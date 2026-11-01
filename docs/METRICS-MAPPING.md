@@ -11,6 +11,88 @@ in `packages/shared/src/constants/metrics.ts`; the typed query builders in
 > *and* `host.docker.internal:7779`), all counts double. `deploy/prometheus.yml`
 > uses a single `host.docker.internal:7779` target for that reason.
 
+## Current upstream health and request history (MAG-4226)
+
+Both Metrics layouts show **Status** instead of calling request success
+"Uptime". The API seeds every configured upstream × chain row even before
+its first scrape. Status combines `rpc_endpoint_overall_health` with recent
+`rpc_endpoint_fetch_latest_{success,fails}` increases in a **chain-sized window**, independent of request history.
+The chain rate is `max by (spec) (deriv(rpc_endpoint_latest_block[1h]))`.
+The window covers three expected blocks, rounded up to 5 / 15 / 30 / 60
+minutes, with a one-hour cap and a 30-minute fallback for missing, non-finite
+or non-positive rates. Bitcoin at one block per 600 seconds uses 30 minutes:
+
+
+- A failing live check, or failed block polls with no successful polls in
+  the health window, means **Unhealthy** (even with health gauge = 1).
+- Successful recent block events provide operational evidence unless a live
+  check reports unhealthy. A healthy gauge alone is insufficient: the router
+  can reset it to 1 while an endpoint is still dead. Empty or expired poll
+  windows show an explicit Unknown warning, never assumed recovery.
+- Missing/non-finite health without successful poll evidence means **Unknown**,
+  shown as a warning with the missing-data reason. A configured interface
+  without evidence cannot be hidden behind a healthy interface.
+
+The worst interface/replica wins per upstream × chain. Poll evaluation keeps
+`apiInterface` and scrape `instance` until after classification; one working
+replica cannot mask failed polls on another. Prometheus needs at least two
+scrapes for `increase()`, and its usual instant-selector lookback applies to
+health gauges. The one-hour rate estimate smooths sparse arrivals; it remains
+a measured estimate, so a long gap can select the fallback. Poll success counters report latest-block tracker events,
+not every HTTP request; a non-advancing chain alone is not failure.
+
+The **Request success rate** card retains the historical success/total ratio
+and its fixed windows. When health is unhealthy or unknown, these percentages,
+error rates and QoS figures use neutral colours and a notice explains the
+request window and health reason. Block heights are **last reported**, latency
+is window-scoped, and failure-only traffic keeps its diagnostics available.
+A QoS availability score is an optimizer score, not a percentage of time up.
+There is no explicit disabled-state signal, so the UI does not invent one.
+
+`/api/metrics/overview` includes `upstreamHealthCounts: { unhealthy, unknown }`
+using the same four health reads as the roster (gauge, chain rate, success
+and failure events). Chains sharing a window are grouped into PromQL union
+branches; query count is independent of the number of endpoints or chains. The optional
+`spec` and `routerId` filter these counts; `router` scopes all Prometheus
+queries. Headers consume this existing overview call every 30 seconds and
+make no additional roster/histogram/QoS request. They show **Checking health…**
+until the selected scope answers, a warning on fetch errors, and warning
+counts for missing upstream health. Background refresh retains the same
+scope's last measurement; changing scope does not reuse another scope's data.
+
+## Upstream history in blocks (`/api/metrics/upstream-timeline`)
+
+The Availability view draws a row per upstream, and one for all of them
+together, a block per stretch of the clock (`bucketGrid`, the errors-over-time
+bars' grid) coloured by the share of its tries that succeeded. Stretches, not
+points: on a quiet chain one failed try in a 15-second point is a 50%
+availability. A block an upstream took no tries in is "No traffic". No series records an
+upstream's health over time, so each cell is read from the two signals that
+do exist per upstream over time:
+
+- **Tries** - `smartrouter_requests_{total,success}_total` by
+  `provider_address` (`qPerUpstreamRpsExpr`, `qPerUpstreamFailedRpsExpr`), on
+  the bars' step; the ruler's
+  `spec_router_provider:*` recorded series from the chart floor (12h) up.
+- **Latest-block polls** - `rpc_endpoint_fetch_latest_{success,fails}` by
+  `endpoint_id` (`qPerEndpointPollsSeriesExpr`), the chain tracker's polls of
+  every configured upstream, backups included, with or without traffic. No
+  recorded series exists for them; they are one counter per upstream ×
+  interface × router pod, so a 30-day read covers a few series, not a
+  histogram's thousands.
+
+A cell reads (`upstreamCellState` in `@sr/shared`): **Unhealthy** when half
+or more of its tries failed, or every poll failed (the current-health rule);
+**Operational** when tries or polls succeeded otherwise; **Unknown** when the
+upstream was scraped but neither tried nor polled (the poll gate makes zero
+polls "not polled", never healthy); **no data** (a blank cell) when no series
+had a sample there. `rpc_endpoint_overall_health` is not read: it starts
+optimistic and moves only on relay outcomes, so as history it would draw an
+idle backup green. A backup that took tries in a cell gets an orange bar;
+"standby" is a backup with no tries and no unhealthy cell. Series names are
+matched to config nodes case-insensitively, as `qBackupShareExpr` matches
+them; `Cached` (the relay cache) counts in the chain's tries and gets no row.
+
 ## Label conventions
 
 | UI concept | Prometheus label |
@@ -20,7 +102,7 @@ in `packages/shared/src/constants/metrics.ts`; the typed query builders in
 | API interface | `apiInterface` (`jsonrpc`, `rest`, `tendermintrpc`, `grpc`) |
 | Method | `method` on `requests_*`; latency histogram uses `function` instead |
 | Selection score axis | `score_type ∈ {availability, latency, sync, stake, composite}` |
-| Time window | PromQL range from the 13-window catalog (`constants/windows.ts`) — scalars use `increase(m[$range])`, series use `rate(m[$step])` via `query_range`; prior-window KPIs add `offset $range` |
+| Time window | PromQL range from the 13-window catalog (`constants/windows.ts`) — scalars use `increase(m[$range])`; via `query_range`, rate lines use `rate(m[rateRange($step)])` and counts per point `rate(m[countRangeSec($step)]) * $step`; prior-window KPIs add `offset $range` |
 
 ## Confirmed real series (this build)
 
@@ -130,15 +212,18 @@ client requests) against the live router:
 |---|---|
 | `/api/metrics/specs` | `count by (spec) (smartrouter_requests_total)` |
 | `/api/metrics/dashboard-summary` | `qRequestsTotal` + `qAvailability` + `qLatencyQuantile(0.95)` + stale-caught, each **twice** (current + `offset $range` prior); `count by (endpoint_id) (rpc_endpoint_overall_health)`; `smartrouter_overall_health`; retries/cache KPIs only when `qPresence` says the family exists. No cache on this build ⇒ the documented derived "effective read p95" reduces to the node read p95 (the overall router histogram). |
-| `/api/metrics/overview` | KPI pairs (requests, 5m-rate RPS, availability, p50/95/99) + `qErrorCount` (both windows); `query_range` series for throughput / errors / p50/p95/p99; `qLatencyDistribution`; per-provider stack `sum by (provider_address) (rate(requests_total[step]))`; per-chain p50 + health + trend; active routes `sum by (endpoint_id, spec) (increase(rpc_endpoint_total_relays_serviced[$w]))` |
+| `/api/metrics/overview` | KPI pairs (requests, 5m-rate RPS, availability, p50/95/99) + `qErrorCount` (both windows); `query_range` series for throughput / errors / p50/p95/p99; `qLatencyDistribution`; per-provider stack `sum by (provider_address) (rate(requests_total[step]))`; per-chain p50 / health / trend as one grouped read each — `histogram_quantile(0.5, sum by (spec, le) (rate(…_bucket[$w])))`, `max by (spec) (rpc_endpoint_overall_health)`, `sum by (spec) (rate(…_latency_milliseconds_count[step]))` (that matrix also feeds `perChainSeries`) — joined on `spec`; active routes `sum by (endpoint_id, spec) (increase(rpc_endpoint_total_relays_serviced[$w]))` |
+| `/api/metrics/pulse` | `smartrouter_overall_health` (under a chain filter: `max by (spec) (rpc_endpoint_overall_health{spec})`), `qClientRps`, and the four reads of `readUpstreamHealth` — six reads, no window |
 | `/api/metrics/dashboard` | `qRpsSeriesExpr`, `qErrorCountSeriesExpr`, `qErrorRateSeriesExpr`, `qAvailabilitySeriesExpr`, `qLatencySeriesExpr(q)`; per-chain `qPerSpecRpsExpr`, per-spec success ratio, per-spec `qPerSpecLatencySeriesExpr(q)` (`sum by (spec, le)` - the one latency query that keeps a series per chain); `qPerProviderRpsExpr`; per-provider p95 `histogram_quantile(0.95, sum by (endpoint_id, le) (rate(rpc_endpoint_…_bucket[step])))`; chain list from `count by (spec)` + `max by (spec) (rpc_endpoint_overall_health)` |
-| `/api/metrics/chains` | per spec: `qRequestsTotal`, `qAvailability`, `qErrorRate`, `qLatencyQuantile(0.95)`, `avg(rpc_endpoint_selection_score{score_type="composite"})`, `max by (spec) (rpc_endpoint_overall_health)`, `qLatestBlock`, `count by (endpoint_id)` |
+| `/api/metrics/chains` | seven grouped reads, one row per chain, joined on `spec`: `qGroupedClientRequests`, `qGroupedAvailability` (the error rate is `1 −` that ratio, not a second read), `qGroupedLatencyQuantile(0.95)`, `qGroupedQos`, `qGroupedHealth`, `qGroupedLatestBlock`, `qGroupedUpstreams` (`count by (spec, endpoint_id)` — the row count per chain) |
+| `/api/metrics/routers-rollup` | `count by (<scope label>) (smartrouter_requests_total)` to learn which routers the collector tells apart, then the same seven reads as `/chains` `by (spec)` for the routers it cannot split (one shared row per chain) and `by (spec, <scope label>)` for the ones it can (one row per router) — at most 15 reads whatever the router count |
 | `/api/metrics/providers` | `sum by (endpoint_id, spec) (increase(rpc_endpoint_total_relays_serviced[$w]))`; **both** `selection_score` gauges (optimizer-first per row, `scoreSource` names the winner) + `qEndpointPolls` for the traffic-free liveness; the `overall_health` / `latest_block` / `requests_in_flight` gauges; per-endpoint p95 from the endpoint histogram; uptime + errorRate = success/total by `provider_address` on the router counters; blockLag computed as spec-max − endpoint block; `role`/`apiInterface` joined from the mounted config (not Prometheus) |
 | `/api/metrics/block-heights` | `qBestTipBySpec`, `qBlockRateBySpec`, `qRouterTips`, `qRouterTipChanges`, `qUpstreamTips`, `qTipChanges`, `rpc_endpoint_overall_health` — instant only (gauges; no window param). Takes both router axes: `?router=` scopes the PromQL by target label, `?routerId=` filters the upstream tips by what the config router declares — the `routers` rows can only ever be split by the first, since `smartrouter_latest_block` is labelled with the chain. Lags are reported in SECONDS as well as blocks. ⚠ `smartrouter_latest_block` advances on accepted tip observations, NOT every poll, so it trails the endpoint gauge by ~one refresh interval by construction — on a fast chain that is thousands of blocks and still healthy. The UI judges a router against its own measured `refreshSec`, never a fixed seconds threshold; the endpoint gauge is the one to read for a live tip. |
 | `/api/metrics/rps` | `sum(rate(smartrouter_requests_total{spec?}[step]))` via `query_range` |
 | `/api/metrics/traffic` | aggregate + per-spec `rate` series; per-chain totals + shares from `qRequestsTotal` |
 | `/api/metrics/methods` | `qRequestsBy("method")`; read-set from `sum by (method) (increase(requests_read_total[$w]))`; `qErrorsBy("method")`; class totals + `qPresence` probes for write/batch |
 | `/api/metrics/chain-series` | `qAvailabilitySeriesExpr`, `qLatencySeriesExpr(0.95)`, `qErrorRateSeriesExpr`, `qRpsSeriesExpr`; QoS = `qOptimizerScore("composite")`, falling back to `qScoreExpr` (endpoint scope), null when both empty; `qBackupShareExpr` only when the config marks backups |
+| `/api/metrics/upstream-timeline` | four range reads on the errors-over-time bars' grid (`bucketGrid`), grouped by upstream: `qPerUpstreamRpsExpr`, `qPerUpstreamFailedRpsExpr`, `qPerEndpointPollsSeriesExpr("ok"/"failed")`; rows from the config (one router's with `routerId`), joined case-insensitively; see "Upstream history in blocks" |
 | `/api/metrics/upstream-detail` | every selector is `{spec, provider_address}` / `{spec, endpoint_id}` — an upstream is a name ON A CHAIN. Router counters (requests, 5m RPS, availability, `qUpstreamErrorRate`); `qEndpointLatencyQuantile` + per-quantile series; `qUpstreamVolumeSeriesExpr` + read variant; `selection_score` gauge + a series per **emitted** score type; `qEndpointBlockLagSeriesExpr`; `qPresence` on node/protocol error counters (gates the errors-by-code panel) |
 | `/api/metrics/errors` | `qErrorCount` + `qErrorCountSeriesExpr`; pivots via `qErrorsBy("spec"/"method")`; hotspots = `clamp_min(total − success, 0)` grouped by `(spec, provider_address)` (with the `or … * 0` guard); per-hotspot trend series for the top 5 only (bounded fan-out); `qPresence` on the three error families |
 | `/api/metrics/retries` | `qPresence` for the retry family; `qRetriesByMethod("recovered"/"failed")` by `(spec, method)`, summed into the three count cards; `qRetryAvgExtraAttempts`; the retry rate divides by `qClientRequestsTotal` plus the still-failed retries (the latency histogram counts only requests that got a reply). Window counts use `increaseFromBirth`: a counter born inside the window starts at its first value, which plain `increase()` drops (a first burst of 11 retries read as 0); a day-long look-back tells a birth from a gap in scraping, and a birth counts only where the store holds `smartrouter_overall_health` from the day before the window - past the store's first sample every counter would look newborn. The Errors tab's request list below the cards is not Prometheus at all - `GET /api/error-requests` rebuilds it from the router's logs |

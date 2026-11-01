@@ -25,7 +25,7 @@ OUT OF SYNC`. Each line routes to one section below:
 | `chain-map: changed (N)` | name, family, interfaces or mainnet flag moved | §7 |
 | `explorers: gained / lost their explorer / explorer changed` | registry snapshot or overlay moved | §3 |
 | `no-explorer: NO explorer (N)` | new chains with nothing to link | §3 |
-| `no-runnable-defaults: NO runnable default (N)` | a (spec × iface) with no command that runs as-is | §4 |
+| `no-runnable-defaults: NO runnable default (N)` | a tier with no command that runs as-is (`SPEC/iface` = regular, `SPEC/iface/tier` = an add-on) | §4 |
 
 Whatever the lines say, §1 and §8 always apply.
 
@@ -167,22 +167,25 @@ The explorer generator prints `explorers N/M`, then `no explorer` and
 
 ## 4. New chains — runnable defaults
 
-The catalog generator prints `runnable N commands` and then every
-`(spec × iface)` with none; `no-runnable-defaults.generated.json` is the
-roll-call.
+The catalog generator prints `runnable N commands` and then every method
+list with none (`SPEC/iface` for a regular tier, `SPEC/iface/tier` for an
+add-on); `no-runnable-defaults.generated.json` is the roll-call.
 
 - **A new chain in a known family needs nothing** — hints are keyed by method
   name (`eth_*`, `chain_*`, cosmos REST paths), so it inherits them. Confirm
   the roll-call diff is empty or only names the expected surface.
 - **A new family needs hints** in `generate-try-me-catalog.mjs`
-  (`JSONRPC_HINTS`, `REST_HINTS`, `TENDERMINT_HINTS`, `GRPC_HINTS`), scoped
+  (`JSONRPC_HINTS`, `REST_HINTS`, `TENDERMINT_HINTS`, `GRPC_HINTS`,
+  `GRAPHQL_HINTS`), scoped
   with `only: ["PREFIX"]` when the method name is generic. **Fire every
   hint with `p` before it ships** — at the router if the chain is in
   `dev-config/values.yml`, else at a public endpoint — and say in the PR
   which endpoint answered. Params shapes differ per family (CometBFT `{}`,
   XRPL `[{}]`, EVM `[]`). A method that needs an argument gets `d` only.
-- **A GraphQL-over-POST surface is an accepted gap**; commit the roll-call
-  with the entry in it.
+- **GraphQL filed as a REST collection is an accepted gap** (Mina, Fuel,
+  Subgraph); commit the roll-call with the entry in it. A spec's native
+  `graphql` interface is not: curate `GRAPHQL_HINTS` (`p` is the query
+  document, a slot to fill is `<two words>`).
 
 ## 5. `methods changed (N)` — a base spec or a spec moved
 

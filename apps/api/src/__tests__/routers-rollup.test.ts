@@ -56,7 +56,8 @@ const { buildApp } = await import("../app.js");
 /**
  * The canned series for one query. Every branch returns, so there is no dead
  * initial value to fall through to — the chain below is exhaustive by
- * construction.
+ * construction. The table reads grouped series (MAG-4295): one row per chain
+ * from `by (spec)`, one row per (chain, target) from `by (spec, service)`.
  */
 function seriesFor(query: string, scopeValues: string[]): unknown[] {
   // Which routers the collector can tell apart.
@@ -69,26 +70,42 @@ function seriesFor(query: string, scopeValues: string[]): unknown[] {
       { metric: { spec: "SOLANA" }, value: [1, "1"] },
     ];
   }
-  // Scoped read — deliberately a different number from the chain's, so a test
-  // can tell "scoped to this router" from "the whole chain".
-  if (query.includes('service="eth-prod-router"')) {
-    return [{ metric: {}, value: [1, "700"] }];
+  // Per-target rows — deliberately a different number from the chain's, so a
+  // test can tell "this router's own row" from "the whole chain".
+  if (query.includes("by (spec, service")) {
+    if (query.startsWith("count by (spec, service, endpoint_id)")) {
+      return scopeValues.flatMap((v) => [
+        { metric: { spec: "ETH1", service: v, endpoint_id: "eth-publicnode" }, value: [1, "1"] },
+        { metric: { spec: "ETH1", service: v, endpoint_id: "eth-mevblocker" }, value: [1, "1"] },
+      ]);
+    }
+    return scopeValues.map((v) => ({ metric: { spec: "ETH1", service: v }, value: [1, "700"] }));
   }
-  if (query.includes("count by (endpoint_id)")) {
+  // Per-chain rows.
+  if (query.startsWith("count by (spec, endpoint_id)")) {
     return [
-      { metric: { endpoint_id: "eth-publicnode" }, value: [1, "1"] },
-      { metric: { endpoint_id: "eth-mevblocker" }, value: [1, "1"] },
-      { metric: { endpoint_id: "eth-tenderly" }, value: [1, "1"] },
+      { metric: { spec: "ETH1", endpoint_id: "eth-publicnode" }, value: [1, "1"] },
+      { metric: { spec: "ETH1", endpoint_id: "eth-mevblocker" }, value: [1, "1"] },
+      { metric: { spec: "ETH1", endpoint_id: "eth-tenderly" }, value: [1, "1"] },
+      { metric: { spec: "SOLANA", endpoint_id: "sol-publicnode" }, value: [1, "1"] },
     ];
   }
-  return [{ metric: {}, value: [1, "1000"] }];
+  return [
+    { metric: { spec: "ETH1" }, value: [1, "1000"] },
+    { metric: { spec: "SOLANA" }, value: [1, "1000"] },
+  ];
 }
+
+/** Every PromQL expression the api sent since the last `mockPrometheus()`. */
+let sent: string[] = [];
 
 /** Canned Prometheus: chain-level numbers per spec, and no per-target label. */
 function mockPrometheus(scopeValues: string[] = []): void {
+  sent = [];
   vi.stubGlobal("fetch", async (input: URL | string) => {
     const url = typeof input === "string" ? input : input.toString();
     const query = new URL(url).searchParams.get("query") ?? "";
+    sent.push(query);
     return new Response(
       JSON.stringify({
         status: "success",
@@ -125,6 +142,7 @@ async function rollup() {
     sharedWith: string[];
     upstreamCount: number;
     requests: number;
+    latestBlock: number | null;
   }[];
 }
 
@@ -179,5 +197,42 @@ describe("GET /api/metrics/routers-rollup", () => {
     // chain series — and still says so.
     expect(staging.attribution).toBe("shared");
     expect(staging.requests).toBe(1000);
+  });
+
+  // MAG-4295: eight reads per router, all at once, was ~350 queries on a
+  // 44-router deployment; the store rejected part of each burst and the rows
+  // rendered "unknown" and 0. The table now reads at most two grouped sets.
+  it("reads one grouped set per chain when the collector reports no targets", async () => {
+    mockPrometheus();
+    await rollup();
+    // The target discovery, then the seven chain-level reads by spec.
+    expect(sent).toHaveLength(1 + 7);
+    expect(sent.filter((q) => /\bby \(spec[,)]/.test(q))).toHaveLength(7);
+    // The target discovery is the only read that names the target label.
+    expect(sent.filter((q) => q.includes("by (spec, service"))).toHaveLength(0);
+  });
+
+  it("adds one grouped set per (chain, target) when it does — never a read per router", async () => {
+    mockPrometheus(["eth-prod-router"]);
+    const rows = await rollup();
+    expect(sent).toHaveLength(1 + 7 + 7);
+    expect(sent.filter((q) => q.includes("by (spec, service"))).toHaveLength(7);
+    // The per-target row joins on BOTH labels: a READ field (the config
+    // overrides upstreamCount) comes from eth-prod's own (ETH1, target) row,
+    // while its sibling, which the collector does not split, reads the chain's.
+    expect(rows.find((r) => r.routerId === "eth-prod")!.latestBlock).toBe(700);
+    expect(rows.find((r) => r.routerId === "eth-staging")!.latestBlock).toBe(1000);
+  });
+
+  it("every row of a fully split deployment comes from the per-target set", async () => {
+    mockPrometheus(["eth-prod-router", "eth-staging-router", "sol-main-router"]);
+    const rows = await rollup();
+    // No router shares a chain row, so the per-chain set is not read at all.
+    expect(sent).toHaveLength(1 + 7);
+    expect(sent.filter((q) => q.includes("by (spec, service"))).toHaveLength(7);
+    expect(rows.every((r) => r.attribution === "own")).toBe(true);
+    // sol-main has a target but the fake only answers ETH1 rows for it: the
+    // nulls a missing read always gave, never another chain's figures.
+    expect(rows.find((r) => r.routerId === "sol-main")!.requests).toBe(0);
   });
 });

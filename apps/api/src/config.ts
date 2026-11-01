@@ -2,7 +2,7 @@
  * Single source of truth for env-var defaults. Parsed once at startup.
  * Every default is documented in the env-var table in the repo CLAUDE.md.
  */
-import { isValidScopeLabel, isValidScopeValue, type MetricScope } from "@sr/shared";
+import { isMetricWindow, isValidScopeLabel, isValidScopeValue, type MetricScope, type MetricWindow } from "@sr/shared";
 
 function env(name: string): string | undefined {
   return process.env[name];
@@ -29,6 +29,14 @@ function envTrustProxy(name: string): number | string | false {
   return raw;
 }
 
+/** A metric window, or null for `never` / `off` / `0`; an unknown value takes the fallback. */
+function envWindow(name: string, fallback: MetricWindow): MetricWindow | null {
+  const raw = env(name)?.trim().toLowerCase();
+  if (raw === undefined || raw === "") return fallback;
+  if (raw === "never" || raw === "off" || raw === "0" || raw === "false") return null;
+  return isMetricWindow(raw) ? raw : fallback;
+}
+
 function envList(name: string): string[] | true {
   const raw = env(name);
   if (!raw) return true;
@@ -44,6 +52,15 @@ function envList(name: string): string[] | true {
   }
   return trimmed.split(",").map((o) => o.trim()).filter(Boolean);
 }
+
+/**
+ * The labels a collector stamps the router identity on, in the order they
+ * are tried when `ROUTER_SCOPE_LABEL` is unset: `router` is what the fleet's
+ * collector and the chart's ServiceMonitor (6.20.0+) copy from the pod label
+ * `app.smart-router-id`; `service` is the Prometheus Operator's automatic
+ * label, the router's Service name (`<id>-router`).
+ */
+export const ROUTER_SCOPE_CANDIDATES = ["router", "service"] as const;
 
 export const config = {
   env: env("NODE_ENV") ?? "production",
@@ -76,14 +93,52 @@ export const config = {
     url: env("PROMETHEUS_URL") ?? "http://localhost:9090",
     timeoutMs: envInt("PROMETHEUS_TIMEOUT_MS", 10000),
     /**
+     * How long a successful answer is reused for an identical read (same
+     * path, params, scope and credential). The panels poll every 15 s, so
+     * 10 s means two tabs or two panels asking the same instant read in an
+     * interval cost the store one query; range reads stamp their window with
+     * the current second, so they share only when they coincide. Per
+     * process — each replica keeps its own. 0 keeps every read live;
+     * identical reads in flight at the same moment share one request either
+     * way, and a refused refresh is answered from the last good read for up
+     * to 60 s (see `PrometheusClient`).
+     */
+    cacheTtlMs: envInt("PROMETHEUS_CACHE_TTL_MS", 10000),
+    /**
+     * The base TTL of the metrics routes' response snapshot (`routes/metrics.ts`):
+     * one answer per route and query, shared by every caller of the process.
+     * Windows up to 1h and the window-less routes keep their answer this long;
+     * longer windows keep theirs longer, never shorter than this. 0 turns the
+     * snapshot off: every request reads live.
+     */
+    snapshotTtlMs: envInt("METRICS_SNAPSHOT_TTL_MS", 15000),
+    /**
      * Target label that identifies ONE router deployment, used by the
      * `?router=` scope (see `promql/scope.ts`). The router labels its series
      * with the chain, not with itself, so telling two routers on one chain
-     * apart relies on a per-target label the collector attaches. `service` is
-     * the Prometheus Operator's (the value being the router's Service name);
-     * point it at `job` for a scrape config that names jobs per router.
+     * apart relies on a per-target label the collector attaches. Empty (the
+     * default) means "find out": the first of `ROUTER_SCOPE_CANDIDATES` the
+     * store reports values for, probed when a request first needs it and
+     * remembered once found (`plugins/prometheus.ts`). Set it to `job` for a
+     * scrape config that names jobs per router.
      */
-    routerScopeLabel: env("ROUTER_SCOPE_LABEL") ?? "service",
+    routerScopeLabel: env("ROUTER_SCOPE_LABEL") ?? "",
+    /**
+     * Recorded reads — see `promql/recorded.ts`. The narrowest window read
+     * from the store's recorded series instead of the raw families; windows
+     * under it stay raw and exact. `never` (or `off`) holds a tenant on raw
+     * reads for every window. The series exist only where the fleet store's
+     * ruler evaluates the rules, and only from then on, so the api probes
+     * their freshness (`plugins/prometheus.ts`) and reads raw while they are
+     * missing or older than `recordedStaleMs`.
+     */
+    recorded: {
+      from: envWindow("METRICS_RECORDED_FROM", "3h"),
+      staleMs: envInt("METRICS_RECORDED_STALE_MS", 300_000),
+      probeMs: envInt("METRICS_RECORDED_PROBE_MS", 60_000),
+      /** How far back the probe looks for the oldest recorded sample; the widest window the dashboard offers. */
+      historyLookback: "30d" as const,
+    },
     /**
      * Deployment scope — see `readMetricsScope()`. Read at plugin registration
      * (live env, not this snapshot) so a bad pair fails the boot with a
@@ -298,4 +353,72 @@ export function readMetricsScope(source: NodeJS.ProcessEnv = process.env): Metri
     );
   }
   return { label, value };
+}
+
+/**
+ * Customer-reported incidents (`POST /api/incidents`), from the live env so
+ * tests can flip them per app instance.
+ *
+ *  - `INCIDENTS_ENABLED` — the switch. Off unless it is exactly `true`: the
+ *    route sends a report into our on-call system, and with the default
+ *    `AUTH_MODE=disabled` anyone who can reach the api may send one, so it is
+ *    opt-in per deployment, never on by accident.
+ *  - `INCIDENT_WEBHOOK_URL` — the deployment's own inbound webhook in our
+ *    on-call system. The URL is the credential, so it arrives from a Secret.
+ *    https only; plain http is accepted for a loopback host, which is a local
+ *    mock and nothing else.
+ *  - `INCIDENT_WEBHOOK_TIMEOUT_MS` (10 s), `INCIDENT_RATE_LIMIT_MAX` (3 per
+ *    caller per 10 minutes) and `INCIDENT_POD_MAX` (10 per 5 minutes from
+ *    every caller together, per api process) — see `services/incidents.ts`.
+ *
+ * Switched on with no usable URL is NOT a refused boot: the dashboard is the
+ * customer's view of their traffic, and losing it over the incident form would
+ * be the worse outage. `problem` says what is wrong; the api logs it at boot
+ * and every report answers 503, which the form shows.
+ */
+export interface IncidentSettings {
+  enabled: boolean;
+  /** Null when unset or refused — `problem` says which. */
+  webhookUrl: string | null;
+  problem: string | null;
+  timeoutMs: number;
+  perIpMax: number;
+  podMax: number;
+}
+
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+function positiveInt(raw: string | undefined, fallback: number): number {
+  const n = raw !== undefined ? Number(raw) : NaN;
+  return Number.isInteger(n) && n > 0 ? n : fallback;
+}
+
+export function readIncidentSettings(source: NodeJS.ProcessEnv = process.env): IncidentSettings {
+  const enabled = source.INCIDENTS_ENABLED?.trim().toLowerCase() === "true";
+  const raw = source.INCIDENT_WEBHOOK_URL?.trim() ?? "";
+  let webhookUrl: string | null = null;
+  let problem: string | null = null;
+  if (raw === "") {
+    problem = "INCIDENT_WEBHOOK_URL is not set";
+  } else {
+    let url: URL | null = null;
+    try {
+      url = new URL(raw);
+    } catch {
+      problem = "INCIDENT_WEBHOOK_URL is not a URL";
+    }
+    if (url) {
+      const secure = url.protocol === "https:" || (url.protocol === "http:" && LOOPBACK_HOSTS.has(url.hostname));
+      if (secure) webhookUrl = url.toString();
+      else problem = "INCIDENT_WEBHOOK_URL must be https";
+    }
+  }
+  return {
+    enabled,
+    webhookUrl,
+    problem: enabled ? problem : null,
+    timeoutMs: positiveInt(source.INCIDENT_WEBHOOK_TIMEOUT_MS, 10_000),
+    perIpMax: positiveInt(source.INCIDENT_RATE_LIMIT_MAX, 3),
+    podMax: positiveInt(source.INCIDENT_POD_MAX, 10),
+  };
 }

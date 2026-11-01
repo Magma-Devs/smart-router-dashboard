@@ -1,6 +1,9 @@
 import { beforeAll, describe, expect, it } from "vitest";
+import noRunnable from "../../../../scripts/data/no-runnable-defaults.generated.json";
+import generated from "../chain-methods.generated.json";
 import {
   catalogReady,
+  defaultCommand,
   groupByInternalPath,
   headCommands,
   httpVariantOf,
@@ -41,6 +44,7 @@ describe("runnable defaults", () => {
       ["XLM", "rest"],
       ["TON", "rest"],
       ["VECHAIN", "rest"],
+      ["POLYMESH", "rest"],
       ["TEZOS", "rest"],
       ["STACKS", "rest"],
       ["ARWEAVE", "rest"],
@@ -142,6 +146,40 @@ describe("runnable defaults", () => {
     expect(byName("/getConsensusBlock")?.ready).toBe(true);
   });
 
+  it("claims nothing for Moralis, whose arguments are all query parameters", () => {
+    // `/dateToBlock` was the "ready" default, and it takes `chain` and `date`
+    // as required query parameters. Without an API key no hint can be fired,
+    // so the surface is a written-down gap instead.
+    const cfg = getInterfaceConfig("MORALIS", "rest", [])!;
+    expect(headCommands(cfg.regular)).toEqual([]);
+    expect(cfg.regular.find((c) => c.label === "/dateToBlock")?.ready).toBeUndefined();
+  });
+
+  it("sends Polymesh's Sidecar routes with the query and the arguments they need", () => {
+    // `/blocks` and `/accounts/compare` look complete, but Sidecar answers 400
+    // without `?range=` / `?addresses=`. Both were "ready" and both failed.
+    const cfg = getInterfaceConfig("POLYMESH", "rest", []);
+    const byName = (name: string) => cfg?.regular.find((c) => c.label === name);
+    expect(byName("/blocks")?.params).toBe("/blocks?range=1-2");
+    expect(byName("/accounts/compare")?.params).toMatch(/^\/accounts\/compare\?addresses=\w+,\w+$/);
+    // Every GET with a path template ships a filled-in example.
+    for (const cmd of cfg!.regular.filter((c) => c.method === "GET" && /\{/.test(c.label))) {
+      expect(cmd.params, cmd.label).not.toMatch(/\{[^}"]+\}/);
+    }
+    // A metadata version is `v14`; a bare `14` answers 500.
+    expect(byName("/runtime/metadata/{metadataVersion}")?.params).toMatch(/\/v\d+$/);
+    // Block traces need an unsafe RPC the node refuses: no ready mark, no "needs params".
+    const traces = byName("/experimental/blocks/{blockId}/traces");
+    expect(traces?.ready).toBeUndefined();
+    expect(traces?.needsInput).toBeUndefined();
+    expect(traces?.desc).toMatch(/unsafe/);
+    // The account examples are a mainnet stash, so the testnet keeps its placeholders.
+    const testnet = getInterfaceConfig("POLYMESHT", "rest", []);
+    const stakingInfo = testnet?.regular.find((c) => c.label === "/accounts/{accountId}/staking-info");
+    expect(stakingInfo?.needsInput).toBe(true);
+    expect(testnet?.regular.find((c) => c.label === "/blocks")?.params).toBe("/blocks?range=1-2");
+  });
+
   it("keeps endpoints that were checked and still cannot be sent out of the head", () => {
     const vechain = getInterfaceConfig("VECHAIN", "rest", []);
     // A WebSocket upgrade — a plain GET answers 400.
@@ -162,6 +200,80 @@ describe("runnable defaults", () => {
     expect(evm.regular.find((c) => c.method === "eth_blockNumber")?.ready).toBe(true);
     expect(evm.regular.find((c) => c.method === "eth_getTransactionByHash")?.needsInput).toBe(true);
   });
+
+  it("sends Starknet a block id as the bare tag", () => {
+    // Juno and Pathfinder both answer `[{"block_id":"latest"}]` with "Invalid
+    // block id" — two "ready" commands failed on every node.
+    const cfg = getInterfaceConfig("STRK", "jsonrpc", ["trace"])!;
+    for (const cmd of [...cfg.regular, ...cfg.trace!]) {
+      expect(cmd.params, cmd.method).not.toContain('{"block_id"');
+    }
+    expect(cfg.regular.find((c) => c.method === "starknet_getBlockWithTxs")?.params).toBe('["latest"]');
+    expect(FAMILY_METHODS.starknet.jsonrpc!.regular
+      .find((c) => c.method === "starknet_getBlockWithTxs")?.params).toBe('["latest"]');
+    // The Trace tier gets a command that runs as-is.
+    expect(cfg.trace!.find((c) => c.method === "starknet_traceBlockTransactions")?.ready).toBe(true);
+  });
+});
+
+describe("defaultCommand", () => {
+  it("opens a tier on its first command that runs as-is", () => {
+    // The EVM debug tier leads with debug_traceTransaction, which wants a hash.
+    const eth = getInterfaceConfig("ETH1", "jsonrpc", ["archive", "debug", "trace"])!;
+    expect(eth.debug![0]?.method).toBe("debug_traceTransaction");
+    expect(defaultCommand(eth.debug!)?.method).toBe("debug_traceCall");
+    expect(defaultCommand(eth.trace!)?.method).toBe("trace_call");
+    expect(defaultCommand(getInterfaceConfig("STRK", "jsonrpc", ["trace"])!.trace!)?.method)
+      .toBe("starknet_traceBlockTransactions");
+  });
+
+  it("opens on one call's answer, not a whole block or store", () => {
+    // A block's trace is 2.3 MB on Ethereum and the beacon fork-choice dump
+    // 45 MB: past the direct leg's body cap, and a stall in the browser.
+    const eth = getInterfaceConfig("ETH1", "jsonrpc", ["debug", "trace"])!;
+    for (const tier of [eth.debug!, eth.trace!]) {
+      expect(defaultCommand(tier)?.params).not.toMatch(/^\["latest"/);
+    }
+    const beacon = getInterfaceConfig("ETHBEACON", "rest", ["debug"])!.debug!;
+    expect(defaultCommand(beacon)?.label).toBe("/eth/v2/debug/beacon/heads");
+    expect(beacon.find((c) => c.label === "/eth/v1/debug/fork_choice")?.desc).toMatch(/MB/);
+  });
+
+  it("keeps a tier's first command when it already runs", () => {
+    const eth = getInterfaceConfig("ETH1", "jsonrpc", ["archive"])!;
+    expect(defaultCommand(eth.regular)).toBe(eth.regular[0]);
+    expect(defaultCommand(eth.archive!)).toBe(eth.archive![0]);
+  });
+
+  it("falls back to the tier's first command when nothing in it is ready", () => {
+    const needs = { method: "a", label: "a", params: '["0x..."]', needsInput: true };
+    const unverified = { method: "b", label: "b", params: "[]" };
+    const ready = { method: "c", label: "c", params: "[]", ready: true };
+    expect(defaultCommand([needs, unverified, ready])).toBe(ready);
+    expect(defaultCommand([needs, unverified])).toBe(needs);
+    expect(defaultCommand([])).toBeNull();
+  });
+
+  it("opens every tier on a runnable command, but the roll-call's gaps", () => {
+    // Every chain, interface and add-on in the catalog, filtered the way the
+    // drawer filters a plain-HTTP transport. A tier with nothing runnable has
+    // to be written down in the roll-call the drift check diffs.
+    const gaps = new Set<string>(noRunnable);
+    const notRunnable: string[] = [];
+    for (const [spec, entry] of Object.entries(generated as Record<string, unknown>)) {
+      if (typeof entry === "string") continue;
+      for (const iface of Object.keys(entry as object)) {
+        const cfg = getInterfaceConfig(spec, iface, ["archive", "debug", "trace"]);
+        for (const tier of TIER_ORDER) {
+          const list = cfg?.[tier]?.filter((c) => !/(un)?subscribe$/i.test(c.method));
+          if (!list?.length) continue;
+          const id = tier === "regular" ? `${spec}/${iface}` : `${spec}/${iface}/${tier}`;
+          if (!defaultCommand(list)?.ready && !gaps.has(id)) notRunnable.push(id);
+        }
+      }
+    }
+    expect(notRunnable).toEqual([]);
+  });
 });
 
 describe("transport twins", () => {
@@ -174,7 +286,9 @@ describe("transport twins", () => {
     expect(httpVariantOf("rest")).toBe("rest");
   });
 
-  it("has no ws form for REST or gRPC", () => {
+  it("has no ws form for REST, gRPC or GraphQL", () => {
+    expect(wsVariantOf("graphql")).toBeNull();
+    expect(httpVariantOf("graphql")).toBe("graphql");
     expect(wsVariantOf("rest")).toBeNull();
     expect(wsVariantOf("grpc")).toBeNull();
     expect(wsVariantOf("grpc-web")).toBeNull();
@@ -312,6 +426,7 @@ describe("isCatalogInterface", () => {
     expect(isCatalogInterface("tendermintrpc-ws")).toBe(true);
     expect(isCatalogInterface("grpc")).toBe(true);
     expect(isCatalogInterface("grpc-web")).toBe(true);
+    expect(isCatalogInterface("graphql")).toBe(true);
   });
 
   it("rejects raw config ids that aren't drawer transports", () => {
@@ -333,6 +448,7 @@ describe("storageKey", () => {
     expect(storageKey("rest")).toBe("rest");
     expect(storageKey("tendermintrpc")).toBe("tendermintrpc");
     expect(storageKey("grpc")).toBe("grpc");
+    expect(storageKey("graphql")).toBe("graphql");
   });
 });
 
@@ -343,6 +459,7 @@ describe("ifaceCanFire", () => {
     expect(ifaceCanFire("rest")).toBe(true);
     expect(ifaceCanFire("tendermintrpc")).toBe(true);
     expect(ifaceCanFire("tendermintrpc-ws")).toBe(true);
+    expect(ifaceCanFire("graphql")).toBe(true);
   });
   it("returns false for gRPC variants the browser can't dial", () => {
     expect(ifaceCanFire("grpc")).toBe(false);
@@ -670,5 +787,62 @@ describe("groupByInternalPath", () => {
       ["root", [root]],
       ["/P", [p]],
     ]);
+  });
+});
+
+describe("GraphQL catalog", () => {
+  /** The GraphQL slot is `<two words>`. A single bracketed word is a Move
+   *  type argument (`Coin<0x2::sui::SUI>`), not something to fill in. */
+  const SLOT = /<[a-z][a-z0-9-]* [a-z0-9 -]+>/;
+
+  it("serves Sui's root fields, one command per field", () => {
+    const cfg = getInterfaceConfig("SUI", "graphql", []);
+    expect(cfg).not.toBeNull();
+    const fields = cfg!.regular.map((c) => c.method);
+    expect(fields).toContain("chainIdentifier");
+    expect(fields).toContain("executeTransaction");
+    expect(new Set(fields).size).toBe(fields.length);
+  });
+
+  it("opens on queries that run as they stand", () => {
+    const head = headCommands(getInterfaceConfig("SUI", "graphql", [])!.regular);
+    expect(head.length).toBe(HEAD_LIMIT);
+    expect(head[0]?.method).toBe("chainIdentifier");
+    for (const cmd of head) {
+      expect(cmd.ready, cmd.method).toBe(true);
+      expect(cmd.params, cmd.method).not.toMatch(SLOT);
+      // Every default is a query selecting the field it is filed under.
+      expect(cmd.params, cmd.method).toMatch(new RegExp(`^(mutation )?\\{ ${cmd.method}\\b`));
+    }
+  });
+
+  it("does not take a Move type argument for a slot", () => {
+    const type = getInterfaceConfig("SUI", "graphql", [])!.regular.find((c) => c.method === "type");
+    expect(type?.params).toContain("Coin<0x2::sui::SUI>");
+    expect(type?.ready).toBe(true);
+  });
+
+  it("marks the fields that need an argument, and shows where it goes", () => {
+    const cfg = getInterfaceConfig("SUI", "graphql", [])!;
+    for (const field of ["transaction", "verifySignature", "simulateTransaction", "executeTransaction"]) {
+      const cmd = cfg.regular.find((c) => c.method === field);
+      expect(cmd?.needsInput, field).toBe(true);
+      expect(cmd?.ready, field).toBeUndefined();
+      expect(cmd?.params, field).toMatch(SLOT);
+    }
+  });
+
+  it("serves the same console on testnet and devnet", () => {
+    const mainnet = getInterfaceConfig("SUI", "graphql", [])!;
+    expect(getInterfaceConfig("SUIT", "graphql", [])).toBe(mainnet);
+    expect(getInterfaceConfig("SUID", "graphql", [])?.regular).toEqual(mainnet.regular);
+  });
+
+  it("borrows no other chain's schema", () => {
+    // A known spec with no graphql collection, and an index nobody knows:
+    // neither has a fallback family, because no other chain's root fields
+    // would answer.
+    expect(getInterfaceConfig("ETH1", "graphql", [])).toBeNull();
+    expect(getInterfaceConfig("TOTALLY_UNKNOWN", "graphql", [])).toBeNull();
   });
 });

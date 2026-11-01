@@ -28,16 +28,20 @@
  * isn't currently valid). It's parsed at submit time.
  *
  * For REST commands `command.method` is the HTTP verb (GET/POST/...) and
- * `command.params` is the path appended to the local endpoint URL.
+ * `command.params` is the path appended to the local endpoint URL. For GraphQL
+ * commands `command.method` is the root field and `command.params` is the
+ * query document.
  */
 
 import { familyForSpecIndex, isKnownSpecIndex } from "@sr/shared";
 
 export interface AddonCommand {
-  /** JSON-RPC method name, or HTTP verb for REST commands. */
+  /** JSON-RPC method name, HTTP verb for REST commands, or the root field
+   *  for GraphQL commands. */
   method: string;
   label: string;
-  /** JSON string for JSON-RPC params, or path string for REST. */
+  /** JSON string for JSON-RPC params, path string for REST, or the query
+   *  document for GraphQL. */
   params: string;
   /** One-line human description (from the curated hints). */
   desc?: string;
@@ -108,7 +112,7 @@ export type ChainFamily =
 /** Storage key for the methods catalog. WS variants share the catalog of their
  *  HTTP counterpart; `grpc-web` shares with `grpc`. The drawer accepts the
  *  wider `CatalogInterface` and we collapse to a storage key via `storageKey`. */
-export type CatalogStorageKey = "jsonrpc" | "tendermintrpc" | "rest" | "grpc";
+export type CatalogStorageKey = "jsonrpc" | "tendermintrpc" | "rest" | "grpc" | "graphql";
 
 /** Interface ids the Try-it drawer recognises. Wider than `CatalogStorageKey`
  *  because WS variants and `grpc-web` are valid drawer inputs even though they
@@ -120,13 +124,15 @@ export type CatalogInterface =
   | "tendermintrpc-ws"
   | "rest"
   | "grpc"
-  | "grpc-web";
+  | "grpc-web"
+  | "graphql";
 
 /* ── Generated catalog (full lava-specs coverage) ────────────────────────── */
 
 /** Compact command shape emitted by the generator — see the script header. */
 interface GeneratedCmd {
-  /** Method name / REST path template / grpc `pkg.Service/Method`. */
+  /** Method name / REST path template / grpc `pkg.Service/Method` /
+   *  GraphQL root field. */
   m: string;
   /** HTTP verb for REST when not GET. */
   v?: string;
@@ -204,14 +210,17 @@ function expandCommand(cmd: GeneratedCmd, key: CatalogStorageKey): AddonCommand 
   const method = key === "rest" ? (cmd.v ?? "GET") : cmd.m;
   // Same defaults the generator drops: an empty object for gRPC and for
   // CometBFT (which rejects `[]` on any method with optional arguments), an
-  // empty array elsewhere, the path itself for REST.
+  // empty array elsewhere, the path itself for REST, and a query selecting
+  // the bare root field for GraphQL.
   const params =
     cmd.p ??
     (key === "rest"
       ? cmd.m
-      : key === "grpc" || key === "tendermintrpc"
-        ? "{}"
-        : "[]");
+      : key === "graphql"
+        ? `{ ${cmd.m} }`
+        : key === "grpc" || key === "tendermintrpc"
+          ? "{}"
+          : "[]");
   const out: AddonCommand = { method, label: cmd.l ?? cmd.m, params };
   if (cmd.d) out.desc = cmd.d;
   if (cmd.r) out.ready = true;
@@ -382,7 +391,7 @@ const STARKNET_JSONRPC: InterfaceConfig = {
     {
       method: "starknet_getBlockWithTxs",
       label: "starknet_getBlockWithTxs",
-      params: '[{"block_id":"latest"}]',
+      params: '["latest"]',
       desc: "Get block information with full transactions.",
     },
     { method: "starknet_syncing", label: "starknet_syncing", params: "[]", desc: "Returns sync status, or false if not syncing." },
@@ -392,7 +401,7 @@ const STARKNET_JSONRPC: InterfaceConfig = {
     {
       method: "starknet_getStorageAt",
       label: "Get Storage At",
-      params: '{"contract_address":"0x0123","key":"0x0","block_id":{"block_number":123456}}',
+      params: '{"contract_address":"0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7","key":"0x0341c1bdfd89f69748aa00b5742b03adbffd79b8e80cab5c50d91cd8c2a79be1","block_id":{"block_number":123456}}',
     },
   ],
   debug: null,
@@ -525,8 +534,10 @@ export function familyForSpec(spec: string): ChainFamily | null {
   return MAP_FAMILY_TO_CATALOG[familyForSpecIndex(spec)] ?? null;
 }
 
-/** Fallback family per storage key for specs no prefix rule covers. */
-const FALLBACK_FAMILY: Record<CatalogStorageKey, ChainFamily> = {
+/** Fallback family per storage key for specs no prefix rule covers. GraphQL
+ *  has none: a GraphQL schema is the chain's own, so no other chain's root
+ *  fields would answer. */
+const FALLBACK_FAMILY: Partial<Record<CatalogStorageKey, ChainFamily>> = {
   jsonrpc: "evm",
   rest: "cosmos",
   tendermintrpc: "cosmos",
@@ -543,6 +554,7 @@ const SUPPORTED_CATALOG_INTERFACES: CatalogInterface[] = [
   "tendermintrpc-ws",
   "grpc",
   "grpc-web",
+  "graphql",
 ];
 
 /** True when the iface is something the Try-it drawer can handle today. */
@@ -555,7 +567,8 @@ export function isCatalogInterface(iface: string): iface is CatalogInterface {
  * serves the upgrade on the SAME listen address as the base interface (path
  * -scoped: `/ws`, `/websocket`), so the two are one endpoint with two
  * transports — which is what the Try-it drawer's transport toggle switches
- * between. REST and gRPC have no ws form.
+ * between. REST, gRPC and GraphQL have no ws form: the router serves GraphQL
+ * over HTTP POST only.
  */
 export function wsVariantOf(iface: CatalogInterface): CatalogInterface | null {
   if (iface === "jsonrpc" || iface === "jsonrpc-ws") return "jsonrpc-ws";
@@ -659,8 +672,9 @@ export function getInterfaceConfig(
     // EVM-only chain that merely happens to be missing from the JSON.
     const family = familyForSpec(spec);
     cfg = family ? FAMILY_METHODS[family][key] ?? null : null;
-    if (!cfg && !isKnownSpecIndex(spec)) {
-      cfg = FAMILY_METHODS[FALLBACK_FAMILY[key]][key] ?? null;
+    const fallback = FALLBACK_FAMILY[key];
+    if (!cfg && fallback && !isKnownSpecIndex(spec)) {
+      cfg = FAMILY_METHODS[fallback][key] ?? null;
     }
     // Never borrow another chain's gRPC methods — an EVM chain's gRPC surface
     // is not cosmos's — but never hide the console either.
@@ -697,6 +711,20 @@ export function headCommands(
   const leading = ready.filter(preferred);
   const rest = ready.filter((cmd) => !leading.includes(cmd));
   return [...leading, ...rest].slice(0, HEAD_LIMIT);
+}
+
+/**
+ * The command a tier preselects: its first one that can be sent as-is, in
+ * catalog order (curated hints lead it). The catalog's first entry is no
+ * guide on its own: every EVM debug tier leads with `debug_traceTransaction`,
+ * which wants a hash.
+ *
+ * A tier with nothing runnable opens on its first command, which is a
+ * roll-call gap (`no-runnable-defaults.generated.json`). Null for an empty
+ * tier.
+ */
+export function defaultCommand(commands: AddonCommand[]): AddonCommand | null {
+  return commands.find((cmd) => cmd.ready) ?? commands[0] ?? null;
 }
 
 /** Flatten the InterfaceConfig into `[tier, command, indexInTier]` triples in

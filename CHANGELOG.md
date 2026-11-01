@@ -5,6 +5,1012 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.51.1]
+
+### Fixed
+
+- **Errors and Transactions tabs: a picked chain's list shows its own
+  requests.** With a chain or a router picked, the list narrowed its log read
+  by the chain's provider names. A provider serves many chains, so another
+  chain's errors or transactions at the same provider filled each read in
+  seconds, and the chain asked for showed none: a 12-hour Errors list read
+  2 seconds, a Transactions list 13 minutes. Where the router's log streams are
+  labelled by chain and router, the list now reads only that chain's or that
+  router's streams, which is exact and lets one read cover far more of the
+  window; elsewhere it reads as before.
+- **Transactions tab: no more "0+".** When the list hasn't read the whole
+  window yet, the count says how much it covers ("in the newest 13 minutes of
+  the window - load older ones below") instead of adding a "+".
+
+## [0.51.0]
+
+### Added
+
+- **Availability in blocks.** Expanding a router on the Metrics page with
+  Availability selected shows a block per 30 minutes on 12 hours. The top
+  row, **Requests served**, is what clients got: the share of their requests
+  the router answered, from the Failed requests card's counts, so a try that
+  failed and was then served by another provider doesn't count against it.
+  Under it, a row per provider: the share of its tries that succeeded. A
+  block is 99.9% or more, 99% to 99.9%, under 99%, or no traffic (a standby
+  backup wasn't asked, which isn't the same as available). Each row ends in
+  its figure over the window; hovering a column lists every row for that
+  half hour. Where the store has no recorded counts, the top row adds up the
+  providers' tries and says so.
+- **Metrics tab: a picked chain shows no Routers table.** The table compares
+  routers; with one chain picked, its cards say it, and the chains list on the
+  left picks between a chain's routers.
+- **Metrics tab: an Availability card for a picked chain.** The same blocks
+  under Traffic by provider. It follows the router picked in the chains
+  list; with none picked, a chain two routers serve shows all its providers.
+- `GET /api/metrics/upstream-timeline` - every upstream of one chain, a cell
+  per stretch of the clock (the errors-over-time bars' grid): tries, failed
+  tries, share of the chain's tries, latest-block polls, and the state they
+  read as; and `served`, per cell, the clients' requests and the ones the
+  router couldn't serve (`smartrouter_final_{requests,failures}:count1m`, by
+  `chain` and a router's `service_name`). Six range reads whatever the count.
+- **A Metrics page link opens exactly what you were looking at.** Copy the
+  browser's URL and send it: the person who opens it sees the same chain,
+  router, tab, time window and focus. New URL keys, beside `chain`, `router`,
+  `tab` and `request`, which work as before:
+  - `window` - the time window, always in the URL. A link opens with the
+    sender's window and does not change the window the viewer has saved.
+  - `upstream` on the Upstreams tab - the upstream in the deep-dive. Clicking
+    a roster row writes it. `upstreamChain` names its chain when no chain is
+    picked.
+  - `upstream`, `from`, `to` on the Errors tab - the request list's upstream
+    filter and exact times (unix ms). Clicking an errors-over-time bar writes
+    all three, so a link shows the same failed requests, not the last 30
+    minutes of whoever opens it.
+  - `expand`, `tile` on Overview - the router row open in the Routers table
+    and the chart picked in it.
+
+  A change of chain or router is still a new history entry; a change of tab,
+  window or focus rewrites the current one, and picking another tab drops the
+  old tab's focus. A link to something that is gone opens the nearest view
+  with one plain line saying why: an upstream or router no longer in the
+  config, times older than the 30 days the logs keep, a window the page
+  doesn't offer. Only names go in the URL, never node URLs.
+
+### Changed
+
+- **Errors and Transactions tabs: an opened request, redrawn.** It opens on
+  what happened, in one plain sentence ("Sent to all at the same time:
+  tatum and quicknode both failed (Nonce too low). quicknode's answer went
+  to the client."), then the status, the error's **meaning** from the
+  error-code table (it was only a tooltip on the error's name) and its
+  **next step**. The tries follow as a table with how long each took; the
+  one that reached the client is marked "→ client". The request's details
+  sit beside them as a list - Smart Router's request ID, method, chain, time,
+  customer, sizes and blocks, the blocks linked to the chain's explorer - and
+  every ID there has a copy button.
+  The status is a dot and a word on a plain card, without a coloured stroke
+  down the left.
+- **Transactions tab: a rejected transaction's hash links to its explorer
+  again.** 0.50.2 left it unlinked where every node refused the transaction;
+  it now links like any other hash.
+- **Errors and Transactions tabs: the filters stay in view.** The list's
+  header - its title, counts, filters and the ID search - sticks under the
+  top bar while the rows scroll under it, and the column headers stick under
+  it. Where the card is narrower than the table, the table still scrolls
+  sideways and its column headers scroll with it.
+- **Errors and Transactions tabs: each row shows its date.** Under the time,
+  where a request with no customer showed "-", the row now shows the date,
+  then the customer when the request named one.
+- **Every error code explained in plain words.** All 134 entries of the
+  error-code table were rewritten: the meaning is one short sentence, without
+  hedging or lists of possibilities. A next step shows only when the client
+  can act on it: 53 entries have none, for example a provider's server error or
+  rate limit, which the router already retries elsewhere. The "it may have gone
+  through" tails are gone, since the "May already be on chain" tag says it. A
+  setup problem (a provider's URL or credentials, a chain with no provider) has
+  no next step either: one message has to hold for every deployment.
+- **Metrics page: "Requests served" no longer says "across N upstreams";
+  "Retried requests" no longer says how many extra attempts each took, and
+  "Failed attempts" no longer counts its chain · upstream pairs.**
+- **Bar charts: a short bar is as easy to hover as a tall one.** Transactions
+  over time and an upstream's errors over time open a bar's counts anywhere
+  in its column, not only on the bar itself. A part of a bar that isn't zero
+  is drawn at least 3 px tall, so one rejected transaction on top of hundreds
+  accepted shows as a sliver instead of nothing.
+- **Router row charts: P95 latency, error rate and requests start at 0.**
+  Their axis padded below the data, so it drew negative ticks ("-7.00%",
+  "-28 ms"); it now starts at 0 and steps on round numbers. Percentages drop
+  the zeros that say nothing ("0%", "57%"), and a rate above 0 too small to
+  show reads "<0.01%", never "0%".
+- **Traffic by provider: hover shows the values.** Hovering the chart shows
+  the time and each upstream's share (or requests per second, with the total)
+  at that moment, as the other charts do. The legend lists the upstreams only:
+  its window-average percentages are gone.
+
+### Removed
+
+- The chain drill-down's "Primary vs backup" tile: the Availability view
+  has a row per provider, backups marked.
+
+### Fixed
+
+- **Errors and Transactions tabs: an opened request stays open.** Every 30 s
+  read put newer requests on top, so the one being read slid down the page and
+  off it. While a row is open the list now holds still, and a strip above it
+  counts what arrived since ("12 new requests · Show"). The list keeps
+  reading meanwhile, in place of 0.50.2's pause while a row is open. Picking
+  another chain or router closes it, since it belongs to the list it was
+  opened in.
+- **Errors and Transactions tabs: the filter dropdowns' arrows.** Each filter
+  drew the browser's own arrow, pressed against its right border while the
+  text sat 10 px in from the left. They now draw the page's line chevron, the
+  one the window picker uses, 10 px in from the right and centred, and dimmed
+  while a filter has nothing to pick.
+
+## [0.50.2]
+
+### Fixed
+
+- **The Metrics page keeps the previous window up while the next one
+  loads.** On a window change the Routers table drew four skeleton rows above
+  the previous window's rows, with a ninth skeleton column the header doesn't
+  have, and the KPI cards went blank. Skeletons now appear only when there is
+  nothing to show; otherwise the previous rows and values stay up, dimmed with
+  the refresh dot, until the next ones land. The Failed requests card, which
+  reads the logs and can land well after the others, dims on its own. A poll
+  of the same window shows only the dot, so the Routers table no longer dims
+  every 15 seconds.
+- **The Transactions and Errors lists hold still while a row is open.** A
+  poll every 30 s moved an open row down or paged it out of view; the list
+  now stops reading newer rows while an open row is on screen, says so in its
+  header, and reads again once the row closes or a filter, page or window
+  takes it out of view.
+- **Log rows carry their date.** Today's rows showed a time alone, so a list
+  that spans midnight couldn't say which day a row was on.
+- **A log row's chain icon sits on the chain's line**, not halfway down a cell
+  that also holds the method and the transaction hash.
+- **A row whose chain the logs don't name lists up to three candidates** and
+  otherwise reads "One of N chains", the full list on hover, instead of every
+  chain its upstreams serve - about thirty behind a shared upstream.
+- **A transaction every node refused isn't linked to an explorer.** The chain
+  never saw it, so the explorer's page was always "not found"; the hash stays
+  to copy, and the opened row says why. A rejection still links when another
+  node took the transaction or left no answer, or when the refusal says the
+  chain may have it (already known, nonce too low, already in the chain).
+- **An opened row shows one request ID: Smart Router's.** It was "ID" beside
+  "Caller request ID", "Task ID" and "Tx ID" - the `X-Request-Id`,
+  `X-Task-Id` and `X-Tx-Id` headers the router got. Behind the gateway the
+  `X-Request-Id` is the gateway's own ID for every request, not the caller's,
+  and "Tx ID" read like the chain's transaction id. The row now names the
+  router's GUID "Smart Router request ID" and leaves the headers out, and
+  Find a request no longer suggests them.
+- **An opened row's block numbers link to the chain's explorer** where one has
+  a proven block page, as the Routers table's do.
+- **Stellar's transactions link to stellar.expert**, mainnet and testnet,
+  each watched rendering a real transaction. The router writes no `tx_hash`
+  for Stellar's `sendTransaction` yet; its rows link once it does.
+- **A row with no customer says why**: the caller sent no `project-id`
+  header.
+- **The KPI cards' labels are capitalised alike:** "Successful
+  retries" and "Stale responses caught" read lowercase beside the others.
+- **A request still in flight names its chain.** No line of a request names
+  its chain until its last one lands, and a list read meanwhile guessed it
+  from the request's upstreams - every chain a shared upstream serves. The
+  log agent labels each router's stream with its chain (its pod's
+  `app.smart-router-chain`, the spec lower-cased); the api now keeps a
+  stream's labels and takes the chain from them before guessing.
+
+## [0.50.1]
+
+### Fixed
+
+- **Errors and Transactions tabs: a picked chain's list shows its own
+  requests.** With a chain or a router picked, the list narrowed its log read
+  by the chain's provider names. A provider serves many chains, so another
+  chain's errors or transactions at the same provider filled each read in
+  seconds, and the chain asked for showed none: a 12-hour Errors list read
+  2 seconds, a Transactions list 13 minutes. Where the router's log streams are
+  labelled by chain and router, the list now reads only that chain's or that
+  router's streams, which is exact and lets one read cover far more of the
+  window; elsewhere it reads as before.
+- **Transactions tab: no more "0+".** When the list hasn't read the whole
+  window yet, the count says how much it covers ("in the newest 13 minutes of
+  the window - load older ones below") instead of adding a "+".
+
+- **Starknet commands in Try now that failed on every node.**
+  `starknet_getBlockWithTxs` and `starknet_getStateUpdate` sent
+  `[{"block_id":"latest"}]`, which Juno and Pathfinder reject with "Invalid
+  block id". They now send `["latest"]`. The Trace tier gets a ready command,
+  `starknet_traceBlockTransactions ["latest"]`. The archive
+  `starknet_getStorageAt` example reads the ETH token's name slot, which
+  answers "Ether"; the old address was not a contract (MAG-4724).
+- **Try now opens every tier on a command that runs as-is** (MAG-4725).
+  Picking a Request Type (Regular, Archive, Debug, Trace) used to select the
+  tier's first catalog entry, so every EVM Debug tier opened on
+  `debug_traceTransaction`, which wants a transaction hash. The drawer now
+  opens each tier on its first command marked ready to send, and a tier whose
+  first command already ran keeps it. Changed: 59 Debug tiers, 48 Trace tiers
+  and 8 REST Regular tiers (Arweave, Canton, Cardano, Kaspa, MultiversX,
+  Stacks, Tezos, Stellar Horizon).
+- **Add-on tiers open on one call, not a whole block** (MAG-4725). The EVM
+  Debug and Trace tiers lead with `debug_traceCall` and `trace_call`, a few
+  hundred bytes each. A block's trace is 2.3 MB on Ethereum, past the direct
+  leg's body cap. The beacon Debug tier opens on `/eth/v2/debug/beacon/heads`
+  (5 KB) rather than `/eth/v1/debug/fork_choice`, which dumps the whole
+  fork-choice store (45 MB on mainnet) and now says so.
+- **Moralis claims no ready commands** (MAG-4725). It takes its arguments in
+  the query string, like toncenter (`/dateToBlock` wants `?chain=&date=`), so
+  its bare GETs no longer count as complete requests. It joins the roll-call
+  as a gap: its API key keeps any hint from being checked here.
+- **The no-runnable roll-call covers add-on tiers** (MAG-4725).
+  `no-runnable-defaults.generated.json` now lists add-on tiers with nothing
+  runnable as `SPEC/iface/tier`, so the spec-drift check fails on a new one.
+  Three are accepted, each with its testnet: EOS trace and VeChain REST debug
+  (POST with a body, which the REST drawer cannot send), and Quai debug
+  (every method takes a block argument).
+
+## [0.50.0]
+
+### Changed
+
+- **One UI: the screens `DASHBOARD_NEW_UI=true` drew are the only ones**
+  (MAG-4689). The flag is gone and the web no longer reads the variable. A
+  deployment that left it unset gets these screens on upgrade:
+  - the Errors and Transactions tabs from the router's logs (they need
+    `LOKI_URL` on the api), and the Failed requests card
+  - the upstream deep-dive on one time axis
+  - the chains drawer, with chain and router in the URL
+  - Upstreams grouped by chain, and the tooltips with an arrow
+  - no subtitles under the Team, Audit log and Account titles
+
+  The 0.27 screens are removed, and with them the Metrics page's Traffic tab,
+  the Effective read p95 card, the Errors tab's Upstreams and Error types
+  views, the deep-dive's QoS and selection scores, and the chain and router
+  dropdowns on Metrics. `apps/web/src/legacy/` is deleted, and compose no
+  longer passes `DASHBOARD_NEW_UI`. The api is unchanged:
+  `/api/metrics/methods`, `/api/metrics/websocket` and
+  `/api/metrics/cross-validation` have no web caller now and stay as
+  documented read surfaces.
+
+## [0.49.2]
+
+### Fixed
+
+- **Polymesh REST commands in Try now send working requests** (MAG-4623).
+  Polymesh's REST surface had no examples. `/blocks` and `/accounts/compare` were
+  marked ready but answer 400 without their query string, and the 22 commands
+  that take an argument opened on a bare `{placeholder}` path. Now 35 of the 39
+  GET commands open on a path that answers 200 through the router: a block
+  number, a pallet item with `?metadata=true`, `v15` for a metadata version, an
+  account to look up. Each also says what it returns. The other four, the
+  `/experimental/.../traces` routes, are marked as not served, because the node
+  refuses the unsafe RPC that block traces need. The examples were checked
+  through a production router. The account examples are a mainnet validator
+  stash, so the testnet keeps its placeholders for those three.
+
+## [0.49.1]
+
+### Security
+
+- **Next.js 16.3.8 → 16.4.1** (the frontend image). 16.4.1 fixes two critical
+  unauthenticated remote-code-execution advisories
+  ([GHSA-673q-mjm6-r5xr](https://github.com/vercel/next.js/security/advisories/GHSA-673q-mjm6-r5xr):
+  `use cache` functions returning typed arrays;
+  [GHSA-2464-fhr4-w9xw](https://github.com/vercel/next.js/security/advisories/GHSA-2464-fhr4-w9xw):
+  the Image Optimization API with SVG files) and a high-severity denial of
+  service in App Router Server Actions.
+
+## [0.49.0]
+
+### Added
+
+- **Every router error code in plain words, ready for the Errors page.** `@sr/shared` now
+  holds a table of all the error codes Smart Router v1.6.0 knows (133, plus `UNKNOWN_ERROR`).
+  Each one says where the error comes from (the request, the chain, a provider, the router,
+  or unclear), what it means, and what the customer can do, and carries two tags: whether the
+  router tries another provider, and whether a transaction may have gone through anyway.
+  `explainRouterError(name)` looks one up. The rules, and what R&D still has to confirm, are in
+  [`docs/ERROR-CODES.md`](./docs/ERROR-CODES.md).
+- **An opened request reads as a breakdown, on the Errors and Transactions tabs.** Three
+  parts:
+  - **Request:** method, chain, time, duration, ID, sizes, the requested block and the
+    router's latest block.
+  - **Tries:** one line per try at a provider: result, time, the error by name and its
+    source (Request, Chain, Provider, Router or Undetermined). The router's code and the
+    provider's message are on hover, shown inline only when the source is undetermined.
+  - **Response:** returned by, status, retries and the next step.
+
+  Each error is stated once, on the try it happened on. Orange marks what was returned to
+  the client. A failed transaction that may still have gone through says "May already be on
+  chain". A requested block ahead of the router's latest gets a note. The Errors tab no
+  longer names the returned error twice, and a look-up no longer repeats the request's ID.
+
+### Changed
+
+- **On Metrics, the menu folds to its icons beside the chains drawer.** The
+  menu and the chains list used to sit side by side and take 492 px
+  together, which pushed the Routers table's Error rate and Status columns
+  off a 1440 px screen. Now the menu is a 64 px strip of icons there (308 px
+  with the drawer), and each icon shows its name on hover. "Expand menu" at
+  the top of the strip opens the full menu for that visit, and "Collapse
+  menu" folds it again. Clicking Metrics or the logo also folds it, and every
+  visit to Metrics starts folded. Other pages keep the full menu. Only the
+  0.28 screens (`DASHBOARD_NEW_UI`) have the drawer; the 0.27 screens look as
+  before.
+- **The chains drawer's footer says only the window** ("Last 30 minutes").
+  "· problems first" is gone; the rows are still sorted that way.
+
+## [0.48.0]
+
+### Added
+
+- **Metrics (0.28 page): which provider took a chain's traffic.** With a
+  chain or a router picked, a "Traffic by provider" chart shows each
+  upstream's part of that chain's traffic over the window - its share at
+  every moment, or its requests per second - drawn like the Overview's
+  "Requests per chain". A failover shows as one upstream's band handing over
+  to another's. The relay cache's part is its own layer, and past the five
+  biggest upstreams the rest are summed into "Other". The counts are the
+  requests the router sent, so a retried request counts at every upstream it
+  reached. New route `GET /api/metrics/upstream-mix`: one range read, the
+  per-upstream read the Overview already makes, scoped to the chain.
+
+### Fixed
+
+- **A branch whose name has a `/` gets its images tagged.** The branch
+  suffix on the image tags was the raw branch name, so `feat/x` made
+  `<version>-feat/x`, which is not a valid reference: the `publish` job failed
+  after both arm64 smokes had passed, and the branch's images were left
+  untagged. Any character a tag can't hold now becomes `-` (`<version>-feat-x`),
+  the way the branch's layer-cache tag already did; the suffix is cut at 100
+  characters. Branch names that were already valid tags keep the same tags.
+
+## [0.47.1]
+
+### Changed
+
+- **The Transactions and Errors lists read only what is new when they poll,
+  and the viewers of one list on an api process share its read** (MAG-4574).
+  A read of the router's logs costs Loki the whole stretch it covers, whatever
+  its filters match: on the largest tenant, which writes 6.7 GB of router
+  lines an hour, a 30-minute Transactions poll scanned about 10 GB, up to
+  27 GB with the reads of each request's other lines, for every viewer every
+  15 s. A list on the page window now keeps its last read on the api, and
+  the next poll runs the line filters only from a minute before where that
+  read ended, merges what they find by request, and reads the rest of a
+  request's lines only when it is new or its lines can still come: rows,
+  `more` and `nextBefore` are what a read of the whole window gives. The
+  window is still read whole on first use, every 10 minutes, and when the
+  values file changes. One read per list runs at a time on a process, and its
+  answer is kept 15 s, a range that ended over a minute ago 5 minutes, a read
+  Loki didn't answer 30 s. The lists poll every 30 s instead of 15 s; after a
+  read the logs couldn't answer they wait 60 s, then twice as long each time
+  up to 5 minutes. The Errors tab's "Still failed" note counts the list's own
+  rows rather than reading the logs a second time, so it stops when the list
+  does, and on exact times, which the cards don't cover, it is left out. The
+  read of a few requests' other lines may return as many lines as a read of a
+  hundred, so a request with many tries isn't cut short.
+
+## [0.47.0]
+
+### Changed
+
+- **A panel polls as often as its window can show a change** (MAG-4573).
+  Every panel re-read every 15 s whatever the window, so a week-long view
+  re-read its whole week four times a minute for a chart that draws a point
+  an hour, and one Metrics Overview tab cost 149-177 store reads a minute at
+  any window. A metrics read now polls every 15 s up to 1h, every minute at
+  3h, 6h and 12h, every 5 minutes at 1d and 3d, and every 15 minutes from 7d
+  (`pollMsFor` in `lib/poll.ts`), never further apart than its chart's step;
+  a caller's longer interval still wins. The same tab now costs about half
+  as many reads at 3h and a third from 1d up; the rest are reads without a
+  window, which keep their own pace, as do the log lists.
+- **A page nobody uses polls slower after 10 minutes and stops after an
+  hour** (MAG-4573). A tab left open on a screen nobody touched re-read
+  every panel for as long as it stayed open. Now ten minutes with no
+  pointer, key, wheel, touch or focus on the page make every poll four
+  times slower, and an hour stops them: the Refresh icon turns amber, with a
+  "Paused" pill beside it wherever the header has room for the whole word,
+  its tooltip saying why and how to resume. The first activity after either
+  re-reads every polling panel once, keeping the numbers on screen while
+  they reload, and resumes the normal pace. The standalone page, made for
+  shared and wall screens, never slows or pauses. A hidden tab still polls
+  nothing.
+
+## [0.46.1]
+
+### Changed
+
+- **The metrics routes answer every viewer from one snapshot per route and
+  query** (MAG-4572). Each request ran its route's whole read set: one
+  Metrics Overview tab of the 0.27 screens costs 149-177 store reads a
+  minute, and N viewers N times that. Mimir caches no instant query, and the
+  client's 10 s answer cache sits under the 15 s poll, so a lone viewer never
+  reused it and two viewers shared a read only when their polls landed
+  within 10 s of each other on the same pod. Now every `/api/metrics/*`
+  route but `/query` and `/reads` keeps its answer for a TTL set by its
+  window: 15 s up to 1h, 60 s for 3h-12h, 5 minutes for 1d-3d and 15 minutes
+  from 7d, never more than a chart point of the window. An answer carrying
+  health, a latest block or another figure about now, and the Errors tab,
+  is kept a minute at most; routes without a window 15 s, and the topbar's
+  pulse 30 s. Past its TTL an answer is still served, up to twice that age,
+  while one background refresh runs, and every caller of a query shares one
+  read. A refresh during which the store refused a read comes back with
+  empty fields, so it never replaces a good answer still within twice its
+  TTL; the key waits 5 s before the next read, and with no good answer left
+  the degraded one is kept only that long. `Age` says how old an answer is;
+  the payloads are unchanged. The snapshot is per process and holds at most
+  256 answers.
+  `METRICS_SNAPSHOT_TTL_MS` (default `15000`) sets the shortest TTL, and `0`
+  turns the snapshot off.
+
+## [0.46.0]
+
+### Changed
+
+- **A request looked up by an ID from smart-router v1.6.1 or later is read
+  in its own minutes, not across the page's window** (MAG-4575). Such an ID
+  carries the unix second it was minted in its top 32 bits, so `GET
+  /api/requests/:guid` and `GET /api/transactions/:guid` read from a minute
+  before that second to 5 minutes after, whatever range they are asked for,
+  and answer from that read once it holds the request's `relay_end`. Before,
+  every look-up read the whole range, because a request's 5 to 40 lines
+  never fill the read's limit, and "Search the last 30 days" read a month:
+  720 hour-long splits in Loki, about 1.6 TB of logs on the largest tenant,
+  from one click and again on every load of a `?request=` link. The 5
+  minutes hold the router's longest default processing budget, 3 minutes.
+  A link to a request now finds it whatever the page's window. When its
+  minutes don't hold the request, the range is read as before, except a
+  30-day one: about 0.06% of an older router's random GUIDs decode to a
+  plausible second, and the range still finds those. For a v1.6.1 ID the
+  look-up no longer offers "Search the last 30 days"; it says which second
+  the ID dates the request to and that the logs around then don't have it
+  either. Other IDs keep the button, and a transaction hash or a caller's request id
+  reads the range as before.
+
+## [0.45.0]
+
+### Changed
+
+- **Chart range reads end on a step boundary, so a cache can answer a
+  poll** (MAG-4571). Every Prometheus range read behind a chart (overview,
+  dashboard, chain detail, the Upstreams deep-dive, the errors trend) ended
+  on the current second, so no two polls asked for the same window: the
+  api's read cache never matched one, and Mimir's results cache, which keeps
+  a range read only when both ends are multiples of its step, stored none.
+  Each read now ends on the last step boundary at or before now
+  (`alignedBounds`). Once its newest point has settled (its end three
+  minutes old: raw samples land late, and the ruler writes recorded series a
+  minute or two behind), its answer is reused for its step, five minutes at
+  most, rather than for the 10-second `PROMETHEUS_CACHE_TTL_MS`; before that
+  it keeps the 10 seconds, so a chart's newest point and a just-closed error
+  bar are read again until their samples are in. A refused refresh is
+  answered from the last good read for 60 s past its reuse. Mimir
+  recomputes only an aligned read's newest 10 minutes: about 67% of a
+  30-minute read comes from its cache, 94% at 3 hours, 97% at 6 hours. The
+  cost is that a chart's newest point is up to one step old: 15 s on the
+  30-minute default, 10 minutes at a day, 4 hours at 30 days. Instant reads
+  are unchanged, and `PROMETHEUS_CACHE_TTL_MS=0` still keeps every read
+  live.
+
+## [0.44.1]
+
+### Fixed
+
+- **Long windows no longer stall the shared log store** (MAG-4465). The
+  Failed requests card and the Errors and Transactions lists read the raw
+  router lines over the whole window, and a line filter doesn't make that
+  cheaper: Loki opens every chunk of the router's streams. On the largest
+  tenant 14 days is about 800 GB; on 2026-10-20 such a read pinned the fleet
+  Loki at 97 % CPU for five minutes and timed out every tenant's alert rules.
+  - The **Failed requests** card reads the counts the fleet Loki's ruler
+    records once a minute (`smartrouter_final_failures:count1m`, the
+    server-errors alert's count): about a second for a month. A router on a
+    chain other routers serve now gets its own count. Where the recorded
+    counts start inside the window the card says since when. Without them
+    it counts the raw lines as before, for a window light enough to read in
+    one go, and says so for a heavier one.
+  - The **Errors** and **Transactions** lists read at most 4 GB of logs per
+    read, weighed first from Loki's index: a range within that is read
+    whole (a small deployment's month), a heavier one from its newest part
+    (about half an hour on the largest tenant), and **Load older** reads on.
+    An empty part says it is a part.
+
+## [0.44.0]
+
+### Added
+
+- **Transactions and Errors tabs: the router's newer `relay_end` fields**
+  (MAG-4459). smart-router adds optional fields to its `relay_end` event, each
+  absent when unknown, so an older router's events read as before. The tabs
+  now use them:
+  - **Customer:** a column and a filter on both tabs, from the caller's
+    project id; "—" when a request carried none.
+  - **Failed on chain:** on the Transactions tab, a transaction whose send
+    reply says the chain ran it and it failed (`tx_status: "failure"`, so far
+    Sui's) is its own red result, with the chain's error in its details. It
+    counts as failed in the cards and the success rate; a `success` stays
+    Accepted.
+  - **Transaction hash:** shown shortened on the Transactions tab, to copy,
+    and linked to the chain's explorer where its transaction page was watched
+    rendering a real transaction: 15 chains, listed in `docs/CHAINS.md`
+    (`explorerTxUrl`). Other chains show the hash without a link.
+  - **Find a request** also takes a transaction hash or the caller's own
+    request id (`X-Request-Id`), up to 128 plain characters. A value several
+    requests carry, such as a transaction sent again, shows the newest and
+    says how many there are.
+  - **Details** add, where the router wrote them: the caller's ids, the
+    request's and the reply's size, the block a request named and the
+    router's latest block, and each try's own JSON-RPC error code from the
+    node.
+
+## [0.43.3]
+
+### Changed
+
+- **A release is tagged only after its arm64 images boot, and `latest`
+  never moves backwards** (MAG-4511). The build pushes each image by digest,
+  with no tag; the `smoke-arm64` job pulls that digest on an arm64 runner,
+  and only once both smokes pass does a `publish` job create the version tag
+  (`<version>-<branch>` and `<major.minor>-<branch>` on a branch). Before,
+  every tag existed before the smoke started, so an arm64 image that failed
+  to boot was already pullable under its release tags, and its version was
+  burned. Now a failed smoke publishes nothing and the version stays free.
+  On main, `tag-release` cuts the `v<VERSION>` git tag and then points
+  `latest` and `<major.minor>` at the highest `v*` release tag rather than at
+  its own build, re-reading the tags until they hold still. Main commits
+  build in parallel, so before, of two merges minutes apart, the slower build
+  took `latest` back to the older release. The version tag is also checked
+  again, for both images before either is tagged, seconds before it is
+  created, so two overlapping runs with the same `VERSION` cannot both
+  publish it; a re-run that finds its own digest there passes.
+
+## [0.43.2]
+
+### Changed
+
+- **Images build and publish in a fraction of the time** (MAG-4483). The
+  `build-and-push` workflow built each image for `linux/amd64` and
+  `linux/arm64` by running the whole install-and-compile stage twice, and
+  the arm64 copy ran under QEMU: `next build` took 313 s there against 37 s
+  native, the api's tsc builds 139 s against 14 s, so a push waited 5 to 9
+  minutes on an image whose native build work is under a minute. Both
+  Dockerfiles now build on `$BUILDPLATFORM` (the output is plain JS; the api
+  has no native module and the web never loads sharp, pinned by
+  `images.unoptimized`) and keep their runtime stages free of `RUN`, so one
+  build stage serves both architectures and the workflow sets up no QEMU.
+  The install layer is keyed on the lockfile and the package manifests
+  alone, so a code-only commit reuses it. The layer cache moved from the
+  Actions cache, which sat at its 10 GB cap and evicted these blobs between
+  runs, to GHCR: main writes `…/<image>:buildcache`, a branch writes its own
+  `buildcache-<branch>` tag and reads both, and a failed cache export no
+  longer fails the build. A newer push to a branch cancels the run it
+  supersedes; on main every push builds in its own group, so quick merges
+  never cancel each other. A `smoke-arm64` job starts each arm64 image on
+  an arm64 runner after the push and waits for its health endpoint, and the
+  web's for its first page; the release tag waits for both. The images are
+  published before the smoke runs, so a failure turns the run red and
+  leaves the release untagged, not unpublished. The api runtime image is a
+  `pnpm deploy` production tree, 237 MB instead of 415 MB, with `files` in
+  the package manifests deciding what ships; it has no devDependencies, so
+  `NODE_ENV=development` (the dev-only `pino-pretty` log transport) is for
+  the dev stack, not the published image. The web image drops the sharp
+  binaries Next traces for the build host, about 39 MB on each
+  architecture. The image layout (`apps/api/dist/main.js`) is unchanged.
+  Measured on the runner with a cold cache: backend step 43 s, frontend
+  step 70 s, the whole run 1m36 against 8m34.
+
+## [0.43.1]
+
+### Fixed
+
+- **Charts on 5-minute to 1-hour windows were empty.** Those windows draw a
+  point every 15 or 30 seconds, and every rate-based chart took its rate over
+  that one step. A rate needs two samples, and a 15-second range holds one
+  scrape at most, so the store answered nothing: on the default 30-minute
+  window the Metrics page's expanded router rows, the Upstreams tab's latency
+  and volume, and the Overview's charts read "No samples". At 30 seconds
+  (the hour) some series dropped out the same way. A rate is now never taken
+  over less than a minute (`rateRange` in `promql/builders.ts`); a chart still
+  draws a point every step, each covering the minute before it. Both UIs.
+- **Error and volume points add up to the counter.** A count per point (the
+  Overview's and the Errors tab's errors, a hotspot's trend, an upstream's
+  volume and error bars) reads m steps and one scrape (`countRangeSec`): 60 s
+  at a 15-second step, 75 s at 30 s, the step and 15 s from a minute up. Each
+  counter step then lands in exactly m points at 1/m each, whatever the phase
+  of the scrape clock, so the points sum to the counter's delta; they are
+  rounded only where m is 1. Before, a quiet chain's or upstream's errors
+  read wrong per series: at a 15-second step rounding hid them, at 30 seconds
+  they doubled, and on the 3- and 6-hour windows `increase()` over the step
+  dropped or overcounted them. The errors-over-time bar still filling reads
+  only its own seconds, not the minute before it.
+- **Upstreams tab, without `DASHBOARD_NEW_UI`: the Request volume tooltip**
+  says what the chart draws, the requests served per point (per 15 seconds
+  on half an hour, per 10 minutes on a day), not per second. The `rps`
+  beside the title is per second.
+
+## [0.43.0]
+
+### Added
+
+- **Transactions tab: transactions over time** (MAG-4461). A chart between the
+  cards and the list counts the page window's transactions, a bar per stretch
+  of the clock (10 minutes on an hour, longer on days), each bar split by
+  result in the list's colours: Accepted, Rejected, Router error, Unknown, and
+  Failed on chain where the send reply says the chain ran the transaction and
+  it failed. Router error is striped and Failed on chain lighter, as both share
+  the list's red. Hover a bar for its counts; the legend adds up the window.
+  The counts come from the store's per-minute series
+  `smartrouter_transactions:count1m`, which the fleet's Loki ruler records in
+  each tenant's org. They run about two minutes behind, so the newest minutes
+  are counted from the router's logs, and a bar says so when the logs don't
+  answer. A store with the fleet's ruler (it records
+  `smartrouter_final_requests:count1m` too) and no transactions recorded
+  shows none: the whole window is never counted from Loki there, as sparing
+  that read is what the rules are for. Only a store without the ruler, such
+  as a standalone install, has the whole window counted from the logs, and a
+  store that doesn't answer the check says the chart can't be read. A result
+  is mapped by one function the list's rows use too, so the chart and the list
+  can't disagree. A chain or a router narrows it: on a chain several routers
+  serve, the recorded counts tell a router's own apart by its `service_name`,
+  and the logs, which can't, say so. `GET /api/transactions/over-time`.
+
+## [0.42.0]
+
+### Added
+
+- **Transactions and Errors tabs: links to a request** (MAG-4458). Opening a
+  row puts its request in the page's URL (`?request=<id>`), and so does
+  finding one by ID; closing it takes it out, and picking another tab drops
+  it. A link with it opens that tab's look-up on the request, so a reload
+  keeps it and a link can be shared. Each opened row also has **Logs ↗**: the
+  request's own lines on the Grafana logs board, searched by its ID, from a
+  minute before it started to a minute after it ended. It shows only where
+  the board's Grafana is set (`DASHBOARD_GRAFANA_URL`), as "View full logs"
+  does.
+- **Transactions tab: two filters.** The result (Accepted, Rejected, Router
+  error, Unknown) and an upstream the transaction went to, each with its
+  count, next to the method and the error type.
+- **Errors tab:** the error type filter also matches the request's own error
+  code from `relay_end`, not only its tries'. A write the router couldn't
+  settle carries its code on the request (`NODE_GATEWAY_TIMEOUT`, say) even
+  when no try failed, and was in no error type. The code is shown beside the error the client got, and
+  `GET /api/error-requests` returns it as `errorCode`.
+
+### Fixed
+
+- **Errors tab: a write the router couldn't settle** is no longer a red
+  "Router error". The Transactions tab calls the same request "Unknown": no
+  upstream gave a definite answer, so the router can't tell whether the
+  transaction reached a node. The Errors tab now says the same, in grey and in
+  the same words, and shows the "transaction status unclear" reply the client
+  got. Its result is `write-unknown` in `GET /api/error-requests`. The Failed
+  requests card still counts it: by the server-errors alert's definition it
+  is a failed request. The tab's other grey result, a request whose end isn't
+  in the logs, is now called "No end logged".
+- **Transactions and Errors tabs:** the empty list and the "No end logged"
+  details no longer say the router must log at `info`. smart-router v1.6.1
+  and later write `relay_end` at every log level; only an older router needs
+  `info`.
+
+## [0.41.0]
+
+### Added
+
+- **Incidents:** a **Report incident** button in the top bar sends a report (Critical, High, Medium or Low) to the deployment's own inbound webhook in Magma's on-call system, which routes it by severity; Critical calls the on-call engineer. Off unless `INCIDENTS_ENABLED=true`. With accounts off anyone who reaches the dashboard may report; with them on the reporter is the signed-in user, audited as `incident.reported`. A retry never files twice, Critical calls at most once an hour, and two limits keep a flood off the on-call system's shared budget. See `docs/INCIDENTS.md` (MAG-4403).
+
+## [0.40.0]
+
+### Added
+
+- **Transactions and Errors tabs: smart-router's `relay_end` event**
+  (MAG-4422). From smart-router #543, a router ends each request in one
+  `relay_end` line, written at every log level, and stops writing `relay
+  finished`, `failed getting responses from RPC endpoints`, `write outcome
+  unknown` and `failed processing responses from RPC endpoints`. The tabs,
+  the request look-up and the Failed requests card read those lines, so on
+  such a router they lost the end of every request, and showed nothing at
+  `warn`. A request that has a `relay_end` is now read from it alone: its
+  chain, method, outcome and every try, with the router's code, verdict,
+  words and timings, and the upstreams the consistency check passed over.
+  Each tab also finds requests by the event, next to the old lines, so a
+  window across an upgrade reads both shapes. The failed count adds the
+  event's failed requests to the old lines, with the server-errors alert's
+  definition: parsed, not a subscription request, and an outcome of
+  `no_answer`, `write_unknown`, `rejected_before_dispatch` or
+  `router_error`. Two things the old lines could not show: a Cosmos node's
+  refusal inside a normal reply is read from the event's `tx_code`, and a
+  transaction submitted over a WebSocket subscription (Substrate's
+  submit-and-watch) is a row.
+
+## [0.39.1]
+
+### Fixed
+
+- **Metrics:** the recorded reads follow the fleet store's second generation
+  of recording rules, `…:rate2m15s`. The first (`…:rate2m`) was phase-biased
+  on sparse counters: the routers report every 15 s, a counter step sat
+  inside a two-minute window for 105 s, and the one-minute evaluation grid
+  hit that span once or twice depending on how the scrape clock met the
+  ruler's — a busy series averaged out, a quiet method, provider or chain
+  counted every step at 57 % or 114 % of raw at every window. A 2m15s window
+  lands every step in exactly two evaluations at half each: measured within
+  0.1 % of the exact counter delta on quiet and busy routers alike. The read
+  math is unchanged. Because the exactness assumes the 15-second scrape, the
+  api's probe now also measures the raw sample spacing and reads raw on a
+  store that scrapes at another interval (`GET /api/metrics/reads` reports
+  `scrapeSec` and the reason `scrape`). The renamed series start with no
+  history, so every window reads raw until the ruler or a backfill covers it
+  (MAG-4393).
+
+## [0.39.0]
+
+### Added
+
+- **Pepecoin arrived upstream** (MAG-4391). lava-specs added `pep.json`:
+  `PEP` is the mainnet and `PEPT` the testnet. Pepecoin is a Dogecoin fork
+  whose spec imports `DOGE`, so it inherits Dogecoin's JSON-RPC surface and
+  its runnable defaults. It adds `estimatefee` and `getcoincount`, and
+  disables five Dogecoin methods: `getblockfilter`, `getchaintxstats`,
+  `getindexinfo`, `submitpackage` and `testmempoolaccept`.
+
+  `pepecoin.svg` is reduced from the badge in Pepecoin Core's own
+  `share/pixmaps`, because web3icons' `PEPE` is the unrelated ERC-20. The
+  testnet inherits it. Both explorers are curated, and both block pages were
+  watched rendering height 1000. Each one's genesis page shows the hash the
+  spec verifies as its chain-id:
+  - **mainnet:** Peppool (`peppool.space/block/<height>`). PepeBlocks, which
+    pepecoin.com lists first, puts a Cloudflare challenge in front of headless
+    browsers, so its block page could not be watched.
+  - **testnet:** Pepeblocks Testnet (`testnet.pepeblocks.com/block/<height>`)
+
+  The registry snapshot was not refreshed, so no other chain moved.
+
+  294 chains, 251 with an explorer, 204 primaries linking a height.
+
+## [0.38.1]
+
+### Removed
+
+- **Metrics:** the recording-rules notice above the Metrics tabs, in both UIs.
+  It told the viewer whether the store has the rules, whether they are behind,
+  and how far their history reaches — detail for whoever runs the store, not
+  for someone reading the page. Reads are unchanged: each window still picks
+  recorded or raw series by the same policy, and `GET /api/metrics/reads`
+  still reports which case a deployment is in (MAG-4353).
+
+## [0.38.0]
+
+### Added
+
+- **Metrics:** a store without the recording rules gets the raw reads it had
+  before 0.36.0, window by window, and is told so. The api's probe measures
+  how far back the recorded series reach as well as how old the newest sample
+  is, and a window reads recorded only while that history covers it (twice
+  the window for a read with a prior-window delta): rules added an hour ago no
+  longer undercount a three-day window — it reads the raw query, byte for
+  byte, until the history catches up. `GET /api/metrics/reads` reports the
+  state (`off`, `unprobed`, `absent`, `stale` or `fresh`, the sample age, the
+  history, and which windows read recorded). The Metrics page shows a notice
+  when the store has no rules, when they are behind, or while their history
+  is shorter than a window the page offers, linking to
+  `docs/RECORDING-RULES.md` — the rules file to copy into any Prometheus or
+  Mimir, the math behind each read, and the measured deviation (MAG-4348).
+
+## [0.37.1]
+
+### Fixed
+
+- **Upstreams:** the endpoint sheet no longer cuts off its right side. When an
+  upstream's addresses were long, the status tags, the Edit button, the copy
+  buttons and the Authentication box ran past the sheet's edge and were cut.
+  The cause: the sheet body is a grid, and a grid's automatic column grows to
+  the widest line that can't wrap - here, one upstream's addresses joined on
+  one line. The column is now exactly the sheet's width (`minmax(0, 1fr)` on
+  the shared `.gw-sheet__body` and on the sheet's inner lists). Each address
+  has its own line and wraps when it is too long, and on a narrow window the
+  status tags move under the upstream's name. Fixed in both UIs.
+
+## [0.37.0]
+
+### Added
+
+- **Try it:** GraphQL endpoints get a console. A router serving a chain over
+  the `graphql` interface (Sui, smart-router#480) shows **Try now** on its
+  Upstreams rows, where it showed nothing before. The method catalog carries
+  each root field the spec declares, with an example query: 26 of Sui's 37 run
+  as they stand, and the other 11 show where their argument goes
+  (`<transaction digest>`). Every example was sent to Sui's public GraphQL
+  endpoints on mainnet, testnet and devnet. The query box shows the query laid
+  out one field per line and sends it as `{"query": …}` on one line, so the
+  curl, Python, Go and JavaScript snippets stay readable. A JSON body pasted
+  into the box goes as written, which is how to send `variables`. A response
+  carrying GraphQL `errors` reads as a failure, although the server answers
+  it with HTTP 200. Through the router, pinned to an upstream, and direct to
+  the upstream all work.
+
+## [0.36.0]
+
+### Added
+
+- **Metrics:** windows of 3 hours and up read the fleet store's recorded series
+  (`promql/recorded.ts`: the Mimir ruler's two-minute rates of the request
+  counters, the two latency histograms and the upstream relay counters, summed
+  per chain and router) instead of scanning the raw families — a per-chain p95
+  over seven days reads 645 series instead of 7,530, and the upstream roster's
+  reads over the 10,620-series endpoint histogram become reads over 1,230.
+  Narrower windows stay raw and exact, and chart lines switch only from 12
+  hours up, where a chart point is a two-minute average over the step rather
+  than an instantaneous rate. The api probes the series' freshness on
+  the first metrics request and once a minute after it, and reads raw while
+  they are missing or older than five minutes, so a store without the rules
+  (or a ruler that stopped) is slow again, never wrong. `METRICS_RECORDED_FROM`
+  moves the floor or holds a tenant on raw (`never`); the `?router=` scope
+  reaches the recorded names. The per-method latency quantile, the small
+  counter families (consistency, retries, node and classified errors, cache,
+  cross-validation) and every gauge keep reading raw (MAG-4339).
+
+### Fixed
+
+- **Metrics (0.27 page):** on a window change the Routers table drew four
+  skeleton rows above the previous window's rows, with a ninth skeleton
+  column the table does not have, and the hero cards blanked. Skeletons now
+  appear only with no rows to show; otherwise the previous window's rows and
+  cards stay up, dimmed, with the refreshing dot, until the next ones land
+  (MAG-4339).
+## [0.35.5]
+
+### Changed
+
+- **Tests:** every database-backed test loads its pglite from a snapshot of
+  the migrated data dir, built once and cached under `node_modules/.cache`,
+  instead of running `initdb` and every migration itself. A fresh instance
+  costs about 0.3s rather than 1.4s, which takes the api suite from about
+  5.5 minutes to under 3 on the CI runner (MAG-4318).
+- **CI:** the Quality Gate runs vitest with one worker per CPU
+  (`VITEST_MAX_WORKERS=$(nproc)`) instead of vitest's default of one fewer,
+  which left a quarter of the 4-vCPU runner idle through the test step
+  (MAG-4318).
+- **Tests:** the api suite hashes fixture passwords at bcrypt cost 4 through
+  a test-only `setPasswordCostForTests()`; production stays at cost 12, and
+  the setup test that asserts the stored cost keeps asserting 12
+  (MAG-4318).
+- **Tests:** database-backed tests in one file share a pglite instance that
+  is truncated between tests (sequences restart), instead of opening one
+  per test; a test that watches its SQL still gets a private instance. With
+  the three changes above, the api suite runs in about a minute on the CI
+  runner, down from about 5.5 (MAG-4318).
+
+## [0.35.4]
+
+### Fixed
+
+- **Metrics:** the HeroPanel summary (`/api/metrics/dashboard-summary`) issues
+  its eighteen Prometheus reads in one round instead of four — the optional
+  families' presence probes no longer gate their reads, and the retries and
+  cache pairs no longer wait their turn — so a call costs its slowest read
+  rather than the sum of four. The output contract is unchanged: an absent
+  family still reads null and `emitted:false` (MAG-4322).
+
+## [0.35.3]
+
+### Fixed
+
+- **Try it:** the method catalog follows lava-specs again — it was one method
+  behind within minutes of #250: NEAR's `next_light_client_block` no longer
+  carries the "needs an argument" mark, because lava-specs (64dcd8b0,
+  2026-10-14) moved its block parsing from a canonical block argument to the
+  default parser with block-hash paths. Nothing was added or removed, and the
+  explorer and runnable roll-calls are unchanged. 292 chains, 249 with an
+  explorer, 202 primaries linking a height (MAG-4329).
+## [0.35.2]
+
+### Fixed
+
+- **Try it:** the method catalog is back in sync with lava-specs, which the
+  drift check had been failing on. SEI's REST and gRPC surfaces gain their
+  archive collection — a historical block on each, marked as needing an
+  archive node — after the archive rules were extended to them upstream
+  (MAG-4282). TON's v3 REST gains `/account`, `/wallet` and
+  `/balanceChanges`, and `/decode` is offered as a POST, as the spec now
+  declares it (MAG-4180). Nothing was removed and no runnable default was
+  lost; the chain map and explorer catalog did not move. 292 chains, 202 of
+  249 primaries linking a height (MAG-4324).
+
+## [0.35.1]
+
+### Fixed
+
+- **CI:** the main build tags each release it publishes (`v<VERSION>`, once
+  both images are pushed), so "Validate version was bumped" has a tag to
+  compare against — with none in the repository it passed every merge. The
+  registry check behind it now lowercases the image path (the org name's
+  capitals made `docker manifest inspect` fail on the reference, which the
+  step read as "proceed") and fails on anything but "no such manifest"
+  (MAG-4314).
+
+## [0.35.0]
+
+### Fixed
+
+- **Metrics:** the overview reads its per-chain latency, health and throughput
+  as one grouped series each, joined on the chain label, instead of three reads
+  per chain plus a second copy of the trend, and issues every read in one round.
+  A 40-chain deployment goes from about 200 Prometheus reads per call to about
+  30, so the per-chain panels stop timing out into empty rows (MAG-4294).
+- **Metrics:** the Routers table and `/api/metrics/chains` read their
+  chain-level figures as seven grouped series — one row per chain, plus one
+  row per (chain, scrape target) for the routers the collector tells apart —
+  instead of eight reads per router. A 44-router deployment goes from about
+  350 Prometheus reads per call to at most 15, so rows stop timing out into
+  "unknown" and zeros (MAG-4295).
+
+### Changed
+
+- **Topbar:** the health badge and live RPS poll a dedicated
+  `GET /api/metrics/pulse` — router health, upstream health counts and the
+  current client RPS in six Prometheus reads — instead of the full overview
+  payload every 30 s on every page (MAG-4296).
+- **API:** identical Prometheus reads in flight at the same moment share one
+  request, and a successful answer is reused for `PROMETHEUS_CACHE_TTL_MS`
+  (default 10 s, under the 15 s panel poll; `0` keeps every read live).
+  Failures and the readiness probe are never kept (MAG-4297).
+- **Per-router scoping finds its label.** `ROUTER_SCOPE_LABEL` is unset by
+  default; the api resolves it on first use to the first of `router`, `service`
+  the store reports router values for, and remembers it. The fleet's collector
+  stamps `router`, so the Routers table attributes a chain served by several
+  routers per router instead of marking every such row `shared`, the router
+  filter appears, and `?router=` scoping works — without per-deployment config.
+  A bare Prometheus Operator install keeps working on `service`. An explicit
+  `ROUTER_SCOPE_LABEL` still wins; the boot refusal for a `METRICS_SCOPE_LABEL`
+  that collides now covers both candidates (MAG-4303).
+
+## [0.34.2]
+
+### Added
+
+- Optional **Advanced → Grafana** sidebar link, configured per deployment by
+  `DASHBOARD_GRAFANA_DASHBOARD_URL` at runtime (MAG-4241). Empty, whitespace-only and invalid
+  URLs hide the section. Valid HTTP(S) URLs open unchanged in a new tab, including
+  their time range and Grafana variables. The existing logs URL is independent.
+
+## [0.34.1]
+
+### Fixed
+
+- **Metrics:** Uptime column replaced by Status (Operational / Unhealthy /
+  Unknown) from the router's live health check and recent block polls;
+  request success rate kept as history. Configured upstreams remain visible
+  when health data is missing, with a warning and reason. The header reports
+  unhealthy and unknown upstream counts without a separate roster request.
+  Health windows follow the chain block rate, including slow chains; a reset
+  health gauge without recent success evidence cannot falsely show recovery.
+
+## [0.34.0]
+
+### Removed
+
+- **The unused `/dashboard` page.** It was not in the sidebar and nothing
+  linked to it, so it was reachable only by typing the URL. The page and the
+  components only it used are gone, and `/dashboard` now answers 404. The api
+  endpoint behind it stays (`/api/metrics/dashboard`), with no web consumer.
+
+## [0.33.1]
+
+### Fixed
+
+- **Seven Dependabot alerts** (MAG-4271). Both packages are transitive.
+  `pnpm.overrides` in the root `package.json` now sets a floor for each one,
+  capped at its current major:
+  - `fast-jwt` 6.2.4 → 6.3.4, used by `@fastify/jwt` to verify the api's
+    Bearer tokens. It fixes six advisories: GHSA-ww5h-9m49-7xx4 (critical: an
+    incomplete patch of CVE-2026-34950 re-enables RSA→HS256 algorithm
+    confusion), GHSA-g3jj-5cmm-3hxx (a raw public JWK is treated as an HMAC
+    secret), GHSA-8wpc-h4q6-8fxv (an empty or null key accepts unsigned
+    tokens), GHSA-5hjw-83fp-phq9 (claim validators are skipped when the
+    payload is a JSON array), GHSA-687g-22h4-j4w4 (`clockTolerance: Infinity`
+    skips `exp` and `nbf`) and GHSA-x937-hj6v-793p (the verifier cache accepts
+    expired tokens that have no `iat`).
+  - `fast-copy` 4.0.3 → 4.1.2, used by `pino-pretty` for the api's dev-mode
+    logs. It fixes GHSA-jggr-w7fw-pc2j, where copying deeply nested values
+    exhausts the stack.
+
 ## [0.33.0]
 
 ### Added

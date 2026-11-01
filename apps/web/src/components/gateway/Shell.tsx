@@ -4,18 +4,18 @@ import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { useEffect, useState, useSyncExternalStore, type ComponentType } from "react";
 import { signOut } from "next-auth/react";
-import { buildChainMetaByIndex, type OverviewData } from "@sr/shared";
+import { buildChainMetaByIndex } from "@sr/shared";
 import { NAV_SECTIONS, visibleNavSections } from "./nav";
 import { useAuthMode } from "./auth-mode";
-import { useNewUi } from "./new-ui";
 import { CHAIN_DRAWER_PATH, ChainDrawer, ChainDrawerProvider, useChainDrawer } from "./ChainDrawer";
-import { IconMoon, IconSun, type IconProps } from "./icons";
-import { useApi } from "@/hooks/use-api";
+import { IconMenuCollapse, IconMenuExpand, IconMoon, IconSun, type IconProps } from "./icons";
 import { useFilters } from "@/components/gateway/FiltersProvider";
+import { DeploymentHealthBadge, useDeploymentPulse } from "./DeploymentHealth";
 import { fmtNum } from "@/lib/format";
 import { getAuthVersion, subscribeAuth } from "@/lib/auth-store";
 import { useMe } from "@/hooks/use-me";
 import { TwoFactorCountdown, TwoFactorGate } from "@/components/auth/two-factor-gate";
+import { ReportIncidentButton } from "@/components/incidents/ReportIncident";
 
 export function ThemeToggle() {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
@@ -42,22 +42,26 @@ export function ThemeToggle() {
   );
 }
 
-function Sidebar() {
+function Sidebar({ grafanaDashboardUrl }: { grafanaDashboardUrl?: string | null }) {
   const pathname = usePathname();
-  const sections = visibleNavSections(useAuthMode());
-  const drawerOpen = useChainDrawer().visible;
+  const sections = visibleNavSections(useAuthMode(), grafanaDashboardUrl);
+  const { visible: drawerOpen, menuCollapsed: compact, setMenuCollapsed } = useChainDrawer();
   const { setChain, setRouterId, setRouter } = useFilters();
   // Home or Metrics while on Metrics: back to every chain, as the drawer's
-  // first row does. Navigating would land on the same page with the chain kept.
+  // first row does, with the menu folded again. Navigating would land on the
+  // same page with the chain kept.
   const toAllChains = drawerOpen ? (e: React.MouseEvent) => {
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     e.preventDefault();
     setRouterId(null);
     setRouter(null);
     setChain(null);
+    setMenuCollapsed(true);
   } : undefined;
   return (
-    <aside className="gw-side">
+    // Beside the chains drawer the menu folds to its icons, each naming itself
+    // on hover, so the page doesn't carry two lists side by side.
+    <aside className={`gw-side${compact ? " gw-side--compact" : ""}`}>
       {/* The brand is the way home, as it is on every product: `/` redirects to
           whatever the default surface is (Metrics), so home stays defined in one
           place rather than being restated here. */}
@@ -66,6 +70,7 @@ function Sidebar() {
         className="gw-side__brand"
         style={{ textDecoration: "none", color: "inherit" }}
         onClick={toAllChains}
+        title={compact ? "Smart Router" : undefined}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
@@ -81,11 +86,42 @@ function Sidebar() {
         </div>
       </Link>
       <nav className="gw-side__nav">
+        {drawerOpen && (
+          <button
+            type="button"
+            className="gw-nav-item gw-side__toggle"
+            onClick={() => setMenuCollapsed(!compact)}
+            aria-label={compact ? "Expand menu" : "Collapse menu"}
+            aria-expanded={!compact}
+            title={compact ? "Expand menu" : undefined}
+          >
+            {compact
+              ? <IconMenuExpand size={16} className="ic" strokeWidth={1.75} />
+              : <IconMenuCollapse size={16} className="ic" strokeWidth={1.75} />}
+            <span>Collapse menu</span>
+          </button>
+        )}
         {sections.map((section, i) => (
           <div key={i}>
             {section.label && <div className="gw-side__section-label">{section.label}</div>}
             {section.items.map((item) => {
               const Icon: ComponentType<IconProps> = item.icon;
+              if (item.external) {
+                return (
+                  <a
+                    key={item.href}
+                    href={item.href}
+                    className="gw-nav-item"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={`${item.label} (opens in a new tab)`}
+                    title={compact ? item.label : undefined}
+                  >
+                    <Icon size={16} className="ic" strokeWidth={1.75} />
+                    <span>{item.label}</span>
+                  </a>
+                );
+              }
               const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
               return (
                 <Link
@@ -93,6 +129,9 @@ function Sidebar() {
                   href={item.href}
                   className={`gw-nav-item${active ? " active" : ""}`}
                   onClick={item.href === CHAIN_DRAWER_PATH ? toAllChains : undefined}
+                  // The label is hidden while folded, and a hidden label names nothing.
+                  aria-label={compact ? item.label : undefined}
+                  title={compact ? item.label : undefined}
                 >
                   <Icon
                     size={16}
@@ -191,14 +230,12 @@ function SidebarUser() {
   );
 }
 
-function Topbar({ here, sub }: { here: string; sub: string | null }) {
+function Topbar({ here, sub, incidentsEnabled }: { here: string; sub: string | null; incidentsEnabled: boolean }) {
   // Live throughput + health for the top-bar stats (real data; CU/mo is a
   // Lava-consumer concept the router doesn't emit, so it's omitted here).
   // Scoped like every other panel, so the pills describe the selected router.
-  const { scopeQ } = useFilters();
-  const { data } = useApi<OverviewData>(`/api/metrics/overview?window=1h${scopeQ}`, 30000);
-  const rps = data?.throughputRps.value;
-  const ok = data?.health === "operational";
+  const { data, isLoading, error } = useDeploymentPulse();
+  const rps = data?.throughputRps;
   return (
     <header className="gw-top">
       <div className="gw-top__crumbs">
@@ -227,10 +264,7 @@ function Topbar({ here, sub }: { here: string; sub: string | null }) {
         <span className="pill gw-mono" title="Live throughput">
           {fmtNum(rps)} RPS
         </span>
-        <span className="pill">
-          <span className={ok ? "dot-ok" : "dot-warn"} />
-          {ok ? "All systems normal" : data ? "Degraded" : "…"}
-        </span>
+        <DeploymentHealthBadge health={data?.health} counts={data?.upstreamHealthCounts} loading={!data && isLoading && !error} error={Boolean(error)} />
         {/* Router scope — global, so it sits next to the theme toggle rather
             than in any one page's header. Hides itself when the metrics can't
             be split per router. */}
@@ -240,24 +274,27 @@ function Topbar({ here, sub }: { here: string; sub: string | null }) {
         {/* Shows only for the one account that may still defer 2FA. Not
             dismissible: what it counts down to is the dashboard closing. */}
         <TwoFactorCountdown />
+        <ReportIncidentButton enabled={incidentsEnabled} />
         <ThemeToggle />
       </div>
     </header>
   );
 }
 
-export function Shell({ children }: { children: React.ReactNode }) {
+export function Shell({ children, grafanaDashboardUrl, incidentsEnabled = false }: {
+  children: React.ReactNode;
+  grafanaDashboardUrl?: string | null;
+  incidentsEnabled?: boolean;
+}) {
   const pathname = usePathname();
   const { chain } = useFilters();
-  const newUi = useNewUi();
 
   const here =
     NAV_SECTIONS.flatMap((s) => s.items).find(
       (i) => pathname === i.href || pathname.startsWith(`${i.href}/`),
     )?.label ?? "Overview";
-  // Metrics on one chain: the chain is the last crumb (with the chains drawer,
-  // DASHBOARD_NEW_UI; the 0.27 page names it in its own banner).
-  const sub = newUi && pathname === CHAIN_DRAWER_PATH && chain ? buildChainMetaByIndex(chain).name : null;
+  // Metrics on one chain: the chain is the last crumb (the chains drawer picks it).
+  const sub = pathname === CHAIN_DRAWER_PATH && chain ? buildChainMetaByIndex(chain).name : null;
 
   return (
     // Outside the chrome, not inside it: a blocked dashboard should not render a
@@ -267,10 +304,10 @@ export function Shell({ children }: { children: React.ReactNode }) {
     <TwoFactorGate>
       <ChainDrawerProvider>
         <div className="gw-app">
-          <Sidebar />
+          <Sidebar grafanaDashboardUrl={grafanaDashboardUrl} />
           <ChainDrawerSlot />
           <div className="gw-main">
-            <Topbar here={here} sub={sub} />
+            <Topbar here={here} sub={sub} incidentsEnabled={incidentsEnabled} />
             <div className="fade-in" key={pathname}>
               {children}
             </div>

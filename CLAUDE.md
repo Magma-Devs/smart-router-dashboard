@@ -93,20 +93,106 @@ joined by the request GUID (`services/transactions.ts` and
 `services/error-requests.ts` list the lines they read; what each try at each
 upstream did is `triesOf` in `services/router-log.ts`, shared by both). That wording is the
 router's, not an interface: a reworded line empties the tab, and the tests pin
-it with captured lines. Order them by Loki's nanosecond timestamp, never by
+it with captured lines. A router on smart-router #543 or later ends each
+request in one `relay_end` event instead (`services/relay-end.ts`; contract:
+smart-router's `docs/RELAY-END-EVENT.md`), written at every log level with the
+chain, the method, the outcome and every try: a request that has one is read
+from it alone, and each tab finds requests by it as well as by the old lines,
+so a window across an upgrade reads both. Order them by Loki's nanosecond timestamp, never by
 arrival: the router writes several lines of one request in the same
 millisecond at different levels, and each level is its own Loki stream. A transaction
 is a request the spec marks `stateful:"1"` **or** a transaction method by name
 (HYPERLIQUID's spec doesn't flag `eth_sendRawTransaction`). On Cosmos SDK
 chains a refused transaction still gets a normal reply, which the router
 doesn't log, so there a reply without a node-error line is `unknown`, never
-`accepted`. A write the router itself can't settle ("write outcome unknown") is
-`unknown` too, in its words. Credentials work as the Prometheus ones do:
+`accepted`. A write the router itself can't settle ("write outcome unknown", or
+`write_unknown` on `relay_end`) is `unknown` too, in its words; the Errors tab
+lists the same request as `write-unknown`, drawn as the same grey "Unknown"
+with the same words (`WRITE_UNKNOWN_NOTE` in `@sr/shared`), and the Failed
+requests card still counts it: it is a server error by the alert's definition. On `relay_end` a Cosmos refusal is read: the
+router puts the reply's code in `tx_code`, so only a gRPC write is `unknown`
+for it; and a transaction submitted over a WebSocket subscription (Substrate's
+submit-and-watch) is a row, which the old lines never logged. Credentials work as the Prometheus ones do:
 `LOKI_USERNAME` + `LOKI_PASSWORD` for basic auth (both or nothing),
 `LOKI_ORG_ID` for `X-Scope-OrgID`.
 
-A request's chain is the one its lines name (`chain_id` on an error line),
-else the only chain serving every upstream it used - its tries and the pool
+The Transactions tab's chart (`services/transactions-over-time.ts`) counts the
+same `relay_end` lines over the page window, a bar per stretch of the clock
+(`bucketGrid`), each split by result. It reads the store first: the fleet's
+Loki ruler records `smartrouter_transactions:count1m` in each tenant's org
+(labels `cluster`, `chain` = the spec lowercased, `service_name` =
+`<tenant>-<router id>`, `api_interface`, `outcome`, `tx_status`, `tx_refused`;
+the rule's line filter is `TX_EVENT_FILTER`, the list's own). A series' result
+is `txResultOf`, the mapping the list's rows use too, so the two can't drift;
+a subscription request a node refused on a try is the one case the list reads
+as `rejected` and the counts can't. The recorded counts lag about two minutes
+(`[1m] offset 30s`, then the ruler's delay): the newest minutes are counted
+from the logs, from where the ruler's newest count ends (read off a sample's
+timestamp, since it evaluates at a second of its own), and the bars say so
+(`partialFrom`) when the logs don't answer. No transactions recorded for the
+scope is none sent where the store has the fleet's ruler, which records
+`smartrouter_final_requests:count1m` from the same rules file for every tenant
+whose routers log (`RULER_FAMILY`, checked over the window - 15 minutes at
+least, a day at most - and kept 5 minutes): the whole window is never counted
+from Loki there, since sparing that read is what the rules are for. Only a
+store without the ruler - a standalone install - has the whole window counted
+from the logs; a store that doesn't answer the check answers `unreachable`
+rather than guess. A config router is read through its chain; on a chain other
+routers serve too, the recorded counts split it by `service_name`, and the
+logs, which can't, answer `shared-chain`. A router before smart-router v1.6.1
+writes no `relay_end`, so its transactions are in the list, not the chart.
+
+Later routers add optional `relay_end` fields (smart-router's
+`docs/RELAY-END-EVENT.md`; schema 1 still, each absent when unknown, so an
+older router's events read as before): the transaction's `tx_hash`, its
+`tx_status` and `tx_error` where the send reply reports execution (Sui), the
+caller's `customer` (project id) and `request_id` / `task_id` / `tx_id`,
+`request_bytes` / `reply_bytes`, `requested_block` / `seen_block`, and each
+try's `node_code`. `callFactsOf` (`relay-end.ts`) reads the caller's fields
+onto both tabs' rows, a value not in its field's form left out. A row with
+`tx_status: "failure"` is `failed-on-chain`, a failure in the cards and the
+success rate. Both tabs filter by customer; the Transactions tab links the
+hash to the chain's explorer where a transaction page is known
+(`explorerTxUrl`, docs/CHAINS.md). A look-up takes the request ID, the
+transaction hash or the caller's request id (`LOOKUP_ID`, plain characters,
+up to 128), and matches only the event's own fields; a value several requests
+carry (a transaction sent again keeps its hash) answers with the newest and
+`matches`.
+
+**What a log read may cost.** A line filter doesn't make a Loki read cheaper:
+every chunk of the selected streams is opened, and a filter with few matches
+can't stop early. So one read scans at most `LOG_READ_BUDGET_BYTES` (4 GB,
+`services/read-range.ts`), weighed first from Loki's index (`index/stats`,
+under a second for a month): a range within it is read whole, a heavier one
+from its newest part, and the rest is the next "Load older". On the largest
+tenant (6.7 GB of router lines an hour) that is about half an hour per read;
+on a small one a month reads whole. The Failed requests card reads the counts
+the fleet Loki's ruler records once a minute into the metrics store
+(`smartrouter_final_{requests,failures}:count1m`, `RECORDED_OUTCOMES`), which
+cost the same at any window, and counts the lines only where those are
+missing or stale, and only within the budget. A 14-day read of the raw lines
+pinned the shared Loki for five minutes and timed out every tenant's alert
+rules (2026-10-20).
+
+**Reading one chain or one router.** Where the log agent labels the
+router's streams by `chain` (the spec lower-cased) and `service_name`
+(`<tenant>-<router id lower-cased>`) - the fleet's does, the labels the ruler's recorded
+counts carry - both lists narrow their read to those streams
+(`services/stream-scope.ts`: the values come from Loki's label index, kept 10
+minutes; a router by the one `service_name` ending in `-<id>`, else its chain).
+It is exact, and Loki opens no other chain's chunks, so the same budget covers
+far more of the window. Narrowing by the upstreams' names, the fallback where
+the streams carry no such label, fails on a busy deployment: a vendor's name is
+on every chain it serves, and one chain's errors at it filled the read's line
+limit in two seconds, leaving another chain's list empty for 12 hours
+(2026-10-29).
+
+A request's chain is the one its lines name (`chain_id` on an error line, or
+the listener on the line that ends it), else its router's: the log agent
+labels a router's stream `chain` (its pod's `app.smart-router-chain`, the
+spec lower-cased), and the Loki client keeps a stream's labels on its lines,
+so a request still in flight names its chain too. Only without that label is
+it the only chain serving every upstream it used - its tries and the pool
 the router chose from (`validAddresses`). One node name serves many chains,
 so a name alone never decides it; with several candidates `spec` is null and
 `specs` lists them, and the row shows under each.
@@ -116,7 +202,14 @@ policy decided to retry it (`[StateMachine] policy.Decide`, `action: retry`),
 or when the router gave up. It gives up with one of two lines: `failed
 getting responses from RPC endpoints` when nothing came back (it returns
 before "relay finished"), `failed processing responses from RPC endpoints`
-when nothing usable did - either makes the request `failed`. A try the router **called off** (`context
+when nothing usable did - either makes the request `failed`. A router on #543
+writes neither line: its failed requests are `relay_end` events with an
+`outcome` of `no_answer`, `write_unknown`, `rejected_before_dispatch` or
+`router_error`, the server-errors alert's set. Such a request is listed when a
+try or the request failed - what its finder reads, so the list does not change
+with the log level. A request the router couldn't parse and a subscription
+request write the event too, and are neither listed nor counted, as the alert
+counts neither. A try the router **called off** (`context
 canceled` - another try had answered, or the client stopped waiting) is not a
 failure. Each try carries the router's own words: the node's error message,
 the router's `retryable` verdict on it, or why it passed an upstream over
@@ -127,14 +220,34 @@ can't say any of it, and because the router records a retry only once **two
 of a request's tries have come back**: one it wanted to retry with no upstream
 left, or whose other try never answered, is in no counter - so the list can
 show failures the "Still failed" card doesn't count, and the card says so
-rather than showing a quiet 0. It reads at most 300 requests at a time,
+rather than showing a quiet 0 - counted over the rows the list has loaded,
+while it covers the cards' window. It reads at most 300 requests at a time,
 newest first. `nextBefore` is just past the newest line of the first request
 a read didn't keep (or of the oldest line, when the read hit its line limit),
 and the next read includes it: a request whose lines straddle two reads comes
 back in both, and the list keeps it once. Ending at the oldest kept line
 instead would skip every request with lines between a kept one's first and
 last. Once an older read is loaded, the list continues from its first read as
-it was then, whatever later polls of that key bring.
+it was then and stops polling it.
+
+Both lists read through `services/log-list.ts`. A read costs Loki the whole
+span it covers - it opens every chunk of the router's streams in it, whatever
+the filters match - so a list on the page window (no `before`) keeps its last
+read on the api process, and its next poll reads only what is new: the
+finders from `LATE_MS` (a minute) before where that read ended, merged by
+GUID with the lines it held, each finder's newest lines kept up to its limit;
+and the rest of a request's lines only for one that is new, or whose lines
+can still come (`afterMs` after a line that found it, then `LATE_MS` for them
+to reach Loki). Rows, `more` and `nextBefore` come out as a read of the whole
+window gives them (`log-list.test.ts`). The window is read whole on first
+use, once the last whole read is 10 minutes old (`HEAD_FRESH_MS`), when the
+values file or the queries changed, and when the merge can't tell. A line
+Loki holds more than `LATE_MS` after its own time is missed by polls until
+then. Each list keeps one read per key in flight and its answer: a live
+list's 15 s, a range that ended over `LATE_MS` ago 5 minutes, a read Loki
+didn't answer, in whole or in part, 30 s. The web reads a live list every
+30 s, and after a read the logs couldn't answer 60 s, doubling to 5 minutes
+(`hooks/use-log-reads.ts`).
 
 **ONE values file drives both the router and the dashboard** (the v1 pattern):
 `SR_CONFIG_HOST` (default `./dev-config/values.yml`) is mounted as the router's
@@ -149,11 +262,16 @@ packages/shared/          @sr/shared — domain types, metric catalog, PromQL bu
     constants/metrics.ts   GROUND-TRUTH metric names + OPTIONAL_METRICS (see "Metrics")
     constants/chains.ts     buildChainMetaByIndex(spec) — keyed by Lava spec index
     constants/explorers.ts  explorersFor / explorerUrl — the chain's block
-                            explorer + deep links (docs/CHAINS.md)
-    constants/windows.ts    WINDOWS — 13-window catalog (5m..30d) → PromQL range + step
+                            explorer + deep links; explorerTxUrl — a
+                            transaction's page, from the curated
+                            explorer-tx.json (docs/CHAINS.md)
+    constants/windows.ts    WINDOWS — 13-window catalog (5m..30d) → PromQL range + step;
+                            alignedBounds — a range read's window, on step boundaries
     promql/builders.ts      typed query builders shared by api (+ docs)
     constants/roles.ts      ROLES + roleAtLeast — four cumulative roles
     constants/audit-events.ts  the audit log's verb set (see "Audit log")
+    constants/error-codes.ts   every router error code → source, meaning, what to do,
+                            retries, may have gone through (docs/ERROR-CODES.md)
     audit/format.ts         how a value is written into an audit row —
                             redaction, (none)/(new)/(deleted), yes/no, lists
     types/domain.ts         OverviewData, DashboardData, HeroSummary, ChainSeries,
@@ -173,12 +291,16 @@ apps/api/                 @sr/api — Fastify 5 (:8000)
     services/           prometheus-client · metrics · metrics-detail ·
                         metrics-dashboard · configuration (values-file loader) ·
                         loki-client · router-log (parsing the router's lines) ·
-                        transactions · error-requests (rows from the router's logs)
+                        transactions · error-requests (rows from the router's logs) ·
+                        log-list (how both lists read and poll them) ·
+                        transactions-over-time (the Transactions tab's chart) ·
+                        snapshot (the metrics routes' shared answers) ·
+                        read-health (the reads the store refused, per run)
     config.ts           single source of truth for env defaults
 apps/web/                 @sr/web — Next.js 16 App Router (:3000)
   src/
-    app/(app)/          overview · dashboard · upstreams · metrics ·
-                        team · account (Shell layout)
+    app/(app)/          overview · upstreams · metrics · team · account
+                        (Shell layout)
     app/standalone/     chrome-less Metrics page (sharing/embedding)
     app/api/config/     runtime-config route (DASHBOARD_API_URL → browser)
     components/
@@ -188,12 +310,20 @@ apps/web/                 @sr/web — Next.js 16 App Router (:3000)
                         RouterFilterSelect · HealthTag · charts · SortTable ·
                         SideSheet · icons
       overview/         OverviewView (KPI strip + 2×2 chart grid)
-      dashboard/        DashHeader · OverviewTab · MetricsTab · TroubleDetail · …
       metrics/          MetricsView (4 tabs) · HeroPanel · RouterOverview ·
-                        ChainDetail · ErrorsBreakdown (the Errors tab: count
+                        ChainDetail (its Availability view is
+                        AvailabilityBreakdown: availability in blocks, all
+                        the router's providers and each one) ·
+                        ChainTrafficByProvider (which upstream
+                        took a picked chain's traffic) · ChainAvailability
+                        (the same blocks for a picked chain, a router picker
+                        when two or more serve it) · ErrorsBreakdown (the Errors tab: count
                         cards + ErrorRequests, the request list) ·
-                        TransactionLog · request-log (the two log tables'
-                        shared chips + details) · upstream/ (the
+                        TransactionLog · TransactionsChart (its bars over
+                        time) · request-log (the two log tables'
+                        shared chips) · request-breakdown (an opened row:
+                        request, tries, response, each error
+                        explained from constants/error-codes.ts) · upstream/ (the
                         Upstreams tab: PMRoster · PMBody - errors over time
                         (a bar opens the Errors tab on the requests
                         that failed at its upstream),
@@ -203,8 +333,11 @@ apps/web/                 @sr/web — Next.js 16 App Router (:3000)
       endpoints/        endpoint row model + IfaceTag + detail sheet — the
                         bits the "By router" grouping renders
       team/             InviteModal · ChangeRoleModal · bits
-    hooks/use-api.ts    SWR wrapper (15s poll default)
-    hooks/use-log-reads.ts  the two log lists' "Load older" paging
+    hooks/use-api.ts    SWR wrapper: each window polls at its own pace, every
+                        poll through the idle gate (see "Polling")
+    hooks/use-log-reads.ts  the two log lists' 30 s poll and "Load older" paging
+    lib/poll.ts         the poll cadence per window + the idle gate's rules (pure)
+    lib/idle-store.ts   the idle gate's clock: page activity → SWR's isPaused
     lib/api-client.ts   base URL resolved ONCE per session from /api/config
     styles/globals.css  design tokens + gw-* classes, 1:1 from the prototype
 ```
@@ -411,10 +544,14 @@ such a chain lists its routers under it there (`?chain=ETH1&router=eth-prod`).
 `smartrouter_*` carries `spec` (the chain) and no router identity, so two
 routers on one chain sum into a single set of numbers. What *does* separate
 them is the collector: each router is its own scrape target, so Prometheus
-attaches a per-target label — `service` under the Prometheus Operator, whose
-value is the router's Service name (`<router-id-lowered>-router`).
-`ROUTER_SCOPE_LABEL` names that label
-(default `service`; use `job` for a scrape config that names jobs per router).
+attaches a per-target label — `router` from the fleet's collector and the
+chart's ServiceMonitor (6.20.0+), copied from the pod label
+`app.smart-router-id`; `service` under a bare Prometheus Operator, whose value
+is the router's Service name (`<router-id-lowered>-router`).
+`ROUTER_SCOPE_LABEL` names that label. Unset (the default), the api resolves
+it on first use: the first of `router`, `service` the store reports values
+for, remembered once found, asked again on every use until then, never at
+boot. Set `job` for a scrape config that names jobs per router.
 
 - **`GET /api/metrics/routers`** → `{ label, routers[] }` — the distinct
   values actually present. Empty means the collector attaches no such label
@@ -435,7 +572,8 @@ value is the router's Service name (`<router-id-lowered>-router`).
   one.
 - Web side: the scope lives in `FiltersProvider` next to the chain and the time
   window, in two lifetimes — **the window persists** (`sr:window`, a viewing
-  preference), **the chain and the router belong to the page** that set them
+  preference; a window from a link, `linkWindow`, is shown on that page only
+  and never saved), **the chain and the router belong to the page** that set them
   (in-memory, stamped with the pathname, gone when you navigate — a narrowing
   that outlives its screen is a trap). Every metrics URL appends `scopeQ` /
   `withScope(url)`. A selection that disappears from the list resets to "All
@@ -443,6 +581,11 @@ value is the router's Service name (`<router-id-lowered>-router`).
 - The Metrics page picks them in its **chains drawer** (`ChainDrawer`, beside
   the sidebar): one row per chain with its health,
   requests and error rate for the page's window, problems first, and a search.
+  Beside it the sidebar folds to a 64 px strip of icons (`gw-side--compact`),
+  so the page doesn't carry two lists side by side: each icon names itself on
+  hover, "Expand menu" at the top opens the full menu for that visit, and
+  every arrival on the page starts folded (`menuCollapsed` on
+  `ChainDrawerProvider`). Other pages keep the full menu.
   A row IS the chain filter (`useChainFilter`), so every tab follows it; a
   chain two or more routers serve lists them under it once picked. The page
   also writes both into its URL with the tab
@@ -450,9 +593,31 @@ value is the router's Service name (`<router-id-lowered>-router`).
   them, a chain or router change is a history entry (Back returns to the
   previous one, tab included) while a tab change alone rewrites the current
   entry, and another page's URL has none, so the per-page rule above still
-  holds. The drawer reads the whole deployment, never the router scope (the
+  holds. The rest of the view rides with them (`lib/view-in-url.ts`, written by
+  the same hook, so a copied URL or a reload opens the same view): `window`
+  always (the sender's, not the viewer's saved one - opening a link never
+  saves it); on Overview `expand=<router id>` and `tile=<tile key>` (the
+  Routers table's open row and its chart, `ChainDetail`'s own tile keys); on
+  Upstreams `upstream=<node name>` (the deep-dive; `upstreamChain=<spec>` only
+  when no chain is picked); on Errors `upstream` (the list's filter) and
+  `from` / `to` (unix ms - an errors-over-time bar writes all three). A change
+  to them rewrites the current entry, picking another tab drops the old tab's,
+  and a new chain or router drops the Upstreams tab's upstream. What a link
+  asks for that no longer exists opens the nearest view with a one-line notice
+  (`LinkNotice`): an upstream or router the config no longer has (the first
+  upstream / no open row), a tile the row doesn't draw, times that ended over
+  30 days ago (the page window), started before then (cut to 30 days ago) or
+  can't be read, an unknown window. A malformed value reads as none; an
+  upstream name with `://` is refused, so no node URL reaches the URL.
+  The two log tabs add `request=<id>` (`lib/request-in-url.ts`): opening
+  a row or finding a request by ID writes it, closing clears it, picking
+  another tab drops it, and a link with it opens that tab's look-up on the
+  request (a v1.6.1 ID is read in its own minutes, whatever the page's
+  window). It rewrites the current entry rather than adding one. Each opened
+  row also links to its own lines on the Grafana logs board (the GUID as the
+  search, a minute either side of the request). The drawer reads the whole deployment, never the router scope (the
   one exception `router-scope.test.ts` allows). Clicking Metrics, or the logo,
-  while on it goes back to every chain.
+  while on it goes back to every chain, with the menu folded again.
 
 #### The deployment scope
 
@@ -486,7 +651,7 @@ deployment to one label value:
   `count(smartrouter_overall_health)` through the scoped client, a gauge
   every running router exports whether or not it has traffic — that warns
   when it counts zero. Advisory only: a zone still provisioning is also zero.
-- `METRICS_SCOPE_LABEL` equal to `ROUTER_SCOPE_LABEL` is refused at boot:
+- `METRICS_SCOPE_LABEL` equal to `ROUTER_SCOPE_LABEL` (or, with that unset, to either label it could resolve to) is refused at boot:
   the router scope would put a second matcher on the same label — redundant
   for the same value, an empty result for any other.
 
@@ -506,9 +671,16 @@ state can't be worded or sourced two ways:
   filter's only entry point — one selection, both router axes (see "Two router
   axes"), chain-narrowed list, `routerId` on `FiltersProvider` (`sr:routerId`).
 - **`lib/health.ts`** owns the words and colours for `HealthState`
-  (`operational | unhealthy | unknown`) — **Operational / Unhealthy / —** — and
+  (`operational | unhealthy | unknown`) — **Operational / Unhealthy / Unknown** — and
   `<HealthTag>` / `<HealthDot>` are how they reach the screen. `unknown` means
-  "no metrics in this window", never "down", so it renders neutral. Nothing
+  "no current health evidence", so it renders as a warning with a reason.
+  Configured endpoints remain in the roster without metrics. Current health
+  uses live checks and block-poll windows sized to three expected blocks
+  (5 / 15 / 30 / 60 minutes, 30-minute fallback for an unmeasurable rate).
+  A reset healthy gauge alone cannot establish recovery without a recent
+  successful block event; an expired/empty window is a warning with a reason.
+  Request-history filters do not change current health. Overview carries unhealthy/unknown counts, and
+  headers show a loading state until the selected scope answers. Nothing
   invents its own health vocabulary: four surfaces used to (the roster said
   "healthy / degraded", the deep-dive "Live · up", the drawer the raw wire
   word), and one upstream read three different ways depending on the panel.
@@ -521,8 +693,8 @@ A Kubernetes deployment runs the api as the `…/backend` image and the web as
 | | Value |
 |---|---|
 | Backend liveness / readiness | `/health` · `/health/ready` (**not** `/api/health` — that's the retired v1 path). Readiness pings Prometheus, so give it a timeout ≥3s and a failureThreshold >1, or a Prometheus blip evicts the only replica |
-| Backend env | `PROMETHEUS_URL`, `CORS_ORIGINS` (comma list **or** JSON array), `HELM_VALUES_DIR` (default `/app/helm-values`, matching the values mount), `LOG_LEVEL`, `RATE_LIMIT_MAX`. No basic auth: `AUTH_USERNAME` / `AUTH_PASSWORD` / `DEBUG` / `CORS_ALLOW_CREDENTIALS` / `AUTH_GATEWAY_*` are v1-only and unread here |
-| Frontend runtime env | `DASHBOARD_API_URL` (browser-facing api origin) and `DASHBOARD_GRAFANA_URL`, both read per-request by `GET /api/config` so one image serves any host; `DASHBOARD_NEW_UI=true` for the 0.28 screens, read per request by the root layout. `NEXT_PUBLIC_*` are build-time and can't vary per deployment |
+| Backend env | `PROMETHEUS_URL`, `CORS_ORIGINS` (comma list **or** JSON array), `HELM_VALUES_DIR` (default `/app/helm-values`, matching the values mount), `LOG_LEVEL`, `RATE_LIMIT_MAX`. Optional: `INCIDENTS_ENABLED` + `INCIDENT_WEBHOOK_URL` (a `secretKeyRef` — the URL is the credential). No basic auth: `AUTH_USERNAME` / `AUTH_PASSWORD` / `DEBUG` / `CORS_ALLOW_CREDENTIALS` / `AUTH_GATEWAY_*` are v1-only and unread here |
+| Frontend runtime env | `DASHBOARD_API_URL` (browser-facing api origin) and `DASHBOARD_GRAFANA_URL`, both read per-request by `GET /api/config` so one image serves any host. Optional: `INCIDENTS_ENABLED` (same as the backend's). `NEXT_PUBLIC_*` are build-time and can't vary per deployment |
 | Frontend liveness / readiness | `/api/config` (`/` also answers — it 307s to `/metrics`) |
 | Values mount | `<HELM_VALUES_DIR>/core/values.yml`, the rendered values. Drives `publicUrls` above, so the pod must roll when they change |
 
@@ -609,6 +781,14 @@ the log; the accounts, 2FA and config-approval tasks only emit into it.
 `packages/shared/src/constants/windows.ts` defines the **13-window catalog**
 (`5m 15m 30m 1h 3h 6h 12h 1d 3d 7d 14d 21d 30d`), each with a PromQL range and
 a step targeting ~150–200 range points (clamped to ≥15s, the scrape interval).
+The step is how often a chart draws, not what it reads. A rate needs two
+samples and a 15-second range holds one scrape, so a rate line reads the step
+or a minute, whichever is longer (`rateRange` in `promql/builders.ts`). A count
+per point (errors, volume) reads m steps and one scrape (`countRangeSec`: 60 s
+at a 15 s step, 75 s at 30 s, step + 15 s from a minute up), times the step:
+each counter step lands in exactly m points at 1/m each, at every phase of the
+scrape clock, so the points add up to the counter's delta. Points are rounded
+only where m is 1. The error bar still filling is a `single` read (m = 1).
 Charts that need to be dense rather than cheap sample on their own grid:
 `chartSampling(window)` - ~300 points, each averaging a 24th of the window (≥4
 steps, and ≥5 minutes once the window holds six), so light traffic reads as a
@@ -624,10 +804,69 @@ clock by `bucketGrid`: whole bars from a range read, then the bar still
 filling from one instant `increase` over the seconds it has run (a range read
 can't: it would end in the future, which Mimir refuses past 10 minutes).
 
+The range reads behind the charts end on a step boundary: `alignedBounds(range,
+step, now)` puts the end on the last multiple of the step at or before now and
+the start one window before it, at the step the chart draws on
+(`chartSampling`'s for the Upstreams deep-dive). Two reasons. Every poll until
+the next boundary asks for the same window, so the api's read cache can answer
+it: once its newest point has settled (its end three minutes old), for up to a
+step (see `PROMETHEUS_CACHE_TTL_MS`). And Mimir's results cache keeps a range
+read only when both ends are multiples of its step, then recomputes just its
+newest 10 minutes: about 67% of a 30-minute read comes from cache, 94% at
+3 hours, 97% at 6 hours. The cost: a chart's newest point is up to one step
+old - 15 s on the 30-minute default, 10 minutes at a day, 4 hours at 30 days.
+The error bars sit on their own clock (`bucketGrid`), and the Transactions
+chart's recorded read on its bars' ends shifted 30 seconds
+(`SAMPLE_SHIFT_SEC`): both move once a bar.
+
 Every `window=` query param accepts those keys **plus the `24h` alias (= `1d`)**;
 anything else falls back to the default `30m`. The page-level `<select>` shows
 the design's 12 options (`WINDOW_OPTIONS` — everything except `1h`, which the
-Dashboard page's chip row uses internally).
+api accepts and no page offers).
+
+## Polling
+
+Every panel reads through `useApi` (`hooks/use-api.ts`), which polls with
+SWR. A metrics read over a window (`/api/metrics/…?window=`) polls no faster
+than its window can use (`pollMsForKey`, `lib/poll.ts`); the caller's own
+interval wins when it is longer, and a key that doesn't poll (0, the request
+look-ups) never starts.
+
+| Window | Polls every |
+|---|---|
+| 5m · 15m · 30m · 1h | 15 s |
+| 3h · 6h · 12h | 1 minute |
+| 1d · 3d | 5 minutes |
+| 7d · 14d · 21d · 30d | 15 minutes |
+
+A poll is never further apart than the window's chart step, and from 30m up
+it slides the window by under 1% of its length; from 3h the api reads the
+store's recorded series where it has them, which move once a minute. Keys
+without a window (the topbar pulse, block heights, specs) and the log routes
+(`/api/error-requests`, `/api/transactions`, `/api/requests`) poll at the
+caller's interval: the two log lists every 30 s, longer while the logs
+don't answer (`hooks/use-log-reads.ts`).
+
+**The idle gate** (`lib/idle-store.ts`; its rules are pure functions in
+`lib/poll.ts`) holds every `useApi` poll to whether someone is at the page:
+a pointer move or press, a key, the wheel, a touch, focus, Back or Forward,
+or the tab coming back into view. Ten minutes with none of these make every
+interval four times longer; an hour pauses every poll through SWR's
+`isPaused`, so nothing revalidates, a `mutate()` included. While paused, the
+Refresh icon turns amber and a "● Paused" pill sits beside it wherever the
+header has room for the whole word; its tooltip and screen-reader text say
+"Polling paused after an hour without activity · move the mouse to resume".
+The pill is never cut: it takes only the header's free space, and where the
+word doesn't fit it isn't drawn and
+the amber icon says it alone. The first activity after either phase re-reads
+every key that polls, once (a global SWR `mutate` that leaves the numbers on
+screen while they reload, never a look-up, which doesn't poll), and re-arms
+each poll's timer at its normal cadence. The phases run on the wall clock,
+so a laptop that slept through the hour wakes up paused instead of polling
+first. A hidden tab doesn't poll at all (SWR's default). **The standalone
+page is exempt** (`idleGateApplies`): it is for shared and wall screens that
+nobody touches, so it never slows or pauses. The Team page's member list and
+the Account page's sessions call `useSWR` directly, outside the gate.
 
 ## API endpoints
 
@@ -636,7 +875,9 @@ every route is public; with `AUTH_MODE=enabled` the `/api/*` routes require a
 valid Bearer JWT (health/version and `/auth/*` stay public). See [`docs/AUTH.md`](docs/AUTH.md).
 
 Every `/api/metrics/*` route also accepts **`router?`** — the router scope
-(see "Router scope" above); omitted = cluster-wide.
+(see "Router scope" above); omitted = cluster-wide. Every one but `/query` and
+`/reads` answers from a per-process snapshot and says how old the answer is in
+`Age` (see "Response snapshot" below).
 
 | Endpoint | Params | Returns |
 |---|---|---|
@@ -663,16 +904,19 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 | `GET /api/metrics/routers` | — | `{ label, routers: string[] }` — router deployments the metrics can be scoped to (distinct values of `ROUTER_SCOPE_LABEL`). `[]` when the collector can't tell routers apart. See "Router scope" |
 | `GET /api/metrics/specs` | `router?` | `{ specs: string[] }` — distinct chains present on the requests counter |
 | `GET /api/metrics/dashboard-summary` | `window` | `HeroSummary` - the hero cards as `Kpi` `{value, prior}` pairs (`requestsServed`, `successRate`, `effectiveReadP95Ms` - returned, not shown: that card is "Failed requests", from `GET /api/error-requests/count` - `staleCaught`, `retriesRecovered` (counted with `increaseFromBirth`, as the Errors tab's cards are), `cacheOffloadPct`) + `providerCount` / `chainCount` / `health` + **`emitted: {retries, cache}`** |
+| `GET /api/metrics/pulse` | `spec?`, `router?`, `routerId?` | `DeploymentPulse` — the topbar's `health`, `upstreamHealthCounts` and current `throughputRps` (5m client rate) in six reads, no window. What the topbar used to read the whole overview for (MAG-4296) |
 | `GET /api/metrics/overview` | `window`, `spec?` | `OverviewData` — KPI pairs (requests, RPS, errors, success rate, p50/p95/p99), `errorRate`, `health`, throughput/errors series, `latencySeries` (p50/p95/p99 toggle), **`latencyDistribution`** (histogram buckets), **`perProviderSeries`**, **`errorLayers`** (single `unclassified` layer until labelled counters exist), `perChainLatency`, `activeRoutes`, `perChainSeries`; `computeUnits`/`rpsCap` always null |
-| `GET /api/metrics/dashboard` | `window`, `spec?` | `DashboardData` — the Dashboard page (both tabs) in one round-trip: `kpis` (successRate, p95Ms, errors, rps, errorsHandled=null), `series` (throughput, errors, errorRate, successRate, latency p50/95/99, perChain, perChainSuccessRate, perChainLatency, providerMix, perProviderLatencyP95), `chains` (multiselect options — the series filter is client-side; `spec` accepted for symmetry). Unbacked families (`scu`, `regions`, `failoverRatio`, `internalAvailability`, `cacheHitRate`, `errorClasses`, `errorsHandledBreakdown`, `contribution`, `providerAvailability`, `scorecard`) are `null`, `trouble` is `[]` |
-| `GET /api/metrics/routers-rollup` | `window` | `{ routers: RouterMetrics[] }` — **the Routers table: one row per CONFIG router**, not per chain. `ChainMetrics` plus `routerId`, `upstreamCount` (from the values file, so always the router's own) and `attribution`: `own` when the collector reports a target label for it (the chain-level numbers were re-read through that label) or when it is alone on its chain, `shared` otherwise — in which case `sharedWith` names the siblings reading the same series, and the rows deliberately carry identical figures. Falls back to one row per chain when no values file is mounted |
+| `GET /api/metrics/dashboard` | `window`, `spec?` | `DashboardData` — **no web consumer** (the Dashboard page that read it is removed); kept as a documented read surface: `kpis` (successRate, p95Ms, errors, rps, errorsHandled=null), `series` (throughput, errors, errorRate, successRate, latency p50/95/99, perChain, perChainSuccessRate, perChainLatency, providerMix, perProviderLatencyP95), `chains` (multiselect options — the series filter is client-side; `spec` accepted for symmetry). Unbacked families (`scu`, `regions`, `failoverRatio`, `internalAvailability`, `cacheHitRate`, `errorClasses`, `errorsHandledBreakdown`, `contribution`, `providerAvailability`, `scorecard`) are `null`, `trouble` is `[]` |
+| `GET /api/metrics/routers-rollup` | `window` | `{ routers: RouterMetrics[] }` — **the Routers table: one row per CONFIG router**, not per chain. `ChainMetrics` plus `routerId`, `upstreamCount` (from the values file, so always the router's own) and `attribution`: `own` when the collector reports a target label for it (its chain-level numbers come from the read grouped by that label) or when it is alone on its chain, `shared` otherwise — in which case `sharedWith` names the siblings reading the same series, and the rows deliberately carry identical figures. Falls back to one row per chain when no values file is mounted |
 | `GET /api/metrics/chains` | `window` | `{ chains: ChainMetrics[] }` — per-chain rollup (requests, availability, errorRate, p95, composite QoS, health, latestBlock, providerCount) for the Routers table |
 | `GET /api/metrics/upstreams` | `window`, `spec?`, **`routerId?`** | `{ upstreams: UpstreamMetrics[] }` — roster with requests, uptime, p95, **errorRate**, selection scores, health, latestBlock, **blockLag**, **`behindSec`** (that lag ÷ the chain's block rate — the comparable form) + **`stale`** (tip frozen 15m while the chain produced blocks), **role** (`primary`/`backup` from helm `is_backup`; null for SR_CONFIG), **apiInterface**, inFlight, **`routerIds`** (the config routers declaring the upstream — several when they share a node name), plus the two signals that need NO traffic: **`scoreSource`** (`optimizer` = the sampler's live score, refreshed for every upstream on a timer; `endpoint` = the routing path's, frozen at the last selection, so possibly old on an idle row; `null` = no score) and **`polls`** (`{ok, failed}` latest-block polls the chain tracker made — `null` when the family is absent, `{0,0}` when the poll gate suppressed them, which is "we did not ask", never "it answered fine"). `routerId` keeps only one router's rows; it filters against the values file and does NOT narrow the PromQL (that's `router` — see "Two router axes") |
 | `GET /api/metrics/block-heights` | `spec?`, `router?`, **`routerId?`** | `BlockHeights` — `{ routerLabel, chains: ChainTips[] }`. Per chain: `blocksPerSec` (from `deriv` on the endpoint gauge), `bestBlock` (highest upstream tip — the reference), `routers[]` (`smartrouter_latest_block` per scope value × api interface, each with `behindBlocks` / `behindSec` / **`refreshSec`**) and `upstreams[]` (`rpc_endpoint_latest_block` per endpoint × interface, with `stale`). **Instant only** — gauges, so no `window`. Lags are given in seconds as well as blocks because a block count isn't comparable across chains. ⚠ The router gauge advances on accepted tip observations, not every poll, so it trails by ~one `refreshSec` however healthy the router is; judge it against that cadence, never a wall-clock threshold |
 | `GET /api/metrics/rps` | `window`, `spec?` | `TimeSeries` — `{ label, points: {t, v}[] }` |
 | `GET /api/metrics/traffic` | `window` | Aggregate `rpsNow` + series + per-chain rows (`rpsNow`, `requests`, `share`, `trend` sparkline). **No web consumer**; kept as a documented read surface |
-| `GET /api/metrics/methods` | `window`, `spec?` | `{ methods: MethodUsage[], classTotals: MethodClassTotals }` — per-method CLIENT requests/class/errorRate + **real `p95Ms`** (the histogram's method label is named `function`); classTotals: `read` real, `write`/`batch` null + `emitted` flags, `unclassified` remainder |
-| `GET /api/metrics/chain-series` | **`spec`** (required), `window` | `ChainSeries` — the ChainDetail metric-switcher bundle: availability / p95 / errorRate / rps series + `qos` (optimizer-scope score, endpoint-scope fallback; null when never emitted) + `backupShare` (only when the config marks backups **and** the selector actually matched — an unmatched selector is `null`, never a 0% series; the UI states it as **primary** share). 400 without `spec` |
+| `GET /api/metrics/methods` | `window`, `spec?` | `{ methods: MethodUsage[], classTotals: MethodClassTotals }` — per-method CLIENT requests/class/errorRate + **real `p95Ms`** (the histogram's method label is named `function`); classTotals: `read` real, `write`/`batch` null + `emitted` flags, `unclassified` remainder. **No web consumer**; kept as a documented read surface |
+| `GET /api/metrics/chain-series` | **`spec`** (required), `window` | `ChainSeries` — the ChainDetail metric-switcher bundle: availability / p95 / errorRate / rps series + `qos` (optimizer-scope score, endpoint-scope fallback; null when never emitted) + `backupShare` (only when the config marks backups **and** the selector actually matched — an unmatched selector is `null`, never a 0% series). 400 without `spec` |
+| `GET /api/metrics/upstream-mix` | **`spec`** (required), `window` | `UpstreamMix` — `{ spec, upstreams: { upstream, points }[] }`: requests per second each upstream took on the chain, biggest first - relay-scoped, so a retried request counts at every upstream it reached; `Cached` is the relay cache answering with no upstream. One range read through `qPerUpstreamRpsExpr` (the Overview's per-upstream read, recorded series on long windows), kept apart from `chain-series` so the Metrics tab's "Traffic by provider" card, shown whenever a chain is picked, doesn't pull the row bundle's other reads. 400 without `spec` |
+| `GET /api/metrics/upstream-timeline` | **`spec`** (required), `window`, `router?`, **`routerId?`** | `UpstreamTimeline` - the Availability blocks (a router row's Availability view and the Metrics tab's Availability card): every upstream of one chain, a cell per stretch of the clock (`bucketGrid`, the errors-over-time bars' grid - 30 minutes on 12 hours; `grid` holds the cells' ends, the last still filling up to `asOf`): `rps` and `failedRps` (tries by `provider_address`), `share` of the chain's tries (the relay cache's counted in, as `qBackupShareExpr` divides), `pollsOk` / `pollsFailed` (`rpc_endpoint_fetch_latest_*` by `endpoint_id`), and `state` (`upstreamCellState`: unhealthy at half the tries failed or every poll failed, `unknown` when scraped but neither tried nor polled, `null` when nothing was scraped - a gap, never a health). No health-over-time series exists per upstream; `rpc_endpoint_overall_health` is not read (optimistic at start, moved only by relays). Four range reads whatever the count; the stretch still filling is one more read of each at now. Recorded series for the tries from 12h. `served`: per cell, the clients' requests and the ones the router couldn't serve - the Failed requests card's recorded counts (`RECORDED_OUTCOMES`, `chain` and a router's `service_name=~".+-<id>"`), null where the store has none or the router can't be split; the top row, Requests served, reads it. Rows: the config's nodes on the chain (one router's with `routerId`), matched to series case-insensitively, `role` from helm `is_backup`, primaries then backups; without `routerId`, upstreams only the metrics name too (`inConfig: false`); `Cached` gets no row. `available:false` + `failed` when a read was refused. 400 without `spec`. See docs/METRICS-MAPPING.md |
 | `GET /api/metrics/upstream-detail` | **`endpointId`** + **`spec`** (both required), `window` | `UpstreamDetail` - the Upstreams deep-dive for ONE upstream on ONE chain (vendors reuse a node name across chains, so every selector carries `spec` too: `upstreamEndpointSelector` / `upstreamProviderSelector`): health, availability, requests, rpsNow, p50/95/99, errorRate, blockLag, inFlight, score gauges + per-score-type series (not shown), latency/volume/block-lag series (`volume.read` real; write/batch null), **`errorsOverTime`** (`failed` tries + `node` error replies per bar, on the clock (`bucketGrid`) - a bar at `t` covers the `stepSec` before it, the last one still filling up to `asOf`; clicking a bar opens the Errors tab on the requests whose attempt at that upstream failed over exactly that span, the list's upstream filter); `errorsByCode`/`recentErrors` empty + `emitted` flags. 400 without `endpointId` or `spec` |
 | `GET /api/metrics/upstream-peers` | **`spec`** (required), `window` | `UpstreamPeers` - every upstream of one chain side by side: `latencyP95`, `rps` and `latestBlock` series per upstream, from three range queries whatever the count, sampled on `grid` (`chartSampling`: ~300 points, each averaging a 24th of the window - volume as an average of short rates over what is there, see "Time windows"). The deep-dive draws the selected upstream bold against these and lays points out by time on the grid; latency and volume are cut where the upstream wasn't scraped, so missing data is a gap. No requests at a point ⇒ no latency there (`v: null`), never a zero. 400 without `spec` |
 | `GET /api/metrics/errors` | `window`, `spec?` | `ErrorsReport` — derived `total` + `trend`, (chain × provider) **hotspots** (trend sparklines for the top 5), chain/method **pivots**; `category`/`code`/`retryability` pivots stay `[]` until labelled error counters exist (**`families`** presence flags) |
@@ -682,12 +926,14 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 | `GET /api/metrics/websocket` | `window` | `WebSocketReport` - `emitted:false` + nulls until `ws_*` fires (first subscription). **No web consumer**; kept as a documented read surface |
 | `GET /api/metrics/query` | **`query`** (required) | Raw **instant** PromQL passthrough — `{ result }`. 400 without `query` |
 | `GET /api/config/routers` | — | `{ routers: RouterTopology[] }` — live topology from the mounted values file (either format), node URLs masked to scheme+host. Each endpoint also carries `index` (the handle the relay below resolves) + `directable` |
-| `GET /api/error-requests` | `window` **or** `from` + `to` (unix ms, in the past, ≤30 days; 400 otherwise), `before?`, `spec?`, `routerId?`, `upstream?` | `ErrorRequestsReport` - the Errors tab's request list, from the router's logs in Loki (not Prometheus): every request that hit an error, newest first - `attempts[]` in order (`upstream`, `batch` (tries sent together share one), `outcome` ∈ ok/failed/skipped/cancelled/no-result, `replied`, the router's `code` and `retryable` verdict, the node's `message` word for word, the router's `note`, `atMs` / `endMs`), `result` ∈ recovered/error-reply/failed/unknown, `resolvedBy`, `retried`, `stopReason` (the router's own), `exhausted`, `totalMs`, `error`, `spec` (null + `specs` when its upstreams serve several chains). At most 300 requests per read: `more` + `nextBefore` say where to read on (`before=`). A chain or router narrows the read to its upstreams' names; `upstream` (an errors-over-time bar's) narrows it to that one and keeps the requests whose try there failed. Node urls in messages are cut to scheme+host. `available:false` + `reason` (`unconfigured` / `unreachable`) without `LOKI_URL` or when Loki doesn't answer |
-| `GET /api/error-requests/count` | `window`, `spec?`, `routerId?` | `FailedRequests` - `{ available, reason?, value }`: client requests the router **could not serve** (nothing, or nothing usable, came back from the upstreams, so the router returned its own error, typically "insufficient results") in the window. Counted by Loki from the line the router ends each such request with (`message` = "failed getting responses from RPC endpoints" when nothing came back, "failed processing responses from RPC endpoints" when nothing usable did; its own relays log "[-] failed sending init relay" instead); a chain narrows it by the listener that logged it (`<spec><interface>`). A config router narrows it to its chain; on a chain other routers serve too it answers `reason: "shared-chain"` - the lines don't say which router wrote them. A chain the values file doesn't serve is 0 without a read. Kept 30 s per window and chain, a failed read too, one read in flight per key. No metric has this number: `smartrouter_requests_{total,success,failed}_total` move once per TRY, and the one per-request series, the end-to-end latency histogram, is only observed on success. The Metrics page's "Failed requests" card |
-| `GET /api/requests/:guid` | `window` **or** `from` + `to` | `RequestLookup` - one request by its ID (the GUID the router puts in its errors), from its logs: the same row the Errors list shows, for ANY request - `result: "ok"` when nothing failed on the way. `row: null` = not in the logs of the range read; the web offers a 30-day read on purpose rather than by default (it scans every line in the range). 400 on an ID that isn't a plain token |
-| `GET /api/transactions` | `window` **or** `from` + `to` (unix ms, in the past, ≤30 days; 400 otherwise), `before?`, `spec?`, `routerId?` | `TransactionsReport` - the Transactions tab, from the router's logs in Loki (not Prometheus): `rows` (newest first: time, chain, method, `attempts` - every upstream it went to and what each answered, the same shape as a retried request's tries - `answeredBy`, `replyMs`, `outcome` ∈ accepted/rejected/failed/unknown, `error`, `note`), totals, `successRate` (unknown left out). At most 500 transactions per read, and the numbers cover those: `more` + `nextBefore` say where to read on (`before=`), the same paging as `/api/error-requests`. `available:false` without `LOKI_URL` or when Loki doesn't answer. Value and finality are not here: the logs cut long bodies short, and finality needs the chain |
-| `GET /api/transactions/:guid` | `window` **or** `from` + `to` | `TransactionLookup` - one transaction by its request ID, the same row the Transactions tab shows. `found` with `row: null` = the ID is a request that isn't a transaction (the Errors tab's look-up shows it). 400 on an ID that isn't a plain token |
+| `GET /api/error-requests` | `window` **or** `from` + `to` (unix ms, in the past, ≤30 days; 400 otherwise), `before?`, `spec?`, `routerId?`, `upstream?` | `ErrorRequestsReport` - the Errors tab's request list, from the router's logs in Loki (not Prometheus): every request that hit an error, newest first - `attempts[]` in order (`upstream`, `batch` (tries sent together share one), `outcome` ∈ ok/failed/skipped/cancelled/no-result, `replied`, the router's `code` and `retryable` verdict, the node's `message` word for word, the router's `note`, `atMs` / `endMs`), `result` ∈ recovered/error-reply/failed/write-unknown/unknown (`write-unknown`: a write the router couldn't settle, the Transactions tab's `unknown`; `unknown`: the logs show no end), `resolvedBy`, `retried`, `stopReason` (the router's own), `exhausted`, `totalMs`, `error` (what the client got, for `failed` and `write-unknown`), `errorCode` (the request's own code from `relay_end`, e.g. `NODE_GATEWAY_TIMEOUT` on a `write-unknown`; null on the old lines), the caller's fields where the router wrote them (`customer`, `requestId`, `taskId`, `txId`, `requestBytes`, `replyBytes`, `requestedBlock`, `seenBlock`) and a try's `nodeCode`, `spec` (null + `specs` when its upstreams serve several chains). At most 300 requests per read, and at most `LOG_READ_BUDGET_BYTES` (4 GB) of logs, newest first: `more` + `nextBefore` say where to read on (`before=`). A chain or router narrows the read to its upstreams' names; `upstream` (an errors-over-time bar's) narrows it to that one and keeps the requests whose try there failed. Node urls in messages are cut to scheme+host. `available:false` + `reason` (`unconfigured` / `unreachable`) without `LOKI_URL` or when Loki doesn't answer. One read per key in flight on a process, its answer kept 15 s (a range that ended over a minute ago 5 minutes, a read Loki didn't answer 30 s); a poll of a page window reads only what is new since the last (see the Loki section) |
+| `GET /api/error-requests/count` | `window`, `spec?`, `routerId?` | `FailedRequests` - `{ available, reason?, value, since? }`: client requests the router **could not serve** (nothing, or nothing usable, came back from the upstreams, so the router returned its own error, typically "insufficient results") in the window. Read from the counts the fleet Loki's ruler records once a minute into the tenant's metrics store (`smartrouter_final_failures:count1m`, the server-errors alert's count) while they are fresh (newest under 5 min; looked at once a minute): any window, one cheap read; a chain is `chain="<spec lower-cased>"`, a config router `service_name=~".+-<id>"`, so a router on a shared chain has its own count unless another router id of the chain ends in its (`shared-chain`). When the recorded counts start inside the window, `since` (ISO) says where. Without them it counts the lines in Loki: the line the router ends each such request with (`message` = "failed getting responses from RPC endpoints" when nothing came back, "failed processing responses from RPC endpoints" when nothing usable did; its own relays log "[-] failed sending init relay" instead), plus each failed `relay_end` on a router on smart-router #543 or later (parsed, not a subscription, `outcome` `no_answer` / `write_unknown` / `rejected_before_dispatch` / `router_error`); a chain narrows it by the listener that logged it (`<spec><interface>`), or by the event's `chain`; a router on a shared chain answers `shared-chain`; a window heavier than `LOG_READ_BUDGET_BYTES` answers `too-large` - the count reads the whole window at once. A chain the values file doesn't serve is 0 without a read. Kept 30 s per window, chain and router, a failed read too, one read in flight per key. No metric has this number: `smartrouter_requests_{total,success,failed}_total` move once per TRY, and the one per-request series, the end-to-end latency histogram, is only observed on success. The Metrics page's "Failed requests" card |
+| `GET /api/requests/:guid` | `window` **or** `from` + `to` | `RequestLookup` - one request by its ID (the GUID the router puts in its errors), its transaction hash or the caller's request id (`tx_hash` / `request_id` on its `relay_end`), from its logs: the same row the Errors list shows, for ANY request - `result: "ok"` when nothing failed on the way. `matches` when several requests carry the value; `row` is the newest. `row: null` = not in the logs read. An ID from smart-router v1.6.1 on carries the second it was minted (`guidMintedSecond` in `@sr/shared`: the top 32 bits, taken when they fall from 30 days back to 5 minutes ahead): its lines are read from a minute before that second to 5 minutes after (`MINTED_SPAN_MS`, the router's longest default processing budget with room to spare), whatever the range, and that read answers once it holds the request's `relay_end`. Otherwise the range is read too, except a 30-day one: about 0.06% of older routers' random GUIDs decode to a plausible second, and the range finds those (`linesOfLookup` in `services/router-log.ts`). A transaction hash, a caller's request id or any other ID reads every line in the range, so the web offers it a 30-day read on purpose rather than by default; a v1.6.1 ID gets none, the look-up having read the logs where it was minted. 400 on a value that isn't plain characters (`LOOKUP_ID`: letters, digits, `_ - . : + = @`, up to 128) |
+| `GET /api/transactions` | `window` **or** `from` + `to` (unix ms, in the past, ≤30 days; 400 otherwise), `before?`, `spec?`, `routerId?` | `TransactionsReport` - the Transactions tab, from the router's logs in Loki (not Prometheus): `rows` (newest first: time, chain, method, `attempts` - every upstream it went to and what each answered, the same shape as a retried request's tries - `answeredBy`, `replyMs`, `outcome` ∈ accepted/rejected/failed/failed-on-chain/unknown, `error`, `note`, and where the router wrote them `txHash`, `txStatus`, `txError` and the caller's fields - `customer`, `requestId`, `taskId`, `txId`, `requestBytes`, `replyBytes`, `requestedBlock`, `seenBlock`; a try's `nodeCode`), totals with `failedOnChain`, `successRate` (unknown left out; failed on chain is a failure). At most 500 transactions per read, and at most `LOG_READ_BUDGET_BYTES` (4 GB) of logs, and the numbers cover those: `more` + `nextBefore` say where to read on (`before=`), the same paging as `/api/error-requests`. `available:false` without `LOKI_URL` or when Loki doesn't answer. Value and finality are not here: the logs cut long bodies short, and finality needs the chain. Kept and polled as `/api/error-requests` is |
+| `GET /api/transactions/over-time` | `window`, `spec?`, `routerId?` | `TransactionsOverTime` - the Transactions tab's chart: `grid` (the bars' end times, `bucketGrid`), `counts` (one count per bar for each result in the window: accepted/rejected/failed/unknown, and `failed-on-chain` where the send reply says the chain ran it and it failed), `asOf`, `source` (`recorded`: the store's `smartrouter_transactions:count1m`, the newest minutes from the logs; `logs`: counted from the router's logs, on a store without the fleet's ruler - no `smartrouter_final_requests:count1m` in the window; with the ruler, no series is no transactions), `partialFrom` (unix s from which the newest bars may be short: the logs didn't answer for the minutes the store doesn't hold yet). `available:false` + `reason` (`unconfigured` / `unreachable` - also when the store doesn't answer whether it has the ruler - / `shared-chain`: a router whose lines can't be told from another router's on its chain). Kept 30 s per window, chain and router, one read in flight per key |
+| `GET /api/transactions/:guid` | `window` **or** `from` + `to` | `TransactionLookup` - one transaction by its request ID, its hash or the caller's request id, the same row the Transactions tab shows, read as `GET /api/requests/:guid` reads it (a v1.6.1 ID in its own minutes first); `matches` when several requests carry the value (a resent transaction keeps its hash), `row` the newest. `found` with `row: null` = the ID is a request that isn't a transaction (the Errors tab's look-up shows it). 400 on a value that isn't plain characters (`LOOKUP_ID`) |
 | `POST /api/upstreams/relay` | body: `{routerId, node, endpointIndex, transport?, httpMethod?, path?, body?}` | Fires ONE request straight at a configured upstream, router excluded — `{httpStatus, latencyMs, body, truncated, transport}`. The target is resolved from the values file, never taken from the caller; the resolved url is never returned and is scrubbed out of the upstream's own body. Upstream 4xx/5xx come back **200** with their status inside; 502/504 mean our hop failed. Off with `UPSTREAM_RELAY_ENABLED=false`. See [`docs/UPSTREAM-DIRECT-TEST.md`](docs/UPSTREAM-DIRECT-TEST.md) |
+| `POST /api/incidents` | body: `{id, severity, title, description?, chain?, routerId?, reporter?}` | A member reports an incident to our on-call system → `{id, severity, sentAt}`, **only after IRM answered 2xx** (IRM queues; routing and the call follow). `severity` ∈ critical/high/medium/low; `id` is a UUID the form mints, reused on retry. `AUTH_MODE=disabled`: `reporter {name, email, phone?}` required, recorded as typed; `enabled`: the signed-in user, any role, `reporter` ignored, audited as `incident.reported`. A `chain` / `routerId` the values file doesn't declare is 400. 404 while `INCIDENTS_ENABLED` is off, 503 without a usable webhook, 429 past either limit, 502 when IRM refused or didn't answer. See [`docs/INCIDENTS.md`](docs/INCIDENTS.md) |
 | `POST /auth/2fa/verify` | body: `{challenge, code}` | Second sign-in step. `/auth/sign-in` returns a challenge and **no session** for an enrolled account; only this opens one. Wrong code, dead challenge and unknown challenge all answer the same 401 |
 | `POST /auth/oauth/:provider` | body: `{token}` | Google/GitHub sign-in. An account without an authenticator gets `{ user, sessionId }`; an enrolled one gets `{ twoFactorRequired, challenge, expiresAt, email }` and **no session** — the web parks the challenge in the `sr_2fa` handoff cookie for the code screen, and the session opens at `/auth/2fa/verify` as `<provider>+totp` |
 | `POST /api/account/2fa/begin` · `/confirm` | — · `{code}` | Enrolment. `begin` returns the QR (server-rendered SVG) and the secret as text, once; `confirm` proves a code and turns 2FA on. Refused 409 for an already-enrolled account — an admin reset is the only way back |
@@ -697,6 +943,66 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 | `GET /api/audit/tokens` | — | `{ tokens }` — **admin only**. Never returns a hash; a token is identified by name + last four characters, with `lastUsedAt` / `lastUsedIp` |
 | `POST /api/audit/tokens` | body `{ name }` | **admin only**. Mints a read-only pull token and returns `{ token, secret }` — the **only** time the value exists. Stored as SHA-256; lost means revoke and re-issue |
 | `DELETE /api/audit/tokens/:id` | — | **admin only**. Revokes; the token stops working on the next request. 404 when already revoked or unknown — the two are one answer so an id can't be confirmed by guessing |
+
+### Response snapshot
+
+Every `/api/metrics/*` route that reads the store answers from a snapshot: one
+answer per route and query, shared by every caller of the process
+(`services/snapshot.ts`; the TTLs are `snapshotTtlMs` in `routes/metrics.ts`).
+Without it every viewer re-runs its page's whole read set on every poll,
+N viewers N times that, and neither Mimir (its results cache covers range
+queries only) nor the client's 10 s answer cache, which sits under the 15 s
+poll, shares them. `/api/metrics/query` (the caller's own PromQL) and
+`/api/metrics/reads` (process state) always answer live.
+
+- The key is the route and the parameters it reads, as parsed: the window
+  after `toMetricWindow` (`24h` and `1d` share an answer), `spec`, `router`,
+  `routerId`, `endpointId`. Parameter order, and parameters the route doesn't
+  read, change nothing.
+- Younger than its TTL, an answer is served as is. Up to twice its TTL old it
+  is still served while one refresh runs in the background, so no request
+  waits on a refresh; older, or never read, the request waits for the read,
+  and every request that arrives meanwhile shares it. A viewer alone on a page
+  whose polls are as far apart as the TTL (15 s on the short windows)
+  therefore sees the answer its previous poll read.
+- A run that throws, or one during which the store refused a read, gives no
+  good answer, and the key is read again 5 s later at the earliest, never on
+  every request. A refused read (non-2xx, an error envelope, a timeout or a
+  dropped connection) comes back as empty fields rather than an error (the
+  honesty contract), so the client notes it against the run that issued it
+  (`services/read-health.ts`, called from `fetchOnce`). Such a degraded answer
+  never replaces a good one still under twice its TTL: that one keeps being
+  served, its `Age` running on. With no servable good answer, the degraded
+  answer goes to the callers of its run and is kept for those 5 s only; after
+  a throw they get the error. A read that joined one already in flight counts
+  only for the run that issued it, and a refused read counts even when the
+  client answers it from its last good read.
+- At most 256 answers; a new key past that evicts the least recently
+  refreshed one. Per process: each replica keeps its own, so a key costs each
+  replica one read set per TTL. A values-file edit reaches the answers within
+  twice their TTL.
+- `Age` says how old an answer is, in seconds since its read started, and
+  `Access-Control-Expose-Headers` lets the browser read it. The payloads are
+  unchanged.
+- No answer depends on the caller: no metrics route reads the session, and
+  under `AUTH_MODE=enabled` the gate is an `onRequest` hook, so a snapshot is
+  only served past it.
+
+| Answer | Routes (`/api/metrics/…`) | 5m–1h | 3h–12h | 1d–3d | 7d–30d |
+|---|---|---|---|---|---|
+| Figures over the window | `rps` · `traffic` · `methods` · `chain-series` · `upstream-timeline` · `upstream-peers` · `cross-validation` | 15 s | 60 s | 5 min | 15 min |
+| Figures about now too (health, latest block, in-flight, a current rate), and the Errors tab | `dashboard-summary` · `overview` · `dashboard` · `routers-rollup` · `chains` · `upstreams` · `upstream-detail` · `websocket` · `errors` · `retries` | 15 s | 60 s | 60 s | 60 s |
+| No window | `routers` · `specs` · `block-heights` · `unavailable` | 15 s | | | |
+| The topbar's pulse, polled every 30 s | `pulse` | 30 s | | | |
+
+The 15 s is `METRICS_SNAPSHOT_TTL_MS`. No TTL is shorter, so a larger value
+raises the others to it, and `0` turns the snapshot off. A window's answer is
+kept at most one chart point of the window (`chartSampling`: 15 s up to 1h,
+1–5 min from 3h, 5–15 min from 1d, an hour and more from 7d), and from 3h the
+window reads recorded series that move once a minute. A figure about now is
+kept a minute at most. The Errors tab is read during an incident, beside the
+request list, which reads the logs live. `websocket` ignores its window: its
+figures are lifetime totals and the live connection gauge.
 
 ## Environment variables
 
@@ -708,9 +1014,13 @@ API (`apps/api/src/config.ts` is the source of truth):
 | `API_HOST` | `0.0.0.0` | |
 | `PROMETHEUS_URL` | `http://localhost:9090` | compose sets `http://prometheus:9090`. A path prefix (Mimir's `/prometheus`) and a query string are both kept on every call |
 | `PROMETHEUS_TIMEOUT_MS` | `10000` | per-query abort |
+| `METRICS_RECORDED_FROM` | `3h` | the narrowest window read from the store's recorded series (`promql/recorded.ts`: the fleet Mimir ruler's two-minute rates, summed per chain and router) instead of the raw histograms and counters; narrower windows stay raw and exact; chart series switch only from 12h (`RECORDED_CHART_FLOOR`). `never` holds every window on raw. Only while the series are fresh — see the next row |
+| `METRICS_RECORDED_STALE_MS` | `300000` | the api asks the store once a minute (`METRICS_RECORDED_PROBE_MS`) how old the newest recorded sample is, how far back the oldest one reaches, and how far apart the raw router samples are (the rules' 2m15s window is exact for a 15-second scrape only); older than this, absent, on another scrape interval, or with less history than the window asked for, and the builder reads raw — slow, never wrong. `GET /api/metrics/reads` reports the state; the Metrics page's notice reads it. Transitions are logged once |
+| `PROMETHEUS_CACHE_TTL_MS` | `10000` | how long a successful answer is reused for an identical read (same path, params, scope and credential) — under the fastest panel poll (15 s), so two tabs or two panels asking the same instant read in an interval cost the store one query (the store is per process, each replica keeps its own). A range read ends on a step boundary (see "Time windows"), so it asks for the same window until the next one. An answer read while the window's end is under three minutes old (`RANGE_SETTLE_MS`: raw samples land late, and the ruler writes recorded series a minute or two after their timestamps) is reused for this value only, so a chart's newest point and a just-closed error bar are read again until they settle; once settled, for the read's step, five minutes at most and never less than this value. `0` keeps every read live, range reads included. Identical reads in flight at the same moment share one request whatever the value. A refused refresh (429, timeout, error) is answered from the last good read for up to 60 s (60 s past its reuse, for a range read) and retried next time; failures themselves and the readiness probe are never kept |
+| `METRICS_SNAPSHOT_TTL_MS` | `15000` | the base TTL of the metrics routes' response snapshot (see "Response snapshot"): windows up to 1h and the window-less routes keep an answer this long, and no answer is kept shorter. `0` turns the snapshot off: every request reads live and carries no `Age`. Read at boot |
 | `PROMETHEUS_USERNAME` / `PROMETHEUS_PASSWORD` | unset | Basic auth on every Prometheus call — for a per-tenant read proxy or Mimir behind an auth gateway. Both or neither: one half alone sends no header |
 | `PROMETHEUS_ORG_ID` | unset | Sent as `X-Scope-OrgID`, for a multi-tenant store that takes the org from the client. The fleet's read proxy pins the org from the credential and ignores this |
-| `ROUTER_SCOPE_LABEL` | `service` | Target label carrying the router identity for `?router=` (Prometheus Operator's `service`; `job` for a per-router scrape config). Parsed at import — a change needs a restart |
+| `ROUTER_SCOPE_LABEL` | unset | Target label carrying the router identity for `?router=`. Unset: resolved on first use — `router` (the fleet's collector and the chart's ServiceMonitor from 6.20.0 stamp it from the pod label `app.smart-router-id`), else `service` (the Prometheus Operator's automatic label, the router's Service name); never probed at boot, remembered once found. Set `job` for a scrape config that names jobs per router. Parsed at import — a change needs a restart |
 | `METRICS_SCOPE_LABEL` / `METRICS_SCOPE_VALUE` | unset | Deployment scope: a `label="value"` matcher EVERY metrics query carries (`cache_*`, router discovery and the `/query` passthrough included), for one dashboard per zone / tenant against a shared store. Both or neither — half a pair, a value that cannot sit in a matcher, or a label equal to `ROUTER_SCOPE_LABEL` refuses the boot. A scope that selects no router series warns at boot. Unset = the whole store, as before. See "The deployment scope" |
 | `CORS_ORIGINS` | all | comma list or JSON array |
 | `RATE_LIMIT_MAX` | `300` | per IP per minute |
@@ -720,9 +1030,14 @@ API (`apps/api/src/config.ts` is the source of truth):
 | `UPSTREAM_RELAY_TIMEOUT_MS` | `10000` | deadline on the api→upstream call |
 | `UPSTREAM_RELAY_MAX_BODY_BYTES` | `262144` | upstream responses past this come back `truncated: true` |
 | `UPSTREAM_RELAY_RATE_LIMIT_MAX` | `20` | per IP per minute, tighter than `RATE_LIMIT_MAX` |
+| `INCIDENTS_ENABLED` | off | exactly `true` turns on `POST /api/incidents`; anything else 404s it. With `AUTH_MODE=disabled` anyone who can reach the api may send a report, Critical included — opt-in per deployment. See [`docs/INCIDENTS.md`](docs/INCIDENTS.md) |
+| `INCIDENT_WEBHOOK_URL` | unset | the deployment's inbound webhook in our on-call system (Grafana IRM `formatted_webhook`). The URL is the credential — deliver it from a Secret, never a plain chart value. https only (http for a loopback mock). On with no usable URL logs an error at boot and every report answers 503; the boot is NOT refused |
+| `INCIDENT_WEBHOOK_TIMEOUT_MS` | `10000` | deadline on the api→IRM call |
+| `INCIDENT_RATE_LIMIT_MAX` | `3` | reports per caller per 10 minutes, keyed on `cf-connecting-ip` (the fleet sits behind Cloudflare) and falling back to the connection |
+| `INCIDENT_POD_MAX` | `10` | reports per api process per 5 minutes, every caller together — keeps a flood far below IRM's organisation budget (900 / 5 min), which fleet alerts share |
 | `LOKI_URL` | unset | Loki holding the router's logs, for the Transactions tab, the Errors tab's request list and the Failed requests card. Unset ⇒ they say they can't read them (`available:false`). Compose sets `http://loki:3100` (the `logs` profile). Read from the live env, so tests can set it |
 | `LOKI_TIMEOUT_MS` | `60000` | per-query abort — a day of router lines on a shared Loki takes seconds per read; keep it under the edge's cut (Cloudflare: 100 s) |
-| `LOKI_ROUTER_SELECTOR` | `{component="router"}` | LogQL stream selector for the router's lines - the label the fleet's log agent and the compose promtail both put on them; set it only where the router's streams carry other labels. The router must log at `info` |
+| `LOKI_ROUTER_SELECTOR` | `{component="router"}` | LogQL stream selector for the router's lines - the label the fleet's log agent and the compose promtail both put on them; set it only where the router's streams carry other labels. smart-router v1.6.1 and later write `relay_end` at every log level; an older router must log at `info` |
 | `LOKI_USERNAME` / `LOKI_PASSWORD` | unset | basic auth for Loki, sent only when both are set - e.g. a per-tenant read path that pins the org from the credential |
 | `LOKI_ORG_ID` | unset | sent as `X-Scope-OrgID`, for a Loki that takes the org from the client; unset sends no header |
 | `LOG_LEVEL` | `info` | |
@@ -764,7 +1079,7 @@ Web — build-time vs. **runtime**:
 | `DASHBOARD_API_URL` | (unset) | **runtime** override — read from the container env per-request by `GET /api/config`, so one published image serves any host |
 | `DASHBOARD_LOCAL_MODE` | (unset) | runtime override of `localMode`, same mechanism |
 | `DASHBOARD_GRAFANA_URL` | (unset) | Grafana base URL the "View full logs" button links to — runtime override via `/api/config`, same mechanism (falls back to `NEXT_PUBLIC_GRAFANA_URL`). Unset hides the button; the `logs` compose profile's Grafana is `http://localhost:3001` |
-| `DASHBOARD_NEW_UI` | (unset) | `true` (any case) draws the screens 0.28 introduced; anything else draws the 0.27 ones. Read per request by the root layout and handed down (`useNewUi()`), so one image serves both. See "Two UIs" below |
+| `INCIDENTS_ENABLED` | (unset) | `true` (any case) shows the top bar's **Report incident** button. Read per request by the `(app)` layout, not asked of the api, so the button still shows when the api is down. Set it with the api's |
 | `AUTH_MODE` / `AUTH_SECRET` | `disabled` / (unset) | must match the api; `enabled` renders the login page + edge gate |
 | `DEPLOYMENT_MODE` | `onprem` | must match the api. Surfaced to the browser by `GET /api/config`, so one image serves both shapes |
 | `INTERNAL_AUTH_SECRET` | (unset) | must match the api (which requires it under `AUTH_MODE=enabled`); lets the web forward the browser's real IP / User-Agent on sign-in and on the server-rendered previews |
@@ -802,7 +1117,12 @@ Compose / Makefile knobs:
   `.github/workflows/build-and-push.yml` publishes the api as
   `ghcr.io/magma-devs/smart-router-dashboard/backend` and the web as
   `…/frontend` (tags: `VERSION`, `major.minor`, `latest` on main; other
-  branches get a `-<branch>` suffix). Those image names are the ones the
+  branches get a `-<branch>` suffix, with any character a tag can't hold,
+  `/` among them, replaced by `-`). Each image is pushed by digest and
+  tagged only after `smoke-arm64` boots it (the `publish` job); on main,
+  `tag-release` then cuts the git tag and points `latest` and `major.minor`
+  at the highest `v*` release tag, so overlapping main runs cannot move
+  them backwards. Those image names are the ones the
   smart-router helm chart consumes, so the build target (`apps/api` /
   `apps/web`) maps onto them in the workflow matrix. `make build` reproduces
   the same images locally on an isolated buildx builder (`srdash-builder`) —
@@ -810,6 +1130,24 @@ Compose / Makefile knobs:
   serve the wrong project's `apps/api/package.json`
   (`ERR_PNPM_OUTDATED_LOCKFILE` mentioning `@info/shared`), so the `make
   build*` targets always pass `--builder srdash-builder`.
+- **One build stage for both architectures**: each Dockerfile builds on
+  `$BUILDPLATFORM` (plain-JS output; the api has no native module, and the
+  web never loads sharp, which `images.unoptimized` in `next.config.mjs`
+  pins and the web Dockerfile removes from the standalone output) and keeps
+  its runtime stage free of `RUN`, so a `linux/amd64,linux/arm64` build
+  compiles once and the workflow sets up no QEMU. Layers go lockfile +
+  package manifests → `pnpm install` → sources, so a code-only commit
+  reuses the install layer. The layer cache lives on GHCR
+  (`type=registry`): main writes `…/<image>:buildcache`, a branch writes
+  `…/<image>:buildcache-<branch>` and reads both, and a failed cache export
+  never fails a build. The api runtime image is a
+  `pnpm deploy --legacy --prod` tree under `apps/api/`: the `files` field
+  of each package manifest decides what ships, and it carries no
+  devDependencies, so `NODE_ENV=development` (the dev-only `pino-pretty`
+  transport) does not boot it. A `smoke-arm64` job pulls each image by
+  digest on an `ubuntu-24.04-arm` runner and waits for its health endpoint
+  (and the web's first page); no tag exists until it passes, so a failed
+  smoke leaves the version unpublished and reusable.
 
 ## Gotchas
 
@@ -818,9 +1156,11 @@ Compose / Makefile knobs:
 | ESM `.js` suffixes | `apps/api` + `packages/shared` use Node16 resolution — relative imports need `.js` suffixes even though source is `.ts`. `apps/web` uses bundler resolution (no suffixes). |
 | shared `dist` | api/web read `@sr/shared` from `dist/` — run `pnpm --filter @sr/shared build` after editing it (the docker dev `builder` service does this on a `tsc --watch`). |
 | Metric names | NOT `lava_rpcsmartrouter_*` — see Metrics above. The `../SR_Dashboard/` prototype is authoritative for **pixels**, not for metric names. |
-| Window params | `24h` is a wire alias of `1d`; unknown values silently fall back to `DEFAULT_WINDOW` = `30m` (never a 400). The web opens on the same constant, and a window the user picks persists to `localStorage` under `sr:window` — so a changed default only reaches someone who has never picked one. `1h` is in the catalog but not in the page-level select. |
+| Polling | A poll belongs in `useApi`: the per-window cadence and the idle gate live there, and a direct `useSWR` poll gets neither. While the gate has polling paused, `isPaused` refuses every revalidation, a `mutate()` included. A click or a key resumes polling before its handler runs, so a refresh a person asks for works; one fired by a timer does nothing until someone comes back. See "Polling" |
+| Window params | `24h` is a wire alias of `1d`; unknown values silently fall back to `DEFAULT_WINDOW` = `30m` (never a 400). The web opens on the same constant, and a window the user picks persists to `localStorage` under `sr:window` — so a changed default only reaches someone who has never picked one. The Metrics page's `?window=` beats both and is never saved. `1h` is in the catalog but not in the page-level select. |
 | Provider `role` | Only the helm values format marks backups (`is_backup`); with a raw SR_CONFIG mount, `role` is null and backup-share panels stay empty — that's honest, not a bug. |
 | Endpoint URLs | `localhost:<port>` comes from SR_CONFIG's listen ports, gateway hostnames from helm values' `publicUrls` — a mount never has both. Anything that renders or dials an endpoint address must resolve public → local → `—` (`epHttpUrl` / `epWsUrl` in `components/endpoints/bits.tsx`), never hardcode `localhost`. |
 | Health words | `HealthState` has exactly three states and exactly one wording — `lib/health.ts` / `<HealthTag>`. A panel that maps health to its own labels/colours is a bug, even when the words look nicer locally: the same upstream is read across panels. |
-| Two UIs (`DASHBOARD_NEW_UI`) | The 0.27 screens live under `apps/web/src/legacy/`, at their original paths and as 0.27.2 shipped them (only their imports point at each other), and draw when the flag is off — the default. The Metrics, standalone and Upstreams pages pick one on `newUiEnabled()`, server side. `Tip`, `LineChart` / `ColumnChart` and `RouterFilterSelect` pick inside themselves on `useNewUi()`, because screens that 0.28 left alone (Overview among them) draw them too. `Shell` (the chains drawer), Account, Team and Audit branch inline on `useNewUi()`. A change to a screen in `components/` reaches only the 0.28 UI; the api serves both, and none of its routes reads the flag. Retiring the flag = delete `legacy/` and those branches |
 | BuildKit cache | `make build*` targets use the isolated `srdash-builder` (see Docker / images / isolation). Plain `docker compose up --build` is fine for the stack itself. |
+| `RUN` in a runtime stage | CI builds the arm64 half of each image without QEMU, so a `RUN` in a Dockerfile's runtime stage fails there with `exec format error`. Do the work in the build stage and `COPY --from=builder`. A runtime break on arm64 (a dependency that loads a native binding at boot) shows up in the `smoke-arm64` job instead. |
+| Image `files` whitelist | The api image ships only what each package's `files` lists (`apps/api`: `dist`; `packages/db`: `dist` + `migrations`; `packages/shared`: `dist`). A runtime asset anywhere else (a template, a file read with `fs`) works in dev and fails only in the published image — put it under `dist` or add it to `files`. |

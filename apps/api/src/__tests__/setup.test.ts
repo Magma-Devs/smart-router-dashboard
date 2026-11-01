@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { createTestDb, type TestDb } from "@sr/db/testing";
 import { users } from "@sr/db";
 import { maybeSeedAdmin } from "../plugins/db.js";
+import { setPasswordCostForTests } from "../services/password.js";
 import {
   completeSetup,
   countActiveUsers,
@@ -212,6 +213,9 @@ describe("completeSetup", () => {
   });
 
   it("never hashes the password into the row in the clear", async () => {
+    // The cost this asserts is the production one. The suite's setup file
+    // lowers it for every other test; this is the one place that guards it.
+    setPasswordCostForTests(undefined);
     const password = "correct horse battery staple";
     const outcome = await completeSetup(t.db, { email: "a@example.com", password });
     expect(outcome.ok).toBe(true);

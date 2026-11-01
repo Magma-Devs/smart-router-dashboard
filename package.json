@@ -18,21 +18,23 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@next/eslint-plugin-next": "^16.4.0",
-    "eslint": "^10.12.0",
+    "eslint": "^10.13.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.12.0",
-    "prettier": "^3.9.9",
+    "prettier": "^3.9.10",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.71.0",
-    "vite": "^8.3.4",
-    "vitest": "^5.0.3"
+    "typescript-eslint": "^8.72.0",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
   },
   "pnpm": {
     "overrides": {
       "brace-expansion@<5.0.8": ">=5.0.8",
       "browserslist@<4.28.7": ">=4.28.7 <5",
       "esbuild@<0.25.0": ">=0.25.0",
+      "fast-copy@<4.1.0": ">=4.1.0 <5",
+      "fast-jwt@<6.3.4": ">=6.3.4 <7",
       "fast-uri@<3.1.8": ">=3.1.8 <4",
       "find-my-way@<9.7.0": ">=9.7.0",
       "ip-address@<10.7.1": ">=10.7.1 <11",

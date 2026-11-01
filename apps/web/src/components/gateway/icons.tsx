@@ -58,6 +58,13 @@ export const IconChart = svg(
     <line x1="6" y1="20" x2="6" y2="14" />
   </>,
 );
+export const IconReport = svg(
+  <>
+    <path d="M4 4a2 2 0 0 1 2-2h8l4 4v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" />
+    <polyline points="14 2 14 6 18 6" />
+    <path d="M8 17v-3m3 3v-6m3 6v-4" />
+  </>,
+);
 export const IconPlay = svg(<polygon points="5 3 19 12 5 21 5 3" />);
 export const IconSun = svg(
   <>
@@ -73,6 +80,13 @@ export const IconSun = svg(
   </>,
 );
 export const IconMoon = svg(<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />);
+export const IconAlert = svg(
+  <>
+    <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+    <line x1="12" y1="9" x2="12" y2="13" />
+    <line x1="12" y1="17" x2="12.01" y2="17" />
+  </>,
+);
 export const IconUsers = svg(
   <>
     <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
@@ -103,6 +117,21 @@ export const IconSearch = svg(
   <>
     <circle cx="11" cy="11" r="7" />
     <line x1="21" y1="21" x2="16.65" y2="16.65" />
+  </>,
+);
+/** A panel with its left side marked: the menu. The chevron says which way it goes. */
+export const IconMenuExpand = svg(
+  <>
+    <rect x="3" y="4" width="18" height="16" rx="2" />
+    <line x1="9" y1="4" x2="9" y2="20" />
+    <polyline points="13 10 15 12 13 14" />
+  </>,
+);
+export const IconMenuCollapse = svg(
+  <>
+    <rect x="3" y="4" width="18" height="16" rx="2" />
+    <line x1="9" y1="4" x2="9" y2="20" />
+    <polyline points="15 10 13 12 15 14" />
   </>,
 );
 

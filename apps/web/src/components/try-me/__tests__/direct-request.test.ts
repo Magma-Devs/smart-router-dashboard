@@ -107,6 +107,35 @@ describe("relayPayloadFor", () => {
   });
 });
 
+describe("relayPayloadFor — GraphQL", () => {
+  it("posts the envelope to the upstream's own url, with no path and no query text in one", () => {
+    const query = "{\n  chainIdentifier\n}";
+    const out = relayPayloadFor({
+      resolved: {
+        transport: "http",
+        httpMethod: "POST",
+        url: "http://localhost:3368",
+        body: { query },
+        contentType: "application/json",
+      },
+      paramsText: query,
+      iface: "graphql",
+      target: { ...TARGET, routerId: "SUI", node: "sui-graphql", wsIndex: null, wsHost: null },
+    });
+    expect(out).toEqual({
+      ok: true,
+      payload: {
+        routerId: "SUI",
+        node: "sui-graphql",
+        endpointIndex: 0,
+        transport: "http",
+        httpMethod: "POST",
+        body: { query },
+      },
+    });
+  });
+});
+
 describe("directAvailableFor", () => {
   it("follows the transport currently selected", () => {
     expect(directAvailableFor(TARGET, false)).toBe(true);

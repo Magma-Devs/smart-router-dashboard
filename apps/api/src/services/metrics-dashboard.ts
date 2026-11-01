@@ -23,6 +23,7 @@ import {
   qClientRps,
   qClientRpsSeriesExpr,
   rangeFor,
+  rateRange,
   selector,
   type DashboardChainMeta,
   type DashboardChainSeries,
@@ -31,7 +32,7 @@ import {
   type Kpi,
   type MetricWindow,
 } from "@sr/shared";
-import { WINDOWS, stepSeconds } from "@sr/shared/constants";
+import { WINDOWS, alignedBounds, stepSeconds } from "@sr/shared/constants";
 import type { PromMatrixSample, PrometheusClient } from "./prometheus-client.js";
 import { health, toGridPoints } from "./metrics.js";
 
@@ -78,10 +79,9 @@ export class MetricsDashboardService {
 
   async dashboard(window: MetricWindow, spec?: string): Promise<DashboardData> {
     const win = WINDOWS[window];
-    const end = Math.floor(Date.now() / 1000);
-    const start = end - win.rangeSeconds;
     const step = win.step; // Prometheus duration string (e.g. "5m") for queryRange
     const stepSec = stepSeconds(window); // numeric seconds for grid alignment
+    const { start, end } = alignedBounds(win.rangeSeconds, stepSec, Date.now() / 1000);
     const grid = { start, end, step: stepSec };
     const r = rangeFor(window);
     const sel = selector({ spec });
@@ -94,9 +94,9 @@ export class MetricsDashboardService {
     const range = (expr: string) => this.prom.queryRange(expr, start, end, step);
 
     // Per-chain availability-ratio series (success/total grouped by spec).
-    const perSpecSrExpr = `clamp_max(sum by (spec) (rate(${ROUTER_METRICS.requestsSuccessTotal}[${step}])) / sum by (spec) (rate(${ROUTER_METRICS.requestsTotal}[${step}])), 1)`;
+    const perSpecSrExpr = `clamp_max(sum by (spec) (rate(${ROUTER_METRICS.requestsSuccessTotal}[${rateRange(step)}])) / sum by (spec) (rate(${ROUTER_METRICS.requestsTotal}[${rateRange(step)}])), 1)`;
     // Per-upstream p95 — the endpoint histogram carries endpoint_id.
-    const perUpstreamLatencyExpr = `histogram_quantile(0.95, sum by (endpoint_id, le) (rate(${ENDPOINT_METRICS.latencyBucket}${sel}[${step}])))`;
+    const perUpstreamLatencyExpr = `histogram_quantile(0.95, sum by (endpoint_id, le) (rate(${ENDPOINT_METRICS.latencyBucket}${sel}[${rateRange(step)}])))`;
 
     const [successRate, p95Ms, rps, errorsNow, errorsPrior] = await Promise.all([
       kpi(qAvailability(spec, window), qAvailability(spec, window, r)),

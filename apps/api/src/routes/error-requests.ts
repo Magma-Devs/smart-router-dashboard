@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { toMetricWindow } from "@sr/shared";
 import { RANGE_QUERY_PROPERTIES, readRange, type RangeQuery } from "../services/read-range.js";
-import { REQUEST_ID } from "../services/error-requests.js";
+import { LOOKUP_ID } from "../services/error-requests.js";
 import { sendApiError } from "../plugins/error-handler.js";
 
 interface ErrorRequestsQuery extends RangeQuery {
@@ -75,14 +75,14 @@ export async function errorRequestRoutes(app: FastifyInstance) {
   app.get<{ Params: { guid: string }; Querystring: RangeQuery }>("/api/requests/:guid", {
     schema: {
       tags: ["Errors"],
-      summary: "One request by its ID (the router's GUID) from its logs: every try, what each upstream answered, what the app got",
-      params: { type: "object" as const, properties: { guid: { type: "string" as const, description: "The request ID - the GUID the router puts in its errors" } } },
+      summary: "One request by its ID (the router's GUID), its transaction hash or the caller's request ID, from its logs: every try, what each upstream answered, what the app got; matches = how many requests carry the value",
+      params: { type: "object" as const, properties: { guid: { type: "string" as const, description: "The request ID (the GUID the router puts in its errors), the transaction hash, or the caller's X-Request-Id" } } },
       querystring: { type: "object" as const, properties: { ...RANGE_QUERY_PROPERTIES } },
     },
   }, async (request, reply) => {
     const { guid } = request.params;
-    if (!REQUEST_ID.test(guid)) {
-      sendApiError(reply, 400, "not a request ID: letters, digits, - and _ only, up to 64");
+    if (!LOOKUP_ID.test(guid)) {
+      sendApiError(reply, 400, "not a request ID, transaction hash or caller's request ID: letters, digits and _ - . : + = @ only, up to 128");
       return reply;
     }
     const range = readRange(request.query);

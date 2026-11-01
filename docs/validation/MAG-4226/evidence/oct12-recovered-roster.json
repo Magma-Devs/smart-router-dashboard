@@ -1,0 +1,64 @@
+{
+  "upstreams": [
+    {
+      "endpointId": "eth-publicnode",
+      "spec": "ETH1",
+      "requests": 11,
+      "uptime": 1,
+      "p95Ms": 374.9999999999998,
+      "errorRate": 0,
+      "scores": {
+        "availability": 0.9893577927177446,
+        "composite": 0.9275616650200386,
+        "latency": 0.964443236558019,
+        "stake": 0.7071067811865476,
+        "sync": 1
+      },
+      "scoreSource": "optimizer",
+      "polls": {
+        "ok": 23,
+        "failed": 0
+      },
+      "health": "operational",
+      "healthReason": "The router's live health check reports this upstream operational.",
+      "latestBlock": 26176177,
+      "blockLag": 0,
+      "behindSec": 0,
+      "stale": false,
+      "role": null,
+      "apiInterface": "jsonrpc",
+      "inFlight": 0,
+      "routerIds": ["ETH1"]
+    },
+    {
+      "endpointId": "fixture-switchable",
+      "spec": "ETH1",
+      "requests": 0,
+      "uptime": null,
+      "p95Ms": null,
+      "errorRate": null,
+      "scores": {
+        "availability": 0,
+        "composite": 0.01,
+        "latency": 0.8978819797423345,
+        "stake": 0.7071067811865476,
+        "sync": 0.5719342018573212
+      },
+      "scoreSource": "optimizer",
+      "polls": {
+        "ok": 15,
+        "failed": 2
+      },
+      "health": "operational",
+      "healthReason": "The router's live health check reports this upstream operational.",
+      "latestBlock": 26176177,
+      "blockLag": 0,
+      "behindSec": 0,
+      "stale": false,
+      "role": null,
+      "apiInterface": "jsonrpc",
+      "inFlight": 0,
+      "routerIds": ["ETH1"]
+    }
+  ]
+}

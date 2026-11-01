@@ -4,8 +4,11 @@ import {
   PASSWORD_MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
   checkPasswordBreached,
+  hashPassword,
+  setPasswordCostForTests,
   validatePassword,
   validatePasswordShape,
+  verifyPassword,
 } from "../services/password.js";
 
 const savedEnv: Record<string, string | undefined> = {};
@@ -147,5 +150,24 @@ describe("validatePassword", () => {
   it("lets a good password through", async () => {
     stubHibp("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA:1\n");
     expect(await validatePassword("correct horse battery staple")).toBeNull();
+  });
+});
+
+describe("hashPassword", () => {
+  // bcrypt writes the cost into the hash — `$2b$04$…` — so the prefix shows
+  // which cost a hash was made at, and `verifyPassword` reads it from there.
+  it("hashes at the cost the suite set, and at the production cost once it is put back", async () => {
+    expect(await hashPassword(HUNTER)).toMatch(/^\$2[aby]\$04\$/);
+    setPasswordCostForTests(undefined);
+    expect(await hashPassword(HUNTER)).toMatch(/^\$2[aby]\$12\$/);
+  });
+
+  it("verifies a hash made at either cost", async () => {
+    const cheap = await hashPassword(HUNTER);
+    setPasswordCostForTests(undefined);
+    const production = await hashPassword(HUNTER);
+    expect(await verifyPassword(HUNTER, cheap)).toBe(true);
+    expect(await verifyPassword(HUNTER, production)).toBe(true);
+    expect(await verifyPassword("not it", cheap)).toBe(false);
   });
 });

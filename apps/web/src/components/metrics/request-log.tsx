@@ -7,13 +7,16 @@
  * Attempts sent together sit side by side (a transaction's broadcast); one
  * batch after another is joined by arrows (a retry). The attempt whose
  * response was returned to the client is marked "→ client". An error the router didn't
- * classify shows the node's own words - there is no "unknown error" here. */
+ * classify shows the node's own words - there is no "unknown error" here.
+ * An opened row is drawn by request-breakdown.tsx. */
 
-import { Fragment, useState } from "react";
-import { buildChainMetaByIndex, type LogUnavailable, type RelayAttempt } from "@sr/shared";
+import { Fragment, useCallback, useState } from "react";
+import { buildChainMetaByIndex, explorerTxUrl, guidMintedSecond, type LogUnavailable, type RelayAttempt } from "@sr/shared";
 import { SkelRows, type SkelCol } from "@/components/gateway/Skel";
-import { errorDocsUrl } from "@/lib/error-docs";
+import { CopyButton } from "@/components/gateway/CopyButton";
+import { useGrafanaUrl } from "@/hooks/use-grafana-url";
 import { fmtComma } from "@/lib/format";
+import { requestLogsHref } from "@/lib/grafana-logs";
 
 /** The router's error code in plain words: NODE_RATE_LIMITED → "rate limited". */
 export function codeWords(code: string): string {
@@ -49,32 +52,43 @@ export function errorType(a: RelayAttempt): { key: string; label: string } {
   return { key: "msg:" + m, label: clip(m) };
 }
 
+/** A row the error type filter reads: its tries, and the request's own code where the router names one. */
+interface ErrorTyped {
+  attempts: RelayAttempt[];
+  errorCode?: string | null;
+}
+
+/** A row's error types, key → label: each failed try's, and the request's own
+ *  code - a write the router couldn't settle names one when no try failed. */
+function errorTypesOf(r: ErrorTyped): Map<string, string> {
+  const types = new Map<string, string>();
+  for (const a of r.attempts) {
+    if (a.outcome !== "failed") continue;
+    const t = errorType(a);
+    types.set(t.key, t.label);
+  }
+  if (r.errorCode && r.errorCode !== "UNKNOWN_ERROR") types.set(r.errorCode, codeWords(r.errorCode));
+  return types;
+}
+
 /** The error types in these rows, most common first, each with how many rows have it. */
-export function errorTypeOptions(rows: { attempts: RelayAttempt[] }[]): { key: string; label: string; count: number }[] {
+export function errorTypeOptions(rows: ErrorTyped[]): { key: string; label: string; count: number }[] {
   const seen = new Map<string, { label: string; count: number }>();
   for (const r of rows) {
-    const types = new Map<string, string>();
-    for (const a of r.attempts) {
-      if (a.outcome !== "failed") continue;
-      const t = errorType(a);
-      types.set(t.key, t.label);
-    }
-    for (const [key, label] of types) seen.set(key, { label, count: (seen.get(key)?.count ?? 0) + 1 });
+    for (const [key, label] of errorTypesOf(r)) seen.set(key, { label, count: (seen.get(key)?.count ?? 0) + 1 });
   }
   return [...seen]
     .map(([key, v]) => ({ key, ...v }))
     .sort((x, y) => y.count - x.count || x.label.localeCompare(y.label));
 }
 
-export function hasErrorType(r: { attempts: RelayAttempt[] }, key: string): boolean {
-  return r.attempts.some((a) => a.outcome === "failed" && errorType(a).key === key);
+export function hasErrorType(r: ErrorTyped, key: string): boolean {
+  return errorTypesOf(r).has(key);
 }
 
+/** A row's time, always with its date: a list can span midnight, and a time alone doesn't say which day. */
 export function fmtWhen(ms: number): string {
-  const d = new Date(ms);
-  return d.toDateString() === new Date().toDateString()
-    ? d.toLocaleTimeString("en-US", { hour12: false })
-    : d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+  return new Date(ms).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
 }
 
 export function fmtTook(ms: number | null): string {
@@ -92,12 +106,13 @@ const MARK: Record<RelayAttempt["outcome"], string> = { ok: "✓", failed: "✗"
  * anyone who hadn't read the tooltip, and a red one beside an orange "Node
  * error" read as two different things.
  */
-function Step({ a, replyColor }: { a: RelayAttempt; replyColor?: string }) {
+function Step({ a, replyColor, quiet = false }: { a: RelayAttempt; replyColor?: string; quiet?: boolean }) {
   const mark = MARK[a.outcome];
   const markColor = a.outcome === "ok" ? "var(--ok)" : a.outcome === "failed" ? "var(--err)" : "var(--text-4)";
   const appColor = replyColor ?? (a.outcome === "ok" ? "var(--ok)" : a.outcome === "failed" ? "var(--warn)" : "var(--text-3)");
   const note =
-    a.outcome === "failed" ? errorLabel(a)
+    quiet ? ""
+    : a.outcome === "failed" ? errorLabel(a)
       : a.outcome === "skipped" ? "skipped"
         : a.outcome === "cancelled" ? "cancelled"
           : a.outcome === "no-result" ? (a.replied ? "responded" : "no response")
@@ -124,11 +139,13 @@ export function stopMarker(row: { exhausted: boolean; stopReason: string | null;
 }
 
 /** Every try as a chip: side by side within a batch, arrows between batches. */
-export function Flow({ attempts, end = null, replyColor }: {
+export function Flow({ attempts, end = null, replyColor, quietReplied = false }: {
   attempts: RelayAttempt[];
   end?: { text: string; title: string } | null;
   /** The row's result colour - the attempt whose response was returned is outlined in it. */
   replyColor?: string;
+  /** The row's Result column already names the returned error: its chip doesn't say it again. */
+  quietReplied?: boolean;
 }) {
   const batches: RelayAttempt[][] = [];
   for (const a of attempts) {
@@ -142,7 +159,7 @@ export function Flow({ attempts, end = null, replyColor }: {
       {batches.map((b, i) => (
         <Fragment key={i}>
           {i > 0 && arrow}
-          {b.map((a, j) => <Step key={j} a={a} replyColor={replyColor} />)}
+          {b.map((a, j) => <Step key={j} a={a} replyColor={replyColor} quiet={quietReplied && a.replied} />)}
         </Fragment>
       ))}
       {end && (
@@ -155,58 +172,10 @@ export function Flow({ attempts, end = null, replyColor }: {
   );
 }
 
-const OUTCOME_WORDS: Record<RelayAttempt["outcome"], string> = {
-  ok: "succeeded",
-  failed: "failed",
-  skipped: "skipped",
-  cancelled: "cancelled",
-  "no-result": "no response logged",
-};
-
-/** A row of the details: a time on the left, anything on the right. */
-export function DetailLine({ at, children }: { at?: string; children: React.ReactNode }) {
-  return (
-    <div style={{ display: "grid", gridTemplateColumns: "64px 1fr", gap: 10, alignItems: "baseline" }}>
-      <span className="gw-mono gw-tnum" style={{ fontSize: 11, color: "var(--text-4)" }}>{at ?? ""}</span>
-      <div style={{ minWidth: 0 }}>{children}</div>
-    </div>
-  );
-}
-
-export const detailText: React.CSSProperties = { fontSize: 11.5, color: "var(--text-2)", marginTop: 3, lineHeight: 1.55, wordBreak: "break-word" };
-
-/** Every try in full, when a row is opened: when it went out, what came back
- *  and how long that took, the router's reasoning, and the words themselves. */
-export function AttemptList({ attempts }: { attempts: RelayAttempt[] }) {
-  return (
-    <>
-      {attempts.map((a, i) => (
-        <DetailLine key={i} at={`+${fmtComma(a.atMs)} ms`}>
-          <div style={{ fontSize: 12, color: "var(--text-2)" }}>
-            <span className="gw-mono" style={{ color: "var(--text)" }}>{a.upstream}</span>
-            {" - "}
-            {a.outcome === "no-result" && a.replied ? "responded" : OUTCOME_WORDS[a.outcome]}
-            {a.endMs != null && a.outcome !== "skipped" && <span style={{ color: "var(--text-3)" }}> after {fmtTook(a.endMs - a.atMs)}</span>}
-            {a.replied && <span style={{ color: "var(--text-3)" }}> · response returned to the client</span>}
-            {realCode(a) && (
-              <> · <a className="gw-mono" href={errorDocsUrl(a.code!)} target="_blank" rel="noopener noreferrer" style={{ color: "var(--text-3)" }}>{a.code}</a></>
-            )}
-            {a.outcome === "failed" && a.retryable != null && (
-              <span style={{ color: "var(--text-4)" }}> · {a.retryable ? "retryable" : "not retryable"}</span>
-            )}
-          </div>
-          {a.note && <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 3, lineHeight: 1.5 }}>{a.note}</div>}
-          {a.message && <div className="gw-mono" style={detailText}>{a.message}</div>}
-        </DetailLine>
-      ))}
-    </>
-  );
-}
-
 /** The words the app got back, when a request ended in an error: the
  *  answering upstream's own message, or the router's. Null otherwise. */
 export function appGot(row: { result: string; attempts: RelayAttempt[]; error: string | null }): string | null {
-  if (row.result === "failed") return row.error;
+  if (row.result === "failed" || row.result === "write-unknown") return row.error;
   if (row.result !== "error-reply" && row.result !== "rejected") return null;
   const replied = row.attempts.find((a) => a.replied);
   return replied ? replied.message ?? (replied.code ? codeWords(replied.code) : null) : null;
@@ -323,25 +292,97 @@ export function TimeRangeControl({ range, onChange, windowLabel, windowMs }: {
   );
 }
 
-/** "Find a request by ID" - the box both log lists carry. */
+/** Clicks inside an opened row's own controls stay there: a copy or a link doesn't fold the row. */
+const keepClick = (e: React.MouseEvent) => e.stopPropagation();
+
+/** A row's time: the hour, and under it the date and the caller's project when the request named one. */
+export function WhenCell({ time, customer }: { time: number; customer?: string }) {
+  const d = new Date(time);
+  const date = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return (
+    <>
+      <span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{d.toLocaleTimeString("en-US", { hour12: false })}</span>
+      <span title={customer ? undefined : "No customer: the caller sent no project-id header"}
+        style={{ display: "block", marginTop: 4, fontSize: 10.5, color: "var(--text-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {date}
+        {customer && <span className="gw-mono" title={`Customer - the project-id header the caller sent: ${customer}`}> · {customer}</span>}
+      </span>
+    </>
+  );
+}
+
+/** The customer filter's key for requests that carried none. */
+export const NO_CUSTOMER = "\u0000none";
+
+/** The customers in these rows, by name, each with its count; "no customer" last, when some carried none. */
+export function customerOptions(rows: { customer?: string }[]): { key: string; label: string; count: number }[] {
+  const n = new Map<string, number>();
+  for (const r of rows) n.set(r.customer ?? NO_CUSTOMER, (n.get(r.customer ?? NO_CUSTOMER) ?? 0) + 1);
+  const named = [...n].filter(([k]) => k !== NO_CUSTOMER).sort(([a], [b]) => a.localeCompare(b)).map(([key, count]) => ({ key, label: key, count }));
+  const none = n.get(NO_CUSTOMER);
+  return none ? [...named, { key: NO_CUSTOMER, label: "No customer", count: none }] : named;
+}
+
+export const hasCustomer = (r: { customer?: string }, key: string) => (r.customer ?? NO_CUSTOMER) === key;
+
+/** A hash too long for a cell, as its two ends: 0x8f3a91…a91c2. */
+export const shortHash = (h: string) => (h.length > 16 ? `${h.slice(0, h.startsWith("0x") ? 8 : 6)}…${h.slice(-6)}` : h);
+
+/**
+ * A transaction's hash, to copy, linked to the chain's explorer where a
+ * transaction page is known (explorerTxUrl) - plain text where it isn't.
+ * `full` writes it out whole, for the details.
+ */
+export function TxHash({ hash, spec, full = false }: { hash: string; spec: string | null; full?: boolean }) {
+  const url = spec ? explorerTxUrl(spec, hash) : null;
+  const text = full ? hash : shortHash(hash);
+  const style: React.CSSProperties = { fontSize: full ? 11.5 : 10.5, wordBreak: full ? "break-all" : undefined, whiteSpace: full ? undefined : "nowrap" };
+  return (
+    <span onClick={keepClick} style={{ display: "inline-flex", alignItems: "center", gap: 6, minWidth: 0, maxWidth: "100%" }}>
+      {url
+        ? <a className="gw-mono" href={url} target="_blank" rel="noopener noreferrer" title={`${hash} - on the chain's explorer`} style={{ ...style, color: "var(--brand)", textDecoration: "none" }}>{text}{full ? "" : " ↗"}</a>
+        : <span className="gw-mono" title={hash} style={{ ...style, color: "var(--text-3)" }}>{text}</span>}
+      <CopyButton text={hash} />
+    </span>
+  );
+}
+
+/** "Logs ↗": the request's own lines on the Grafana logs board, a minute either side of it. Nothing without a Grafana. */
+export function RequestLogsLink({ id, startMs, tookMs }: { id: string; startMs: number; tookMs: number | null }) {
+  const grafana = useGrafanaUrl();
+  if (!grafana) return null;
+  return (
+    <a href={requestLogsHref(grafana, id, startMs, tookMs)} target="_blank" rel="noopener noreferrer"
+      title="Every line the router wrote for this request, on the Grafana logs board"
+      style={{ color: "var(--brand)", fontWeight: 600, textDecoration: "none", whiteSpace: "nowrap" }}>
+      Logs ↗
+    </a>
+  );
+}
+
+/** "Find a request" - the box both log lists carry: by Smart Router's ID for it, or its transaction hash. */
 export function IdSearch({ onFind }: { onFind: (id: string) => void }) {
   const [draft, setDraft] = useState("");
   const id = draft.trim();
   return (
     <form onSubmit={(e) => { e.preventDefault(); if (id) onFind(id); }} style={{ display: "flex", gap: 6 }}>
-      <input aria-label="Request ID" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Find a request by ID"
-        className="gw-mono" style={{ ...filterSelectStyle, width: 210, fontSize: 11.5 }} />
+      <input aria-label="Request ID" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Request ID or tx hash"
+        title="Smart Router's request ID, or a transaction's hash"
+        className="gw-mono" style={{ ...filterSelectStyle, width: 240, fontSize: 11.5 }} />
       <button type="submit" disabled={!id} style={{ ...filterSelectStyle, cursor: id ? "pointer" : "default", color: id ? "var(--text)" : "var(--text-4)" }}>Find</button>
     </form>
   );
 }
 
-/** Where a looked-up request sits, above the list: its ID, its result, a way out. The body is the tab's own. */
-export function LookupFrame({ id, tag, onClose, children }: { id: string; tag?: React.ReactNode; onClose: () => void; children: React.ReactNode }) {
+/** Where a looked-up request sits, above the list: what was looked up, its result, a way out. The body is the tab's own.
+ *  `found`: the request's own ID, once read - the body names it, so the header doesn't repeat it. */
+export function LookupFrame({ id, found, tag, onClose, children }: { id: string; found?: string; tag?: React.ReactNode; onClose: () => void; children: React.ReactNode }) {
   return (
     <div style={{ borderBottom: "1px solid var(--line)", background: "var(--bg-2)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px" }}>
-        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-2)" }}>Request <span className="gw-mono">{id}</span></span>
+        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-2)" }}>
+          {found === id ? "Request found" : <>Looked up <span className="gw-mono">{id}</span></>}
+        </span>
         {tag}
         <span style={{ flex: 1 }} />
         <button onClick={onClose} aria-label="Close" style={{ border: "none", background: "none", color: "var(--text-3)", cursor: "pointer", fontSize: 14, padding: 0, fontFamily: "inherit" }}>✕</button>
@@ -351,12 +392,29 @@ export function LookupFrame({ id, tag, onClose, children }: { id: string; tag?: 
   );
 }
 
-/** A look-up that found nothing in the range it read - the month is one click, never the default: it reads every line in it. */
-export function NotFound({ rangeWords, wide, onWiden }: { rangeWords: string; wide: boolean; onWiden: () => void }) {
+/** What a look-up couldn't read the value as, in words: the shapes it takes. */
+export const LOOKUP_REFUSED = "Couldn't look this up: it isn't a request ID, a transaction hash or a caller's request ID (letters, digits and _ - . : + = @), or the API didn't answer.";
+
+/** Several requests carry the value - a transaction sent again keeps its hash: the newest is shown. */
+export function MatchesNote({ matches }: { matches?: number }) {
+  if (!matches || matches < 2) return null;
+  return <div style={{ fontSize: 11.5, color: "var(--text-4)" }}>{fmtComma(matches)} requests carry this value in the range read; this is the newest.</div>;
+}
+
+/**
+ * A look-up that found nothing in the range it read - the month is one click,
+ * never the default: it reads every line in it. An ID from smart-router
+ * v1.6.1 on carries the second it was minted, and the look-up has read the
+ * logs around it already, so it gets no month.
+ */
+export function NotFound({ id, rangeWords, wide, onWiden }: { id: string; rangeWords: string; wide: boolean; onWiden: () => void }) {
+  const [minted] = useState(() => guidMintedSecond(id, Date.now() / 1000));
   return (
     <div style={{ color: "var(--text-4)", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-      No request with this ID in the router&apos;s logs {wide ? "of the last 30 days" : rangeWords}.
-      {!wide && (
+      No request with this ID or hash in the router&apos;s logs {wide ? "of the last 30 days" : rangeWords}.
+      {minted !== null ? (
+        <span>Its ID dates it to {fmtWhen(minted * 1000)}, and the logs around then don&apos;t have it either.</span>
+      ) : !wide && (
         <button onClick={onWiden} style={{ border: "none", background: "none", color: "var(--brand)", cursor: "pointer", padding: 0, fontSize: 12, fontWeight: 600, fontFamily: "inherit" }}>
           Search the last 30 days
         </button>
@@ -383,6 +441,42 @@ export function OlderRowsLoading({ show }: { show: boolean }) {
 }
 
 /** A line across a log table, under its header - what the list holds, or why it holds less. */
+/** While a row is open the list holds still: it keeps the rows it showed when the row was opened
+ *  (each updated while a read still has it), adds older ones as they load, and counts the newer ones
+ *  instead of showing them. A poll used to shift the open row down the page, and off it - on a busy
+ *  chain the newest 300 are all new within a minute. Closing it lets the list catch up. */
+export function useHeldRows<T extends { guid: string; time: number }>(rows: T[], open: string | null) {
+  const [snap, setSnap] = useState<T[] | null>(null);
+  if (!open && snap) setSnap(null);
+  // Not on an empty list: opening a row writes the URL, and the list reads afresh, empty for a moment.
+  if (open && !snap && rows.length) setSnap(rows);
+  if (!snap) return { rows, newCount: 0, showNew: () => {} };
+  const live = new Map(rows.map((r) => [r.guid, r]));
+  const inSnap = new Set(snap.map((r) => r.guid));
+  const newestHeld = snap.reduce((m, r) => Math.max(m, r.time), 0);
+  const oldestHeld = snap.reduce((m, r) => Math.min(m, r.time), Infinity);
+  const held = [
+    ...snap.map((r) => live.get(r.guid) ?? r),
+    ...rows.filter((r) => !inSnap.has(r.guid) && r.time < oldestHeld),
+  ];
+  const showNew = () => {
+    const openRow = held.find((r) => r.guid === open);
+    setSnap(openRow && !live.has(openRow.guid) ? [...rows, openRow].sort((a, b) => b.time - a.time) : rows);
+  };
+  return { rows: held, newCount: rows.filter((r) => !inSnap.has(r.guid) && r.time > newestHeld).length, showNew };
+}
+
+/** Above a held list: how many arrived since a row was opened, and a way to show them. */
+export function NewRowsStrip({ count, noun, onShow }: { count: number; noun: string; onShow: () => void }) {
+  if (!count) return null;
+  return (
+    <LogStrip>
+      {fmtComma(count)} new {count === 1 ? noun : `${noun}s`} ·{" "}
+      <button type="button" onClick={onShow} style={{ border: "none", background: "none", padding: 0, color: "var(--brand)", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Show</button>
+    </LogStrip>
+  );
+}
+
 export function LogStrip({ tone = "quiet", children }: { tone?: "quiet" | "warn"; children: React.ReactNode }) {
   return (
     <div role={tone === "warn" ? "status" : undefined} style={{
@@ -418,10 +512,21 @@ export function UnreadStrip({ count, noun, bound, covers }: { count: number; nou
   );
 }
 
+/** The most candidate chains a row names; past this it says how many, and `chainsTitle` lists them. */
+const CHAIN_WORDS_MAX = 3;
+
 /** A row's chain - or the chains it could be on, when its upstreams serve several. */
 export function chainWords(row: { spec: string | null; specs?: string[] }): string {
   if (row.spec) return buildChainMetaByIndex(row.spec).name;
-  return row.specs?.length ? row.specs.map((s) => buildChainMetaByIndex(s).name).join(" or ") : "—";
+  if (!row.specs?.length) return "—";
+  if (row.specs.length > CHAIN_WORDS_MAX) return `One of ${row.specs.length} chains`;
+  return row.specs.map((s) => buildChainMetaByIndex(s).name).join(" or ");
+}
+
+/** The hover text of a row whose chain the logs don't name: every chain its upstreams serve. */
+export function chainsTitle(row: { spec: string | null; specs?: string[] }): string | undefined {
+  if (row.spec || !row.specs?.length) return undefined;
+  return `The logs don't name this request's chain. Its upstreams serve ${row.specs.length === 1 ? "one" : `these ${row.specs.length}`}: ${row.specs.map((s) => buildChainMetaByIndex(s).name).join(", ")}`;
 }
 
 /** Enter and Space open a row, as a click does. */
@@ -435,7 +540,39 @@ export const onRowKey = (toggle: () => void) => (e: React.KeyboardEvent) => {
 /** A picked range still growing (it ends within the last minute): worth polling. */
 export const rangeIsLive = (r: ExactRange | null) => !r || r.to > Date.now() - 60_000;
 
+/** The sticky list header's height, as the card's `--list-head`, for the column headers stuck under it. */
+export function useListHeadHeight(): [React.RefCallback<HTMLDivElement>, React.CSSProperties] {
+  const [h, setH] = useState(0);
+  const ref = useCallback((el: HTMLDivElement | null) => {
+    if (!el) return;
+    const ro = new ResizeObserver(() => setH(Math.floor(el.getBoundingClientRect().height)));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return [ref, { ["--list-head" as string]: `${h}px` }];
+}
+
+/** A log list's header - its title, counts and filters - held under the page's top bar (`.gw-top`, 56 px) while the rows scroll.
+ *  Its card must clip with `overflow: clip`, not `hidden`: `hidden` makes the card the scroll container and the header never sticks. */
+export const stickyListHeader: React.CSSProperties = {
+  position: "sticky", top: 56, zIndex: 4, background: "var(--surface)",
+  padding: "12px 16px", borderBottom: "1px solid var(--line)", display: "grid", gap: 10,
+};
+
 export const filterSelectStyle: React.CSSProperties = { height: 32, padding: "0 10px", borderRadius: 8, border: "1px solid var(--line-2)", background: "var(--surface)", color: "var(--text)", fontSize: 12, fontFamily: "inherit", maxWidth: 320 };
+
+/** A filter dropdown with the page's own chevron, 10 px in from the right as
+ *  the text is from the left. The browser's arrow sat against the border, a
+ *  different distance in each browser. */
+export function FilterSelect({ style, disabled, ...props }: React.SelectHTMLAttributes<HTMLSelectElement>) {
+  return (
+    <span style={{ position: "relative", display: "inline-flex", alignItems: "center", maxWidth: style?.maxWidth }}>
+      <select {...props} disabled={disabled} style={{ ...style, appearance: "none", WebkitAppearance: "none", paddingRight: 28, minWidth: 0 }} />
+      <svg aria-hidden width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+        style={{ position: "absolute", right: 10, pointerEvents: "none", opacity: disabled ? 0.5 : 1 }}><polyline points="6 9 12 15 18 9" /></svg>
+    </span>
+  );
+}
 
 export function Pager({ page, pageCount, total, perPage, noun, onPage, more }: {
   page: number; pageCount: number; total: number; perPage: number; noun: string; onPage: (p: number) => void;

@@ -106,6 +106,24 @@ describe("snippetsFor — HTTP POST (JSON-RPC)", () => {
   });
 });
 
+describe("snippetsFor — GraphQL", () => {
+  const GRAPHQL: ResolvedRequest = {
+    transport: "http",
+    httpMethod: "POST",
+    url: "http://localhost:3368",
+    body: { query: "{\n  checkpoint {\n    digest\n  }\n}" },
+    contentType: "application/json",
+  };
+
+  it("CLI: the envelope on one line, the query's newlines escaped inside it", () => {
+    const cli = snippetsFor(GRAPHQL).cli[0]?.code ?? "";
+    expect(cli).toContain('-X POST "http://localhost:3368"');
+    expect(cli).toContain(`-d '{"query":"{\\n  checkpoint {\\n    digest\\n  }\\n}"}'`);
+    // curl, the Content-Type header, the body: the query adds no lines.
+    expect(cli.split("\n")).toHaveLength(3);
+  });
+});
+
 describe("snippetsFor — HTTP GET (REST)", () => {
   it("CLI: bare curl with no -X / no body", () => {
     const cli = snippetsFor(GET).cli[0]?.code ?? "";

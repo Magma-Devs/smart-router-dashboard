@@ -4,36 +4,43 @@
  * first, from the router's logs (/api/error-requests): each try's upstream
  * and what it answered, what the app got, and why the router stopped.
  * Filters: the result, whether the error was retryable, the error type, the
- * method and the upstream (chain and router come from the page). An exact
+ * customer, the method and the upstream (chain and router come from the page). An exact
  * time range zooms into an incident - a bar on the Upstreams tab opens the
  * list on its own - and "Load older" reads on past one read's cap. The chips
  * and details are shared with the Transactions tab (request-log.tsx). */
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { WINDOWS, type ErrorRequestRow, type ErrorRequestsReport, type MetricWindow, type RequestLookup } from "@sr/shared";
+import { WINDOWS, WRITE_UNKNOWN_NOTE, explainRouterError, type ErrorRequestRow, type ErrorRequestsReport, type MetricWindow, type RequestLookup } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { useLogReads } from "@/hooks/use-log-reads";
 import { useRouterFilter } from "@/hooks/use-router-options";
 import { Refreshing, SkelLine, SkelRows } from "@/components/gateway/Skel";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
-import { CopyButton } from "@/components/gateway/CopyButton";
 import { Tip } from "@/components/gateway/Tip";
 import { TT } from "@/lib/tooltips";
 import { fmtComma } from "@/lib/format";
+import { linkRequest, requestFromUrl } from "@/lib/request-in-url";
 import {
   AppGot,
   appGot,
-  AttemptList,
-  DetailLine,
-  detailText,
+  customerOptions,
+  hasCustomer,
+  LOOKUP_REFUSED,
+  MatchesNote,
   errorLabel,
   errorTypeOptions,
+  FilterSelect,
+  NewRowsStrip,
+  useHeldRows,
+  WhenCell,
+  stickyListHeader,
+  useListHeadHeight,
   filterSelectStyle,
   Flow,
   fmtTook,
-  fmtWhen,
   hasErrorType,
   chainWords,
+  chainsTitle,
   IdSearch,
   LOG_SKEL_COLS,
   ResponseSource,
@@ -51,6 +58,7 @@ import {
   UnreadStrip,
   type ExactRange,
 } from "./request-log";
+import { RequestBreakdown, type BreakdownProps, type FinalAnswer } from "./request-breakdown";
 
 const PER_PAGE = 25;
 export const ALL = "all";
@@ -77,9 +85,13 @@ export const RESULT: Record<ErrorRequestRow["result"], { label: string; color: s
     color: "var(--err)",
     hint: "Router error: no upstream returned a usable response (timeouts, connection errors, rate limits, HTTP 5xx), so the router returned its own error, typically \"insufficient results\".",
   },
-  unknown: { label: "Unknown", color: "var(--text-4)", hint: "No completion logged: the request may still be in flight, or the client disconnected." },
+  // The Transactions tab's "Unknown", in its words: the same request reads the same on both tabs.
+  "write-unknown": { label: "Unknown", color: "var(--text-4)", hint: `Unknown: ${WRITE_UNKNOWN_NOTE}` },
+  unknown: { label: "No end logged", color: "var(--text-4)", hint: "No end logged: the request may still be in flight, or the client disconnected." },
 };
-const RESULT_ORDER: ErrorRequestRow["result"][] = ["recovered", "error-reply", "failed", "unknown"];
+const RESULT_ORDER: ErrorRequestRow["result"][] = ["recovered", "error-reply", "failed", "write-unknown", "unknown"];
+/** Rare results: a pill only while the list holds one. */
+const RARE: ReadonlySet<ErrorRequestRow["result"]> = new Set(["write-unknown", "unknown"]);
 
 /** Did this upstream's own attempt fail - no response, or an error response?
  *  What the upstream filter keeps, and what its bar on the Upstreams tab
@@ -130,28 +142,42 @@ function ResultTag({ row }: { row: ErrorRequestRow }) {
 
 type RetryFilter = typeof ALL | "retryable" | "not-retryable";
 
-/** Every try in full, when a row is opened: the words, not just the type. */
+/** Why the router stopped retrying, when it stopped short of an answer. */
+function retriesWords(r: ErrorRequestRow): string | null {
+  if (r.exhausted) return "All providers tried";
+  if (r.stopReason === "NonRetryableNodeError") return "Not retried: another provider would return the same error";
+  if (r.stopReason === "ProcessingTimeout") return "Stopped at the router's time limit";
+  return null;
+}
+
+/** The response's status: the word, its colour, and a detail where the code doesn't carry one. */
+export function statusOf(r: ErrorRequestRow): BreakdownProps["status"] {
+  switch (r.result) {
+    case "ok": return { label: "Success", color: "var(--ok)" };
+    case "recovered": return { label: "Success", color: "var(--ok)", detail: null };
+    case "error-reply": return { label: "Error", color: "var(--err)" };
+    case "failed": return { label: "Error", color: "var(--err)", detail: null };
+    case "write-unknown": return { label: "Unknown", color: "var(--text-3)", detail: "Write not confirmed" };
+    case "unknown": return { label: "Not logged", color: "var(--text-3)" };
+  }
+}
+
+/** An opened row: the request, every try, and the response to the client, in plain words. */
 function Details({ row }: { row: ErrorRequestRow }) {
-  const end = stopMarker(row);
+  const replied = row.attempts.find((a) => a.replied);
+  const final: FinalAnswer =
+    row.result === "failed" || row.result === "write-unknown" ? { from: "router", code: row.errorCode }
+      : replied ? { from: "provider", attempt: replied }
+        : null;
+  const known = row.errorCode ? explainRouterError(row.errorCode) : null;
+  const extra =
+    row.result === "write-unknown" && !known ? [{ label: "Next step", value: "Check the chain before sending it again." }]
+      : row.result === "unknown" ? [{ label: "Note", value: "Still running, or log lines are missing." }]
+        : undefined;
   return (
-    <div style={{ display: "grid", gap: 10, padding: "4px 4px 8px" }}>
-      <AttemptList attempts={row.attempts} />
-      {end && (
-        <DetailLine><div style={{ fontSize: 12, color: "var(--text-3)" }}>{end.title}.</div></DetailLine>
-      )}
-      {row.error && (
-        <DetailLine at={row.totalMs != null ? `+${fmtComma(row.totalMs)} ms` : ""}>
-          <div style={{ fontSize: 12, color: "var(--err)" }}>Router error returned to the client</div>
-          <div className="gw-mono" style={detailText}>{row.error}</div>
-        </DetailLine>
-      )}
-      {row.result === "unknown" && (
-        <DetailLine><div style={{ fontSize: 12, color: "var(--text-3)" }}>No completion logged: the request may still be in flight, the client may have disconnected, or log lines are missing - a router logging above info writes none of its tries or its end.</div></DetailLine>
-      )}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11.5, color: "var(--text-4)" }}>
-        Request ID <span className="gw-mono" style={{ color: "var(--text-3)" }}>{row.guid}</span> <CopyButton text={row.guid} />
-      </div>
-    </div>
+    <RequestBreakdown spec={row.spec} chain={chainWords(row)} chainTitle={chainsTitle(row)} method={row.method === "unknown" ? "method not in the logs" : row.method}
+      time={row.time} guid={row.guid} tookMs={row.totalMs} facts={row} attempts={row.attempts}
+      final={final} status={statusOf(row)} retries={retriesWords(row)} isWrite={row.result === "write-unknown"} extra={extra} />
   );
 }
 
@@ -161,26 +187,19 @@ function LookupPanel({ id, rangeQ, rangeWords, onClose }: { id: string; rangeQ: 
   const { data, error, isLoading } = useApi<RequestLookup>(`/api/requests/${encodeURIComponent(id)}?${wide ? "window=30d" : rangeQ}`, 0);
   const row = data?.row ?? null;
   return (
-    <LookupFrame id={id} onClose={onClose}
+    <LookupFrame id={id} found={row?.guid} onClose={onClose}
       tag={row && <ResultTag row={row} />}>
       {isLoading ? (
         <SkelLine w="50%" />
       ) : error && !data ? (
-        <div style={{ color: "var(--text-4)" }}>Couldn&apos;t look this up: it isn&apos;t an ID the router writes (letters, digits, - and _), or the API didn&apos;t answer.</div>
+        <div style={{ color: "var(--text-4)" }}>{LOOKUP_REFUSED}</div>
       ) : data && !data.available ? (
         <div style={{ color: "var(--text-4)" }}>{unreadableWords(data.reason)}</div>
       ) : !row ? (
-        <NotFound rangeWords={rangeWords} wide={wide} onWiden={() => setWide(true)} />
+        <NotFound id={id} rangeWords={rangeWords} wide={wide} onWiden={() => setWide(true)} />
       ) : (
         <div style={{ display: "grid", gap: 8 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--text-2)", flexWrap: "wrap" }}>
-            <span className="gw-mono gw-tnum">{fmtWhen(row.time)}</span>
-            {row.spec ? <><ChainBadge spec={row.spec} size={14} /><span>{chainWords(row)}</span></> : row.specs && <span>{chainWords(row)}</span>}
-            <span className="gw-mono" style={{ color: "var(--text-3)" }}>{row.method === "unknown" ? "method not in the logs" : row.method}</span>
-            <span style={{ color: "var(--text-4)" }}>took {fmtTook(row.totalMs)}</span>
-          </div>
-          <Flow attempts={row.attempts} end={stopMarker(row)} replyColor={RESULT[row.result].color} />
-          <AppGot text={appGot(row)} />
+          <MatchesNote matches={data?.matches} />
           <Details row={row} />
         </div>
       )}
@@ -209,26 +228,22 @@ function Seg<T extends string>({ value, onChange, options }: {
 /** The filter row's dropdowns: capped, so a long error name can't push the row onto two lines. */
 const narrowSelect: React.CSSProperties = { ...filterSelectStyle, maxWidth: 200 };
 
-export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialRange = null }: {
+/**
+ * The list's times - the page window, or exact ones picked here or a bar's -
+ * and its reads of them. Held by the tab, so the cards above count the rows
+ * the list shows rather than reading the logs again.
+ */
+export function useErrorList({ chainFilter, win, upstream, initialRange = null, onPick }: {
   chainFilter: string | null;
   win: MetricWindow;
-  /** Controlled from the tab, so a bar on the Upstreams tab can open its own requests. */
   upstream: string;
-  onUpstream: (u: string) => void;
-  /** Exact times to open on - a bar's - instead of the page window. */
   initialRange?: ExactRange | null;
+  /** Told when the list's times are picked or cleared - the page keeps them in its URL. */
+  onPick?: (r: ExactRange | null) => void;
 }) {
-  const [result, setResult] = useState<ErrorRequestRow["result"] | typeof ALL>(ALL);
-  const [retry, setRetry] = useState<RetryFilter>(ALL);
-  const [errType, setErrType] = useState(ALL);
-  const [method, setMethod] = useState(ALL);
   const [range, setRange] = useState<ExactRange | null>(initialRange);
   // A picked range that has closed can't change: read it once, don't poll it.
   const [live, setLive] = useState(() => rangeIsLive(initialRange));
-  const [open, setOpen] = useState<string | null>(null);
-  const [lookupId, setLookupId] = useState<string | null>(null);
-  const [page, setPage] = useState(0);
-
   const specQ = chainFilter ? `&spec=${encodeURIComponent(chainFilter)}` : "";
   const { routerIdQ } = useRouterFilter();
   const rangeQ = range ? `from=${Math.round(range.from)}&to=${Math.round(range.to)}` : `window=${win}`;
@@ -236,9 +251,54 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
   // that upstream, so the cap applies to the requests the bar counts.
   const onBarRange = initialRange != null && range != null && range.from === initialRange.from && range.to === initialRange.to;
   const barQ = onBarRange && upstream !== ALL ? `&upstream=${encodeURIComponent(upstream)}` : "";
-  const base = `/api/error-requests?${rangeQ}${specQ}${routerIdQ}${barQ}`;
-  const log = useLogReads<ErrorRequestRow, ErrorRequestsReport>(base, live ? 15_000 : 0);
-  const { first, head, rows: allRows } = log;
+  const log = useLogReads<ErrorRequestRow, ErrorRequestsReport>(`/api/error-requests?${rangeQ}${specQ}${routerIdQ}${barQ}`, live);
+  const pick = (r: ExactRange | null) => { setRange(r); setLive(rangeIsLive(r)); onPick?.(r); };
+  return { log, range, pick, rangeQ, routerIdQ, onBarRange, barQ };
+}
+
+export type ErrorList = ReturnType<typeof useErrorList>;
+
+export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialRange = null, list }: {
+  chainFilter: string | null;
+  win: MetricWindow;
+  /** Controlled from the tab, so a bar on the Upstreams tab can open its own requests. */
+  upstream: string;
+  onUpstream: (u: string) => void;
+  /** Exact times to open on - a bar's - instead of the page window. */
+  initialRange?: ExactRange | null;
+  /** The list's reads, held by the tab (`useErrorList`). */
+  list: ErrorList;
+}) {
+  const [result, setResult] = useState<ErrorRequestRow["result"] | typeof ALL>(ALL);
+  const [retry, setRetry] = useState<RetryFilter>(ALL);
+  const [errType, setErrType] = useState(ALL);
+  const [customer, setCustomer] = useState(ALL);
+  const [method, setMethod] = useState(ALL);
+  const [open, setOpen] = useState<string | null>(null);
+  // A request named in the URL opens looked up.
+  const [lookupId, setLookupId] = useState<string | null>(requestFromUrl);
+  const [page, setPage] = useState(0);
+  // Back / Forward: the look-up follows the URL.
+  useEffect(() => {
+    const onPop = () => setLookupId(requestFromUrl());
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+  // The URL names the request last opened or found that is still in view.
+  const find = (id: string | null) => { setLookupId(id); linkRequest(id ?? open); };
+  const toggleRow = (guid: string) => { const next = open === guid ? null : guid; setOpen(next); linkRequest(next ?? lookupId); };
+
+  const { log, range, rangeQ, routerIdQ, onBarRange, barQ } = list;
+
+  // Another chain or router is another list: what was open on the last one closes.
+  const scopeKey = `${chainFilter ?? ""}|${routerIdQ}`;
+  const [shownScope, setShownScope] = useState(scopeKey);
+  if (shownScope !== scopeKey) { setShownScope(scopeKey); setOpen(null); setLookupId(null); setPage(0); }
+  useEffect(() => { if (!open && !lookupId) linkRequest(null); }, [scopeKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const { first, head } = log;
+  const held = useHeldRows(log.rows, open);
+  const [headRef, headVar] = useListHeadHeight();
+  const allRows = held.rows;
 
   const methods = useMemo(() => [...new Set(allRows.map((r) => r.method))].sort(), [allRows]);
   // The upstreams an attempt failed at, each with its count of requests.
@@ -250,10 +310,12 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
     return [...n].sort(([a], [b]) => (a < b ? -1 : 1)).map(([name, count]) => ({ name, count }));
   }, [allRows]);
   const errTypes = useMemo(() => errorTypeOptions(allRows), [allRows]);
+  const customers = useMemo(() => customerOptions(allRows), [allRows]);
 
   // Each row of pills counts within every other filter, so a pill's number is
   // what picking it would list.
   const byDropdowns = allRows.filter((r) =>
+    (customer === ALL || hasCustomer(r, customer)) &&
     (method === ALL || r.method === method) &&
     (upstream === ALL || failedAt(r, upstream)) &&
     (errType === ALL || hasErrorType(r, errType)));
@@ -280,7 +342,7 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
      the ones it sends by itself when it starts and to check its upstreams -
      and this list leaves those out: no client sent them. An empty list here has
      to say so, or it reads as the bar being wrong. */
-  const onBar = onBarRange && upstream !== ALL && result === ALL && retry === ALL && errType === ALL && method === ALL;
+  const onBar = onBarRange && upstream !== ALL && result === ALL && retry === ALL && errType === ALL && customer === ALL && method === ALL;
   useEffect(() => {
     if (jumpKey) listRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
   }, [jumpKey]);
@@ -304,8 +366,8 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
   }
 
   return (
-    <div ref={listRef} className="gw-card" style={{ padding: 0, overflow: "hidden", scrollMarginTop: 16 }}>
-      <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--line)", display: "grid", gap: 10 }}>
+    <div ref={listRef} className="gw-card gw-log-card" style={{ padding: 0, overflow: "clip", scrollMarginTop: 72, ...headVar }}>
+      <div ref={headRef} style={stickyListHeader}>
         {/* What the list holds: how many, what came of them, and the times it covers. */}
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <span style={{ display: "inline-flex", alignItems: "center", fontSize: 12, fontWeight: 600, color: "var(--text-2)" }}>
@@ -319,40 +381,44 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
             options={[
               // No counts before the first read lands: a 0 there would be a claim.
               { key: ALL, label: "All", count: head ? narrowed.length : undefined },
-              ...RESULT_ORDER.filter((k) => k !== "unknown" || byResult("unknown") > 0)
+              ...RESULT_ORDER.filter((k) => !RARE.has(k) || byResult(k) > 0)
                 .map((k) => ({ key: k, label: RESULT[k].label, count: head ? byResult(k) : undefined, color: RESULT[k].color, title: RESULT[k].hint })),
             ]}
           />
           <span style={{ flex: 1 }} />
           <TimeRangeControl
             range={range}
-            onChange={(r) => { setRange(r); setLive(rangeIsLive(r)); setPage(0); }}
+            onChange={(r) => { list.pick(r); setPage(0); }}
             windowLabel={WINDOWS[win].label}
             windowMs={WINDOWS[win].rangeSeconds * 1000}
           />
         </div>
         {/* Narrowing it down, and finding one request. */}
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <select aria-label="Retryable" value={retry} onChange={(e) => reset(setRetry)(e.target.value as RetryFilter)} style={narrowSelect}>
+          <FilterSelect aria-label="Retryable" value={retry} onChange={(e) => reset(setRetry)(e.target.value as RetryFilter)} style={narrowSelect}>
             <option value={ALL}>Retryable or not</option>
             <option value="retryable">Retryable ({fmtComma(kinds.filter((k) => k.retryable).length)})</option>
             <option value="not-retryable">Not retryable ({fmtComma(kinds.filter((k) => k.notRetryable).length)})</option>
-          </select>
-          <select aria-label="Error type" value={errType} onChange={(e) => reset(setErrType)(e.target.value)} style={narrowSelect} disabled={!errTypes.length}>
+          </FilterSelect>
+          <FilterSelect aria-label="Error type" value={errType} onChange={(e) => reset(setErrType)(e.target.value)} style={narrowSelect} disabled={!errTypes.length}>
             <option value={ALL}>All error types</option>
             {errTypes.map((t) => <option key={t.key} value={t.key}>{t.label} ({fmtComma(t.count)})</option>)}
-          </select>
-          <select aria-label="Method" value={method} onChange={(e) => reset(setMethod)(e.target.value)} style={narrowSelect} disabled={!methods.length}>
+          </FilterSelect>
+          <FilterSelect aria-label="Customer" value={customer} onChange={(e) => reset(setCustomer)(e.target.value)} style={narrowSelect} disabled={!customers.length && customer === ALL}>
+            <option value={ALL}>All customers</option>
+            {customers.map((c) => <option key={c.key} value={c.key}>{c.label} ({fmtComma(c.count)})</option>)}
+          </FilterSelect>
+          <FilterSelect aria-label="Method" value={method} onChange={(e) => reset(setMethod)(e.target.value)} style={narrowSelect} disabled={!methods.length}>
             <option value={ALL}>All methods</option>
             {methods.map((m) => <option key={m} value={m}>{m === "unknown" ? "method not in the logs" : m}</option>)}
-          </select>
-          <select aria-label="Upstream" value={upstream} onChange={(e) => { onUpstream(e.target.value); setPage(0); }} style={narrowSelect} disabled={!upstreams.length && upstream === ALL}>
+          </FilterSelect>
+          <FilterSelect aria-label="Upstream" value={upstream} onChange={(e) => { onUpstream(e.target.value); setPage(0); }} style={narrowSelect} disabled={!upstreams.length && upstream === ALL}>
             <option value={ALL}>All upstreams</option>
             {upstream !== ALL && !upstreams.some((u) => u.name === upstream) && <option value={upstream}>{upstream}</option>}
             {upstreams.map((u) => <option key={u.name} value={u.name}>{u.name} ({fmtComma(u.count)})</option>)}
-          </select>
+          </FilterSelect>
           <span style={{ flex: 1 }} />
-          <IdSearch onFind={setLookupId} />
+          <IdSearch onFind={find} />
         </div>
         {range && (
           <div style={{ fontSize: 11, color: "var(--text-4)" }}>
@@ -364,11 +430,12 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
       <UnreadStrip count={log.unread} noun="request" bound={!!chainFilter || !!routerIdQ || !!barQ} covers="the list" />
       {lookupId && (
         <LookupPanel key={lookupId + rangeQ} id={lookupId} rangeQ={rangeQ} rangeWords={range ? "of the times you picked" : `of the last ${WINDOWS[win].label}`}
-          onClose={() => setLookupId(null)} />
+          onClose={() => find(null)} />
       )}
 
+      <NewRowsStrip count={held.newCount} noun="request" onShow={held.showNew} />
       {/* Below 860px the columns would overlap: scroll sideways instead. */}
-      <div style={{ overflowX: "auto" }}>
+      <div className="gw-log-scroll">
         <table className="gw-table" style={{ tableLayout: "fixed", width: "100%", minWidth: 860 }}>
           <colgroup>
             <col style={{ width: 150 }} />
@@ -379,7 +446,7 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
           </colgroup>
           <thead>
             <tr>
-              <th>Time</th>
+              <th>Time · customer</th>
               <th>Chain · method</th>
               <th>What happened</th>
               <th>Result</th>
@@ -390,16 +457,19 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
             {first.isLoading && <SkelRows rows={6} cols={LOG_SKEL_COLS} />}
             {pageRows.map((r) => {
               const isOpen = open === r.guid;
-              const toggle = () => setOpen(isOpen ? null : r.guid);
+              const toggle = () => toggleRow(r.guid);
               return (
                 <Fragment key={r.guid}>
                   <tr tabIndex={0} aria-expanded={isOpen} style={{ cursor: "pointer" }} onClick={toggle} onKeyDown={onRowKey(toggle)}>
-                    <td style={{ verticalAlign: "top" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{fmtWhen(r.time)}</span></td>
                     <td style={{ maxWidth: 0, verticalAlign: "top" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-                        {r.spec && <ChainBadge spec={r.spec} size={16} />}
+                      <WhenCell time={r.time} customer={r.customer} />
+                    </td>
+                    <td style={{ maxWidth: 0, verticalAlign: "top" }}>
+                      {/* The icon sits on the chain's line, not halfway down the cell. */}
+                      <div style={{ display: "flex", alignItems: "flex-start", gap: 8, minWidth: 0 }}>
+                        {r.spec && <span style={{ display: "flex", flexShrink: 0, marginTop: 1 }}><ChainBadge spec={r.spec} size={16} /></span>}
                         <div style={{ minWidth: 0 }}>
-                          <div style={{ fontSize: 12 }}>{chainWords(r)}</div>
+                          <div style={{ fontSize: 12 }} title={chainsTitle(r)}>{chainWords(r)}</div>
                           {r.method === "unknown"
                             ? <div style={{ fontSize: 10.5, color: "var(--text-4)", fontStyle: "italic" }}>method not in the logs</div>
                             : <div className="gw-mono" title={r.method} style={{ fontSize: 10.5, color: "var(--text-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.method}</div>}
@@ -407,7 +477,7 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
                       </div>
                     </td>
                     <td style={{ maxWidth: 0 }}>
-                      <Flow attempts={r.attempts} end={stopMarker(r)} replyColor={RESULT[r.result].color} />
+                      <Flow attempts={r.attempts} end={stopMarker(r)} replyColor={RESULT[r.result].color} quietReplied={r.result === "error-reply"} />
                       <AppGot text={appGot(r)} />
                     </td>
                     <td style={{ verticalAlign: "top" }}>
@@ -430,7 +500,9 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
                 {!allRows.length && log.unread ? "None of the requests found in this range came back from the logs in time."
                   : onBar
                   ? <>No client requests failed at <span className="gw-mono">{upstream}</span> in this period. The bar also counts the router&apos;s internal relays (startup and health checks), which this list excludes.</>
-                  : allRows.length ? "No requests match these filters." : range ? "No requests with errors in this period." : `No requests with errors in the last ${WINDOWS[win].label}.`}
+                  : allRows.length ? "No requests match these filters."
+                  : log.more ? "No requests with errors in the part of this period read so far."
+                  : range ? "No requests with errors in this period." : `No requests with errors in the last ${WINDOWS[win].label}.`}
                 {log.more ? " Older ones may: load them below." : ""}
               </td></tr>
             )}

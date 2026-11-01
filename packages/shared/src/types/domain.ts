@@ -1,5 +1,6 @@
 import type { ScoreType } from "../constants/metrics.js";
 import type { MetricWindow } from "../constants/windows.js";
+import type { IncidentSeverity } from "../constants/incidents.js";
 
 export type { MetricWindow, ScoreType };
 
@@ -91,6 +92,8 @@ export interface UpstreamMetrics {
    */
   polls: { ok: number; failed: number } | null;
   health: HealthState;
+  /** Current health evidence or the reason measurement is unavailable. */
+  healthReason?: string;
   latestBlock: number | null;
   /** Blocks behind the spec's best endpoint; null when unknown. */
   blockLag: number | null;
@@ -244,6 +247,21 @@ export interface ActiveRoute {
   share: number;
 }
 
+/**
+ * What the topbar shows on every page: the router's health, how many of its
+ * upstreams are unhealthy or unreported, and the current client RPS. Six
+ * reads, independent of the chain count — the full overview was read for
+ * these three fields before.
+ */
+export interface DeploymentPulse {
+  health: HealthState;
+  /** Current upstream × chain status, independent of any time window. */
+  upstreamHealthCounts: { unhealthy: number; unknown: number };
+  /** Client requests per second over the last 5 minutes; null with no traffic. */
+  throughputRps: number | null;
+  lastUpdated: string;
+}
+
 /** Everything the Overview + Dashboard screens need in one round-trip. */
 export interface OverviewData {
   totalRequests: Kpi;
@@ -257,6 +275,8 @@ export interface OverviewData {
   p95Ms: Kpi;
   p99Ms: Kpi;
   health: HealthState;
+  /** Current upstream × chain status, independent of the history window. */
+  upstreamHealthCounts: { unhealthy: number; unknown: number };
   /** Quota/cap are NOT emitted by the router — always null (gated in the UI). */
   computeUnits: { used: number | null; limit: number | null; resetsAt: string | null };
   rpsCap: number | null;
@@ -334,6 +354,79 @@ export interface ChainSeries {
   qos: TimePoint[] | null;
   /** Share of traffic on backup upstreams; null unless config marks backups. */
   backupShare: TimePoint[] | null;
+}
+
+/**
+ * One upstream at one point of the chain's availability grid. `t` is the
+ * point's end, as on the availability series: each figure covers the rate
+ * range before it (`rateRange(step)`).
+ */
+export interface UpstreamTimelineCell {
+  t: number;
+  /**
+   * What the evidence at this point says (`upstreamCellState`): `null` when
+   * nothing about this upstream was scraped at all (a gap, never a health),
+   * `unknown` when it was scraped but neither tried nor polled.
+   */
+  state: HealthState | null;
+  /** Tries per second the router sent it (relay-scoped); null = no series. */
+  rps: number | null;
+  /** Failed tries per second; null = no series. */
+  failedRps: number | null;
+  /** Its share of the chain's tries, 0–1; null when the chain had none. */
+  share: number | null;
+  /** Latest-block polls that answered / failed; null = no series. */
+  pollsOk: number | null;
+  pollsFailed: number | null;
+}
+
+/** One upstream of the chain, a cell per stretch from `grid.start` to `grid.end`. */
+export interface UpstreamTimelineRow {
+  /** The values file's name where it declares the upstream (series matched case-insensitively), else the series'. */
+  upstream: string;
+  /** From helm `is_backup`; null when the values don't say (SR_CONFIG, or not in the config). */
+  role: "primary" | "backup" | null;
+  /** Declared by the mounted values file. False: seen only in the metrics. */
+  inConfig: boolean;
+  cells: UpstreamTimelineCell[];
+}
+
+/**
+ * Every upstream of one chain over the window, a cell per stretch of the
+ * clock (`bucketGrid`, the errors-over-time bars' grid): primaries first,
+ * then backups, then upstreams the config doesn't mark.
+ */
+export interface UpstreamTimeline {
+  spec: string;
+  /** Every read answered. False: one failed, so a missing figure means nothing. */
+  available: boolean;
+  failed: ("rps" | "failedRps" | "pollsOk" | "pollsFailed")[];
+  /** The cells' END times: a cell at `t` covers the `stepSec` before it; the last one is still filling, up to `asOf`. */
+  grid: ChartGrid;
+  /** Unix seconds the read was made at: where the last cell stops. */
+  asOf: number;
+  /**
+   * What clients got, per cell: their requests and the ones the router couldn't
+   * serve (the Failed requests card's recorded counts). Null when the store has
+   * no such counts in the window, or the router can't be told from another on
+   * its chain; a cell's `requests` null when that stretch has none recorded.
+   */
+  served: { t: number; requests: number | null; failed: number | null }[] | null;
+  upstreams: UpstreamTimelineRow[];
+}
+
+/* ── Traffic by provider (Metrics · Overview tab, a chain picked) ────────── */
+
+/** Which upstream took one chain's traffic over the window. */
+export interface UpstreamMix {
+  spec: string;
+  /**
+   * Requests per second each upstream took on this chain (`provider_address`
+   * on the request counter), biggest first. Relay-scoped: a retried request
+   * counts at every upstream it reached. `Cached` is the relay cache answering
+   * with no upstream at all.
+   */
+  upstreams: { upstream: string; points: TimePoint[] }[];
 }
 
 /* ── Upstream deep-dive (Metrics · Upstreams tab, PMBody) ────────────────── */
@@ -567,10 +660,32 @@ export interface RelayAttempt {
   atMs: number;
   /** ms from the request's arrival to its answer or its failure; null when the logs show neither. */
   endMs: number | null;
+  /** The node's own numeric JSON-RPC error code for this try (`node_code` on `relay_end`), when the router wrote one. */
+  nodeCode?: number;
+}
+
+/**
+ * What a router's `relay_end` says about the call itself, beyond its tries.
+ * Each is absent when the router doesn't write it or the caller didn't send it.
+ */
+export interface CallFacts {
+  /** The caller's project id. */
+  customer?: string;
+  /** The caller's own ids: X-Request-Id, X-Task-Id, X-Tx-Id. */
+  requestId?: string;
+  taskId?: string;
+  txId?: string;
+  /** Sizes of the request and of the reply the client got, in bytes. */
+  requestBytes?: number;
+  replyBytes?: number;
+  /** The block the request names, when it names a specific one. */
+  requestedBlock?: number;
+  /** The router's latest block when it parsed the request. */
+  seenBlock?: number;
 }
 
 /** One request that hit an error - a try failed, or the router gave up - rebuilt from the router's log lines. */
-export interface ErrorRequestRow {
+export interface ErrorRequestRow extends CallFacts {
   /** The router's request id (`Lava-Guid`). */
   guid: string;
   /** When the router received it, unix ms. */
@@ -584,14 +699,17 @@ export interface ErrorRequestRow {
   attempts: RelayAttempt[];
   /**
    * What the app got:
-   * - `ok`          - an upstream answered without an error, and nothing
-   *                   failed on the way (only a look-up by ID shows these)
-   * - `recovered`   - an upstream answered without an error, after one had failed
-   * - `error-reply` - the reply that went back was an upstream's error
-   * - `failed`      - no usable reply at all
-   * - `unknown`     - the logs show no end
+   * - `ok`            - an upstream answered without an error, and nothing
+   *                     failed on the way (only a look-up by ID shows these)
+   * - `recovered`     - an upstream answered without an error, after one had failed
+   * - `error-reply`   - the reply that went back was an upstream's error
+   * - `failed`        - no usable reply at all
+   * - `write-unknown` - a write no upstream gave a definite answer to: the
+   *                     router can't tell whether it reached a node (the
+   *                     Transactions tab's `unknown` for the same request)
+   * - `unknown`       - the logs show no end
    */
-  result: "ok" | "recovered" | "error-reply" | "failed" | "unknown";
+  result: "ok" | "recovered" | "error-reply" | "failed" | "write-unknown" | "unknown";
   /** The upstream whose reply went back. */
   resolvedBy: string | null;
   /** The router tried another upstream: more than one batch of tries went out. */
@@ -605,32 +723,49 @@ export interface ErrorRequestRow {
   /** The router wanted another try and had no upstream left to send it to. */
   exhausted: boolean;
   totalMs: number | null;
-  /** The router's own error, for `failed`. */
+  /** The router's own error, for `failed` and `write-unknown`: what the client got. */
   error: string | null;
+  /**
+   * The request's own error code, as the router's `relay_end` names it
+   * (`error_code`), e.g. NODE_GATEWAY_TIMEOUT on a write it couldn't settle.
+   * Null when it ended `ok`, and on a router that writes no `relay_end`.
+   */
+  errorCode: string | null;
 }
 
 /** Why the router's logs couldn't be read: no log store configured, or it didn't answer in time. */
 export type LogUnavailable = "unconfigured" | "unreachable";
 
-/** One request looked up by its ID - any request, whatever happened to it. `row` null: not in the logs of the range read. */
+/**
+ * One request looked up by its ID, its transaction hash or the caller's
+ * request id - any request, whatever happened to it. `row` null: not in the
+ * logs of the range read. `matches`: how many requests the value names (a
+ * resent transaction, a reused caller id) when more than one; `row` is the
+ * newest.
+ */
 export interface RequestLookup {
   available: boolean;
   reason?: LogUnavailable;
   row: ErrorRequestRow | null;
+  matches?: number;
 }
 
 /**
  * Client requests the router could not serve in a window: nothing, or
  * nothing usable, came back from the upstreams, so the router returned its
- * own error. Counted from the router's logs; `available:false` and a null
- * value when they can't be read, or (`shared-chain`) when a router was asked
- * for on a chain other routers serve too - the lines don't say which router
- * wrote them.
+ * own error. Counted from the router's logs - from the counts the fleet's log
+ * store records of them a minute at a time, or from the lines themselves where
+ * there are none. `available:false` and a null value when they can't be read;
+ * `shared-chain` when a router was asked for and its lines can't be told from
+ * another router's on the same chain; `too-large` when there are no recorded
+ * counts and the window holds more lines than one read may scan.
  */
 export interface FailedRequests {
   available: boolean;
-  reason?: LogUnavailable | "shared-chain";
+  reason?: LogUnavailable | "shared-chain" | "too-large";
   value: number | null;
+  /** ISO time the recorded counts start, when that is inside the window: the value counts from there. */
+  since?: string;
 }
 
 /** The Errors tab's request list - from the router's logs (Loki), newest first, one read at a time. */
@@ -658,16 +793,17 @@ export interface ErrorRequestsReport {
 
 /**
  * How a transaction ended, as the client saw it:
- *  - `accepted` - the upstream that answered took it (in its pending pool; not yet in a block)
- *  - `rejected` - that upstream answered with an error, e.g. nonce too low
- *  - `failed`   - no usable answer: the router returned an error of its own
- *  - `unknown`  - the logs can't say: no end in them, a write the router
- *                 itself can't tell went through, or a chain that puts a
- *                 refusal inside a normal reply the router doesn't log (`note`)
+ *  - `accepted`        - the upstream that answered took it (in its pending pool; not yet in a block)
+ *  - `rejected`        - that upstream answered with an error, e.g. nonce too low
+ *  - `failed`          - no usable answer: the router returned an error of its own
+ *  - `failed-on-chain` - the send reply says the chain ran it and it failed (`tx_status: failure`, `txError`)
+ *  - `unknown`         - the logs can't say: no end in them, a write the router
+ *                        itself can't tell went through, or a chain that puts a
+ *                        refusal inside a normal reply the router doesn't log (`note`)
  */
-export type TxOutcome = "accepted" | "rejected" | "failed" | "unknown";
+export type TxOutcome = "accepted" | "rejected" | "failed" | "failed-on-chain" | "unknown";
 
-export interface TxLogRow {
+export interface TxLogRow extends CallFacts {
   /** The router's request id (`Lava-Guid`); every log line of the request carries it. */
   guid: string;
   /** When the router received it, unix ms. */
@@ -689,17 +825,27 @@ export interface TxLogRow {
   error: { code: string; message: string } | null;
   /** Why the outcome is `unknown`, in plain words; null otherwise. */
   note: string | null;
+  /** The transaction's hash as its chain names it: an EVM 0x hash, a Sui digest, a Solana signature, a Cosmos hex hash. */
+  txHash?: string;
+  /** The on-chain result, where the send reply reports it (Sui). */
+  txStatus?: "success" | "failure";
+  /** The chain's execution error, when `txStatus` is `failure`. */
+  txError?: string;
 }
 
 /**
- * One transaction looked up by its request ID. `found` says the logs hold the
- * request at all - with `row` null, it was found but isn't a transaction.
+ * One transaction looked up by its request ID, its hash or the caller's
+ * request id. `found` says the logs hold the request at all - with `row`
+ * null, it was found but isn't a transaction. `matches`: how many requests
+ * the value names when more than one (a resent transaction keeps its hash);
+ * `row` is the newest.
  */
 export interface TransactionLookup {
   available: boolean;
   reason?: LogUnavailable;
   found: boolean;
   row: TxLogRow | null;
+  matches?: number;
 }
 
 export interface TransactionsReport {
@@ -713,7 +859,8 @@ export interface TransactionsReport {
   accepted: number;
   rejected: number;
   failed: number;
-  /** accepted ÷ (accepted + rejected + failed); `unknown` is left out. Null with none. */
+  failedOnChain: number;
+  /** accepted ÷ (accepted + rejected + failed + failedOnChain); `unknown` is left out. Null with none. */
   successRate: number | null;
   /** Newest first. */
   rows: TxLogRow[];
@@ -729,6 +876,34 @@ export interface TransactionsReport {
    * covers the same stretch rather than one that moved with the clock.
    */
   range?: { startMs: number; endMs: number };
+}
+
+/** A transaction's result on the Transactions tab's chart: the list's own. */
+export type TxResult = TxOutcome;
+
+/**
+ * Transactions over the page window, a bar per stretch of the clock, each bar
+ * split by result. `GET /api/transactions/over-time`.
+ */
+export interface TransactionsOverTime {
+  /** False when neither the store's recorded counts nor the router's logs could be read, or (`shared-chain`) a router was asked for whose lines can't be told from the other routers' on its chain. */
+  available: boolean;
+  reason?: LogUnavailable | "shared-chain";
+  /**
+   * Where the counts come from: `recorded` - the store's per-minute counts
+   * (`smartrouter_transactions:count1m`), the newest minutes counted from the
+   * logs - none recorded is none sent where the store has the fleet's ruler;
+   * `logs` - counted from the router's logs, on a store without the ruler (a
+   * standalone install). Null without a read.
+   */
+  source: "recorded" | "logs" | null;
+  /** The bars' END times, unix s: a bar at `t` covers the `stepSec` before it; the last is still filling up to `asOf`. */
+  grid: ChartGrid;
+  asOf: number;
+  /** One count per bar, in grid order, for each result the window holds. */
+  counts: Partial<Record<TxResult, number[]>>;
+  /** Unix s from which the newest bars may be short: minutes the recorded counts don't hold yet and the logs didn't count. Null when every bar is whole. */
+  partialFrom: number | null;
 }
 
 /* ── Cross-validation / WebSocket reports (no screen reads them) ── */
@@ -1016,4 +1191,62 @@ export interface DashboardData {
   /** Empty until labelled error counters exist (design's ✓ empty state). */
   trouble: DashboardTroubleRow[];
   lastUpdated: string | null;
+}
+
+/* ── Recorded reads (the api's read policy, as /api/metrics/reads reports it) ── */
+
+/**
+ * How the api reads long windows right now. `reason` says why recorded
+ * reads are on or off: `off` (configured never), `unprobed` (no metrics
+ * request yet), `absent` (the store has no recorded series — no recording
+ * rules), `stale` (the series exist but are behind), `fresh`. `historySec`
+ * is how far back the recorded series reach; `windows.recorded` lists the
+ * windows that read them now, the rest read raw.
+ */
+export interface RecordedReadsState {
+  from: MetricWindow | null;
+  chartFloor: MetricWindow;
+  available: boolean;
+  reason: "off" | "unprobed" | "absent" | "stale" | "scrape" | "fresh";
+  ageSec: number | null;
+  historySec: number | null;
+  /** The sample spacing of the densest raw router series, seconds; the rules assume 15. */
+  scrapeSec: number | null;
+  probedAt: string | null;
+  windows: { recorded: MetricWindow[]; raw: MetricWindow[] };
+}
+
+/* ── Customer-reported incidents (POST /api/incidents) ──────────────────── */
+
+/** Who reported, as typed into the form. Only read when `AUTH_MODE=disabled`;
+ *  with accounts on, the reporter is the signed-in user and this is ignored. */
+export interface IncidentReporter {
+  name: string;
+  email: string;
+  phone?: string | null;
+}
+
+export interface IncidentReportRequest {
+  /**
+   * Minted by the form when it opens (a UUID). Sending it again after a timeout
+   * joins the report already filed instead of filing a second one, so a retry
+   * is always safe.
+   */
+  id: string;
+  severity: IncidentSeverity;
+  title: string;
+  description?: string | null;
+  /** Spec index of the chain the report is about (`ETH1`), when it is about one. */
+  chain?: string | null;
+  /** Config router id, when the report is about one router. */
+  routerId?: string | null;
+  reporter?: IncidentReporter | null;
+}
+
+export interface IncidentReportResponse {
+  id: string;
+  severity: IncidentSeverity;
+  /** When our on-call system accepted it. Accepted, not acted on: it queues the
+   *  report and routes it after answering. */
+  sentAt: string;
 }

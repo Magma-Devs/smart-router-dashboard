@@ -23,6 +23,7 @@ import {
   OPTIONAL_METRICS,
   ROUTER_METRICS,
 } from "../constants/metrics.js";
+import { isRecordedMetric } from "./recorded.js";
 
 /** A Prometheus label matcher every scoped selector in a query gains. */
 export interface MetricScope {
@@ -68,7 +69,9 @@ const SCOPED_PREFIXES = ["smartrouter_", "rpc_endpoint_", "rpc_optimizer_"] as c
 
 function isScopedMetric(name: string, opts: ScopeOptions): boolean {
   if (opts.cache && name.startsWith("cache_")) return true;
-  return SCOPED_METRIC_NAMES.has(name) || SCOPED_PREFIXES.some((p) => name.startsWith(p));
+  // The recorded series keep the router label the rules group by, so the
+  // per-router scope reaches them the way it reaches the raw families.
+  return SCOPED_METRIC_NAMES.has(name) || SCOPED_PREFIXES.some((p) => name.startsWith(p)) || isRecordedMetric(name);
 }
 
 const IDENT_START = /[a-zA-Z_:]/;

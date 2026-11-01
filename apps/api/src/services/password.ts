@@ -2,8 +2,22 @@ import bcrypt from "bcryptjs";
 import { createHash, randomBytes } from "node:crypto";
 
 /** bcrypt cost 12 — same as lava-connect (industry default). */
+const BCRYPT_COST = 12;
+let cost = BCRYPT_COST;
+
 export async function hashPassword(plain: string): Promise<string> {
-  return bcrypt.hash(plain, 12);
+  return bcrypt.hash(plain, cost);
+}
+
+/**
+ * Tests only. A cost-12 hash takes about a quarter of a second, and the api
+ * suite makes a few hundred of them in fixtures whose subject is something
+ * else entirely; at cost 4 the same hash takes a millisecond and verifies the
+ * same way. The suite's setup file lowers it before every test; a test whose
+ * subject is the production cost puts it back with `undefined`.
+ */
+export function setPasswordCostForTests(value: number | undefined): void {
+  cost = value ?? BCRYPT_COST;
 }
 
 export async function verifyPassword(plain: string, hash: string): Promise<boolean> {

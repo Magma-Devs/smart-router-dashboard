@@ -8,6 +8,15 @@ on:
 env:
   REGISTRY: ghcr.io
 
+# A newer push to a branch cancels the run its commit supersedes. main gets a
+# group per commit: GitHub keeps one pending run per group, so a shared group
+# would drop the middle one of three quick merges and leave its VERSION with
+# no images and no tag. Main runs may overlap; tag-release keeps `latest` on
+# the highest release whatever order they finish in.
+concurrency:
+  group: build-and-push-${{ github.ref_name == 'main' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.ref_name != 'main' }}
+
 jobs:
   # The dashboard is a pnpm/TypeScript monorepo at the repo root:
   #   apps/api  → published as …/backend   (Fastify Prometheus proxy)
@@ -28,6 +37,13 @@ jobs:
     permissions:
       contents: read
       packages: write
+    # Both legs compute the same version; each sets only its own digest_<name>,
+    # and GitHub merges a matrix's outputs.
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      major_minor: ${{ steps.version.outputs.major_minor }}
+      digest_frontend: ${{ steps.digest.outputs.digest_frontend }}
+      digest_backend: ${{ steps.digest.outputs.digest_backend }}
 
     steps:
       - name: Checkout repository
@@ -94,7 +110,10 @@ jobs:
             VERSION="${{ steps.read-version.outputs.version }}"
           fi
 
-          BRANCH_NAME="${{ github.ref_name }}"
+          # The suffix carries the branch name with anything a tag can't hold
+          # replaced by `-`: `feat/x` gives `0.48.0-feat-x`. A raw `/` made the
+          # reference invalid, and `publish` failed after the smoke had passed.
+          BRANCH_NAME=$(printf '%s' "$GITHUB_REF_NAME" | sed -E 's/[^A-Za-z0-9._-]+/-/g' | cut -c1-100)
 
           # Extract major.minor BEFORE the suffix is appended. The suffix lands
           # on the patch component (0.16.1-my-branch), so cutting fields 1,2
@@ -111,14 +130,28 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "major_minor=$MAJOR_MINOR" >> $GITHUB_OUTPUT
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
-
+      # No QEMU: both Dockerfiles build on $BUILDPLATFORM and keep their runtime
+      # stages free of RUN. A RUN added to a runtime stage fails here on arm64
+      # with "exec format error".
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
+      - name: Image name
+        id: image
+        # GHCR wants the path lowercase; github.repository carries the org's
+        # capitals (Magma-Devs). The cache tag carries the branch name with
+        # anything a tag can't hold replaced by `-`; main's is plain `buildcache`.
+        run: |
+          echo "name=${GITHUB_REPOSITORY,,}/${{ matrix.name }}" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_REF_NAME" = "main" ]; then
+            echo "cache=buildcache" >> "$GITHUB_OUTPUT"
+          else
+            BRANCH=$(printf '%s' "$GITHUB_REF_NAME" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9._-]+/-/g' | cut -c1-100)
+            echo "cache=buildcache-${BRANCH}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v4.6.0
+        uses: docker/login-action@v4.7.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -127,76 +160,279 @@ jobs:
       - name: Check if image version already exists
         if: github.ref_name == 'main'
         run: |
-          set +e  # Don't stop on errors
-          set -x  # Enable debug output
-          IMAGE_NAME="${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.name }}"
-          VERSION="${{ steps.version.outputs.version }}"
-          IMAGE_TAG="${IMAGE_NAME}:${VERSION}"
-
-          echo "Checking if image tag already exists: $IMAGE_TAG"
-
-          # Use Docker manifest inspect to check if the tag exists
-          # Exit code 0 = manifest exists, exit code 1 = doesn't exist (manifest unknown)
-          echo run: docker manifest inspect "$IMAGE_TAG"
-          MANIFEST_OUTPUT=$(docker manifest inspect "$IMAGE_TAG" 2>&1)
-          EXIT_CODE=$?
-
-          if [ $EXIT_CODE -eq 0 ]; then
-            echo "Error: Image tag $IMAGE_TAG already exists in the registry"
-            echo "Cannot overwrite existing version. Please bump the version in the VERSION file."
-            exit 1
-          elif [ $EXIT_CODE -eq 1 ]; then
-            # Exit code 1 with "manifest unknown" means the image doesn't exist (expected)
-            if echo "$MANIFEST_OUTPUT" | grep -qiE "manifest unknown|not found|404|no such manifest"; then
-              echo "✓ Image tag $IMAGE_TAG does not exist. Safe to proceed."
-            else
-              echo "Warning: Unexpected error checking manifest (exit code 1)"
-              echo "Output was: $MANIFEST_OUTPUT"
-              echo "Proceeding anyway - if the tag exists, the push will fail."
-            fi
-          else
-            echo "Error: Unexpected exit code $EXIT_CODE when checking manifest"
-            echo "Docker manifest inspect output: $MANIFEST_OUTPUT"
-            echo "Cannot proceed without confirming the tag does not exist."
+          # The registry path must be lowercase. `github.repository` carries the
+          # org's capitals (Magma-Devs), and with them `docker manifest inspect`
+          # fails on the reference itself; this step used to read that failure
+          # as "unexpected, proceeding anyway", so it never guarded anything and
+          # three same-version merges overwrote 0.34.2 (MAG-4314). Only "no
+          # such manifest" may pass now.
+          IMAGE_TAG="${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:${{ steps.version.outputs.version }}"
+          echo "Checking whether $IMAGE_TAG exists"
+          if OUTPUT=$(docker manifest inspect "$IMAGE_TAG" 2>&1); then
+            echo "Error: $IMAGE_TAG already exists in the registry."
+            echo "Bump VERSION before releasing; a published tag is never rewritten."
             exit 1
           fi
+          if echo "$OUTPUT" | grep -qiE "manifest unknown|not found|no such manifest"; then
+            echo "✓ $IMAGE_TAG does not exist. Safe to proceed."
+            exit 0
+          fi
+          echo "Error: could not tell whether $IMAGE_TAG exists:"
+          echo "$OUTPUT"
+          exit 1
 
-      - name: Prepare tags
-        id: prepare-tags
-        run: |
-          {
-            echo "type=raw,value=${{ steps.version.outputs.version }}"
-            echo "type=raw,value=${{ steps.version.outputs.major_minor }}"
-            if [ "${{ github.ref_name }}" = "main" ]; then
-              echo "type=raw,value=latest"
-            fi
-          } | tee tags.txt
-
-          # Output tags as multiline string
-          echo "tags<<EOF" >> $GITHUB_OUTPUT
-          cat tags.txt >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
+      # Labels only (the version label among them): the tags come later.
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.name }}
-          tags: ${{ steps.prepare-tags.outputs.tags }}
+          images: ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}
+          tags: type=raw,value=${{ steps.version.outputs.version }}
 
-      - name: Build and push Docker image
+      # Pushed by digest, with no tag: `publish` tags it once its arm64 half
+      # has booted in smoke-arm64.
+      - name: Build and push the image by digest
+        id: build
         uses: docker/build-push-action@v7
         with:
           context: .
           file: ${{ matrix.dockerfile }}
           platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ steps.image.outputs.name }},push-by-digest=true,name-canonical=true,push=true
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             APP_VERSION=${{ steps.version.outputs.version }}
             NEXT_PUBLIC_API_URL=http://localhost:8000
             NEXT_PUBLIC_LOCAL_MODE=true
-          cache-from: type=gha,scope=${{ matrix.name }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          # Layer cache on GHCR; mode=max keeps the build stage's layers too (the
+          # pnpm store and install). A branch writes its own tag and reads it
+          # and main's; main writes `buildcache`. A failed cache export never
+          # fails the build.
+          cache-from: |
+            type=registry,ref=${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:${{ steps.image.outputs.cache }}
+            type=registry,ref=${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:${{ steps.image.outputs.cache }},mode=max,image-manifest=true,oci-mediatypes=true,ignore-error=true
+
+      - name: Record the digest
+        id: digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          if ! [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::the build reported no image digest: '$DIGEST'"
+            exit 1
+          fi
+          echo "digest_${{ matrix.name }}=$DIGEST" >> "$GITHUB_OUTPUT"
+          echo "$DIGEST"
+
+  # The build stage compiles on amd64 for both architectures, so the build
+  # alone never proves the arm64 image runs: a dependency that loads a native
+  # binding at boot would ship an amd64-only arm64 image and pass. This job
+  # starts each arm64 image on an arm64 runner (free on public repositories)
+  # and waits for its health endpoint. It pulls by digest: nothing is tagged
+  # until it passes.
+  smoke-arm64:
+    name: Smoke arm64 ${{ matrix.name }}
+    needs: build-and-push
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 10
+    permissions:
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: frontend
+            port: 3000
+            path: /api/config
+            # A rendered page, so the server-side React path runs too, not
+            # only a route handler. `/` redirects to the first screen.
+            page: /
+          - name: backend
+            port: 8000
+            path: /health
+
+    steps:
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4.7.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Start the image and wait for ${{ matrix.path }}
+        env:
+          DIGEST: ${{ needs.build-and-push.outputs[format('digest_{0}', matrix.name)] }}
+        run: |
+          IMAGE="${{ env.REGISTRY }}/${GITHUB_REPOSITORY,,}/${{ matrix.name }}@${DIGEST}"
+          echo "runner: $(uname -m); image: $IMAGE"
+          docker pull -q "$IMAGE"
+          ARCH=$(docker image inspect "$IMAGE" --format '{{.Architecture}}')
+          if [ "$ARCH" != "arm64" ]; then
+            echo "::error::pulled a $ARCH image on an arm64 runner"
+            exit 1
+          fi
+          docker run -d --name smoke -p ${{ matrix.port }}:${{ matrix.port }} \
+            -e PROMETHEUS_URL=http://127.0.0.1:9090 "$IMAGE"
+          for i in $(seq 1 30); do
+            if curl -sf "http://127.0.0.1:${{ matrix.port }}${{ matrix.path }}" >/dev/null; then
+              echo "✓ ${{ matrix.path }} answered after $((i * 2)) s"
+              PAGE="${{ matrix.page }}"
+              if [ -n "$PAGE" ]; then
+                if ! curl -sfL "http://127.0.0.1:${{ matrix.port }}${PAGE}" >/dev/null; then
+                  echo "::error::$IMAGE answered ${{ matrix.path }} but not the page ${PAGE}"
+                  docker logs smoke
+                  exit 1
+                fi
+                echo "✓ ${PAGE} rendered"
+              fi
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::$IMAGE did not answer ${{ matrix.path }} within 60 s"
+          docker logs smoke
+          exit 1
+
+  # Tags each image's digest once both arm64 smokes passed: `<version>` on
+  # main (latest and major.minor come in tag-release), `<version>-<branch>` and
+  # `<major.minor>-<branch>` on a branch.
+  publish:
+    name: Publish the tags
+    needs: [build-and-push, smoke-arm64]
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+
+    steps:
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4.7.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tag both images
+        env:
+          VERSION: ${{ needs.build-and-push.outputs.version }}
+          MAJOR_MINOR: ${{ needs.build-and-push.outputs.major_minor }}
+          DIGEST_FRONTEND: ${{ needs.build-and-push.outputs.digest_frontend }}
+          DIGEST_BACKEND: ${{ needs.build-and-push.outputs.digest_backend }}
+        run: |
+          set -euo pipefail
+          BASE="${REGISTRY}/${GITHUB_REPOSITORY,,}"
+          declare -A DIGEST=([frontend]="$DIGEST_FRONTEND" [backend]="$DIGEST_BACKEND")
+          declare -A TODO=()
+          for NAME in frontend backend; do
+            REF="$BASE/$NAME:$VERSION"
+            if [ "$GITHUB_REF_NAME" != "main" ]; then
+              TODO[$NAME]=1
+              continue
+            fi
+            # Checked again here, seconds before tagging, for both images before
+            # either is tagged: a run overlapping this one with the same VERSION
+            # passed the build's check too. Its own digest is a re-run; it passes.
+            if EXISTING=$(docker buildx imagetools inspect "$REF" --format '{{.Manifest.Digest}}' 2>&1); then
+              if [ "$EXISTING" = "${DIGEST[$NAME]}" ]; then
+                echo "✓ $REF already points at $EXISTING"
+                continue
+              fi
+              echo "::error::$REF already exists at $EXISTING; bump VERSION, a published tag is never rewritten"
+              exit 1
+            fi
+            if ! echo "$EXISTING" | grep -qiE "manifest unknown|not found|no such manifest"; then
+              echo "::error::could not tell whether $REF exists: $EXISTING"
+              exit 1
+            fi
+            TODO[$NAME]=1
+          done
+          for NAME in "${!TODO[@]}"; do
+            TAGS=(-t "$BASE/$NAME:$VERSION")
+            if [ "$GITHUB_REF_NAME" != "main" ]; then
+              TAGS+=(-t "$BASE/$NAME:$MAJOR_MINOR")
+            fi
+            docker buildx imagetools create "${TAGS[@]}" "$BASE/$NAME@${DIGEST[$NAME]}"
+            echo "✓ $BASE/$NAME:$VERSION → ${DIGEST[$NAME]}"
+          done
+
+  # One tag per published release, so "Validate version was bumped" above has
+  # something to compare against: it reads `git describe --tags`, and with no
+  # tag in the repository it took its first-release branch on every merge
+  # (MAG-4314). Then `latest` and `<major.minor>` move to the highest release.
+  # Runs once, after both version tags exist, on main only.
+  tag-release:
+    name: Tag the release
+    needs: [build-and-push, publish]
+    if: github.ref_name == 'main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Tag the built commit with v<VERSION>
+        run: |
+          VERSION=$(tr -d ' \n\r' < VERSION)
+          TAG="v${VERSION}"
+          EXISTING=$(git ls-remote --tags origin "refs/tags/${TAG}" | cut -f1)
+          if [ -n "$EXISTING" ]; then
+            # An annotated tag lists its tag object; compare commits.
+            TARGET=$(git rev-parse "${EXISTING}^{commit}" 2>/dev/null || echo "$EXISTING")
+            if [ "$TARGET" = "$GITHUB_SHA" ]; then
+              echo "✓ ${TAG} already points at ${GITHUB_SHA}."
+              exit 0
+            fi
+            echo "Error: ${TAG} exists at ${TARGET}, not at ${GITHUB_SHA}."
+            echo "The images just published as ${VERSION} do not match the tagged source."
+            exit 1
+          fi
+          git tag "$TAG" "$GITHUB_SHA"
+          git push origin "refs/tags/${TAG}"
+          echo "✓ Tagged ${TAG} at ${GITHUB_SHA}"
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4.7.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Overlapping main runs finish in any order, so each points `latest` and
+      # its `<major.minor>` at the highest release tag rather than its own, then
+      # re-reads the tags: a newer release tagged meanwhile is picked up here
+      # or by its own run, which tags before it points.
+      - name: Point latest and major.minor at the highest release
+        env:
+          MAJOR_MINOR: ${{ needs.build-and-push.outputs.major_minor }}
+        run: |
+          set -euo pipefail
+          BASE="${REGISTRY}/${GITHUB_REPOSITORY,,}"
+          highest() {
+            git ls-remote --tags --refs origin 'refs/tags/v*' \
+              | awk -v p="$1" '{ sub("refs/tags/v", "", $2) } $2 ~ /^[0-9]+\.[0-9]+\.[0-9]+$/ && (p == "" || index($2, p) == 1) { print $2 }' \
+              | sort -V | tail -n 1
+          }
+          for _ in 1 2 3; do
+            LATEST=$(highest "")
+            LINE=$(highest "${MAJOR_MINOR}.")
+            if [ -z "$LATEST" ] || [ -z "$LINE" ]; then
+              echo "::error::no release tag found (latest='$LATEST', ${MAJOR_MINOR}.x='$LINE')"
+              exit 1
+            fi
+            for NAME in frontend backend; do
+              docker buildx imagetools create -t "$BASE/$NAME:latest" "$BASE/$NAME:$LATEST"
+              docker buildx imagetools create -t "$BASE/$NAME:$MAJOR_MINOR" "$BASE/$NAME:$LINE"
+            done
+            if [ "$(highest "")" = "$LATEST" ] && [ "$(highest "${MAJOR_MINOR}.")" = "$LINE" ]; then
+              echo "✓ latest → $LATEST, $MAJOR_MINOR → $LINE"
+              exit 0
+            fi
+            echo "a newer release was tagged meanwhile; pointing again"
+          done
+          echo "::error::release tags kept moving; latest and $MAJOR_MINOR may lag"
+          exit 1

@@ -196,12 +196,14 @@ resync, not a follow-up.**
 The generator classifies every command as **runnable** (what it ships with is
 already a complete request), **needs params** (a placeholder, a hint that
 documents the argument instead of curating one, or the spec's own
-`block_parsing` naming a positional argument), or unknown. The drawer opens on
-the runnable ones, so a chain with none opens on a list where nothing works.
+`block_parsing` naming a positional argument), or unknown. The drawer opens
+every tier (regular, archive, debug, trace) on its first runnable command, so
+a tier with none opens on a command that needs typing into first.
 
 1. **Read the generator's tail.** It prints `runnable N commands` and then every
-   `(spec × iface)` pair with none. New entries there are the whole point of
-   the roll-call file.
+   method list with none: `SPEC/iface` for a regular tier,
+   `SPEC/iface/tier` for an add-on tier. New entries there are the whole point
+   of the roll-call file.
 2. **A new chain in a known family needs nothing.** Hints are keyed by METHOD
    NAME, not by chain, so a new EVM chain inherits the `eth_*` hints and a new
    Cosmos chain the cosmos ones — TSC arrived with 57 JSON-RPC and 242 REST
@@ -245,9 +247,15 @@ the runnable ones, so a chain with none opens on a list where nothing works.
    then claims nothing, and the ones you actually fire get a hint. This is what
    put 25 of TON's 41 "ready" commands behind a 422.
 
-7. **Accepting a gap is allowed.** GraphQL-over-POST surfaces (Mina, Fuel,
-   Subgraph) need a query body the console has no field for. Commit the
-   roll-call file with the entry in it; the diff records the decision.
+7. **Accepting a gap is allowed.** GraphQL filed as a REST collection (Mina,
+   Fuel, Subgraph) needs a request body, and the REST drawer sends a path and
+   no body. Commit the roll-call file with the entry in it; the diff records
+   the decision. A spec that declares the native `graphql` interface (Sui) is
+   not that gap: it gets its own catalog key, the drawer sends the query box
+   as `{"query": …}`, and its examples are `GRAPHQL_HINTS`, one per root
+   field, each a query document. A hint with an argument to fill marks the
+   slot `<two words>`; the usual placeholder rule does not apply there,
+   because every query is a `{ … }` selection set.
 
 ## Related
 

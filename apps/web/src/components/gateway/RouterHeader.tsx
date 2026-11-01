@@ -1,51 +1,24 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { WINDOWS, type MetricWindow } from "@sr/shared";
+import { useGrafanaUrl } from "@/hooks/use-grafana-url";
+import { logsBoardHref } from "@/lib/grafana-logs";
 import { ChainSelect, type ChainOption } from "./ChainSelect";
 import { RefreshButton } from "./RefreshButton";
 import { RouterFilterSelect } from "./RouterFilterSelect";
 import { WindowSelect } from "./WindowSelect";
 
-/* Grafana base URL for the "View full logs" button. Resolved at runtime from
-   /api/config (which reads DASHBOARD_GRAFANA_URL from the container env), so one
-   published web image can point at any Grafana. Falls back to the build-time
-   NEXT_PUBLIC_GRAFANA_URL; null when neither names one, and the button is hidden. */
-const BUILD_GRAFANA_URL = process.env.NEXT_PUBLIC_GRAFANA_URL || null;
-
-function useGrafanaUrl(): string | null {
-  const [url, setUrl] = useState<string | null>(BUILD_GRAFANA_URL);
-  useEffect(() => {
-    let alive = true;
-    fetch("/api/config")
-      .then((r) => r.json())
-      .then((c) => {
-        if (alive && typeof c?.grafanaUrl === "string" && c.grafanaUrl) setUrl(c.grafanaUrl);
-      })
-      .catch(() => {/* keep the build-time fallback */});
-    return () => {
-      alive = false;
-    };
-  }, []);
-  return url;
-}
-
 /** Build the "Smart Router Dashboard Logs" board URL, scoped to the router
     service and the header's current time window. Mirrors the board's variables:
     var-service=router, var-search=<chain>, from=now-<window>s. */
 function fullLogsHref(grafanaBase: string, timeWindow: MetricWindow, chainFilter: string): string {
-  const rangeSeconds = WINDOWS[timeWindow].rangeSeconds;
-  const params = new URLSearchParams({
-    orgId: "1",
-    from: `now-${rangeSeconds}s`,
-    to: "now",
-    timezone: "browser",
-    "var-service": "router",
+  return logsBoardHref(grafanaBase, {
     // A specific chain seeds the board's regex search; "all" leaves it empty.
-    "var-search": chainFilter === "all" ? "" : chainFilter,
+    search: chainFilter === "all" ? "" : chainFilter,
+    from: `now-${WINDOWS[timeWindow].rangeSeconds}s`,
+    to: "now",
     refresh: "5s",
   });
-  return `${grafanaBase.replace(/\/$/, "")}/?${params.toString()}`;
 }
 
 /* Ported verbatim from the design prototype (page-overview.jsx RouterHeader).

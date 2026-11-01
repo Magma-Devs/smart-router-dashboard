@@ -5,8 +5,12 @@ import type { ChartGrid } from "../types/domain.js";
  * ~150–200 range points (v1's adaptive-step semantics), clamped to ≥15s
  * (the Prometheus scrape interval — finer steps just repeat samples).
  *
+ * The step is how often a chart draws a point, not the range it reads: a rate
+ * needs two samples, so ranges are a minute at least (`rateRange` and
+ * `countOverStep` in promql/builders.ts).
+ *
  * Keys mirror the design's page-level window <select> (12 options) plus
- * "1h", which the Dashboard page's chip row uses internally.
+ * "1h", which the api accepts and no page offers.
  */
 export const WINDOWS = {
   "5m": { label: "5 minutes", rangeSeconds: 300, step: "15s" },
@@ -69,13 +73,21 @@ export function toMetricWindow(v: string | undefined): MetricWindow {
   return WINDOW_ALIASES[v] ?? DEFAULT_WINDOW;
 }
 
-/** The window's step as a number of seconds. */
-export function stepSeconds(window: MetricWindow): number {
-  const m = WINDOWS[window].step.match(/^(\d+)([smh])$/);
-  if (!m) return 15;
+/** A duration such as "15s", "5m" or "1h", in seconds; NaN when it is none of those. */
+export function durationSeconds(d: string): number {
+  const m = /^(\d+)([smh])$/.exec(d);
+  if (!m) return NaN;
   const n = Number(m[1]);
   return m[2] === "s" ? n : m[2] === "m" ? n * 60 : n * 3600;
 }
+
+/** The window's step as a number of seconds. */
+export function stepSeconds(window: MetricWindow): number {
+  return durationSeconds(WINDOWS[window].step) || 15;
+}
+
+/** The shortest range a rate reads: four 15-second scrapes, so it always holds two. */
+export const MIN_RATE_RANGE_SEC = 60;
 
 /** Steps a chart may use, finest first - round numbers a reader can say out loud. */
 const NICE_STEPS = [15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600, 43200, 86400] as const;
@@ -108,8 +120,21 @@ export function chartSampling(window: MetricWindow): {
   const range = WINDOWS[window].rangeSeconds;
   const stepSec = niceStep(range, 300);
   const lookbackSec = Math.ceil(Math.max(stepSec * 4, range / 24, Math.min(300, range / 6)) / stepSec) * stepSec;
-  const rateWindowSec = Math.max(stepSec, 60);
+  const rateWindowSec = Math.max(stepSec, MIN_RATE_RANGE_SEC);
   return { step: fmtStep(stepSec), stepSec, lookback: fmtStep(lookbackSec), lookbackSec, rateWindow: fmtStep(rateWindowSec), rateWindowSec };
+}
+
+/**
+ * The bounds of a range read at `stepSec`: `end` is the last step boundary at
+ * or before `nowSec`, `start` is `rangeSeconds` before it, rounded down to a
+ * step boundary when the range is not a whole number of steps. The same read
+ * then asks for the same window for a whole step, so a cache can answer it:
+ * Mimir's results cache keeps a range read only when both ends are step
+ * multiples. The cost is that the newest point is up to one step old.
+ */
+export function alignedBounds(rangeSeconds: number, stepSec: number, nowSec: number): { start: number; end: number } {
+  const end = Math.floor(nowSec / stepSec) * stepSec;
+  return { start: Math.floor((end - rangeSeconds) / stepSec) * stepSec, end };
 }
 
 /** The bar sizes an errors-over-time chart uses: the clock's own, ten minutes at least. */

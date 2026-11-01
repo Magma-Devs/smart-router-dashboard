@@ -1888,6 +1888,24 @@
     ],
     "mainnet": false
   },
+  "PEP": {
+    "name": "Pepecoin",
+    "family": "bitcoin",
+    "icon": "pepecoin",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "PEPT": {
+    "name": "Pepecoin Testnet",
+    "family": "bitcoin",
+    "icon": "pepecoin",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
   "PHAROS": {
     "name": "Pharos Pacific",
     "family": "evm",

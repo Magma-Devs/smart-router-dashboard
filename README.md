@@ -95,10 +95,19 @@ router uses its in-process cache.
 - The web is **runtime-configurable** — one published image points at any api host via `DASHBOARD_API_URL`.
 - `AUTH_MODE=enabled` adds a Postgres users store + HS256 JWT gate on `/api/*` — see [Authentication](#authentication).
 
+### Recording rules (optional)
+
+Long windows read the raw router metrics unless the store evaluates the
+twelve recording rules in [docs/RECORDING-RULES.md](docs/RECORDING-RULES.md);
+with them, windows of three hours and up read a few hundred recorded series
+instead of every raw histogram bucket, within a fraction of a percent of the
+same numbers, provided the routers are scraped every 15 seconds, which the
+api checks. Without them everything works, only slower on long windows.
+`GET /api/metrics/reads` reports which case a deployment is in.
+
 ## Pages
 
 - **Overview** — KPI strip (requests, RPS, errors, success rate, latency) + chart grid, all live
-- **Dashboard** — ops surface, 1h/3h/24h/7d/custom windows, client-side chain multiselect
 - **Upstreams** - the mounted config joined with live per-endpoint stats, carved three ways: **by chain** (who serves it - the default), by router (the endpoints each router publishes), or by upstream (what it serves)
 - **Metrics** - four tabs: Overview, Upstreams, Errors, Transactions. The Transactions tab and the Errors tab's request list read the router's logs from Loki (`LOKI_URL`; the `logs` profile runs one)
 - **Live test** — POST straight to the router's listen ports from the browser; full per-chain method catalog with archive/debug/trace tiers
@@ -117,6 +126,14 @@ AUTH_SECRET=$(openssl rand -base64 32) make up-auth
 # setup token: the SETUP_TOKEN you set, or: docker compose logs api | grep -iE 'setup_?token'
 # (make dev-auth seeds a development admin instead — see docs/AUTH.md)
 ```
+
+## Incident reports
+
+With `INCIDENTS_ENABLED=true` on both containers, the top bar carries a
+**Report incident** button. A report (Critical / High / Medium / Low) goes to the
+deployment's own inbound webhook in Magma's on-call system, which decides who
+hears about it: Critical calls the on-call engineer. Off by default. Full guide:
+[`docs/INCIDENTS.md`](./docs/INCIDENTS.md).
 
 ## Development
 
@@ -185,6 +202,8 @@ Changes are tracked in [CHANGELOG.md](./CHANGELOG.md). Versioning is driven by t
 
 - `ghcr.io/magma-devs/smart-router-dashboard/backend` — the Fastify api (`apps/api`)
 - `ghcr.io/magma-devs/smart-router-dashboard/frontend` — the Next.js web (`apps/web`)
+
+Both images are published for `linux/amd64` and `linux/arm64` from a single build stage (no emulation; see CLAUDE.md → Docker / images / isolation). A release's tags appear only once its arm64 images have booted in CI, and `latest` is always the highest released version.
 
 Set `DASHBOARD_API_URL` on the web container at runtime to point one published image at any api host.
 

@@ -4,8 +4,6 @@
    Ported 1:1 from the design prototype (SR_Dashboard/magma/charts.jsx). */
 
 import { useEffect, useRef, useState } from "react";
-import { ColumnChart as LegacyColumnChart, LineChart as LegacyLineChart } from "@/legacy/components/gateway/charts";
-import { useNewUi } from "./new-ui";
 
 /* default x-axis tick labels — charts hold ~24h of hourly data */
 export const X_DEFAULT = ["−24h", "−18h", "−12h", "−6h", "now"];
@@ -155,6 +153,10 @@ export interface Layer {
   name: string;
   values: number[];
   color: string;
+  /** Diagonal stripes in `color`, to tell apart two layers that share one. */
+  hatch?: boolean;
+  /** How strong the fill is; 0.7 by default. */
+  opacity?: number;
 }
 export interface BgBand {
   lo: number;
@@ -170,7 +172,7 @@ export interface ChartTarget {
 /* ── LineChart ───────────────────────────────────────────────────────── */
 /* series: [{values, color, dashed, width, opacity, fill}]
    bgBands: [{lo, hi, fill}]   target: {value, color, label} */
-function NewLineChart({
+export function LineChart({
   series,
   height,
   padX = 40,
@@ -497,6 +499,7 @@ export function StackedAreaChart({
   xLabels,
   normalized = false,
   id = "sa",
+  hover,
 }: {
   layers: Layer[];
   height?: number;
@@ -506,12 +509,15 @@ export function StackedAreaChart({
   xLabels?: string[] | null;
   normalized?: boolean;
   id?: string;
+  /** A crosshair and a box with every layer's value at the point under the cursor, as LineChart's. */
+  hover?: { title: (i: number) => string; fmt: (v: number) => string; total?: boolean };
 }) {
   const [ref, w, oh] = useChartDims(600, height || 200);
   const h = height || oh;
   const prog = useAnimProg(id + (layers?.[0]?.values?.length ?? 0));
+  const [hovI, setHovI] = useState<number | null>(null);
 
-  const containerStyle: React.CSSProperties = { width: "100%", height: height ? height : "100%", overflow: "hidden" };
+  const containerStyle: React.CSSProperties = { width: "100%", height: height ? height : "100%", overflow: hover ? "visible" : "hidden", position: "relative" };
   if (!layers?.length || !layers[0]!.values?.length) return <div ref={ref} style={containerStyle} />;
 
   const n = layers[0]!.values.length;
@@ -559,14 +565,53 @@ export function StackedAreaChart({
         {xLabels !== null && (xLabels || X_DEFAULT).map((lab, _i, _a) => (
           <text key={"x" + _i} x={padX + (_a.length > 1 ? (_i / (_a.length - 1)) * iW : iW / 2)} y={padY + iH + 13} fontSize="9" fill="var(--text-4)" fontFamily="var(--font-mono)" textAnchor={_i === 0 ? "start" : _i === _a.length - 1 ? "end" : "middle"}>{lab}</text>
         ))}
+        {hover && hovI != null && (
+          <line x1={cx(hovI)} x2={cx(hovI)} y1={padY} y2={padY + iH} stroke="var(--text-3)" strokeWidth="1" strokeDasharray="3 3" opacity="0.7" pointerEvents="none" />
+        )}
+        {hover && (
+          <rect x={padX} y={padY} width={Math.max(0, iW)} height={Math.max(0, iH)} fill="transparent"
+            onMouseMove={(e) => {
+              const r = e.currentTarget.getBoundingClientRect();
+              const f = r.width ? (e.clientX - r.left) / r.width : 0;
+              setHovI(Math.min(n - 1, Math.max(0, Math.round(f * (n - 1)))));
+            }}
+            onMouseLeave={() => setHovI(null)} />
+        )}
       </svg>
+      {hover && hovI != null && (
+        <div style={{
+          position: "absolute", top: padY, zIndex: 5, pointerEvents: "none",
+          ...(cx(hovI) > w / 2 ? { right: w - cx(hovI) + 12 } : { left: cx(hovI) + 12 }),
+          background: "var(--surface)", border: "1px solid var(--line-2)", borderRadius: 8, padding: "8px 10px",
+          boxShadow: "0 6px 18px rgba(0,0,0,0.35)", fontSize: 11, minWidth: 160, maxWidth: 320,
+        }}>
+          <div className="gw-mono" style={{ color: "var(--text-3)", marginBottom: 6 }}>{hover.title(hovI)}</div>
+          {/* Top layer first, as the stack reads. */}
+          {[...layers].reverse().map((l) => (
+            <div key={l.name} style={{ display: "flex", alignItems: "center", gap: 7, padding: "2px 0" }}>
+              <span style={{ width: 9, height: 9, background: l.color, borderRadius: 2, flexShrink: 0 }} />
+              <span className="gw-mono" style={{ flex: 1, color: "var(--text-2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.name}</span>
+              <span className="gw-mono gw-tnum" style={{ color: "var(--text)", fontWeight: 600 }}>{hover.fmt(l.values[hovI] ?? 0)}</span>
+            </div>
+          ))}
+          {hover.total && (
+            <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "4px 0 0", marginTop: 4, borderTop: "1px solid var(--line)" }}>
+              <span className="gw-mono" style={{ flex: 1, color: "var(--text-3)" }}>Total</span>
+              <span className="gw-mono gw-tnum" style={{ color: "var(--text)", fontWeight: 600 }}>{hover.fmt(cumV[cumV.length - 1]![hovI] ?? 0)}</span>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
 /* ── ColumnChart ─────────────────────────────────────────────────────── */
 /* stacks: [{name, values, color}] — bottom to top */
-function NewColumnChart({
+/** The least height a bar's part that isn't zero is drawn at, in px. */
+const MIN_PART_PX = 3;
+
+export function ColumnChart({
   stacks,
   height,
   padX = 40,
@@ -667,6 +712,16 @@ function NewColumnChart({
   return (
     <div ref={ref} style={containerStyle}>
       <svg width={w} height={h} style={{ overflow: "visible", display: "block" }}>
+        {stacks.some((s) => s.hatch) && (
+          <defs>
+            {stacks.map((s, si) => s.hatch && (
+              <pattern key={si} id={`${id}-hatch-${si}`} width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                <rect width="5" height="5" fill={s.color} opacity="0.3" />
+                <line x1="0" y1="0" x2="0" y2="5" stroke={s.color} strokeWidth="2.5" />
+              </pattern>
+            ))}
+          </defs>
+        )}
         {gVals.map((v, i) => (
           <g key={i}>
             <line x1={padX} x2={padX + iW} y1={cy(v)} y2={cy(v)} stroke="var(--line)" strokeWidth="1" />
@@ -700,17 +755,18 @@ function NewColumnChart({
               onMouseEnter={() => { if (!controlled) setHov(i); report(timed ? (timed.xs[i] ?? 0) - barSpan / 2 : i); }}
               onMouseLeave={() => { if (!controlled) setHov(null); report(null); }}
               onClick={onBarClick ? () => onBarClick(i) : undefined} style={onBarClick ? { cursor: "pointer" } : undefined}>
-              {/* a full-height hit area, so a short bar is still easy to click */}
-              {onBarClick && <rect x={bx - 1} y={padY} width={barW + 2} height={iH} fill="transparent" />}
+              {/* a full-height hit area, so a short bar is as easy to hover or click as a tall one */}
+              <rect x={bx - 1} y={padY} width={barW + 2} height={iH} fill="transparent" />
               {stacks.map((s, si) => {
                 const v = s.values[i] || 0;
-                if (v === 0) { cum += v; return null; }
-                const bh = (v / maxV) * iH;
-                const y = padY + iH - ((cum + v) / maxV) * iH;
-                cum += v;
+                if (v === 0) return null;
+                // Every part that isn't zero stays visible: one rejected on top of hundreds accepted is a sliver, not nothing.
+                const bh = Math.max((v / maxV) * iH, MIN_PART_PX);
+                const y = padY + iH - cum - bh;
+                cum += bh;
                 return (
-                  <rect key={si} x={bx} y={y} width={barW} height={Math.max(bh, 0.5)}
-                    fill={isSpike ? "var(--warn)" : s.color} opacity={isSpike ? 0.88 : 0.7}
+                  <rect key={si} x={bx} y={y} width={barW} height={bh}
+                    fill={isSpike ? "var(--warn)" : s.hatch ? `url(#${id}-hatch-${si})` : s.color} opacity={isSpike ? 0.88 : s.opacity ?? 0.7}
                     rx={si === stacks.length - 1 ? 1.5 : 0} />
                 );
               })}
@@ -793,15 +849,4 @@ export function ChartLegend({ items, style }: { items: LegendItem[]; style?: Rea
       ))}
     </div>
   );
-}
-
-/* DASHBOARD_NEW_UI: the two charts 0.28 changed draw as in 0.28 under the
-   flag, else as in 0.27 (src/legacy) - the curve that overshoots its points
-   included. The props are 0.28's, a superset; 0.27 callers pass only its own. */
-export function LineChart(props: React.ComponentProps<typeof NewLineChart>) {
-  return useNewUi() ? <NewLineChart {...props} /> : <LegacyLineChart {...props} />;
-}
-
-export function ColumnChart(props: React.ComponentProps<typeof NewColumnChart>) {
-  return useNewUi() ? <NewColumnChart {...props} /> : <LegacyColumnChart {...props} />;
 }

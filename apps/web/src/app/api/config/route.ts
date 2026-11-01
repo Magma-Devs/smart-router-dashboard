@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { normalizeGrafanaDashboardUrl } from "@/lib/grafana-dashboard-url";
 
 // NEXT_PUBLIC_* values are inlined into every bundle at BUILD time, so on
 // their own they can't vary per deployment. DASHBOARD_* are read from the
@@ -32,5 +33,8 @@ export function GET() {
       process.env.DASHBOARD_GRAFANA_URL ||
       process.env.NEXT_PUBLIC_GRAFANA_URL ||
       null,
+    // Exact customer reports link for the sidebar, independent of the logs board.
+    // Runtime only: an unset value must not fall back to another tenant's URL.
+    grafanaDashboardUrl: normalizeGrafanaDashboardUrl(process.env.DASHBOARD_GRAFANA_DASHBOARD_URL),
   });
 }

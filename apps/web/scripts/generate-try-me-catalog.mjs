@@ -12,17 +12,18 @@
  *
  *   { [specIndex]:
  *       string                               // alias — identical to that index
- *     | { [iface in jsonrpc|rest|tendermintrpc|grpc]?: {
+ *     | { [iface in jsonrpc|rest|tendermintrpc|grpc|graphql]?: {
  *          regular?: Cmd[]; archive?: Cmd[]; debug?: Cmd[]; trace?: Cmd[] } } }
  *
  *   Cmd = { m: string; v?: string; l?: string; p?: string; d?: string;
  *           ip?: string; a?: 1 }
- *     m  method name (JSON-RPC method / REST path template / grpc Svc/Method)
+ *     m  method name (JSON-RPC method / REST path template / grpc Svc/Method
+ *        / GraphQL root field)
  *     v  HTTP verb for REST when not GET
  *     l  label when different from m (curated)
- *     p  example params when known (JSON string, or concrete REST path);
- *        omitted when it equals the interface default ("[]" / the path
- *        template itself / "{}")
+ *     p  example params when known (JSON string, concrete REST path, or a
+ *        GraphQL query document); omitted when it equals the interface
+ *        default ("[]" / the path template itself / "{}" / "{ <field> }")
  *     d  one-line description (curated)
  *     ip internal path of the collection that serves it (`/v2`, `/P`), when
  *        the method is served under one. NOT part of the identifier — see
@@ -99,10 +100,13 @@ const OUT_PATH =
   process.env.TRY_ME_OUT ??
   path.resolve(__dirname, "../src/components/try-me/chain-methods.generated.json");
 /**
- * Committed roll-call of (spec × interface) pairs whose regular tier has NO
- * command that can be sent as-is. It exists to be diffed: a chain family
- * nobody has curated hints for lands as a line in this file, which the drift
- * check turns into a failure instead of a silent gap in the drawer. See
+ * Committed roll-call of the method lists with NO command that can be sent
+ * as-is: `INDEX/iface` for a regular tier, `INDEX/iface/tier` for an add-on
+ * tier (archive, debug, trace). The drawer opens each tier on its first
+ * runnable command, so every line here is a tier it opens on one that needs
+ * typing into first. It exists to be diffed: a chain family nobody has
+ * curated hints for lands as a line in this file, which the drift check turns
+ * into a failure instead of a silent gap in the drawer. See
  * `.claude/rules/chain-resync.md`.
  */
 const NO_RUNNABLE_PATH =
@@ -163,16 +167,19 @@ const JSONRPC_HINTS = [
   { m: "eth_subscribe", p: '["newHeads"]', d: "Subscribe to new block headers over WebSocket." },
   { m: "eth_unsubscribe", p: '["<subscription id>"]', d: "Cancel a WebSocket subscription by id." },
   // EVM debug add-on
+  // The drawer opens a tier on its first ready command, so the one-call
+  // traces lead: a whole block's trace is megabytes on a busy chain (2.3 MB
+  // on Ethereum), past the direct leg's body cap.
   { m: "debug_traceTransaction", p: '["0x...", {"tracer":"callTracer"}]', d: "Traces a transaction's execution with the given tracer." },
+  { m: "debug_traceCall", p: '[{"to":"0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48","data":"0x18160ddd"}, "latest", {"tracer":"callTracer"}]', d: "Traces an eth_call without creating a transaction." },
   { m: "debug_traceBlockByNumber", p: '["latest", {"tracer":"callTracer"}]', d: "Traces every transaction in a block by number." },
   { m: "debug_traceBlockByHash", p: '["0x...", {"tracer":"callTracer"}]', d: "Traces every transaction in a block by hash." },
-  { m: "debug_traceCall", p: '[{"to":"0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48","data":"0x18160ddd"}, "latest", {"tracer":"callTracer"}]', d: "Traces an eth_call without creating a transaction." },
   // EVM trace add-on (OpenEthereum-style)
+  { m: "trace_call", p: '[{"to":"0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48","data":"0x18160ddd"}, ["trace"], "latest"]', d: "Executes a call and returns the requested traces." },
   { m: "trace_block", p: '["latest"]', d: "Returns traces created at the given block." },
   { m: "trace_transaction", p: '["0x..."]', d: "Returns all traces of the given transaction." },
   { m: "trace_replayBlockTransactions", p: '["latest", ["trace"]]', d: "Replays all transactions in a block, returning the requested traces." },
   { m: "trace_filter", p: '[{"fromBlock":"latest","toBlock":"latest"}]', d: "Returns traces matching the given filter." },
-  { m: "trace_call", p: '[{"to":"0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48","data":"0x18160ddd"}, ["trace"], "latest"]', d: "Executes a call and returns the requested traces." },
   // Arbitrum classic trace add-on
   { m: "arbtrace_block", p: '["latest"]', d: "Arbitrum classic: traces created at the given block." },
   { m: "arbtrace_transaction", p: '["0x..."]', d: "Arbitrum classic: all traces of the given transaction." },
@@ -199,14 +206,17 @@ const JSONRPC_HINTS = [
   { m: "gas_price", p: "[null]", d: "Returns the gas price for a specific block.", only: ["NEAR"] },
   { m: "network_info", p: "[]", d: "Returns network info such as active peers.", only: ["NEAR"] },
   { m: "validators", p: "[null]", d: "Returns the current validator set.", only: ["NEAR"] },
-  // Starknet
+  // Starknet. A block id goes positionally as the bare tag (`["latest"]`) or
+  // by name (`{"block_id":"latest"}`); Juno and Pathfinder both answer
+  // `[{"block_id":"latest"}]` with "Invalid block id".
   { m: "starknet_blockNumber", p: "[]", d: "Get the most recent accepted block number." },
   { m: "starknet_blockHashAndNumber", p: "[]", d: "Get the most recent accepted block hash and number." },
   { m: "starknet_chainId", p: "[]", d: "Return the currently configured StarkNet chain id." },
-  { m: "starknet_getBlockWithTxs", p: '[{"block_id":"latest"}]', d: "Get block information with full transactions." },
+  { m: "starknet_getBlockWithTxs", p: '["latest"]', d: "Get block information with full transactions." },
   { m: "starknet_syncing", p: "[]", d: "Returns sync status, or false if not syncing." },
-  { m: "starknet_getStateUpdate", p: '[{"block_id":"latest"}]', d: "Get the state changes in a given block." },
+  { m: "starknet_getStateUpdate", p: '["latest"]', d: "Get the state changes in a given block." },
   { m: "starknet_traceTransaction", p: '["0x..."]', d: "Returns the execution trace of a transaction." },
+  { m: "starknet_traceBlockTransactions", p: '["latest"]', d: "Returns the execution traces of every transaction in a block." },
   // Bitcoin-family (btc / bch / doge / litecoin)
   { m: "getblockchaininfo", p: "[]", d: "Returns blockchain state info." },
   { m: "getblockcount", p: "[]", d: "Returns the current block height." },
@@ -449,6 +459,54 @@ const REST_HINTS = [
   { m: "/blocks", needs: true, d: "Lists blocks after a hash — append ?lowHash=<block hash> (from /info/blockdag).", only: ["KASPA"] },
   { m: "/blocks-from-bluescore", needs: true, d: "Returns blocks by blue score — append exactly one of ?blueScore=, ?blueScoreGte= or ?blueScoreLt= (see /info/virtual-chain-blue-score).", only: ["KASPA"] },
   { m: "/virtual-chain", needs: true, d: "Returns the virtual chain from a blue score — append ?blueScoreGte=<n>, divisible by the page limit (10 by default).", only: ["KASPA"] },
+  // Polymesh (Substrate API Sidecar). `/blocks` and `/accounts/compare` look
+  // complete but answer 400 without their query string. A `{metadataVersion}`
+  // is spelled `v14`; a bare `14` answers 500. Item routes under `/pallets`
+  // echo the item's name unless asked for `?metadata=true`, and the dispatchable
+  // example sits on `system` because Sidecar resolves `balances` calls to the
+  // wrong entry on this runtime (`transferKeepAlive` comes back as
+  // `transfer_all`, `transferWithMemo` answers 500). The account examples are a
+  // mainnet validator stash, so they are pinned to POLYMESH and POLYMESHT keeps
+  // its placeholders. Every path checked through a production router on 2026-10-25.
+  { m: "/node/version", d: "Returns the node's client name, version and chain.", only: ["POLYMESH"] },
+  { m: "/runtime/spec", d: "Returns the runtime spec: spec name, spec and transaction versions, chain properties.", only: ["POLYMESH"] },
+  { m: "/blocks/head", d: "Returns the latest block with its decoded extrinsics and events.", only: ["POLYMESH"] },
+  { m: "/blocks/head/header", d: "Returns the header of the latest block.", only: ["POLYMESH"] },
+  { m: "/blocks", p: "/blocks?range=1-2", d: "Returns the blocks in ?range=<from>-<to> (inclusive). Without the range the node answers 400.", only: ["POLYMESH"] },
+  { m: "/blocks/{blockId}", p: "/blocks/1", d: "Returns a block by number or hash, with its decoded extrinsics and events. Old blocks need an archive node.", only: ["POLYMESH"] },
+  { m: "/blocks/{blockId}/header", p: "/blocks/1/header", d: "Returns a block's header by number or hash.", only: ["POLYMESH"] },
+  { m: "/blocks/{blockId}/extrinsics-raw", p: "/blocks/1/extrinsics-raw", d: "Returns a block's header and its extrinsics as raw SCALE hex.", only: ["POLYMESH"] },
+  { m: "/blocks/{blockId}/extrinsics/{extrinsicIndex}", p: "/blocks/1/extrinsics/0", d: "Returns one decoded extrinsic of a block, by index, with its events.", only: ["POLYMESH"] },
+  { m: "/node/network", d: "Returns the peer count, sync state and roles of the node.", only: ["POLYMESH"] },
+  { m: "/node/transaction-pool", d: "Returns the extrinsics pending in the node's pool.", only: ["POLYMESH"] },
+  { m: "/pallets/staking/progress", d: "Returns the active era, the next session estimate and the validator set.", only: ["POLYMESH"] },
+  { m: "/pallets/staking/validators", d: "Returns every validator with its status and commission.", only: ["POLYMESH"] },
+  { m: "/accounts/{accountId}/balance-info", p: "/accounts/2HW34bz2Ue9RicxMGfPH6HaFRQKM416cJivXdciXTYsNz3Dz/balance-info", d: "Returns an account's POLYX balance: free, reserved, locks and nonce.", only: ["POLYMESH"], exact: true },
+  { m: "/accounts/{accountId}/staking-info", p: "/accounts/2HW34bz2Ue9RicxMGfPH6HaFRQKM416cJivXdciXTYsNz3Dz/staking-info", d: "Returns a stash's staking ledger: controller, bonded amount, reward destination. The account must be a stash.", only: ["POLYMESH"], exact: true },
+  { m: "/accounts/{accountId}/staking-payouts", p: "/accounts/2HW34bz2Ue9RicxMGfPH6HaFRQKM416cJivXdciXTYsNz3Dz/staking-payouts", d: "Returns a stash's payouts for the last completed era (?depth=<n> for more eras).", only: ["POLYMESH"], exact: true },
+  { m: "/accounts/{address}/validate", p: "/accounts/2HW34bz2Ue9RicxMGfPH6HaFRQKM416cJivXdciXTYsNz3Dz/validate", d: "Checks an SS58 address and returns its network, prefix and account id.", only: ["POLYMESH"] },
+  { m: "/accounts/{accountId}/convert", p: "/accounts/0xdf8e557f44acbff666eb2825b877ee8bbd5fc87e3eba94714c0639f9aa325185/convert?prefix=12", d: "Converts a hex account id to an SS58 address. ?prefix=12 is Polymesh; without it the address comes back in the generic 42 format.", only: ["POLYMESH"] },
+  { m: "/accounts/compare", p: "/accounts/compare?addresses=2HW34bz2Ue9RicxMGfPH6HaFRQKM416cJivXdciXTYsNz3Dz,5H7ppNE81NPEQP6GSdmzRKYzoxcAhVzDxwYU681ZMCi1Rdqk", d: "Checks whether the SS58 addresses in ?addresses=<a>,<b> share one public key. Without the list the node answers 400.", only: ["POLYMESH"] },
+  { m: "/pallets/{palletId}/consts", p: "/pallets/balances/consts", d: "Lists a pallet's constants with their values.", only: ["POLYMESH"] },
+  { m: "/pallets/{palletId}/consts/{constantItemId}", p: "/pallets/balances/consts/ExistentialDeposit?metadata=true", d: "Returns one constant of a pallet; ?metadata=true adds its value and docs.", only: ["POLYMESH"] },
+  { m: "/pallets/{palletId}/storage", p: "/pallets/balances/storage", d: "Lists a pallet's storage items.", only: ["POLYMESH"] },
+  { m: "/pallets/{palletId}/storage/{storageItemId}", p: "/pallets/balances/storage/TotalIssuance", d: "Reads a storage item of a pallet at the chain head.", only: ["POLYMESH"] },
+  { m: "/pallets/{palletId}/dispatchables", p: "/pallets/balances/dispatchables", d: "Lists the calls a pallet exposes, with their arguments.", only: ["POLYMESH"] },
+  { m: "/pallets/{palletId}/dispatchables/{dispatchableItemId}", p: "/pallets/system/dispatchables/remark?metadata=true", d: "Returns one call of a pallet; ?metadata=true adds its arguments and docs.", only: ["POLYMESH"] },
+  { m: "/pallets/{palletId}/events", p: "/pallets/balances/events", d: "Lists the events a pallet emits.", only: ["POLYMESH"] },
+  { m: "/pallets/{palletId}/events/{eventItemId}", p: "/pallets/balances/events/Transfer?metadata=true", d: "Returns one event of a pallet; ?metadata=true adds its fields and docs.", only: ["POLYMESH"] },
+  { m: "/pallets/{palletId}/errors", p: "/pallets/balances/errors", d: "Lists the errors a pallet can raise.", only: ["POLYMESH"] },
+  { m: "/pallets/{palletId}/errors/{errorItemId}", p: "/pallets/balances/errors/InsufficientBalance?metadata=true", d: "Returns one error of a pallet; ?metadata=true adds its docs.", only: ["POLYMESH"] },
+  { m: "/runtime/metadata/versions", d: "Lists the metadata versions the runtime serves.", only: ["POLYMESH"] },
+  { m: "/runtime/metadata", d: "Returns the full runtime metadata, about 0.8 MB.", only: ["POLYMESH"] },
+  { m: "/runtime/metadata/{metadataVersion}", p: "/runtime/metadata/v15", d: "Returns the runtime metadata at one version, spelled vX (see /runtime/metadata/versions). A bare number answers 500.", only: ["POLYMESH"] },
+  { m: "/runtime/code", d: "Returns the runtime Wasm blob as hex, about 3.8 MB.", only: ["POLYMESH"] },
+  { m: "/transaction/material", d: "Returns what an offline signer needs: genesis hash, spec and transaction versions. ?metadata=json or ?metadata=scale adds the metadata.", only: ["POLYMESH"] },
+  { m: "/transaction/material/{metadataVersion}", p: "/transaction/material/v14", d: "Returns the signing material with the metadata at one version, spelled vX. A bare number answers 500.", only: ["POLYMESH"] },
+  { m: "/experimental/blocks/head/traces", unserved: true, d: "Not served — the node refuses the unsafe RPC that block traces run on (500 \"RPC call is unsafe to be called externally\").", only: ["POLYMESH"] },
+  { m: "/experimental/blocks/head/traces/operations", unserved: true, d: "Not served — the node answers 400 to \"head\" here, and refuses the unsafe RPC that block traces run on for a block number.", only: ["POLYMESH"] },
+  { m: "/experimental/blocks/{blockId}/traces", p: "/experimental/blocks/1/traces", unserved: true, d: "Not served — the node refuses the unsafe RPC that block traces run on (500 \"RPC call is unsafe to be called externally\").", only: ["POLYMESH"] },
+  { m: "/experimental/blocks/{blockId}/traces/operations", p: "/experimental/blocks/1/traces/operations", unserved: true, d: "Not served — the node refuses the unsafe RPC that block traces run on (500 \"RPC call is unsafe to be called externally\").", only: ["POLYMESH"] },
   // Concordium (node REST proxy — {…} segments are placeholders to replace)
   { m: "/v0/consensusInfo", d: "Returns consensus state: best block, epoch and finalization info." },
   { m: "/v0/chainParameters", d: "Returns the current chain parameters." },
@@ -464,6 +522,10 @@ const REST_HINTS = [
   { m: "/eth/v1/beacon/headers", d: "Returns the latest block headers." },
   { m: "/eth/v1/beacon/states/{state_id}/root", p: "/eth/v1/beacon/states/head/root", d: "Returns the state root for the given state." },
   { m: "/eth/v1/beacon/states/{state_id}/finality_checkpoints", p: "/eth/v1/beacon/states/head/finality_checkpoints", d: "Returns finality checkpoints for the given state." },
+  // Debug add-on. The fork-choice dump is the whole store (45 MB on mainnet,
+  // lodestar-mainnet.chainsafe.io, 2026-10-29), so the heads (5 KB) lead.
+  { m: "/eth/v2/debug/beacon/heads", d: "Returns the chain heads in the node's fork choice." },
+  { m: "/eth/v1/debug/fork_choice", d: "Dumps the node's whole fork-choice store — tens of MB on mainnet." },
   // Tron
   { m: "/wallet/getnowblock", v: "POST", d: "Returns the latest block." },
   { m: "/wallet/getnodeinfo", d: "Returns node runtime info." },
@@ -536,11 +598,66 @@ const GRPC_HINTS = [
   { m: "sui.rpc.v2.LedgerService/ListEvents", p: "{}", d: "Lists recent events.", only: ["SUI"] },
 ];
 
+/**
+ * GraphQL root fields. `m` is the root field, which is the api name the router
+ * resolves a GraphQL request to: smart-router's `chainlib/graphql.go` reads
+ * the operation out of the body and keys each root field as its own api. `p`
+ * is the query document, which the drawer sends as `{"query": p}`.
+ *
+ * Every query here was sent to graphql.{mainnet,testnet,devnet}.sui.io on
+ * 2026-10-15. The ready ones name only system objects (0x1 / 0x2 framework,
+ * 0x5 system state, 0x6 Clock) and relative windows (`last: 5`), so one table
+ * holds on all three networks. The `needs` ones passed validation with dummy
+ * arguments: the errors that came back were about the values, not the query.
+ * `<two words>` marks the slot to fill. A single angle-bracket word is not a
+ * slot, because Move types are spelled `Coin<0x2::sui::SUI>`.
+ */
+const GRAPHQL_HINTS = [
+  { m: "chainIdentifier", p: "{ chainIdentifier }", d: "Returns the chain identifier, which is the digest of the genesis checkpoint.", only: ["SUI"] },
+  { m: "checkpoint", p: "{ checkpoint { sequenceNumber digest timestamp networkTotalTransactions } }", d: "Returns the latest checkpoint when no sequence number is given.", only: ["SUI"] },
+  { m: "epoch", p: "{ epoch { epochId referenceGasPrice startTimestamp totalCheckpoints } }", d: "Returns the current epoch when no id is given.", only: ["SUI"] },
+  { m: "serviceConfig", p: '{ serviceConfig { availableRange(type: "Checkpoint") { first { sequenceNumber } last { sequenceNumber } } } }', d: "Returns the oldest and newest checkpoint this endpoint can answer for.", only: ["SUI"] },
+  { m: "protocolConfigs", p: "{ protocolConfigs { protocolVersion } }", d: "Returns the protocol version in force.", only: ["SUI"] },
+  { m: "checkpoints", p: "{ checkpoints(last: 5) { nodes { sequenceNumber digest timestamp } } }", d: "Lists the five most recent checkpoints.", only: ["SUI"] },
+  { m: "transactions", p: "{ transactions(last: 5) { nodes { digest sender { address } } } }", d: "Lists the five most recent transactions.", only: ["SUI"] },
+  { m: "events", p: "{ events(last: 5) { nodes { timestamp contents { type { repr } } } } }", d: "Lists the five most recent events.", only: ["SUI"] },
+  { m: "coinMetadata", p: '{ coinMetadata(coinType: "0x2::sui::SUI") { name symbol decimals supply } }', d: "Returns SUI's name, symbol, decimals and total supply.", only: ["SUI"] },
+  { m: "object", p: '{ object(address: "0x6") { address version digest } }', d: "Returns an object by address. 0x6 is the shared Clock.", only: ["SUI"] },
+  { m: "address", p: '{ address(address: "0x5") { address objects(first: 3) { nodes { address } } } }', d: "Returns what an address owns. 0x5 is the system state object.", only: ["SUI"] },
+  { m: "package", p: '{ package(address: "0x2") { address version modules(first: 5) { nodes { name } } } }', d: "Returns a package and its modules. 0x2 is the Sui framework.", only: ["SUI"] },
+  { m: "type", p: '{ type(type: "0x2::coin::Coin<0x2::sui::SUI>") { repr abilities } }', d: "Resolves a Move type to its canonical form and abilities.", only: ["SUI"] },
+  { m: "epochs", p: "{ epochs(last: 3) { nodes { epochId startTimestamp referenceGasPrice } } }", d: "Lists the three most recent epochs.", only: ["SUI"] },
+  { m: "objects", p: '{ objects(filter: { type: "0x2::clock::Clock" }, first: 1) { nodes { address version } } }', d: "Lists objects matching a filter, here by Move type.", only: ["SUI"] },
+  { m: "objectVersions", p: '{ objectVersions(address: "0x6", last: 3) { nodes { version digest } } }', d: "Lists the latest versions of an object.", only: ["SUI"] },
+  { m: "packages", p: "{ packages(last: 5) { nodes { address version } } }", d: "Lists the five most recently published packages.", only: ["SUI"] },
+  { m: "packageVersions", p: '{ packageVersions(address: "0x2", last: 3) { nodes { address version } } }', d: "Lists the latest versions of a package.", only: ["SUI"] },
+  { m: "multiGetCheckpoints", p: "{ multiGetCheckpoints(keys: [0, 1]) { sequenceNumber digest timestamp } }", d: "Fetches several checkpoints by sequence number in one call.", only: ["SUI"] },
+  { m: "multiGetEpochs", p: "{ multiGetEpochs(keys: [0, 1]) { epochId startTimestamp } }", d: "Fetches several epochs by id in one call.", only: ["SUI"] },
+  { m: "multiGetObjects", p: '{ multiGetObjects(keys: [{ address: "0x5" }, { address: "0x6" }]) { address version } }', d: "Fetches several objects by address in one call.", only: ["SUI"] },
+  { m: "multiGetPackages", p: '{ multiGetPackages(keys: [{ address: "0x1" }, { address: "0x2" }]) { address version } }', d: "Fetches several packages by address in one call.", only: ["SUI"] },
+  { m: "multiGetTypes", p: '{ multiGetTypes(keys: ["0x2::sui::SUI", "u64"]) { repr } }', d: "Resolves several Move types in one call.", only: ["SUI"] },
+  { m: "multiGetAddresses", p: '{ multiGetAddresses(keys: [{ address: "0x5" }, { address: "0x6" }]) { address } }', d: "Fetches several addresses in one call.", only: ["SUI"] },
+  { m: "multiGetBalances", p: '{ multiGetBalances(keys: [{ address: "0x5", coinType: "0x2::sui::SUI" }]) { coinType { repr } totalBalance } }', d: "Returns an address's total balance of a coin type.", only: ["SUI"] },
+  { m: "nameRecord", p: '{ nameRecord(name: "example.sui") { domain target { address } } }', d: "Resolves a SuiNS name. example.sui is registered on mainnet only; testnet and devnet answer null.", only: ["SUI"] },
+  { m: "transaction", p: '{ transaction(digest: "<transaction digest>") { digest sender { address } effects { status timestamp } } }', needs: true, d: "Returns a transaction by digest.", only: ["SUI"] },
+  { m: "transactionEffects", p: '{ transactionEffects(digest: "<transaction digest>") { status timestamp checkpoint { sequenceNumber } } }', needs: true, d: "Returns a transaction's effects by digest.", only: ["SUI"] },
+  { m: "multiGetTransactions", p: '{ multiGetTransactions(keys: ["<transaction digest>"]) { digest effects { status } } }', needs: true, d: "Fetches several transactions by digest in one call.", only: ["SUI"] },
+  { m: "multiGetTransactionEffects", p: '{ multiGetTransactionEffects(keys: ["<transaction digest>"]) { status timestamp } }', needs: true, d: "Fetches the effects of several transactions in one call.", only: ["SUI"] },
+  { m: "node", p: '{ node(id: "<global id>") { id } }', needs: true, d: "Fetches any node by its global ID.", only: ["SUI"] },
+  { m: "multiGetDynamicFields", p: '{ multiGetDynamicFields(keys: [{ parent: "<parent address>", name: { type: "<move type>", bcs: "<base64 bcs name>" } }]) { address } }', needs: true, d: "Fetches dynamic fields by parent and name.", only: ["SUI"] },
+  { m: "multiGetDynamicObjectFields", p: '{ multiGetDynamicObjectFields(keys: [{ parent: "<parent address>", name: { type: "<move type>", bcs: "<base64 bcs name>" } }]) { address } }', needs: true, d: "Fetches dynamic object fields by parent and name.", only: ["SUI"] },
+  { m: "multiGetDerivedObjects", p: '{ multiGetDerivedObjects(keys: [{ parent: "<parent address>", name: { type: "<move type>", bcs: "<base64 bcs name>" } }]) { address } }', needs: true, d: "Fetches derived objects by parent and key.", only: ["SUI"] },
+  { m: "verifySignature", p: '{ verifySignature(message: "<base64 message>", signature: "<base64 signature>", intentScope: PERSONAL_MESSAGE, author: "<signer address>") { success } }', needs: true, d: "Checks a signature against a message and its signer.", only: ["SUI"] },
+  { m: "simulateTransaction", p: "{ simulateTransaction(transaction: <transaction json>) { effects { status } } }", needs: true, d: "Dry-runs a transaction and returns its effects. Nothing is committed.", only: ["SUI"] },
+  { m: "executeTransaction", p: 'mutation { executeTransaction(transactionDataBcs: "<base64 transaction bytes>", signatures: ["<base64 signature>"]) { effects { status digest } } }', needs: true, d: "Submits a signed transaction. A mutation, so the request starts with `mutation`.", only: ["SUI"] },
+];
+
 const HINTS = {
   jsonrpc: JSONRPC_HINTS,
   rest: REST_HINTS,
   tendermintrpc: TENDERMINT_HINTS,
   grpc: GRPC_HINTS,
+  graphql: GRAPHQL_HINTS,
 };
 
 /** Archive-tier examples, synthesised for archive-capable interfaces from
@@ -553,7 +670,8 @@ const ARCHIVE_HINTS = {
     { m: "eth_getCode", l: "Get Code (Archive)", p: '["0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", "0x2C2A2"]', d: "Bytecode at a historical block — requires an archive node." },
     { m: "eth_call", l: "Call (Archive)", p: '[{"to":"0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48","data":"0x18160ddd"}, "0x2C2A2"]', d: "Read-only call against a historical block — requires an archive node." },
     { m: "query", l: "Query (Archive)", p: '{"request_type":"view_account","account_id":"example.near","block_id":10000000}', d: "View account state at a historical block — requires an archive node.", only: ["NEAR"] },
-    { m: "starknet_getStorageAt", l: "Get Storage At (Archive)", p: '["0x0123", "0x0", {"block_number":123456}]', d: "Storage value at a historical block — requires an archive node." },
+    // The ETH token's `ERC20_name` slot, which reads back "Ether".
+    { m: "starknet_getStorageAt", l: "Get Storage At (Archive)", p: '["0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7", "0x0341c1bdfd89f69748aa00b5742b03adbffd79b8e80cab5c50d91cd8c2a79be1", {"block_number":123456}]', d: "Storage value at a historical block — requires an archive node." },
     { m: "getblockhash", l: "Get Block Hash (Archive)", p: "[800000]", d: "Hash of a historical block." },
   ],
   rest: [
@@ -571,7 +689,7 @@ const ARCHIVE_HINTS = {
 
 /* ── Spec loading ────────────────────────────────────────────────────────── */
 
-const INTERFACES = ["jsonrpc", "rest", "tendermintrpc", "grpc"];
+const INTERFACES = ["jsonrpc", "rest", "tendermintrpc", "grpc", "graphql"];
 const TIER_BY_ADDON = { "": "regular", debug: "debug", trace: "trace", arbtrace: "trace" };
 const TIERS = ["regular", "archive", "debug", "trace"];
 
@@ -757,13 +875,15 @@ const OBJECT_PARAM_JSONRPC = ["XLM"];
  * Aptos — and is false here: `/getAddressBalance` has no slot to fill and
  * means nothing without `?address=`, so toncenter answers 422. Structurally
  * every path on these specs looks complete, which made 25 of TON's 41
- * "ready" commands unsendable.
+ * "ready" commands unsendable. Moralis is the same shape (`/dateToBlock`
+ * wants `?chain=&date=`, `/erc20/metadata` wants `?addresses=`), and its
+ * API key keeps a hint from being checked here, so all of it stays unmarked.
  *
  * For a spec in this list a bare, uncurated GET claims nothing. Curate the
  * ones that are checked: a hint with `d` says it runs, `needs: true` says it
  * wants a query argument.
  */
-const QUERY_STRING_REST = ["TON", "ION"];
+const QUERY_STRING_REST = ["TON", "ION", "MORALIS"];
 
 const specMatches = (list, specIndex) =>
   list.some((prefix) => specIndex.startsWith(prefix));
@@ -771,11 +891,16 @@ const specMatches = (list, specIndex) =>
 const defaultParamsFor = (iface, method) =>
   iface === "rest"
     ? method
-    // CometBFT reads an empty ARRAY as "zero arguments supplied" and errors on
-    // any method with optional ones; an empty object is the no-arguments call.
-    : iface === "grpc" || iface === "tendermintrpc"
-      ? "{}"
-      : "[]";
+    // A GraphQL query selecting the root field alone. It runs as it stands
+    // only on a scalar field, so an uncurated one is still left unmarked.
+    : iface === "graphql"
+      ? `{ ${method} }`
+      // CometBFT reads an empty ARRAY as "zero arguments supplied" and errors
+      // on any method with optional ones; an empty object is the no-arguments
+      // call.
+      : iface === "grpc" || iface === "tendermintrpc"
+        ? "{}"
+        : "[]";
 
 function hintApplies(hint, specIndex) {
   if (!hint.only) return true;
@@ -837,6 +962,16 @@ function buildCmds(iface, specIndex, entries) {
  */
 const PLACEHOLDER = /\.\.\.|<[^>]{2,}>|\{[^}"]+\}/;
 
+/**
+ * The GraphQL slot: two or more lowercase words in angle brackets
+ * (`<transaction digest>`). PLACEHOLDER above cannot be used there, because
+ * every GraphQL query is a `{ … }` selection set, `...` spreads a fragment,
+ * and a Move type is spelled `Coin<0x2::sui::SUI>` or `Table<address, u64>`.
+ * None of those has a lowercase word, a space and another word between the
+ * brackets.
+ */
+const GRAPHQL_PLACEHOLDER = /<[a-z][a-z0-9-]* [a-z0-9 -]+>/;
+
 /** Does the spec's block_parsing prove the method takes positional args? */
 function specTakesArgs(block) {
   const func = block?.parser_func ?? "";
@@ -862,7 +997,8 @@ function specTakesArgs(block) {
  */
 function runnability(iface, cmd, hint, api, specIndex) {
   const params = cmd.p ?? defaultParamsFor(iface, cmd.m);
-  if (hint?.needs || PLACEHOLDER.test(params)) return { n: 1 };
+  const placeholder = iface === "graphql" ? GRAPHQL_PLACEHOLDER : PLACEHOLDER;
+  if (hint?.needs || placeholder.test(params)) return { n: 1 };
   // Checked, and it still cannot be sent from here — a WebSocket upgrade, a
   // chunked stream that never closes, an authenticated route, a path the
   // public endpoints of this chain do not serve. None of those is "needs
@@ -1067,9 +1203,9 @@ writeFileSync(OUT_PATH, `${json}\n`);
 
 /* ── Runnable-defaults roll-call ─────────────────────────────────────────── */
 
-/* Which (spec × interface) pairs ended up with nothing the drawer can offer
-   as a working default. Aliases resolve to their canonical entry, so a chain
-   that aliases a covered one is covered too. */
+/* Which method lists ended up with nothing the drawer can offer as a working
+   default. Aliases resolve to their canonical entry, so a chain that aliases a
+   covered one is covered too. */
 const noRunnable = [];
 let readyTotal = 0;
 for (const index of Object.keys(out).sort()) {
@@ -1077,10 +1213,14 @@ for (const index of Object.keys(out).sort()) {
   for (let hops = 0; typeof entry === "string" && hops < 4; hops++) entry = out[entry];
   if (typeof entry !== "object") continue;
   for (const iface of Object.keys(entry).sort()) {
-    const regular = entry[iface].regular ?? [];
-    const ready = regular.filter((c) => c.r).length;
-    readyTotal += ready;
-    if (ready === 0) noRunnable.push(`${index}/${iface}`);
+    for (const tier of TIERS) {
+      const cmds = entry[iface][tier];
+      // An empty regular tier is a gap too; an absent add-on tier is not one.
+      if (tier !== "regular" && !cmds?.length) continue;
+      const ready = (cmds ?? []).filter((c) => c.r).length;
+      readyTotal += ready;
+      if (ready === 0) noRunnable.push(tier === "regular" ? `${index}/${iface}` : `${index}/${iface}/${tier}`);
+    }
   }
 }
 writeFileSync(NO_RUNNABLE_PATH, `${JSON.stringify(noRunnable, null, 2)}\n`);
@@ -1095,7 +1235,7 @@ console.log(`iface entries    ${ifaceEntries} (canonical, aliases excluded)`);
 console.log(`methods by tier  regular=${tierTotals.regular} archive=${tierTotals.archive} debug=${tierTotals.debug} trace=${tierTotals.trace}`);
 console.log(`runnable         ${readyTotal} commands can be sent as-is`);
 console.log(`output           ${OUT_PATH} (${kb(Buffer.byteLength(json))})`);
-console.log(`no runnable      ${noRunnable.length} (spec × iface) pairs → ${NO_RUNNABLE_PATH}`);
+console.log(`no runnable      ${noRunnable.length} method lists → ${NO_RUNNABLE_PATH}`);
 for (const pair of noRunnable) console.log(`  - ${pair}: no command runs without caller input`);
 if (skipped.length > 0) {
   console.log(`skipped          ${skipped.length}`);

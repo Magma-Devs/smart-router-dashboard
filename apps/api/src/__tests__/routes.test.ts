@@ -34,6 +34,20 @@ function mockPrometheus(): void {
         { metric: { provider_address: "eth-lava" }, values: [[1, "0.5"], [2, "0.25"]] },
       ]);
     }
+    // Traffic by provider: one chain's requests per second, per upstream.
+    if (new URL(url).pathname.endsWith("/query_range") && query.startsWith('sum by (provider_address) (rate(smartrouter_requests_total{spec="ETH1"}')) {
+      return matrix([
+        { metric: { provider_address: "eth-lava" }, values: [[1, "0.5"], [2, "0.25"]] },
+        { metric: { provider_address: "Cached" }, values: [[1, "2"], [2, "2"]] },
+      ]);
+    }
+    // Upstream timeline: failed tries and latest-block polls per upstream.
+    if (new URL(url).pathname.endsWith("/query_range") && query.startsWith("clamp_min(sum by (provider_address)")) {
+      return matrix([{ metric: { provider_address: "eth-lava" }, values: [[600, "0.5"], [1200, "0"]] }]);
+    }
+    if (new URL(url).pathname.endsWith("/query_range") && query.startsWith("sum by (endpoint_id) (increase(rpc_endpoint_fetch_latest_success")) {
+      return matrix([{ metric: { endpoint_id: "eth-lava" }, values: [[600, "0"], [1200, "1"]] }]);
+    }
     if (new URL(url).pathname.endsWith("/query_range") && query.startsWith("max by (endpoint_id) (max_over_time(rpc_endpoint_latest_block")) {
       return matrix([
         { metric: { endpoint_id: "eth-lava" }, values: [[1, "100"], [2, "101"]] },
@@ -98,11 +112,11 @@ function mockPrometheus(): void {
     } else if (query.includes("changes(smartrouter_latest_block")) {
       // 3 refreshes over the 15m window ⇒ a 300s cadence.
       result = [
-        { metric: { spec: "ETH1", apiInterface: "jsonrpc", service: "eth-router" }, value: [1, "3"] },
+        { metric: { spec: "ETH1", apiInterface: "jsonrpc", router: "eth-router" }, value: [1, "3"] },
       ];
     } else if (query.includes("smartrouter_latest_block")) {
       result = [
-        { metric: { spec: "ETH1", apiInterface: "jsonrpc", service: "eth-router" }, value: [1, "90"] },
+        { metric: { spec: "ETH1", apiInterface: "jsonrpc", router: "eth-router" }, value: [1, "90"] },
       ];
     } else if (query.includes("rpc_endpoint_latest_block")) {
       result = [{ metric: { spec: "ETH1", endpoint_id: "eth-lava" }, value: [1, "100"] }];
@@ -223,6 +237,17 @@ describe("api routes", () => {
     expect(body.classTotals.emitted).toEqual({ write: false, batch: false });
   });
 
+  it("GET /api/metrics/pulse → the topbar's three fields", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/metrics/pulse" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(["operational", "unhealthy", "unknown"]).toContain(body.health);
+    expect(typeof body.upstreamHealthCounts.unhealthy).toBe("number");
+    expect(typeof body.upstreamHealthCounts.unknown).toBe("number");
+    expect(body.throughputRps === null || typeof body.throughputRps === "number").toBe(true);
+    expect(typeof body.lastUpdated).toBe("string");
+  });
+
   it("GET /api/metrics/overview → KPIs + series + gated CU/cap + prior errors", async () => {
     const res = await app.inject({ method: "GET", url: "/api/metrics/overview?window=1d" });
     expect(res.statusCode).toBe(200);
@@ -259,6 +284,21 @@ describe("api routes", () => {
     expect(body.qos).toBeNull();
     // No backup-marked config ⇒ null, not a synthetic 0%.
     expect(body.backupShare).toBeNull();
+  });
+
+  it("GET /api/metrics/upstream-mix requires spec; one series per upstream, biggest first", async () => {
+    const missing = await app.inject({ method: "GET", url: "/api/metrics/upstream-mix?window=1d" });
+    expect(missing.statusCode).toBe(400);
+
+    const res = await app.inject({ method: "GET", url: "/api/metrics/upstream-mix?spec=ETH1&window=1d" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      spec: "ETH1",
+      upstreams: [
+        { upstream: "Cached", points: [{ t: 1, v: 2 }, { t: 2, v: 2 }] },
+        { upstream: "eth-lava", points: [{ t: 1, v: 0.5 }, { t: 2, v: 0.25 }] },
+      ],
+    });
   });
 
   it("GET /api/metrics/upstream-detail requires endpointId + spec; errors stay empty until emitted", async () => {
@@ -299,6 +339,36 @@ describe("api routes", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("GET /api/metrics/upstream-timeline requires spec; a row per upstream, a cell per stretch of the clock", async () => {
+    const missing = await app.inject({ method: "GET", url: "/api/metrics/upstream-timeline?window=30m" });
+    expect(missing.statusCode).toBe(400);
+
+    // The clock at 1800 s: half an hour in 10-minute bars, ending at 600, 1200 and 1800.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(1_800_000);
+    let res;
+    try {
+      res = await app.inject({ method: "GET", url: "/api/metrics/upstream-timeline?spec=ETH1&window=30m" });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.grid).toEqual({ start: 600, end: 1800, stepSec: 600 });
+    expect(body.asOf).toBe(1800);
+    expect(body.spec).toBe("ETH1");
+    expect(body.available).toBe(true);
+    // The relay cache counts in the chain's tries and gets no row.
+    expect(body.upstreams.map((u: { upstream: string }) => u.upstream)).toEqual(["eth-lava"]);
+    const cells = body.upstreams[0].cells;
+    expect(cells).toHaveLength(3);
+    // Scraped but neither tried nor polled: unknown. A poll that answered: operational.
+    expect(cells[0].state).toBe("unknown");
+    expect(cells[1]).toMatchObject({ t: 1200, state: "operational", pollsOk: 1 });
+    // Bars the store didn't return are gaps, never a health.
+    expect(cells[2].state).toBeNull();
   });
 
   it("GET /api/metrics/upstream-peers requires spec; one latency and one tip series per upstream", async () => {
@@ -434,7 +504,9 @@ describe("api routes", () => {
     const res = await app.inject({ method: "GET", url: "/api/metrics/block-heights" });
     expect(res.statusCode).toBe(200);
     const body = res.json();
-    expect(body.routerLabel).toBe("service");
+    // Unset ROUTER_SCOPE_LABEL resolves to `router` first (MAG-4303); the canned
+    // store reports no router values, so that first candidate is what is named.
+    expect(body.routerLabel).toBe("router");
 
     const eth = body.chains.find((c: { spec: string }) => c.spec === "ETH1");
     expect(eth.bestBlock).toBe(100);

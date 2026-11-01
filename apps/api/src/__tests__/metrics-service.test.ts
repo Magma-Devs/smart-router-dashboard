@@ -1,34 +1,57 @@
 import { describe, expect, it } from "vitest";
+import { WINDOWS } from "@sr/shared/constants";
+import { rateRange } from "@sr/shared";
 import { MetricsService } from "../services/metrics.js";
 import { MetricsDetailService } from "../services/metrics-detail.js";
 import type { ConfigurationService } from "../services/configuration.js";
-import type { PrometheusClient } from "../services/prometheus-client.js";
+import type {
+  PrometheusClient,
+  PromMatrixSample,
+  PromVectorSample,
+} from "../services/prometheus-client.js";
 
-/** Fake Prometheus client that records every instant/range expression. */
-function capturingProm(): { prom: PrometheusClient; queries: string[] } {
+interface FakeAnswers {
+  /** The chains `count by (spec)` lists. Default: one. */
+  specs?: string[];
+  /** Canned rows for an instant expression (`query()` and `scalar()`); undefined → none. */
+  vector?: (expr: string) => PromVectorSample[] | undefined;
+  /** Canned rows for a range expression; undefined → none. */
+  matrix?: (expr: string) => PromMatrixSample[] | undefined;
+}
+
+/**
+ * Fake Prometheus client that records every expression: all of them in
+ * `queries`, the `scalar()` reads in `scalars`, the range reads in `ranges`.
+ */
+function capturingProm(answers: FakeAnswers = {}) {
   const queries: string[] = [];
+  const scalars: string[] = [];
+  const ranges: string[] = [];
   const prom = {
     async query(expr: string) {
       queries.push(expr);
-      // listSpecs() must find one chain or per-chain queries never fire.
+      // listSpecs() must find a chain or the per-chain rows never appear.
       if (expr.startsWith("count by (spec)")) {
-        return [{ metric: { spec: "ETH1" }, value: [1, "1"] as [number, string] }];
+        return (answers.specs ?? ["ETH1"]).map((spec) => ({ metric: { spec }, value: [1, "1"] as [number, string] }));
       }
-      return [];
+      return answers.vector?.(expr) ?? [];
     },
     async queryRange(expr: string) {
       queries.push(expr);
-      return [];
+      ranges.push(expr);
+      return answers.matrix?.(expr) ?? [];
     },
     async scalar(expr: string) {
       queries.push(expr);
-      return null;
+      scalars.push(expr);
+      const n = Number(answers.vector?.(expr)?.[0]?.value[1]);
+      return Number.isFinite(n) ? n : null;
     },
     async ping() {
       return true;
     },
   } as unknown as PrometheusClient;
-  return { prom, queries };
+  return { prom, queries, scalars, ranges };
 }
 
 describe("MetricsService query construction (bug regressions)", () => {
@@ -76,14 +99,10 @@ describe("MetricsService query construction (bug regressions)", () => {
   it("per-chain health reads the spec-labelled ENDPOINT gauge, not the global router gauge", async () => {
     const { prom, queries } = capturingProm();
     await new MetricsService(prom).chains("1d");
-    expect(
-      queries.some((q) =>
-        q.includes('max by (spec) (rpc_endpoint_overall_health{spec="'),
-      ),
-    ).toBe(true);
+    expect(queries.some((q) => q === "max by (spec) (rpc_endpoint_overall_health)")).toBe(true);
     // The label-less router gauge must not be used with a spec in mind:
     // it may appear alone (global health) but never filtered per chain.
-    expect(queries.every((q) => !q.includes('smartrouter_overall_health{spec='))).toBe(true);
+    expect(queries.every((q) => !q.includes("smartrouter_overall_health{spec="))).toBe(true);
   });
 
   // MAG-2710: the hero tile read "50.0K across 4 upstreams" while the Routers
@@ -143,28 +162,181 @@ function allChainQuantiles(queries: string[], range: string): string[] {
 // With no chain selected, a quantile grouped `by (spec, le)` came back as one
 // series per chain and scalar() kept the first: the hero p95 was whichever
 // chain Prometheus listed first, and "—" when that chain had no traffic in the
-// window, while all chains together had a p95.
+// window, while all chains together had a p95. (The per-chain panel reads
+// `by (spec, le)` on purpose, through `query()`, and joins on the label — see
+// the grouped-reads cases below.)
 describe("MetricsService · latency with no chain selected reads all chains as one", () => {
   it("hero p95 and its prior group by le only", async () => {
-    const { prom, queries } = capturingProm();
+    const { prom, scalars } = capturingProm();
     await new MetricsService(prom).dashboardSummary("1d");
-    const kpi = allChainQuantiles(queries, "86400s");
+    const kpi = allChainQuantiles(scalars, "86400s");
     expect(kpi).toHaveLength(2);
     expect(kpi.filter((q) => q.includes("offset 86400s"))).toHaveLength(1);
     for (const q of kpi) expect(groupings(q)).toEqual(["le"]);
   });
 
   it("overview p50/p95/p99, their priors and the latency chart group by le only", async () => {
-    const { prom, queries } = capturingProm();
+    const { prom, scalars, ranges } = capturingProm();
     await new MetricsService(prom).overview("1d");
     // 1d: the KPIs read [86400s], the chart's series one [10m] step each.
-    const kpis = allChainQuantiles(queries, "86400s");
+    const kpis = allChainQuantiles(scalars, "86400s");
     expect(kpis).toHaveLength(6);
     for (const q of kpis) expect(groupings(q)).toEqual(["le"]);
     // The chart plots the first series of each percentile, so it had the same bug.
-    const chart = allChainQuantiles(queries, "10m");
+    const chart = allChainQuantiles(ranges, "10m");
     expect(chart).toHaveLength(3);
     for (const q of chart) expect(groupings(q)).toEqual(["le"]);
+  });
+});
+
+// MAG-4294: the overview read three series per chain for its per-chain panels,
+// and the trend a second time for `perChainSeries` — about 200 reads on a
+// 40-chain deployment, enough for the store to reject part of each burst and
+// the rows to render empty. It reads one grouped series each and joins on the
+// spec label.
+describe("MetricsService.overview · per-chain panels read grouped series (MAG-4294)", () => {
+  const perSpecP50 = "histogram_quantile(0.5, sum by (spec, le) (rate(smartrouter_end_to_end_latency_milliseconds_bucket";
+  const perSpecHealth = "max by (spec) (rpc_endpoint_overall_health";
+  const perSpecTrend = "sum by (spec) (rate(smartrouter_end_to_end_latency_milliseconds_count";
+  const row = (spec: string, v: string): PromVectorSample => ({ metric: { spec }, value: [1, v] });
+
+  it("costs the same number of reads for one chain as for three", async () => {
+    const one = capturingProm({ specs: ["ETH1"] });
+    await new MetricsService(one.prom).overview("1h");
+    const three = capturingProm({ specs: ["ETH1", "SOLANA", "APT1"] });
+    await new MetricsService(three.prom).overview("1h");
+    expect(three.queries).toHaveLength(one.queries.length);
+    // Without a chain filter no read names a single chain.
+    expect(three.queries.every((q) => !q.includes('{spec="'))).toBe(true);
+    expect(three.queries.filter((q) => q.startsWith(perSpecP50))).toHaveLength(1);
+    expect(three.queries.filter((q) => q.startsWith(perSpecHealth))).toHaveLength(1);
+    expect(three.ranges.filter((q) => q.startsWith(perSpecTrend))).toHaveLength(1);
+  });
+
+  it("joins the grouped rows onto each chain; a chain without a row keeps its nulls", async () => {
+    const { prom } = capturingProm({
+      specs: ["APT1", "ETH1", "SOLANA"],
+      vector: (expr) => {
+        // A NaN quantile is a chain with buckets but no samples in the window.
+        if (expr.startsWith(perSpecP50)) return [row("ETH1", "42"), row("SOLANA", "NaN")];
+        if (expr.startsWith(perSpecHealth)) return [row("ETH1", "0"), row("SOLANA", "1")];
+        return undefined;
+      },
+      matrix: (expr) =>
+        expr.startsWith(perSpecTrend) ? [{ metric: { spec: "ETH1" }, values: [[1, "3"], [2, "4"]] }] : undefined,
+    });
+    const data = await new MetricsService(prom).overview("1h");
+    const by = Object.fromEntries(data.perChainLatency.map((c) => [c.spec, c]));
+    expect(by.ETH1).toMatchObject({ p50Ms: 42, degraded: true, trend: [{ t: 1, v: 3 }, { t: 2, v: 4 }] });
+    expect(by.SOLANA).toMatchObject({ p50Ms: null, degraded: false, trend: [] });
+    expect(by.APT1).toMatchObject({ p50Ms: null, degraded: false, trend: [] });
+    expect(data.perChainLatency.map((c) => c.spec)).toEqual(["APT1", "ETH1", "SOLANA"]);
+    // perChainSeries is the same matrix, not a second read of it.
+    const series = Object.fromEntries(data.perChainSeries.map((c) => [c.spec, c.points]));
+    expect(series.ETH1).toEqual(by.ETH1!.trend);
+    expect(series.SOLANA).toEqual([]);
+  });
+
+  it("a chain filter scopes the grouped reads to that chain", async () => {
+    const { prom, queries, ranges } = capturingProm({ specs: ["ETH1", "SOLANA"] });
+    const data = await new MetricsService(prom).overview("1h", "ETH1");
+    expect(queries.find((q) => q.startsWith(perSpecP50))).toContain('{spec="ETH1"}[3600s]');
+    expect(queries.find((q) => q.startsWith(perSpecHealth))).toBe(
+      'max by (spec) (rpc_endpoint_overall_health{spec="ETH1"})',
+    );
+    expect(ranges.find((q) => q.startsWith(perSpecTrend))).toBe(
+      // Never a rate over less than a minute: a 30-second range misses series whose scrapes don't land twice in it.
+      `sum by (spec) (rate(smartrouter_end_to_end_latency_milliseconds_count{spec="ETH1"}[${rateRange(WINDOWS["1h"].step)}]))`,
+    );
+    expect(data.perChainLatency.map((c) => c.spec)).toEqual(["ETH1"]);
+  });
+});
+
+// MAG-4322: the hero summary gated its optional-family reads behind their
+// presence probes, then awaited the retries and cache pairs on their own —
+// four round trips to the store per call, each waiting for the slowest read
+// of the one before. Every read now goes out at once; the probes decide
+// afterwards whether an answer is kept.
+describe("MetricsService.dashboardSummary · one round of reads (MAG-4322)", () => {
+  const PRESENCE = "count({__name__=";
+
+  /** A client that records every read and answers none until `release()`. */
+  function gatedProm(answer: (expr: string) => number | null) {
+    const issued: string[] = [];
+    let release = (): void => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const read = async (expr: string): Promise<number | null> => {
+      issued.push(expr);
+      await gate;
+      return answer(expr);
+    };
+    const prom = {
+      async query(expr: string): Promise<PromVectorSample[]> {
+        const v = await read(expr);
+        return v === null ? [] : [{ metric: {}, value: [1, String(v)] }];
+      },
+      scalar: read,
+      async queryRange() {
+        return [];
+      },
+      async ping() {
+        return true;
+      },
+    } as unknown as PrometheusClient;
+    return { prom, issued, release: () => release() };
+  }
+
+  it("issues every read before the first one is answered", async () => {
+    const { prom, issued, release } = gatedProm(() => 1);
+    const pending = new MetricsService(prom).dashboardSummary("6h");
+    await Promise.resolve();
+    // 3 presence probes, 6 KPI pairs, the chain list, the upstream count, health.
+    expect(issued).toHaveLength(18);
+    expect(issued.filter((q) => q.startsWith(PRESENCE))).toHaveLength(3);
+    const reads = issued.filter((q) => !q.startsWith(PRESENCE));
+    expect(reads.filter((q) => q.includes("smartrouter_retries_success_total"))).toHaveLength(2);
+    expect(reads.filter((q) => q.includes("cache_total_hits"))).toHaveLength(2);
+    expect(reads.filter((q) => q.includes("smartrouter_consistency_failed_total"))).toHaveLength(2);
+    release();
+    await pending;
+  });
+
+  it("with a chain selected, the same eighteen reads, scoped", async () => {
+    const { prom, issued, release } = gatedProm(() => 1);
+    const pending = new MetricsService(prom).dashboardSummary("6h", "ETH1");
+    await Promise.resolve();
+    expect(issued).toHaveLength(18);
+    // The six KPI pairs, the upstream count and the chain's health gauge.
+    expect(issued.filter((q) => q.includes('spec="ETH1"'))).toHaveLength(14);
+    release();
+    await pending;
+  });
+
+  it("an answered read of an absent family is discarded, not shown", async () => {
+    // Every probe says absent; every other read answers 7 anyway.
+    const { prom, release } = gatedProm((expr) => (expr.startsWith(PRESENCE) ? 0 : 7));
+    const pending = new MetricsService(prom).dashboardSummary("6h");
+    release();
+    const summary = await pending;
+    expect(summary.requestsServed).toEqual({ value: 7, prior: 7 });
+    expect(summary.retriesRecovered).toEqual({ value: null, prior: null });
+    expect(summary.cacheOffloadPct).toEqual({ value: null, prior: null });
+    // Absent consistency_failed_total = zero failures since boot, not unknown.
+    expect(summary.staleCaught).toEqual({ value: 0, prior: 0 });
+    expect(summary.emitted).toEqual({ retries: false, cache: false });
+  });
+
+  it("a present family's read is kept", async () => {
+    const { prom, release } = gatedProm((expr) => (expr.startsWith(PRESENCE) ? 1 : 7));
+    const pending = new MetricsService(prom).dashboardSummary("6h");
+    release();
+    const summary = await pending;
+    expect(summary.retriesRecovered).toEqual({ value: 7, prior: 7 });
+    expect(summary.cacheOffloadPct).toEqual({ value: 7, prior: 7 });
+    expect(summary.staleCaught).toEqual({ value: 7, prior: 7 });
+    expect(summary.emitted).toEqual({ retries: true, cache: true });
   });
 });
 
@@ -311,8 +483,12 @@ describe("MetricsService · router attribution on the upstream roster", () => {
     const svc = new MetricsService(prom, twoRoutersOneChain);
     // Unfiltered it still shows up (real traffic, honestly reported) with no
     // router to its name; asked for one router's rows, it is not one of them.
-    expect((await svc.upstreams(undefined, "1d")).map((r) => r.routerIds)).toEqual([[]]);
-    expect(await svc.upstreams(undefined, "1d", "eth-prod")).toEqual([]);
+    const all = await svc.upstreams(undefined, "1d");
+    expect(all.find((r) => r.endpointId === "gone-vendor")?.routerIds).toEqual([]);
+    const prod = await svc.upstreams(undefined, "1d", "eth-prod");
+    expect(prod.every((r) => r.routerIds.includes("eth-prod"))).toBe(true);
+    expect(prod.some((r) => r.endpointId === "gone-vendor")).toBe(false);
+    expect(prod).toHaveLength(2); // Configured rows remain visible without metrics.
   });
 });
 
@@ -561,5 +737,104 @@ describe("MetricsService · cross-chain shared node names (MAG-2875)", () => {
     ]);
     const solOnly = await svc.upstreams(undefined, "1d", "Solana");
     expect(solOnly.map((r) => [r.endpointId, r.spec])).toEqual([["lava", "SOLANA"]]);
+  });
+});
+
+// MAG-4295: `chains()` and the Routers table read eight series per chain or
+// per router. They read seven grouped series per set and join on the labels.
+describe("MetricsService · chain-level figures read grouped series (MAG-4295)", () => {
+  const row = (metric: Record<string, string>, v: string): PromVectorSample => ({ metric, value: [1, v] });
+  const answers = (expr: string): PromVectorSample[] | undefined => {
+    if (expr.startsWith("sum by (spec) (increase(smartrouter_end_to_end_latency_milliseconds_count")) return [row({ spec: "ETH1" }, "1234.4")];
+    if (expr.startsWith("clamp_max(sum by (spec) (increase(smartrouter_requests_success_total")) return [row({ spec: "ETH1" }, "0.995")];
+    if (expr.startsWith("histogram_quantile(0.95, sum by (spec, le)")) return [row({ spec: "ETH1" }, "42"), row({ spec: "SOLANA" }, "NaN")];
+    if (expr.startsWith("avg by (spec) (rpc_endpoint_selection_score")) return [row({ spec: "ETH1" }, "0.9")];
+    if (expr === "max by (spec) (rpc_endpoint_overall_health)") return [row({ spec: "ETH1" }, "1"), row({ spec: "SOLANA" }, "0")];
+    if (expr === "max by (spec) (smartrouter_latest_block)") return [row({ spec: "ETH1" }, "100")];
+    if (expr === "count by (spec, endpoint_id) (rpc_endpoint_overall_health)") {
+      return [row({ spec: "ETH1", endpoint_id: "a" }, "1"), row({ spec: "ETH1", endpoint_id: "b" }, "1"), row({ endpoint_id: "orphan" }, "1")];
+    }
+    return undefined;
+  };
+
+  it("costs the same reads for one chain as for three", async () => {
+    const one = capturingProm({ specs: ["ETH1"] });
+    await new MetricsService(one.prom).chains("1h");
+    const three = capturingProm({ specs: ["ETH1", "SOLANA", "APT1"] });
+    await new MetricsService(three.prom).chains("1h");
+    // The chain list, then seven grouped reads.
+    expect(one.queries).toHaveLength(1 + 7);
+    expect(three.queries).toHaveLength(one.queries.length);
+    expect(three.queries.every((q) => !q.includes('{spec="'))).toBe(true);
+  });
+
+  it("joins every figure on the spec label and derives the error rate from the availability read", async () => {
+    const { prom, queries } = capturingProm({ specs: ["ETH1", "SOLANA"], vector: answers });
+    const chains = await new MetricsService(prom).chains("1h");
+    const eth = chains.find((c) => c.spec === "ETH1")!;
+    expect(eth).toMatchObject({ requests: 1234, availability: 0.995, p95Ms: 42, qos: 0.9, health: "operational", latestBlock: 100, upstreamCount: 2 });
+    expect(eth.errorRate).toBeCloseTo(0.005, 10);
+    // No second read of the ratio for the error rate.
+    expect(queries.filter((q) => q.startsWith("1 - ("))).toHaveLength(0);
+    // A NaN quantile is "no samples"; a health gauge of 0 is unhealthy; the rest never arrived.
+    const sol = chains.find((c) => c.spec === "SOLANA")!;
+    expect(sol).toMatchObject({ requests: 0, availability: null, errorRate: null, p95Ms: null, qos: null, health: "unhealthy", latestBlock: null, upstreamCount: 0 });
+  });
+
+  it("the Routers table reads per-target rows for the routers the collector splits, and the chain row for the rest", async () => {
+    const topology = [
+      { id: "eth-prod", spec: "ETH1", nodes: [{}, {}] },
+      { id: "eth-staging", spec: "ETH1", nodes: [{}] },
+      { id: "sol-main", spec: "SOLANA", nodes: [{}] },
+    ];
+    const configSvc = { getRouters: () => topology } as unknown as ConfigurationService;
+    const { prom, queries } = capturingProm({
+      vector: (expr) => {
+        if (expr.startsWith("count by (service)")) return [row({ service: "eth-prod-router" }, "1")];
+        if (expr.startsWith("sum by (spec, service) (increase(smartrouter_end_to_end_latency_milliseconds_count")) {
+          return [row({ spec: "ETH1", service: "eth-prod-router" }, "700")];
+        }
+        return answers(expr);
+      },
+    });
+    const rows = await new MetricsService(prom, configSvc).routers("1h", "service");
+    // Target discovery + one set by spec + one set by (spec, service): never a read per router.
+    expect(queries).toHaveLength(1 + 7 + 7);
+    const by = Object.fromEntries(rows.map((r) => [r.routerId, r]));
+    expect(by["eth-prod"]).toMatchObject({ attribution: "own", requests: 700, upstreamCount: 2, sharedWith: [] });
+    expect(by["eth-staging"]).toMatchObject({ attribution: "shared", requests: 1234, sharedWith: ["eth-prod"], upstreamCount: 1 });
+    expect(by["sol-main"]).toMatchObject({ attribution: "own", requests: 0, health: "unhealthy", sharedWith: [] });
+  });
+
+  it.each(["spec", "le", "endpoint_id"])("%s, a label the grouped reads use, cannot serve as the target label", async (label) => {
+    const configSvc = { getRouters: () => [{ id: "eth-prod", spec: "ETH1", nodes: [] }] } as unknown as ConfigurationService;
+    const { prom, queries } = capturingProm();
+    const rows = await new MetricsService(prom, configSvc).routers("1h", label);
+    // No target discovery and no per-target set: the one chain-level set only.
+    expect(queries).toHaveLength(7);
+    expect(queries.some((q) => q.startsWith(`count by (${label})`))).toBe(false);
+    expect(rows[0]!.attribution).toBe("own");
+  });
+});
+
+// MAG-4296: the topbar read the full overview — dozens of reads, per-chain
+// series it never shows — every 30 s on every page, for three fields.
+describe("MetricsService.pulse · the topbar reads six series, not the overview (MAG-4296)", () => {
+  it("costs six reads whatever the chain count, none of them per chain", async () => {
+    const { prom, queries } = capturingProm({ specs: ["ETH1", "SOLANA", "APT1"] });
+    const pulse = await new MetricsService(prom).pulse();
+    expect(queries).toHaveLength(6);
+    expect(queries).toContain("smartrouter_overall_health");
+    expect(queries).toContain("sum(rate(smartrouter_end_to_end_latency_milliseconds_count[5m]))");
+    expect(queries.every((q) => !q.includes("histogram_quantile") && !q.startsWith("count by (spec)"))).toBe(true);
+    expect(pulse).toMatchObject({ health: "unknown", upstreamHealthCounts: { unhealthy: 0, unknown: 0 }, throughputRps: null });
+  });
+
+  it("under a chain filter reads that chain's endpoint gauge and RPS, like the hero", async () => {
+    const { prom, queries } = capturingProm();
+    await new MetricsService(prom).pulse("ETH1");
+    expect(queries).toContain('max by (spec) (rpc_endpoint_overall_health{spec="ETH1"})');
+    expect(queries).toContain('sum(rate(smartrouter_end_to_end_latency_milliseconds_count{spec="ETH1"}[5m]))');
+    expect(queries.every((q) => q !== "smartrouter_overall_health")).toBe(true);
   });
 });
