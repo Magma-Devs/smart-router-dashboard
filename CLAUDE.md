@@ -1079,6 +1079,8 @@ Web — build-time vs. **runtime**:
 | `DASHBOARD_API_URL` | (unset) | **runtime** override — read from the container env per-request by `GET /api/config`, so one published image serves any host |
 | `DASHBOARD_LOCAL_MODE` | (unset) | runtime override of `localMode`, same mechanism |
 | `DASHBOARD_GRAFANA_URL` | (unset) | Grafana base URL the "View full logs" button links to — runtime override via `/api/config`, same mechanism (falls back to `NEXT_PUBLIC_GRAFANA_URL`). Unset hides the button; the `logs` compose profile's Grafana is `http://localhost:3001` |
+| `DASHBOARD_GRAFANA_DASHBOARD_URL` | (unset) | Exact customer reports URL for **Advanced → Logs & Metrics**, read per request; invalid or unset hides the link. See [`docs/GRAFANA-LINK.md`](docs/GRAFANA-LINK.md) |
+| `DASHBOARD_GRAFANA_CUSTOMER_USAGE_DASHBOARD_URL` | (unset) | Exact customer usage URL for **Advanced → Customer Usage**, independent of the reports link; invalid or unset hides the link |
 | `INCIDENTS_ENABLED` | (unset) | `true` (any case) shows the top bar's **Report incident** button. Read per request by the `(app)` layout, not asked of the api, so the button still shows when the api is down. Set it with the api's |
 | `AUTH_MODE` / `AUTH_SECRET` | `disabled` / (unset) | must match the api; `enabled` renders the login page + edge gate |
 | `DEPLOYMENT_MODE` | `onprem` | must match the api. Surfaced to the browser by `GET /api/config`, so one image serves both shapes |
