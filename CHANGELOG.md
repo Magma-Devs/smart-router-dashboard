@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.51.1]
+
 ### Fixed
 
 - **Errors and Transactions tabs: a picked chain's list shows its own
