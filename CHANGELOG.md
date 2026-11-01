@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.52.1]
+
 ### Fixed
 
 - **Request log: the customer tooltips name the `customer-id` header.** The
