@@ -312,7 +312,7 @@ export function RequestBreakdown(p: BreakdownProps) {
               {facts.requestBytes != null && <KV label="Request size"><span className="gw-mono gw-tnum">{fmtBytes(facts.requestBytes)}</span></KV>}
               {facts.replyBytes != null && <KV label="Reply size"><span className="gw-mono gw-tnum">{fmtBytes(facts.replyBytes)}</span></KV>}
               {facts.requestedBlock != null && <KV label="Requested block"><span className="gw-mono gw-tnum">{block(facts.requestedBlock)}</span></KV>}
-              {facts.requestedBlock != null && facts.seenBlock != null && <KV label="Router's latest block"><span className="gw-mono gw-tnum">{block(facts.seenBlock)}</span></KV>}
+              {facts.seenBlock != null && <KV label="Router's latest block"><span className="gw-mono gw-tnum">{block(facts.seenBlock)}</span></KV>}
             </div>
           </Section>
         </div>

@@ -64,11 +64,14 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   error-code table (it was only a tooltip on the error's name) and its
   **next step**. The tries follow as a table with how long each took; the
   one that reached the client is marked "→ client". The request's details
-  sit beside them as a list, and every ID there has a copy button, the
-  caller's request ID included. Request and response sizes are gone, and the
-  router's latest block shows only beside the block the request asked for.
+  sit beside them as a list - Smart Router's request ID, method, chain, time,
+  customer, sizes and blocks, the blocks linked to the chain's explorer - and
+  every ID there has a copy button.
   The status is a dot and a word on a plain card, without a coloured stroke
   down the left.
+- **Transactions tab: a rejected transaction's hash links to its explorer
+  again.** 0.50.2 left it unlinked where every node refused the transaction;
+  it now links like any other hash.
 - **Errors and Transactions tabs: the filters stay in view.** The list's
   header - its title, counts, filters and the ID search - sticks under the
   top bar while the rows scroll under it, and the column headers stick under
@@ -113,8 +116,10 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 - **Errors and Transactions tabs: an opened request stays open.** Every 30 s
   read put newer requests on top, so the one being read slid down the page and
   off it. While a row is open the list now holds still, and a strip above it
-  counts what arrived since ("12 new requests · Show"). Picking another chain
-  or router closes it, since it belongs to the list it was opened in.
+  counts what arrived since ("12 new requests · Show"). The list keeps
+  reading meanwhile, in place of 0.50.2's pause while a row is open. Picking
+  another chain or router closes it, since it belongs to the list it was
+  opened in.
 - **Errors and Transactions tabs: the filter dropdowns' arrows.** Each filter
   drew the browser's own arrow, pressed against its right border while the
   text sat 10 px in from the left. They now draw the page's line chevron, the

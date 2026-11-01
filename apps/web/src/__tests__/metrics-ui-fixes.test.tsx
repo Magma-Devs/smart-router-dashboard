@@ -1,10 +1,10 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { HeroSummary, RelayAttempt, RouterMetrics } from "@sr/shared";
+import type { HeroSummary, RouterMetrics } from "@sr/shared";
 import { RouterOverview } from "@/components/metrics/RouterOverview";
 import { HeroPanel } from "@/components/metrics/HeroPanel";
-import { chainsTitle, chainWords, everyNodeRefused, fmtWhen, openRowShown, TxHash, WhenCell } from "@/components/metrics/request-log";
+import { chainsTitle, chainWords, fmtWhen, TxHash, WhenCell } from "@/components/metrics/request-log";
 import { RequestBreakdown, type BreakdownProps } from "@/components/metrics/request-breakdown";
 
 /** What `useApi` answers per path: SWR's fields as a window change leaves them. */
@@ -122,18 +122,6 @@ describe("window change on the Metrics page", () => {
   });
 });
 
-describe("an open row holds a live list still", () => {
-  const shown = [{ guid: "a" }, { guid: "b" }];
-  it("while the open row is on screen", () => {
-    expect(openRowShown("a", shown)).toBe(true);
-  });
-  it("not once a filter, a page or a window change has taken it out of view, nor with no row open", () => {
-    expect(openRowShown("gone", shown)).toBe(false);
-    expect(openRowShown("a", [])).toBe(false);
-    expect(openRowShown(null, shown)).toBe(false);
-  });
-});
-
 describe("log rows", () => {
   it("dates every row, today's included", () => {
     const now = new Date();
@@ -149,28 +137,9 @@ describe("log rows", () => {
     expect(chainsTitle({ spec: "ETH1" })).toBeUndefined();
   });
 
-  it("calls a transaction refused only when every node it went to refused it, and none says it may be on chain", () => {
-    const tried = (outcome: RelayAttempt["outcome"], code: string | null = null): RelayAttempt =>
-      ({ upstream: `node-${outcome}`, batch: 0, atMs: 0, endMs: 5, outcome, replied: false, code } as RelayAttempt);
-    const tx = (attempts: RelayAttempt[], code = "CHAIN_INSUFFICIENT_FUNDS") => ({ outcome: "rejected" as const, attempts, error: { code } });
-    expect(everyNodeRefused(tx([tried("failed"), tried("failed"), tried("skipped")]))).toBe(true);
-    // The answering node refused it, another took it: it may well be on chain.
-    expect(everyNodeRefused(tx([tried("failed"), tried("ok")]))).toBe(false);
-    expect(everyNodeRefused(tx([tried("failed"), tried("no-result")]))).toBe(false);
-    // The refusal itself says the chain has it.
-    expect(everyNodeRefused(tx([tried("failed")], "CHAIN_TX_ALREADY_KNOWN"))).toBe(false);
-    expect(everyNodeRefused(tx([tried("failed", "CHAIN_NONCE_TOO_LOW"), tried("failed")]))).toBe(false);
-    expect(everyNodeRefused({ ...tx([tried("failed")]), outcome: "accepted" })).toBe(false);
-    expect(everyNodeRefused(tx([]))).toBe(false);
-  });
-
-  it("links a transaction's hash to the explorer unless every node refused it", () => {
+  it("links a transaction's hash to the chain's explorer, a rejected one's too", () => {
     const hash = `0x${"ab".repeat(32)}`;
-    const linked = renderToStaticMarkup(createElement(TxHash, { hash, spec: "ETH1" }));
-    const refused = renderToStaticMarkup(createElement(TxHash, { hash, spec: "ETH1", refused: true }));
-    expect(linked).toContain("<a ");
-    expect(refused).not.toContain("<a ");
-    expect(refused).toContain("never saw it");
+    expect(renderToStaticMarkup(createElement(TxHash, { hash, spec: "ETH1" }))).toContain(`https://etherscan.io/tx/${hash}`);
   });
 
   it("shows one request ID, Smart Router's, and none of the headers the router got", () => {
@@ -184,8 +153,8 @@ describe("log rows", () => {
   it("links an opened row's block numbers to a chain's explorer where one has a block page", () => {
     const linked = renderToStaticMarkup(createElement(RequestBreakdown, breakdown({ requestedBlock: 5_329_480, seenBlock: 5_329_484 }, { spec: "XLMT" })));
     expect(linked.match(/stellar\.expert\/explorer\/testnet/g)).toHaveLength(2);
-    // The router's latest block shows beside the requested block it is compared with.
-    const unnamed = renderToStaticMarkup(createElement(RequestBreakdown, breakdown({ requestedBlock: 5_329_480, seenBlock: 5_329_484 })));
+    // The router's latest block shows on its own too, and without a chain it is plain text.
+    const unnamed = renderToStaticMarkup(createElement(RequestBreakdown, breakdown({ seenBlock: 5_329_484 })));
     expect(unnamed).toContain("5,329,484");
     expect(unnamed).not.toContain("stellar.expert");
   });
