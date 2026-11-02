@@ -25,11 +25,11 @@ import { TT } from "@/lib/tooltips";
  * error and draws Failed on chain lighter.
  */
 export const TX_RESULT: Record<TxResult, { label: string; color: string; hatch?: boolean; opacity?: number }> = {
-  accepted: { label: "Accepted", color: "var(--ok)" },
-  rejected: { label: "Rejected", color: "var(--err)" },
+  accepted: { label: "Sent", color: "var(--ok)" },
+  rejected: { label: "Refused", color: "var(--warn)" },
   "failed-on-chain": { label: "Failed on chain", color: "var(--err)", opacity: 0.35 },
-  failed: { label: "Router error", color: "var(--err)", hatch: true },
-  unknown: { label: "Unknown", color: "var(--text-4)" },
+  failed: { label: "Not sent", color: "var(--err)", hatch: true },
+  unknown: { label: "Outcome unknown", color: "var(--text-4)" },
 };
 
 /** Bottom to top. */

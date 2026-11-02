@@ -231,11 +231,12 @@ describe("transaction rows from the router's log lines", () => {
     ]);
   });
 
-  it("failed when the router got no usable reply, with the cause it classified", () => {
+  it("unknown when the router got no usable reply after sending it, with the cause it classified", () => {
     expect(byGuid("6955311520133973510")).toMatchObject({
       spec: "BTC",
       method: "sendrawtransaction",
-      outcome: "failed",
+      outcome: "unknown",
+      note: NOTE.mayHaveRun,
       answeredBy: null,
       error: {
         code: "NODE_INTERNAL_ERROR",
@@ -268,8 +269,8 @@ describe("transaction rows from the router's log lines", () => {
 
   it("the success rate leaves out transactions whose end can't be told", () => {
     const s = summarize(rowsOf(ALL));
-    expect(s).toMatchObject({ total: 7, accepted: 1, rejected: 3, failed: 1 });
-    expect(s.successRate).toBeCloseTo(1 / 5);
+    expect(s).toMatchObject({ total: 7, accepted: 1, rejected: 3, failed: 0 });
+    expect(s.successRate).toBeCloseTo(1 / 4);
   });
 });
 
@@ -316,7 +317,7 @@ describe("TransactionsService", () => {
     expect(queries[2]).toContain('{service="router"} |= `"event":"relay_end"`');
     expect(queries[3]).toContain("10227923066219274059"); // found by method name only
     expect(queries[3]).toContain('"event":"relay_end"'); // and its relay_end, had it one
-    expect(r).toMatchObject({ available: true, total: 4, accepted: 1, rejected: 2, failed: 1, more: false, nextBefore: null });
+    expect(r).toMatchObject({ available: true, total: 4, accepted: 1, rejected: 2, failed: 0, more: false, nextBefore: null });
   });
 
   it("a chain narrows the query to its upstreams, so the cap applies to that chain", async () => {
@@ -529,9 +530,9 @@ describe("transactions the router could not settle", () => {
     at(11_002, { GUID: guid, endpoint: "ETH1jsonrpc", error: "failed relay, insufficient results", message: "failed getting responses from RPC endpoints" }),
   ];
 
-  it("nothing came back and the router says so: failed, with its error", () => {
+  it("nothing came back after it was sent: unknown, a provider may have passed it on, with the router's error", () => {
     const [row] = rowsOf(sent("1"));
-    expect(row).toMatchObject({ outcome: "failed", error: { code: "NO_REPLY", message: "failed relay, insufficient results" }, replyMs: 10_002, spec: "ETH1" });
+    expect(row).toMatchObject({ outcome: "unknown", note: NOTE.mayHaveRun, error: { code: "NO_REPLY", message: "failed relay, insufficient results" }, replyMs: 10_002, spec: "ETH1" });
   });
 
   it("the router can't tell whether the write went through: unknown, in its own words", () => {
@@ -604,7 +605,7 @@ describe("LokiClient credentials", () => {
 });
 
 describe("a transaction no upstream could be chosen for", () => {
-  it("is still a transaction, failed, on the chain its end line names", () => {
+  it("is still a transaction, failed - nothing was sent - on the chain its end line names", () => {
     const lines = [
       at(1000, { GUID: "77", path: "/", body: '{"jsonrpc":"2.0","id":1,"method":"eth_sendRawTransaction","params":["0x"]}', message: RECEIVED }),
       at(1002, { GUID: "77", endpoint: "ETH1jsonrpc", error: "no pairings available", message: "failed getting responses from RPC endpoints" }),
