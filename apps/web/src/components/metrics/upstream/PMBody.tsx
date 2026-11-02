@@ -216,7 +216,7 @@ export function PMBody({ pm, detail, name, timeWindow, onOpenErrors }: {
     return b > 0 ? `${fmtComma(b)} behind` : null;
   };
 
-  /* errors over time - failed attempts and node errors per bar, on the clock.
+  /* errors over time - failed attempts and provider errors per bar, on the clock.
      A bar at t covers the stepSec before it; the last one, still filling,
      only up to asOf. The legend adds up the bars, so the two always agree. */
   const eot = detail?.errorsOverTime;
@@ -225,7 +225,7 @@ export function PMBody({ pm, detail, name, timeWindow, onOpenErrors }: {
   const zeroGaps = (vals: number[] | undefined) => (vals ?? []).map((v) => (Number.isFinite(v) ? v : 0));
   const errStacks: Layer[] = [
     { name: "Failed attempts", values: zeroGaps(errVals[0]), color: "var(--err)" },
-    ...(eot?.node ? [{ name: "Node errors", values: zeroGaps(errVals[1]), color: "#f97316" }] : []),
+    ...(eot?.node ? [{ name: "Provider errors", values: zeroGaps(errVals[1]), color: "#f97316" }] : []),
   ];
   const sumOf = (vals: number[]) => vals.reduce((a, b) => a + b, 0);
   const errTotals = errStacks.map((l) => ({ name: l.name, color: l.color, total: sumOf(l.values) }));
@@ -256,7 +256,7 @@ export function PMBody({ pm, detail, name, timeWindow, onOpenErrors }: {
   return (
     <div style={{ display: "grid", gap: 12, marginBottom: 12 }}>
       <PMPanel full title="Errors over time"
-        tip={`**Failed attempts**: attempts at ${name} with no usable response - a timeout, a connection error, a rate limit, an HTTP 5xx.\n\n**Node errors**: error responses from the node itself. Shown once the router reports them.\n\nOne bar per ${barSpanWords(barSec || 600)}, aligned to the clock; the last bar is still in progress.`}>
+        tip={`**Failed attempts**: attempts at ${name} with no usable response - a timeout, a connection error, a rate limit, an HTTP 5xx.\n\n**Provider errors**: error answers from the provider itself. Shown once the router reports them.\n\nOne bar per ${barSpanWords(barSec || 600)}, aligned to the clock; the last bar is still in progress.`}>
         {errTotal > 0 ? (
           <ChartRow height={160}
             chart={<ColumnChart stacks={errStacks} id={"pme" + pid} integerY xs={errTimes} barSpan={barSec} {...shared}

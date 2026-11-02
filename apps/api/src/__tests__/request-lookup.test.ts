@@ -128,7 +128,7 @@ describe("looking a request up by a GUID that carries its second", () => {
     const { loki, reads } = lokiOf(LINES);
     const svc = new ErrorRequestsService(loki, '{service="router"}');
     const around = { startMs: LONG_SEC * 1000 - 3_600_000, endMs: LONG_SEC * 1000 + 3_600_000 };
-    expect(await svc.lookup(LONG, around)).toMatchObject({ row: { result: "failed", stopReason: "ProcessingTimeout", totalMs: 1_200_000 } });
+    expect(await svc.lookup(LONG, around)).toMatchObject({ row: { result: "write-unknown", stopReason: "ProcessingTimeout", totalMs: 1_200_000 } });
     expect(reads).toEqual([minutesOf(LONG_SEC), [around.startMs, around.endMs]]);
     // Over 30 days it keeps what its minutes hold: the request with no end logged.
     expect(await svc.lookup(LONG, LAST_30D)).toMatchObject({ row: { guid: LONG, result: "unknown" } });
