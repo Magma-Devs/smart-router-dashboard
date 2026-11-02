@@ -102,8 +102,8 @@ const MARK: Record<RelayAttempt["outcome"], string> = { ok: "✓", failed: "✗"
  * One attempt, as a chip. The mark says how it went (✗ red: it failed). The
  * attempt whose response was returned to the client says so - "→ client" - and is
  * outlined in the colour of what the app got, the row's result: green for a
- * good answer, orange for a node's error. An outline alone meant nothing to
- * anyone who hadn't read the tooltip, and a red one beside an orange "Node
+ * good answer, orange for a provider's error. An outline alone meant nothing to
+ * anyone who hadn't read the tooltip, and a red one beside an orange "Provider
  * error" read as two different things.
  */
 function Step({ a, replyColor, quiet = false }: { a: RelayAttempt; replyColor?: string; quiet?: boolean }) {
@@ -132,8 +132,8 @@ function Step({ a, replyColor, quiet = false }: { a: RelayAttempt; replyColor?: 
 /** How a request's tries ended, when the router stopped short of an answer:
  *  said after the last chip. Null when there's nothing to add. */
 export function stopMarker(row: { exhausted: boolean; stopReason: string | null; result: string }): { text: string; title: string } | null {
-  if (row.exhausted) return { text: "no upstream available", title: "A retry was needed, but no other upstream was available" };
-  if (row.stopReason === "NonRetryableNodeError") return { text: "not retryable", title: "Not retried: another upstream would return the same error" };
+  if (row.exhausted) return { text: "no other provider", title: "A retry was needed, but no other provider was available" };
+  if (row.stopReason === "NonRetryableNodeError") return { text: "not retryable", title: "Not retried: another provider would return the same error" };
   if (row.stopReason === "ProcessingTimeout") return { text: "timed out", title: "The request exceeded the router's processing timeout" };
   return null;
 }
@@ -173,7 +173,7 @@ export function Flow({ attempts, end = null, replyColor, quietReplied = false }:
 }
 
 /** The words the app got back, when a request ended in an error: the
- *  answering upstream's own message, or the router's. Null otherwise. */
+ *  answering provider's own message, or the router's. Null otherwise. */
 export function appGot(row: { result: string; attempts: RelayAttempt[]; error: string | null }): string | null {
   if (row.result === "failed" || row.result === "write-unknown") return row.error;
   if (row.result !== "error-reply" && row.result !== "rejected") return null;
@@ -181,23 +181,25 @@ export function appGot(row: { result: string; attempts: RelayAttempt[]; error: s
   return replied ? replied.message ?? (replied.code ? codeWords(replied.code) : null) : null;
 }
 
-/** Under a result: where its response came from - "returned by" / "served by"
- *  on one line, the upstream (or the router) on the next, whole. */
-export function ResponseSource({ label, name }: { label: string; name: string }) {
+/**
+ * A row's Result: what the client got, said once. The tag is the kind of
+ * result in its colour; under it, the error the client got, in its sender's
+ * own words (the full text on hover and in the opened row). Who sent it is the
+ * chip marked "→ client", so the cell doesn't name them again.
+ */
+export function ResultCell({ label, color, hint, error, next }: { label: string; color: string; hint?: string; error?: string | null; next?: string | null }) {
   return (
-    <div style={{ fontSize: 10.5, color: "var(--text-4)", marginTop: 5, lineHeight: 1.4, minWidth: 0 }}>
-      {label}
-      <div className="gw-mono" title={name} style={{ color: "var(--text-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
-    </div>
-  );
-}
-
-/** "Returned to client: …" - one line under the chips, the full text on hover and in the details. */
-export function AppGot({ text }: { text: string | null }) {
-  if (!text) return null;
-  return (
-    <div title={text} style={{ marginTop: 6, fontSize: 11, color: "var(--text-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-      Returned to client: <span className="gw-mono" style={{ color: "var(--text-2)" }}>{text}</span>
+    <div style={{ minWidth: 0 }}>
+      <span className="gw-tag" title={hint}
+        style={{ fontSize: 10, color, borderColor: "currentColor", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "inline-block" }}>
+        {label}
+      </span>
+      {error && (
+        <div className="gw-mono" title={error} style={{ marginTop: 6, fontSize: 10.5, color: "var(--text-2)", lineHeight: 1.4, overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", wordBreak: "break-word" }}>
+          {error}
+        </div>
+      )}
+      {next && <div style={{ marginTop: error ? 3 : 6, fontSize: 11, color: "var(--text-3)", lineHeight: 1.4 }}>{next}</div>}
     </div>
   );
 }

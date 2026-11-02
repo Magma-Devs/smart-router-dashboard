@@ -86,7 +86,8 @@ describe("a transaction's result, as the list and the chart both map it", () => 
   it("by the event's outcome, and on ok by what the reply said", () => {
     expect(of("write_unknown")).toBe("unknown");
     expect(of("node_error")).toBe("rejected");
-    expect(["no_answer", "rejected_before_dispatch", "router_error"].map((o) => of(o))).toEqual(["failed", "failed", "failed"]);
+    // Only a write refused before sending is not sent; after a send, a provider may have passed it on.
+    expect(["no_answer", "rejected_before_dispatch", "router_error"].map((o) => of(o))).toEqual(["unknown", "failed", "unknown"]);
     expect(of("ok")).toBe("accepted");
     expect(of("ok", { txRefused: true, apiInterface: "tendermintrpc" })).toBe("rejected");
     expect(of("ok", { apiInterface: "grpc" })).toBe("unknown"); // no code read out of a protobuf reply
@@ -103,7 +104,7 @@ describe("a transaction's result, as the list and the chart both map it", () => 
     const lines = [
       ev("1", { outcome: "ok", served_by: "eth-a" }),
       ev("2", { outcome: "node_error", error_code: "CHAIN_NONCE_TOO_LOW", error: "nonce too low" }),
-      ev("3", { outcome: "no_answer", error: "failed relay" }),
+      ev("3", { outcome: "no_answer", error: "failed relay", attempts: [{ upstream: "eth-a", outcome: "timeout", batch: 0, sent_ms: 0, latency_ms: 5 }] }),
       ev("4", { outcome: "write_unknown" }),
       ev("5", { outcome: "ok", api_interface: "tendermintrpc", tx_code: 5 }),
       ev("6", { outcome: "ok", api_interface: "grpc" }),
@@ -198,7 +199,7 @@ describe("transactions over time, where the store records none", () => {
     expect(calls.loki).toEqual([`range ${count(600)} ${START} ${T0} 600`, `at ${count(430)} ${NOW}`]);
     expect(calls.prom[0]).toContain(`(sum_over_time(${RECORDED_TX}[600s]))`); // no chain asked for
     expect(r).toMatchObject({ available: true, source: "logs", partialFrom: null });
-    expect(r.counts).toEqual({ accepted: bars({ 0: 4, 5: 1 }), failed: bars({ 4: 2 }), unknown: bars({ 6: 1 }) });
+    expect(r.counts).toEqual({ accepted: bars({ 0: 4, 5: 1 }), unknown: bars({ 4: 2, 6: 1 }) });
   });
 
   it("logs that don't answer are 'not available', never zero; no logs at all, the same", async () => {

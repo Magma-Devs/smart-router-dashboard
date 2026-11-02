@@ -21,7 +21,6 @@ import { TT } from "@/lib/tooltips";
 import { fmtComma } from "@/lib/format";
 import { linkRequest, requestFromUrl } from "@/lib/request-in-url";
 import {
-  AppGot,
   appGot,
   customerOptions,
   hasCustomer,
@@ -43,7 +42,7 @@ import {
   chainsTitle,
   IdSearch,
   LOG_SKEL_COLS,
-  ResponseSource,
+  ResultCell,
   LookupFrame,
   NotFound,
   OlderRowsLoading,
@@ -68,25 +67,25 @@ export const RESULT: Record<ErrorRequestRow["result"], { label: string; color: s
   ok: {
     label: "Answered",
     color: "var(--ok)",
-    hint: "Served by an upstream; no attempt failed.",
+    hint: "Served by a provider; no attempt failed.",
   },
   recovered: {
     label: "Recovered",
     color: "var(--ok)",
-    hint: "An attempt failed; a later attempt at another upstream succeeded.",
+    hint: "An attempt failed; a later attempt at another provider succeeded.",
   },
   "error-reply": {
-    label: "Node error",
+    label: "Provider error",
     color: "var(--warn)",
-    hint: "Node error: the upstream returned an error response (for example invalid params, internal error, pruned data, no archive access). It was returned to the client unchanged.",
+    hint: "Provider error: the provider answered with an error (for example invalid params, internal error, pruned data, no archive access). It was returned to the client unchanged.",
   },
   failed: {
     label: "Router error",
     color: "var(--err)",
-    hint: "Router error: no upstream returned a usable response (timeouts, connection errors, rate limits, HTTP 5xx), so the router returned its own error, typically \"insufficient results\".",
+    hint: "Router error: no provider returned a usable response (timeouts, connection errors, rate limits, HTTP 5xx), so the router returned its own error, typically \"insufficient results\".",
   },
-  // The Transactions tab's "Unknown", in its words: the same request reads the same on both tabs.
-  "write-unknown": { label: "Unknown", color: "var(--text-4)", hint: `Unknown: ${WRITE_UNKNOWN_NOTE}` },
+  // The Transactions tab's "Outcome unknown", in its words: the same request reads the same on both tabs.
+  "write-unknown": { label: "Outcome unknown", color: "var(--text-4)", hint: `Outcome unknown: ${WRITE_UNKNOWN_NOTE}` },
   unknown: { label: "No end logged", color: "var(--text-4)", hint: "No end logged: the request may still be in flight, or the client disconnected." },
 };
 const RESULT_ORDER: ErrorRequestRow["result"][] = ["recovered", "error-reply", "failed", "write-unknown", "unknown"];
@@ -113,31 +112,20 @@ function routerReason(r: Pick<ErrorRequestRow, "error" | "exhausted">): string {
 }
 
 /**
- * The Result column: the error returned to the client, by its own name, and
- * its source - "Internal error · returned by eth-mevblocker", "Insufficient
- * results · returned by router". Node error vs. router error was a distinction nobody could see in
- * two category words; it is plain once the error is named and its sender
- * given. The colour (and the hover) still say which of the two it is.
+ * The error the client got, once, under the Result tag: the provider's own
+ * words for a provider error ("pending state is not supported"), the router's
+ * by its own name for a router error ("Insufficient results"). Who sent it is
+ * the chip marked "→ client"; the opened row has the full text and what the
+ * error means. Null when the client got an answer.
  */
-export function resultBadge(r: ErrorRequestRow): { text: string; from: { label: string; name: string } | null } {
+export function resultError(r: ErrorRequestRow): string | null {
   if (r.result === "error-reply") {
     const a = r.attempts.find((x) => x.replied);
-    return { text: sentence(a ? errorLabel(a) : "error response"), from: r.resolvedBy ? { label: "returned by", name: r.resolvedBy } : null };
+    return appGot(r) ?? (a ? errorLabel(a) : null);
   }
-  if (r.result === "failed") return { text: routerReason(r), from: { label: "returned by", name: "router" } };
-  return { text: RESULT[r.result].label, from: r.resolvedBy && (r.result === "recovered" || r.result === "ok") ? { label: "served by", name: r.resolvedBy } : null };
-}
-
-/** The tag itself: the error's name in its category's colour, the category and its meaning on hover. */
-function ResultTag({ row }: { row: ErrorRequestRow }) {
-  const res = RESULT[row.result];
-  const b = resultBadge(row);
-  return (
-    <span className="gw-tag" title={res.hint}
-      style={{ fontSize: 10, color: res.color, borderColor: "currentColor", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "inline-block" }}>
-      {b.text}
-    </span>
-  );
+  if (r.result === "failed") return routerReason(r);
+  if (r.result === "write-unknown") return r.error;
+  return null;
 }
 
 type RetryFilter = typeof ALL | "retryable" | "not-retryable";
@@ -152,14 +140,10 @@ function retriesWords(r: ErrorRequestRow): string | null {
 
 /** The response's status: the word, its colour, and a detail where the code doesn't carry one. */
 export function statusOf(r: ErrorRequestRow): BreakdownProps["status"] {
-  switch (r.result) {
-    case "ok": return { label: "Success", color: "var(--ok)" };
-    case "recovered": return { label: "Success", color: "var(--ok)", detail: null };
-    case "error-reply": return { label: "Error", color: "var(--err)" };
-    case "failed": return { label: "Error", color: "var(--err)", detail: null };
-    case "write-unknown": return { label: "Unknown", color: "var(--text-3)", detail: "Write not confirmed" };
-    case "unknown": return { label: "Not logged", color: "var(--text-3)" };
-  }
+  // The list's own words, so a row reads the same opened and closed.
+  const { label, color } = RESULT[r.result];
+  if (r.result === "write-unknown") return { label, color: "var(--text-3)", detail: "May have been sent. Look up the hash before signing a new one." };
+  return { label, color: r.result === "unknown" ? "var(--text-3)" : color };
 }
 
 /** An opened row: the request, every try, and the response to the client, in plain words. */
@@ -179,6 +163,12 @@ function Details({ row }: { row: ErrorRequestRow }) {
       time={row.time} guid={row.guid} tookMs={row.totalMs} facts={row} attempts={row.attempts}
       final={final} status={statusOf(row)} retries={retriesWords(row)} isWrite={row.result === "write-unknown"} extra={extra} />
   );
+}
+
+/** The kind of result as a tag, its meaning on hover. */
+function ResultTag({ row }: { row: ErrorRequestRow }) {
+  const res = RESULT[row.result];
+  return <span className="gw-tag" title={res.hint} style={{ fontSize: 10, color: res.color, borderColor: "currentColor" }}>{res.label}</span>;
 }
 
 /** One request looked up by its ID: its path, what the app got, and every try in full. */
@@ -412,8 +402,8 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
             <option value={ALL}>All methods</option>
             {methods.map((m) => <option key={m} value={m}>{m === "unknown" ? "method not in the logs" : m}</option>)}
           </FilterSelect>
-          <FilterSelect aria-label="Upstream" value={upstream} onChange={(e) => { onUpstream(e.target.value); setPage(0); }} style={narrowSelect} disabled={!upstreams.length && upstream === ALL}>
-            <option value={ALL}>All upstreams</option>
+          <FilterSelect aria-label="Provider" value={upstream} onChange={(e) => { onUpstream(e.target.value); setPage(0); }} style={narrowSelect} disabled={!upstreams.length && upstream === ALL}>
+            <option value={ALL}>All providers</option>
             {upstream !== ALL && !upstreams.some((u) => u.name === upstream) && <option value={upstream}>{upstream}</option>}
             {upstreams.map((u) => <option key={u.name} value={u.name}>{u.name} ({fmtComma(u.count)})</option>)}
           </FilterSelect>
@@ -478,11 +468,9 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
                     </td>
                     <td style={{ maxWidth: 0 }}>
                       <Flow attempts={r.attempts} end={stopMarker(r)} replyColor={RESULT[r.result].color} quietReplied={r.result === "error-reply"} />
-                      <AppGot text={appGot(r)} />
                     </td>
-                    <td style={{ verticalAlign: "top" }}>
-                      <ResultTag row={r} />
-                      {resultBadge(r).from && <ResponseSource {...resultBadge(r).from!} />}
+                    <td style={{ verticalAlign: "top", maxWidth: 0 }}>
+                      <ResultCell {...RESULT[r.result]} error={resultError(r)} />
                     </td>
                     <td style={{ textAlign: "right", verticalAlign: "top" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{fmtTook(r.totalMs)}</span></td>
                   </tr>
