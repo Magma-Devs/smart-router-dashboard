@@ -83,7 +83,7 @@ function responseWords(a: RelayAttempt, isWrite: boolean): { words: string; colo
   if (a.outcome === "ok" || (a.outcome === "no-result" && a.replied)) return { words: isWrite ? "Took the transaction" : "Answered", color: "var(--ok)" };
   if (a.outcome === "failed") return { words: "Failed", color: "var(--err)" };
   if (a.outcome === "skipped") return { words: "Passed over", color: "var(--text-3)" };
-  if (a.outcome === "cancelled") return { words: "Called off", color: "var(--text-3)" };
+  if (a.outcome === "cancelled") return { words: "Cancelled", color: "var(--text-3)" };
   return { words: "No response logged", color: "var(--text-3)" };
 }
 
