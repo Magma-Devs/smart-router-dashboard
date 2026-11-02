@@ -14,8 +14,9 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   transaction, not whether it reached a block, and "Accepted" read like
   "done". The results are now **Sent** ("Not confirmed on chain yet";
   **Executed** where the send reply says the chain ran it, on Sui),
-  **Refused** (amber: usually the transaction itself; "May already be on
-  chain. Check the hash." on nonce too low and already known), **Outcome
+  **Refused** (amber: usually the transaction itself; on nonce too low and
+  already known, "May already be on chain." and the error's own next step,
+  the words the opened row shows), **Outcome
   unknown** ("May have been sent. Look up the hash before signing a new
   one.") and **Not sent** ("Nothing reached a provider. Sending again is
   safe."). The chart, the filter and the opened row use the same words.
