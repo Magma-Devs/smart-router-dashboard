@@ -97,6 +97,9 @@ export const TX_METHODS = [
   "broadcast_tx_commit",
 ] as const;
 const TX_METHOD_SET: ReadonlySet<string> = new Set(TX_METHODS);
+
+/** A transaction: a request the spec marks a write, or one calling a transaction method by name. */
+export const isTransaction = (stateful: boolean, methods: string[]): boolean => stateful || methods.some((m) => TX_METHOD_SET.has(m));
 const FAILED_SET: ReadonlySet<string> = new Set(FAILED_OUTCOMES);
 
 /**
@@ -122,14 +125,19 @@ export interface TxEndFacts {
 /**
  * A transaction's result from its `relay_end`: the one mapping the list's rows
  * and the chart's bars both use, so the two can't disagree. The list refines
- * two cases the chart's counts can't see: a subscription request the router
- * failed is `rejected` when a node refused it on a try, and an outcome schema
+ * three cases the chart's counts can't see: a subscription request the router
+ * failed is `rejected` when a node refused it on a try, a router failure with
+ * no try sent is `failed` (nothing reached a provider), and an outcome schema
  * 1 doesn't have is explained in its note.
  */
 export function txResultOf(f: TxEndFacts): TxResult {
   if (f.outcome === "write_unknown") return "unknown";
   if (f.outcome === "node_error") return "rejected";
-  if (FAILED_SET.has(f.outcome)) return "failed";
+  // Only a write the router refused before sending it is proved not sent. Any
+  // other failure came after a copy may have reached a provider, which may
+  // have passed it on: the router can't tell (the error rulebook's R-L).
+  if (f.outcome === "rejected_before_dispatch") return "failed";
+  if (FAILED_SET.has(f.outcome)) return "unknown";
   if (f.outcome !== "ok") return "unknown";
   if (f.txRefused) return "rejected";
   // The router reads no code out of a gRPC reply: protobuf.
@@ -153,6 +161,8 @@ export const NOTE = {
     "The node replied, but on this chain a refused transaction also gets a normal reply. The router doesn't log what the reply said, so the dashboard can't tell.",
   /** The Errors tab's `write-unknown` says the same. */
   writeUnknown: WRITE_UNKNOWN_NOTE,
+  mayHaveRun:
+    "No provider returned a usable answer, but the transaction was sent, so a provider may still have passed it on. The router can't tell.",
 } as const;
 
 /** Transactions one read returns; `more` says when the range holds older ones. */
@@ -187,7 +197,7 @@ export function buildTxRows(lines: RouterLine[], index: UpstreamIndex): TxLogRow
     const received = group.find((l) => l.message.startsWith(MSG.received));
     const method = methodOf(received);
     // No "Choosing providers" when no upstream could be chosen: the method alone makes it a transaction.
-    if (!(str(choosing?.f.stateful) === "1" || TX_METHOD_SET.has(method))) continue;
+    if (!isTransaction(str(choosing?.f.stateful) === "1", [method])) continue;
 
     const finished = group.find((l) => l.message === MSG.finished);
     const noAnswer = group.find((l) => l.message === MSG.noAnswer);
@@ -223,7 +233,11 @@ export function buildTxRows(lines: RouterLine[], index: UpstreamIndex): TxLogRow
       outcome = "unknown";
       note = NOTE.noEnd;
     } else if (!finished || routerError || str(finished.f.has_reply) === "false") {
-      outcome = "failed";
+      // Not sent only when no try went out; once one did, a provider may have passed it on.
+      if (attempts.some((a) => a.outcome !== "skipped")) {
+        outcome = "unknown";
+        note = NOTE.mayHaveRun;
+      } else outcome = "failed";
       error = {
         code: str(relayErrors[0]?.f.error_name) || "NO_REPLY",
         message: scrubUrls(routerError || "no upstream replied"),
@@ -264,7 +278,7 @@ export function buildTxRows(lines: RouterLine[], index: UpstreamIndex): TxLogRow
 
 /** A transaction's row from its `relay_end` alone; null when the request isn't a transaction. */
 function rowOfEvent(e: RouterLine, guid: string, index: UpstreamIndex): TxLogRow | null {
-  if (!(e.f.stateful === true || methodsOf(e).some((m) => TX_METHOD_SET.has(m)))) return null;
+  if (!isTransaction(e.f.stateful === true, methodsOf(e))) return null;
   const attempts = attemptsOf(e);
   const outcome = str(e.f.outcome);
   const replied = attempts.find((a) => a.replied);
@@ -280,11 +294,13 @@ function rowOfEvent(e: RouterLine, guid: string, index: UpstreamIndex): TxLogRow
     note = NOTE.writeUnknown;
   } else if (outcome === "node_error") {
     error = { code: str(e.f.error_code) || "NODE_ERROR", message: scrubUrls(str(e.f.error)) };
-  } else if (result === "failed") {
+  } else if (FAILED_SET.has(outcome)) {
     // A subscription request keeps a node's refusal on its try: the router
     // answers the client itself rather than pass the refusal through.
     const refusal = isSubscription(e) ? nodeRefusalOf(e) : null;
     if (refusal) txOutcome = "rejected";
+    else if (!attempts.some((a) => a.outcome !== "skipped")) txOutcome = "failed";
+    else if (result === "unknown") note = NOTE.mayHaveRun;
     error = refusal
       ? { code: refusal.code || "NODE_ERROR", message: scrubUrls(refusal.message) }
       : { code: str(e.f.error_code) || "NO_REPLY", message: scrubUrls(withoutGuid(str(e.f.error)) || "no upstream replied") };

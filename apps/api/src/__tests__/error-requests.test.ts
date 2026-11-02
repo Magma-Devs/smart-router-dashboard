@@ -772,8 +772,16 @@ describe("a write the router could not settle", () => {
   it("is its own result, as on the Transactions tab - not a router error", () => {
     const [r] = rowsOf(UNSETTLED);
     expect(r).toMatchObject({ guid: "404", result: "write-unknown", resolvedBy: null, error: "failed relay, insufficient results", spec: "ETH1" });
-    // Without the line it is the router error it looks like.
-    expect(rowsOf(UNSETTLED.slice(0, -1))[0]).toMatchObject({ result: "failed" });
+    // Without the line it is the same: both copies went out, so a provider may have passed it on.
+    expect(rowsOf(UNSETTLED.slice(0, -1))[0]).toMatchObject({ result: "write-unknown" });
+  });
+
+  it("sent to no provider, it stays a router error: nothing went out", () => {
+    const lines = [
+      at(1000, { GUID: "405", path: "/", body: '{"jsonrpc":"2.0","id":1,"method":"eth_sendRawTransaction","params":["0x00"]}', message: RECEIVED }),
+      at(1002, { GUID: "405", endpoint: "ETH1jsonrpc", error: "no pairings available", message: "failed getting responses from RPC endpoints" }),
+    ];
+    expect(rowsOf(lines)[0]).toMatchObject({ guid: "405", result: "failed", attempts: [] });
   });
 
   it("is read back with the line that settles it", async () => {

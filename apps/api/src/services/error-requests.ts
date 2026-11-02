@@ -55,6 +55,7 @@ import {
   PARSED_PIPELINE,
   isSubscription,
   methodOf as methodOfEvent,
+  methodsOf,
   parsed,
   RELAY_END,
   retried as retriedEvent,
@@ -67,6 +68,7 @@ import type { LokiClient } from "./loki-client.js";
 import { StreamScope } from "./stream-scope.js";
 import type { PrometheusClient } from "./prometheus-client.js";
 import type { ConfigurationService } from "./configuration.js";
+import { isTransaction } from "./transactions.js";
 import {
   chainOf,
   END_MSG,
@@ -94,6 +96,7 @@ export const ERROR_MSG = {
   received: "Consumer received a new",
   ...TRY_MSG,
   decide: "[StateMachine] policy.Decide",
+  choosing: "Choosing providers",
   noResults: "failed relay, insufficient results",
   exhausted: "Circuit breaker: all providers exhausted",
   finished: "relay finished",
@@ -164,6 +167,9 @@ export function buildErrorRows(lines: RouterLine[], index: UpstreamIndex, every 
     else if (!finished) result = gaveUp ? "failed" : "unknown";
     else if (routerError || str(finished.f.has_reply) === "false") result = "failed";
     else if (replied?.outcome === "failed") result = "error-reply";
+    // A transaction the router gave up on after sending it: a provider may still have passed it on.
+    const choosing = ordered.find((l) => l.message === ERROR_MSG.choosing);
+    if (result === "failed" && sentAny(attempts) && isTransaction(str(choosing?.f.stateful) === "1", [methodOf(received, ordered)])) result = "write-unknown";
 
     const decidedRetry = ordered.some((l) => l.message === ERROR_MSG.decide && str(l.f.action) === "retry");
     // An answer with nothing failed on the way isn't a recovery.
@@ -194,6 +200,9 @@ export function buildErrorRows(lines: RouterLine[], index: UpstreamIndex, every 
   return rows.sort((a, b) => b.time - a.time);
 }
 
+/** Did any try go out, rather than every upstream being passed over? */
+const sentAny = (attempts: { outcome: string }[]): boolean => attempts.some((a) => a.outcome !== "skipped");
+
 /** A request's row from its `relay_end` alone; null when the list leaves it out. */
 function rowOfEvent(e: RouterLine, guid: string, index: UpstreamIndex, every: boolean): ErrorRequestRow | null {
   if (!every && (!parsed(e) || isSubscription(e))) return null;
@@ -203,8 +212,10 @@ function rowOfEvent(e: RouterLine, guid: string, index: UpstreamIndex, every: bo
   // A write no upstream settled: the Transactions tab's `unknown`. Still a
   // server error - the Failed requests card counts it, as the alert does.
   if (outcome === "write_unknown") result = "write-unknown";
-  else if (FAILED_SET.has(outcome)) result = "failed";
-  else if (outcome === "node_error") result = "error-reply";
+  else if (FAILED_SET.has(outcome)) {
+    // A transaction the router gave up on after sending it: a provider may still have passed it on.
+    result = sentAny(attempts) && isTransaction(e.f.stateful === true, methodsOf(e)) ? "write-unknown" : "failed";
+  } else if (outcome === "node_error") result = "error-reply";
   else if (outcome === "ok") result = attempts.some((a) => a.outcome === "failed") ? "recovered" : "ok";
   // Listed by what its finder reads - a failed try or request - so the list
   // does not change with the router's log level.

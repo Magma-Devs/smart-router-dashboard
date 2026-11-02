@@ -5,6 +5,43 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.53.0]
+
+### Changed
+
+- **Transactions tab: the result says what happened to the send, never that
+  the transaction is on chain.** The router sees whether a provider took the
+  transaction, not whether it reached a block, and "Accepted" read like
+  "done". The results are now **Sent** ("Not confirmed on chain yet";
+  **Executed** where the send reply says the chain ran it, on Sui),
+  **Refused** (amber: usually the transaction itself; on nonce too low and
+  already known, "May already be on chain." and the error's own next step,
+  the words the opened row shows), **Outcome
+  unknown** ("May have been sent. Look up the hash before signing a new
+  one.") and **Not sent** ("Nothing reached a provider. Sending again is
+  safe."). The chart, the filter and the opened row use the same words.
+- **A transaction the router gave up on after sending it is Outcome
+  unknown, on both tabs.** It was "Router error"; a provider may still have
+  passed it on. Only a transaction sent to no provider is Not sent (a router
+  error on the Errors tab).
+- **Transactions tab: the cards are Transactions, Sent, Refused and Outcome
+  unknown**, each with its share of all. The success rate is gone: it
+  counted the client's own refused transactions as failures.
+- **Errors and Transactions tabs: an opened request reads as steps.** Under
+  the status, **What happened**: the request from the client (its method and
+  size); each send, "Sent to tatum and alchemy at the same time" or "Then
+  sent to alchemy", with one line per provider saying what it answered, its
+  own words and how long it took; then the answer to the client, whose it
+  was, after how long and its size. It replaces the one-sentence summary and
+  the tries table. The status uses the list's own word ("Provider error",
+  not "Error").
+- **Each error said once per row.** A row's Result is the kind of result and,
+  under it, the error the client got. The "Returned to client:" line and
+  "returned by …" are gone.
+- **One word for the provider.** "Node error" is now **Provider error**, the
+  upstream filters read "All providers", and the Upstreams tab's errors chart
+  says "Provider errors".
+
 ## [0.51.1]
 
 ### Fixed
