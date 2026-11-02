@@ -86,15 +86,21 @@ function resultOf(r: TxLogRow): { label: string; color: string } {
   return r.outcome === "accepted" && r.txStatus === "success" ? { label: "Executed", color: "var(--ok)" } : OUTCOME[r.outcome];
 }
 
-/** A refusal whose own code says the chain may already have the transaction ("nonce too low", "already known"). */
-function mayBeOnChain(r: TxLogRow): boolean {
-  return r.outcome === "rejected" && [r.error?.code, ...r.attempts.map((a) => a.code)].some((c) => explainRouterError(c)?.mayHaveGoneThrough);
+/** A refusal whose own code says the chain may already have the transaction ("nonce too low", "already known"): that code's entry. */
+function mayBeOnChain(r: TxLogRow) {
+  if (r.outcome !== "rejected") return null;
+  for (const c of [r.error?.code, ...r.attempts.map((a) => a.code)]) {
+    const entry = explainRouterError(c);
+    if (entry?.mayHaveGoneThrough) return entry;
+  }
+  return null;
 }
 
 /** What the client should do next, under a row's result. */
 function nextOf(r: TxLogRow): string | null {
   if (r.outcome === "accepted") return r.txStatus === "success" ? null : "Not confirmed on chain yet.";
-  if (r.outcome === "rejected") return mayBeOnChain(r) ? "May already be on chain. Check the hash." : null;
+  // The error's own next step, in the words the opened row shows.
+  if (r.outcome === "rejected") { const entry = mayBeOnChain(r); return entry ? `May already be on chain. ${entry.action || "Check the chain before sending again."}` : null; }
   if (r.outcome === "unknown") return "May have been sent. Look up the hash before signing a new one.";
   if (r.outcome === "failed") return "Nothing reached a provider. Sending again is safe.";
   return null;
