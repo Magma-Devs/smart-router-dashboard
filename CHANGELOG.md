@@ -5,6 +5,19 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Changed
+
+- **Upstream state reads the router's own blocked gauge.** Status, the chain
+  health colour, "chains fully down", the hero health and the upstream count
+  read `smartrouter_csm_provider_blocked` (1 while the router sends a provider
+  no traffic because none of its urls is in rotation, 0 while at least one is)
+  instead of `rpc_endpoint_overall_health`, which dropped to 0 on a single
+  failed request and stayed there until that same url answered again, so a
+  provider with one failing url and one serving url read Unhealthy while it
+  served. The block polls still decide for a provider nobody routes to. A
+  backup provider appears in the gauge from smart-router MAG-4735 on; before
+  that its Status comes from the polls alone.
+
 ## [0.51.1]
 
 ### Fixed

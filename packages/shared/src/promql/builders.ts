@@ -266,9 +266,13 @@ export function qEndpointLatencyQuantileBySpec(
   return `histogram_quantile(${quantile}, sum by (endpoint_id, spec, le) (rate(${ENDPOINT_METRICS.latencyBucket}${sel}[${rangeFor(window)}])))`;
 }
 
-/** Per-endpoint health gauge by endpoint_id. */
-export function qEndpointHealth(spec?: string): string {
-  return `${ENDPOINT_METRICS.overallHealth}${selector({ spec })}`;
+/**
+ * The router's per-provider blocked gauge (1 = no url in rotation, so no
+ * traffic; 0 = serving), keyed by `endpoint_id` like the per-endpoint
+ * families: `provider_address` carries the same configured name.
+ */
+export function qProviderBlockedByEndpoint(spec?: string): string {
+  return `label_replace(${ROUTER_METRICS.csmProviderBlocked}${selector({ spec })}, "endpoint_id", "$1", "provider_address", "(.*)")`;
 }
 
 /* ── Derived error math (real: total − success, clamped ≥ 0) ─────────────── */
@@ -587,9 +591,9 @@ export function qGroupedQos(g: GroupBy): string {
   return `avg by (${by(g)}) (${ENDPOINT_METRICS.selectionScore}${selector({ score_type: "composite" })})`;
 }
 
-/** Health from the spec-labelled ENDPOINT gauge (1/0), per group. */
+/** Health per group (1/0) from the blocked gauge: 1 while any provider of the group is in rotation. */
 export function qGroupedHealth(g: GroupBy, spec?: string): string {
-  return `max by (${by(g)}) (${ENDPOINT_METRICS.overallHealth}${selector({ spec })})`;
+  return `1 - min by (${by(g)}) (${ROUTER_METRICS.csmProviderBlocked}${selector({ spec })})`;
 }
 
 /** The router's latest block, per group. */
@@ -597,9 +601,9 @@ export function qGroupedLatestBlock(g: GroupBy): string {
   return `max by (${by(g)}) (${ROUTER_METRICS.latestBlock})`;
 }
 
-/** One row per (group, endpoint_id) on the endpoint health gauge — a group's upstream count is its row count. */
+/** One row per (group, endpoint_id) on the blocked gauge — a group's upstream count is its row count. */
 export function qGroupedUpstreams(g: GroupBy): string {
-  return `count by (${by(g)}, endpoint_id) (${ENDPOINT_METRICS.overallHealth})`;
+  return `count by (${by(g)}, endpoint_id) (${qProviderBlockedByEndpoint()})`;
 }
 
 /** A quantile per chain over the window — `qGroupedLatencyQuantile` by spec. */
@@ -611,7 +615,7 @@ export function qPerSpecLatencyQuantile(
   return qGroupedLatencyQuantile(quantile, ["spec"], window, spec);
 }
 
-/** Health per chain from the spec-labelled ENDPOINT gauge — `qGroupedHealth` by spec. */
+/** Health per chain from the blocked gauge — `qGroupedHealth` by spec. */
 export function qPerSpecHealth(spec?: string): string {
   return qGroupedHealth(["spec"], spec);
 }
@@ -974,9 +978,9 @@ export function qEndpointBlockLagSeriesExpr(ref: UpstreamRef): string {
   return `max(${ENDPOINT_METRICS.latestBlock}${selector({ spec: ref.spec })}) - max(${ENDPOINT_METRICS.latestBlock}${upstreamEndpointSelector(ref)})`;
 }
 
-/** Specs whose every endpoint is down (bool per spec). */
+/** Specs whose every provider is blocked (bool per spec). */
 export function qChainDown(): string {
-  return `max by (spec) (${ENDPOINT_METRICS.overallHealth}) == bool 0`;
+  return `min by (spec) (${ROUTER_METRICS.csmProviderBlocked}) == bool 1`;
 }
 
 /** Selection-score expression (gauge; also valid for query_range series). */
