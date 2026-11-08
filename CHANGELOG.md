@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.54.0]
+
 ### Added
 
 - **Try it: a Blockbook request type** (MAG-5032). lava-specs #202 put the
