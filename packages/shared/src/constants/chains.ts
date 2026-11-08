@@ -60,7 +60,8 @@ export type ChainFamily =
   | "multiversx"
   | "stacks"
   | "rosetta"
-  | "kaspa";
+  | "kaspa"
+  | "siacoin";
 
 interface ChainMapEntry {
   name: string;

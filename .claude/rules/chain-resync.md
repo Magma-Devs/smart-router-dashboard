@@ -197,7 +197,7 @@ The generator classifies every command as **runnable** (what it ships with is
 already a complete request), **needs params** (a placeholder, a hint that
 documents the argument instead of curating one, or the spec's own
 `block_parsing` naming a positional argument), or unknown. The drawer opens
-every tier (regular, archive, debug, trace) on its first runnable command, so
+every tier (regular, archive, debug, trace, blockbook) on its first runnable command, so
 a tier with none opens on a command that needs typing into first.
 
 1. **Read the generator's tail.** It prints `runnable N commands` and then every

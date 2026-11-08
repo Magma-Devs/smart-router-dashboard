@@ -194,3 +194,12 @@ eyes, `#D30556` mouth, `#DCAFC2` tongue, and `#945D24` lips. Only the visible
 vector paths are kept. The hidden tracing bitmap and two hairline construction
 strokes are dropped, and coordinates are rounded to three decimals. The testnet
 (`PEPT`) resolves to the same file.
+
+### Siacoin (2026-11-08)
+
+`siacoin` uses web3icons `raw-svgs/tokens/mono/SC.svg` (no network entry; the
+token metadata names it Siacoin). The circle is the source background's flat
+`#15D47B`. White reaches only 1.96:1 on that green, so the glyph is `#111`, at
+the 0.72 house inset. The ring around the glyph is part of the Siacoin mark,
+not a house border. Source: [Siacoin](https://github.com/0xa3k5/web3icons/blob/main/raw-svgs/tokens/mono/SC.svg)
+(MIT). The Zen testnet (`SCT`) resolves to the same file.

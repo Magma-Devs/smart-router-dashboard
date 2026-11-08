@@ -5,6 +5,69 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.54.0]
+
+### Added
+
+- **Try it: a Blockbook request type** (MAG-5032). lava-specs #202 put the
+  15 Blockbook `bb_*` methods in a `blockbook` add-on collection on BTC's
+  JSON-RPC interface, inherited by every spec that imports BTC: 18 specs,
+  including BCH, LTC, DOGE, DASH, ZCASH, Qtum, Pepecoin and their testnets.
+  The drawer now offers them as a **Blockbook** request type, on routers whose
+  upstream declares `addons: ["blockbook"]` and nowhere else. A router without
+  one answers every `bb_*` call "No Providers For Addon".
+
+  The tier opens on `bb_getBlockHash ["0"]`, the exact call the spec's
+  `enabled` verification sends, so every node admitted to the add-on has
+  answered it. The other 14 take an address, xpub, txid, block or timestamp,
+  so they are marked as needing params. Each description gives the argument
+  shape from QuickNode's method pages, since QuickNode is the one vendor that
+  serves Blockbook over JSON-RPC.
+
+### Fixed
+
+- **Method names keep a plural acronym whole.** AVAX's `getUTXOs` read as
+  "Get UTX Os", and NFTs, CIDs, CSRs and chain IDs split the same way, in 10
+  catalog ids (Cosmos `NFTs`, Filecoin's `StateActorCodeCIDs`, …). They now
+  read "Get UTXOs", "NFTs" and "State Actor Code CIDs".
+
+## [0.53.0]
+
+### Added
+
+- **Siacoin arrived upstream** (MAG-5031). lava-specs added `sc.json`: `SC`
+  is the mainnet and `SCT` the Zen testnet, which imports it. Both serve
+  walletd's REST API only. Try-it opens on `/api/consensus/network`, one of
+  eight GETs that run as-is. The 14 routes that take an address, id or height
+  are marked as needing input, and the 8 POST routes are left unmarked, like
+  every REST POST.
+
+  Siacoin has its own `siacoin` family. Its paths sit under a bare `/api/`
+  prefix that names no ecosystem, so the map generator labelled it EVM through
+  its last-resort fallback, as it once did Kaspa. walletd's consensus and v2
+  txpool routes now identify it.
+
+  `siacoin.svg` is web3icons' `tokens/mono/SC` glyph on the source's
+  `#15D47B`. White reaches only 1.96:1 on that green, so the glyph is `#111`.
+  The testnet resolves to the same file. Both explorers come from the Sia
+  Foundation's own explorer app, and both block pages were watched rendering
+  height 1000:
+  - **mainnet:** SiaScan (`siascan.com/block/<height>`)
+  - **testnet:** SiaScan Zen (`zen.siascan.com/block/<height>`), which shows
+    a different block 1000 from mainnet, under its "zen" badge
+
+  The registry snapshot was refreshed, and it moved two chains. Arc Testnet's
+  explorer is now Arc Explorer (`explorer.testnet.arc.io`) instead of Arcscan.
+  Robinhood Chain lost robinscan, so Blockscout is its primary and hoodscan
+  its second.
+
+  The BTC Blockbook `bb_*` methods that lava-specs added in the same window
+  sit in a `blockbook` add-on collection. Try-it has no tier for that add-on
+  (nor for `blockdaemon`), so the drawer does not offer them and the catalog
+  did not move.
+
+  296 chains, 253 with an explorer, 206 primaries linking a height.
+
 ### Changed
 
 - **Upstream state reads the router's own blocked gauge.** Status, the chain
