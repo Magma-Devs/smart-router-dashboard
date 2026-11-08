@@ -2120,6 +2120,15 @@
     ],
     "mainnet": false
   },
+  "SC": {
+    "name": "Siacoin",
+    "family": "siacoin",
+    "icon": "siacoin",
+    "interfaces": [
+      "rest"
+    ],
+    "mainnet": true
+  },
   "SCROLL": {
     "name": "Scroll",
     "family": "evm",
@@ -2135,6 +2144,15 @@
     "icon": "scroll",
     "interfaces": [
       "jsonrpc"
+    ],
+    "mainnet": false
+  },
+  "SCT": {
+    "name": "Siacoin Zen Testnet",
+    "family": "siacoin",
+    "icon": "siacoin",
+    "interfaces": [
+      "rest"
     ],
     "mainnet": false
   },
