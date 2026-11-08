@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.53.0]
+
 ### Added
 
 - **Siacoin arrived upstream** (MAG-5031). lava-specs added `sc.json`: `SC`
