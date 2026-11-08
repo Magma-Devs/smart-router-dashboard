@@ -620,6 +620,38 @@ describe("generated lava-specs catalog", () => {
     expect(cfg?.trace?.some((c) => c.method === "trace_block")).toBe(true);
   });
 
+  it("offers the Blockbook tier only where an upstream declares the blockbook add-on", () => {
+    const tiersFor = (spec: string, addons: string[]) => {
+      const cfg = getInterfaceConfig(spec, "jsonrpc", addons);
+      return [...new Set(listMethods(cfg!).map((m) => m.tier))];
+    };
+    // bb_* sit in BTC's `blockbook` add-on collection. A router with no node
+    // url declaring that add-on answers every one of them "No Providers For
+    // Addon", so the tier is not offered.
+    expect(tiersFor("BTC", [])).not.toContain("blockbook");
+    expect(tiersFor("BTC", ["blockbook"])).toContain("blockbook");
+    // Inherited by every spec that imports BTC, directly (Litecoin) or through
+    // another import (Pepecoin imports DOGE). Case-insensitive, like the rest.
+    expect(tiersFor("LTC", ["Blockbook"])).toContain("blockbook");
+    expect(tiersFor("PEP", ["blockbook"])).toContain("blockbook");
+    // A spec with no such collection offers nothing, whatever the config says.
+    expect(tiersFor("ETH1", ["blockbook"])).not.toContain("blockbook");
+  });
+
+  it("opens the Blockbook tier on the call the spec's add-on verification makes", () => {
+    const bb = getInterfaceConfig("BTC", "jsonrpc", ["blockbook"])!.blockbook!;
+    expect(bb).toHaveLength(15);
+    // `bb_getBlockHash ["0"]` is what every node passes to be admitted to the
+    // add-on, so it is the one command that runs as-is on any router serving it.
+    const first = defaultCommand(bb);
+    expect(first?.method).toBe("bb_getBlockHash");
+    expect(first?.params).toBe('["0"]');
+    expect(first?.ready).toBe(true);
+    // Every other bb_* method takes an argument no static value fits.
+    expect(bb.filter((c) => c.ready).map((c) => c.method)).toEqual(["bb_getBlockHash"]);
+    expect(bb.filter((c) => c.needsInput)).toHaveLength(14);
+  });
+
   it("ETH1 archive tier is synthesised from the archive extension when offered", () => {
     const cfg = getInterfaceConfig("ETH1", "jsonrpc", ["archive"]);
     expect(cfg?.archive?.length).toBeGreaterThan(0);

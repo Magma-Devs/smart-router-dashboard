@@ -203,6 +203,11 @@ describe("buildChainMetaByIndex", () => {
     // it; the testnet inherits through its KASPA import.
     expect(buildChainMetaByIndex("KASPA").family).toBe("kaspa");
     expect(buildChainMetaByIndex("KASPAT").family).toBe("kaspa");
+    // Siacoin serves only walletd's REST API under a bare `/api/` prefix and
+    // reached the same fallback. Its consensus and v2 txpool routes identify
+    // it; the Zen testnet inherits through its SC import.
+    expect(buildChainMetaByIndex("SC").family).toBe("siacoin");
+    expect(buildChainMetaByIndex("SCT").family).toBe("siacoin");
   });
   it("inherits a forked chain's family from its imports", () => {
     // Dash imports BTC and Koii imports SOLANA; neither index shares a prefix
