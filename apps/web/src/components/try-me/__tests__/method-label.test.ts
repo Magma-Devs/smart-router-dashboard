@@ -26,6 +26,9 @@ describe("humanizeMethod", () => {
     expect(humanizeMethod("starknet_getEvents")).toBe("Get Events");
     expect(humanizeMethod("chain_getBlockHash")).toBe("Get Block Hash");
     expect(humanizeMethod("Filecoin.ChainHead")).toBe("Chain Head");
+    // `bb_` repeats the Blockbook tier the drawer already shows.
+    expect(humanizeMethod("bb_getAddress")).toBe("Get Address");
+    expect(humanizeMethod("bb_getTxSpecific")).toBe("Get Tx Specific");
   });
 
   it("names the gRPC method, not its package path", () => {
@@ -50,6 +53,11 @@ describe("humanizeMethod", () => {
     expect(humanizeMethod("eth_getBlockRlp")).toBe("Get Block RLP");
     // An all-caps run in the id is an acronym of its own — "Lll" reads as a typo.
     expect(humanizeMethod("eth_compileLLL")).toBe("Compile LLL");
+    expect(humanizeMethod("bb_getXPUB")).toBe("Get XPUB");
+    // A plural acronym keeps its `s` and its capitals — not "UTX Os".
+    expect(humanizeMethod("bb_getUTXOs")).toBe("Get UTXOs");
+    // A capital that starts a word still ends the run.
+    expect(humanizeMethod("eth_getBlockRLPData")).toBe("Get Block RLP Data");
   });
 
   it("returns null rather than a name that adds nothing", () => {

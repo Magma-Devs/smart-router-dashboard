@@ -5,8 +5,8 @@
  *
  *  1. `chain-methods.generated.json` — full lava-specs coverage, produced by
  *     `scripts/generate-try-me-catalog.mjs` from the spec proposals in
- *     `lava-specs/` (imports resolved transitively, debug/trace add-on
- *     collections mapped to tiers, archive synthesised from the collection
+ *     `lava-specs/` (imports resolved transitively, debug/trace/blockbook
+ *     add-on collections mapped to tiers, archive synthesised from the collection
  *     `archive` extension + curated hints). Keyed by exact Lava spec index
  *     (`ETH1`, `COSMOSHUB`, …); a string value is an alias to an identical
  *     entry (testnets mostly alias their mainnet).
@@ -64,13 +64,15 @@ export interface AddonCommand {
   ambiguous?: boolean;
 }
 
-export type Tier = "regular" | "archive" | "debug" | "trace";
+export type Tier = "regular" | "archive" | "debug" | "trace" | "blockbook";
 
 export interface InterfaceConfig {
   regular: AddonCommand[];
   archive: AddonCommand[] | null;
   debug: AddonCommand[] | null;
   trace: AddonCommand[] | null;
+  /** BTC-family `bb_*` methods, from the spec's `blockbook` add-on. */
+  blockbook: AddonCommand[] | null;
 }
 
 /**
@@ -258,6 +260,7 @@ function generatedInterfaceConfig(
       archive: expandTier(tiers.archive, key),
       debug: expandTier(tiers.debug, key),
       trace: expandTier(tiers.trace, key),
+      blockbook: expandTier(tiers.blockbook, key),
     };
     EXPANDED_CACHE.set(cacheKey, cfg);
   }
@@ -334,6 +337,7 @@ const EVM_JSONRPC: InterfaceConfig = {
   ],
   debug: null,
   trace: null,
+  blockbook: null,
 };
 
 const SOLANA_JSONRPC: InterfaceConfig = {
@@ -365,6 +369,7 @@ const SOLANA_JSONRPC: InterfaceConfig = {
   archive: null,
   debug: null,
   trace: null,
+  blockbook: null,
 };
 
 const NEAR_JSONRPC: InterfaceConfig = {
@@ -383,6 +388,7 @@ const NEAR_JSONRPC: InterfaceConfig = {
   ],
   debug: null,
   trace: null,
+  blockbook: null,
 };
 
 const STARKNET_JSONRPC: InterfaceConfig = {
@@ -406,6 +412,7 @@ const STARKNET_JSONRPC: InterfaceConfig = {
   ],
   debug: null,
   trace: null,
+  blockbook: null,
 };
 
 const COSMOS_TENDERMINT: InterfaceConfig = {
@@ -417,6 +424,7 @@ const COSMOS_TENDERMINT: InterfaceConfig = {
   archive: [{ method: "block", label: "Block (Archive)", params: '{"height":"340801"}' }],
   debug: null,
   trace: null,
+  blockbook: null,
 };
 
 const COSMOS_REST: InterfaceConfig = {
@@ -455,6 +463,7 @@ const COSMOS_REST: InterfaceConfig = {
   ],
   debug: null,
   trace: null,
+  blockbook: null,
 };
 
 const BITCOIN_JSONRPC: InterfaceConfig = {
@@ -468,6 +477,7 @@ const BITCOIN_JSONRPC: InterfaceConfig = {
   archive: [{ method: "getblockhash", label: "Get Block Hash", params: "[800000]" }],
   debug: null,
   trace: null,
+  blockbook: null,
 };
 
 /**
@@ -492,6 +502,7 @@ function classify(cfg: InterfaceConfig): InterfaceConfig {
     archive: mark(cfg.archive),
     debug: mark(cfg.debug),
     trace: mark(cfg.trace),
+    blockbook: mark(cfg.blockbook),
   };
 }
 
@@ -613,6 +624,7 @@ const GRPC_NO_CATALOG: InterfaceConfig = {
   archive: null,
   debug: null,
   trace: null,
+  blockbook: null,
 };
 
 /** Identity-stable add-on-stripped variants, so React memos keyed on the
@@ -626,8 +638,13 @@ const STRIPPED_CACHE = new Map<InterfaceConfig, Map<string, InterfaceConfig>>();
  *  declares. */
 function withAddons(cfg: InterfaceConfig, addons: readonly string[]): InterfaceConfig {
   const has = (addon: string) => addons.some((a) => a.toLowerCase() === addon);
-  const wanted = { archive: has("archive"), debug: has("debug"), trace: has("trace") };
-  const drops = (["archive", "debug", "trace"] as const).filter(
+  const wanted = {
+    archive: has("archive"),
+    debug: has("debug"),
+    trace: has("trace"),
+    blockbook: has("blockbook"),
+  };
+  const drops = (["archive", "debug", "trace", "blockbook"] as const).filter(
     (tier) => cfg[tier] !== null && !wanted[tier],
   );
   if (drops.length === 0) return cfg;
@@ -684,7 +701,7 @@ export function getInterfaceConfig(
   return withAddons(cfg, addons);
 }
 
-export const TIER_ORDER: Tier[] = ["regular", "archive", "debug", "trace"];
+export const TIER_ORDER: Tier[] = ["regular", "archive", "debug", "trace", "blockbook"];
 
 /** How many commands the dropdown opens on before "Show all". A chain can
  *  have hundreds of runnable paths (a Cosmos LCD has ~100); past a dozen it

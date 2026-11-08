@@ -176,6 +176,8 @@ const NAMESPACES = new Set([
   "grandpa", "babe", "beefy", "mmr", "dev",
   // casper
   "info",
+  // bitcoin-family Blockbook add-on: `bb_` repeats the Blockbook tier
+  "bb",
 ]);
 
 /** Words that read wrong in Title Case — rendered as-is instead. */
@@ -273,7 +275,9 @@ function splitWords(raw: string): string[] | null {
     if (!chunk) continue;
     const camel = chunk
       .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
-      .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+      // A capital ends an acronym run only when it starts a word: the plural
+      // `s` of an acronym (`UTXOs`, `IDs`) stays with it.
+      .replace(/([A-Z]+)([A-Z](?!s(?:[A-Z]|$))[a-z])/g, "$1 $2")
       .split(" ")
       .filter(Boolean);
     // The id told us where the words are — take them, casing intact so
@@ -310,6 +314,8 @@ function titleCase(word: string): string {
   // An all-caps run the camel splitter kept whole is an acronym of its own
   // (`eth_compileLLL` → LLL) — title-casing it to "Lll" reads as a typo.
   if (word.length > 1 && word === word.toUpperCase()) return word;
+  // …and so is one carrying a plural `s` (`bb_getUTXOs` → UTXOs).
+  if (/^[A-Z]{2,}s$/.test(word)) return word;
   return lower.charAt(0).toUpperCase() + lower.slice(1);
 }
 
