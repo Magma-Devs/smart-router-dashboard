@@ -5,6 +5,30 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Added
+
+- **Try it: a Blockbook request type** (MAG-5032). lava-specs #202 put the
+  15 Blockbook `bb_*` methods in a `blockbook` add-on collection on BTC's
+  JSON-RPC interface, inherited by every spec that imports BTC: 18 specs,
+  including BCH, LTC, DOGE, DASH, ZCASH, Qtum, Pepecoin and their testnets.
+  The drawer now offers them as a **Blockbook** request type, on routers whose
+  upstream declares `addons: ["blockbook"]` and nowhere else. A router without
+  one answers every `bb_*` call "No Providers For Addon".
+
+  The tier opens on `bb_getBlockHash ["0"]`, the exact call the spec's
+  `enabled` verification sends, so every node admitted to the add-on has
+  answered it. The other 14 take an address, xpub, txid, block or timestamp,
+  so they are marked as needing params. Each description gives the argument
+  shape from QuickNode's method pages, since QuickNode is the one vendor that
+  serves Blockbook over JSON-RPC.
+
+### Fixed
+
+- **Method names keep a plural acronym whole.** AVAX's `getUTXOs` read as
+  "Get UTX Os", and NFTs, CIDs, CSRs and chain IDs split the same way, in 10
+  catalog ids (Cosmos `NFTs`, Filecoin's `StateActorCodeCIDs`, …). They now
+  read "Get UTXOs", "NFTs" and "State Actor Code CIDs".
+
 ## [0.53.0]
 
 ### Added

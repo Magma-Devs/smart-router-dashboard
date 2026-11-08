@@ -32,7 +32,7 @@ The observability dashboard for the [Smart Router](https://github.com/Magma-Devs
 
 - **Live metrics, honestly sourced** - KPIs, RPS, latency and error breakdowns straight from the router's `smartrouter_*` / `rpc_endpoint_*` Prometheus families, and the per-request error and transaction logs from its own log lines (Loki). Metric families the router hasn't emitted yet render the design's own empty states and light up automatically when they appear.
 - **Topology-aware** — one values file drives both the router and the dashboard, so the Upstreams page always reflects the running configuration.
-- **Live test console** — fire requests at any chain × interface the router serves, straight from the browser, with a full method catalog generated from the [lava-specs](https://github.com/Magma-Devs/lava-specs) repo (238 chains, jsonrpc/rest/tendermint/grpc, archive/debug/trace tiers).
+- **Live test console** — fire requests at any chain × interface the router serves, straight from the browser, with a full method catalog generated from the [lava-specs](https://github.com/Magma-Devs/lava-specs) repo (238 chains, jsonrpc/rest/tendermint/grpc, archive/debug/trace/blockbook tiers).
 - **Self-contained** — `make up` gives you router + Prometheus + api + web from nothing. No accounts, no cloud, optional auth.
 - **Optional authentication** — `AUTH_MODE=enabled` adds Auth.js sign-in (email+password + Google/GitHub) backed by Postgres. Default is open (`disabled`) for private deployments.
 
@@ -110,7 +110,7 @@ api checks. Without them everything works, only slower on long windows.
 - **Overview** — KPI strip (requests, RPS, errors, success rate, latency) + chart grid, all live
 - **Upstreams** - the mounted config joined with live per-endpoint stats, carved three ways: **by chain** (who serves it - the default), by router (the endpoints each router publishes), or by upstream (what it serves)
 - **Metrics** - four tabs: Overview, Upstreams, Errors, Transactions. The Transactions tab and the Errors tab's request list read the router's logs from Loki (`LOKI_URL`; the `logs` profile runs one)
-- **Live test** — POST straight to the router's listen ports from the browser; full per-chain method catalog with archive/debug/trace tiers
+- **Live test** — POST straight to the router's listen ports from the browser; full per-chain method catalog with archive/debug/trace/blockbook tiers
 - **/standalone** — the Metrics page without the shell, for sharing or embedding
 
 ## Authentication
