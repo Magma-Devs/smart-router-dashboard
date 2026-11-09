@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.55.0]
+
 ### Added
 
 - **Decred arrived upstream** (MAG-5052). lava-specs added `dcr.json`: `DCR`
