@@ -5,6 +5,37 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Added
+
+- **Decred arrived upstream** (MAG-5052). lava-specs added `dcr.json`: `DCR`
+  is the mainnet and `DCRT` testnet3, which imports it. Both serve dcrd's
+  JSON-RPC only. dcrd descends from btcd and shares bitcoind's method names,
+  so Try-it opens on the same seven bitcoind-style defaults
+  (`getblockchaininfo`, `getblockcount`, `getbestblockhash`,
+  `getblockhash [800000]`, `getnetworkinfo`, `getmempoolinfo`,
+  `getdifficulty`). All seven answered on a live mainnet node in the
+  maintainer run on lava-specs #186. Height 800000 exists on both networks:
+  mainnet is past 1,130,000, and dcrd's testnet3 assume-valid block is
+  1,780,540. No keyless dcrd RPC exists, so no Decred-only defaults were
+  added. The ticket-pool and treasury methods are listed without one.
+
+  Decred has its own `decred` family. Its spec does not import BTC and serves
+  no `eth_*`, so the map generator labelled it EVM through its last-resort
+  fallback, as it did Kaspa and Siacoin. The ticket-pool methods only
+  Decred's proof-of-stake serves now identify it.
+
+  `decred.svg` is web3icons' `tokens/mono/DCR` glyph on the source's
+  `#2970FF`. White reaches 4.32:1, so the glyph stays white. The testnet
+  resolves to the same file.
+  - **mainnet:** dcrdata (`dcrdata.decred.org/block/<height>`), the explorer
+    decred.org links to. Its block page was watched rendering "Block #1000",
+    mined 2016-02-11.
+  - **testnet:** none. `testnet.dcrdata.org`, the deployment dcrdata links
+    to, answers 503, as it did when the spec was written. The gap is recorded
+    in the overlay.
+
+  298 chains, 254 with an explorer, 207 primaries linking a height.
+
 ## [0.54.0]
 
 ### Added

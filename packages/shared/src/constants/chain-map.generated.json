@@ -784,6 +784,24 @@
     ],
     "mainnet": false
   },
+  "DCR": {
+    "name": "Decred",
+    "family": "decred",
+    "icon": "decred",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "DCRT": {
+    "name": "Decred Testnet3",
+    "family": "decred",
+    "icon": "decred",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
   "DOGE": {
     "name": "Dogecoin",
     "family": "bitcoin",

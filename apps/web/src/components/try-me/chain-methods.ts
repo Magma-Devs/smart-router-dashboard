@@ -524,8 +524,8 @@ export const FAMILY_METHODS: Record<
  * matches — callers fall back per-interface (jsonrpc → evm, rest /
  * tendermintrpc → cosmos) so unknown chains still get a sensible catalog.
  */
-/** The generated chain-map assigns each index one of 32 chain-type families
- *  (from lava-specs + the v1 overlay). The try-me catalog only curates method
+/** The generated chain-map assigns each index a chain-type family (from
+ *  lava-specs + the v1 overlay; `ChainFamily` in @sr/shared lists them). The try-me catalog only curates method
  *  sets for these 6; every other family collapses to its closest match so an
  *  unknown index still gets a sensible fallback drawer. (The generated
  *  per-spec catalog is tried first anyway — this only fires for indices the
