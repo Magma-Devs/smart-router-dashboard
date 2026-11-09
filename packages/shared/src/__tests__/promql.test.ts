@@ -208,6 +208,11 @@ describe("buildChainMetaByIndex", () => {
     // it; the Zen testnet inherits through its SC import.
     expect(buildChainMetaByIndex("SC").family).toBe("siacoin");
     expect(buildChainMetaByIndex("SCT").family).toBe("siacoin");
+    // Decred serves dcrd JSON-RPC: bitcoind's method names without a BTC
+    // import and without eth_*. Its ticket-pool methods identify it; the
+    // testnet3 spec inherits through its DCR import.
+    expect(buildChainMetaByIndex("DCR").family).toBe("decred");
+    expect(buildChainMetaByIndex("DCRT").family).toBe("decred");
   });
   it("inherits a forked chain's family from its imports", () => {
     // Dash imports BTC and Koii imports SOLANA; neither index shares a prefix

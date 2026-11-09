@@ -203,3 +203,12 @@ token metadata names it Siacoin). The circle is the source background's flat
 the 0.72 house inset. The ring around the glyph is part of the Siacoin mark,
 not a house border. Source: [Siacoin](https://github.com/0xa3k5/web3icons/blob/main/raw-svgs/tokens/mono/SC.svg)
 (MIT). The Zen testnet (`SCT`) resolves to the same file.
+
+### Decred (2026-11-09)
+
+`decred` uses web3icons `raw-svgs/tokens/mono/DCR.svg` (no network entry; the
+token metadata names it Decred). The circle is the source background's flat
+`#2970FF`, which is also the colour of the branded variant. White reaches 4.32:1
+on that blue, so the glyph stays white, at the 0.72 house inset. Source:
+[Decred](https://github.com/0xa3k5/web3icons/blob/main/raw-svgs/tokens/mono/DCR.svg)
+(MIT). The testnet3 spec (`DCRT`) resolves to the same file.

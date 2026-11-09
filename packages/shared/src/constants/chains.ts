@@ -61,7 +61,8 @@ export type ChainFamily =
   | "stacks"
   | "rosetta"
   | "kaspa"
-  | "siacoin";
+  | "siacoin"
+  | "decred";
 
 interface ChainMapEntry {
   name: string;
