@@ -74,9 +74,9 @@ dev:
 	@echo "▶ dev stack with hot reload + logs (Grafana → http://localhost:3001, admin/admin; first boot runs pnpm install — ~1 min)"
 	docker compose -f docker-compose.dev.yml --profile router --profile logs up --build
 
-## dev-down: stop the hot-reload dev stack
+## dev-down: stop the hot-reload dev stack (cache profile included, like `down`)
 dev-down:
-	docker compose -f docker-compose.dev.yml --profile router --profile auth --profile logs down
+	docker compose -f docker-compose.dev.yml --profile router --profile auth --profile logs --profile cache down
 
 ## up-auth: prod-style stack WITH authentication (postgres + login) — see docs/AUTH.md.
 ## Requires AUTH_SECRET, TOTP_ENCRYPTION_KEY and INTERNAL_AUTH_SECRET (each
