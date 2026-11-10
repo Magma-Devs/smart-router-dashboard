@@ -42,7 +42,7 @@ The observability dashboard for the [Smart Router](https://github.com/Magma-Devs
 
 ```bash
 make up        # router + Prometheus + api (:8000) + web (:3000) + logs (Grafana :3001), detached
-make up-cache  # ...plus the smart-router cache sidecar (:20100, metrics :5555)
+make up-cache  # ...plus a Valkey relay cache for the router
 make ps        # show what's running
 make down      # stop everything
 ```
@@ -60,20 +60,34 @@ docker compose up --build     # dashboard + Prometheus only
 
 ### Relay cache (optional)
 
-The stack can run the smart-router's RAM relay **cache** sidecar (mirrors
-`smart-router/docker/docker-compose.cache.yml`). It's opt-in behind the `cache`
+The router can keep its relay cache in a **Valkey** container
+(`ghcr.io/valkey-io/valkey:9.1.3-alpine`). It's opt-in behind the `cache`
 profile and off by default:
 
 ```bash
 make up-cache
-# or: SR_CACHE_BE=cache:20100 docker compose --profile router --profile cache up --build
+# or: SR_RESP_CACHE_ADDRESSES=valkey:6379 docker compose --profile router --profile cache up --build
 ```
 
-`make up-cache` wires the router to the cache via the `--cache-be` flag
-(`SR_CACHE_BE=cache:20100`) — no `values.yml` edit needed. The cache listens on
-`:20100` and exposes its own Prometheus metrics on `:5555` (scraped as the
-`smart-router-cache` job). With the profile off, `SR_CACHE_BE` is empty and the
-router uses its in-process cache.
+`make up-cache` starts Valkey and points the router at it with
+`--resp-cache-addresses valkey:6379` — no `values.yml` edit needed. Valkey has
+no host port and writes nothing to disk; the router stores its entries under
+its default key prefix `sr` and publishes the cache's series itself
+(`smartrouter_cache_*`, `smartrouter_resp_cache_*` on `:7779`), which the
+Metrics page's "Cache offload" card reads. To see a request answered from the
+cache, send it twice with the `lava-debug-relay` header:
+
+```bash
+curl -si localhost:3360 -H 'content-type: application/json' -H 'lava-debug-relay: true' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"eth_getBlockByNumber","params":["0x1000000",false]}' \
+  | grep -i '^lava-cache'
+# first call:  Lava-Cache-Tier: none     Lava-Cache-Outcome: primary=miss,secondary=off
+# second call: Lava-Cache-Tier: primary  Lava-Cache-Outcome: primary=hit,secondary=off
+docker compose exec valkey valkey-cli --scan --pattern 'sr:*'
+```
+
+With the profile off, `SR_RESP_CACHE_ADDRESSES` is empty and the router runs
+with no cache: every request goes to its upstreams.
 
 ## How it works
 

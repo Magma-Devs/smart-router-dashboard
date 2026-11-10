@@ -18,11 +18,3 @@ scrape_configs:
     metrics_path: /metrics
     static_configs:
       - targets: ["host.docker.internal:7779"]
-
-  # The cache sidecar's own metrics (--profile cache; distinct process from the
-  # router, so this is NOT a double-scrape). Down when the cache is off, which
-  # is harmless — nothing queries it unless the cache is running.
-  - job_name: smart-router-cache
-    metrics_path: /metrics
-    static_configs:
-      - targets: ["host.docker.internal:5555"]

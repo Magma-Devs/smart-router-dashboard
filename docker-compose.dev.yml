@@ -67,10 +67,11 @@ services:
       - "--log-format"
       - "${SR_LOG_FORMAT:-json}"
       - "--skip-websocket-verification"
-      # External relay cache address — empty = in-process cache; the `cache`
-      # profile / `make up-cache` set SR_CACHE_BE=cache:20100. See docker-compose.yml.
-      - "--cache-be"
-      - "${SR_CACHE_BE:-}"
+      # Relay cache in the `valkey` service below: empty = no cache; set
+      # SR_RESP_CACHE_ADDRESSES=valkey:6379 with `--profile cache`. See
+      # docker-compose.yml for why this is a flag and not a config block.
+      - "--resp-cache-addresses"
+      - "${SR_RESP_CACHE_ADDRESSES:-}"
     volumes:
       - ${SR_CONFIG_HOST:-./dev-config/values.yml}:/smart-router/values.yml:ro
     ports:
@@ -80,26 +81,29 @@ services:
       - "3360-3367:3360-3367"
       - "7779:7779"
     depends_on:
-      cache:
+      valkey:
         condition: service_healthy
         required: false # cache is opt-in (--profile cache)
     restart: unless-stopped
 
-  # ---- Cache sidecar (opt-in via `--profile cache`) ----------------------
-  # smart-router RAM relay cache on :20100 (metrics :5555). The router uses it
-  # only when its config declares `cache-be: cache:20100` (commented out in
-  # dev-config/values.yml). Mirrors smart-router/docker/docker-compose.cache.yml.
-  cache:
+  # ---- Relay cache: Valkey (opt-in via `--profile cache`) ----------------
+  # Keys under the router's default prefix `sr`; no host port, nothing written
+  # to disk. See docker-compose.yml for the settings.
+  valkey:
     profiles: ["cache"]
-    image: ${SR_ROUTER_IMAGE:-ghcr.io/magma-devs/smart-router:main}
-    pull_policy: ${SR_ROUTER_PULL:-always}
-    command: ["cache", "0.0.0.0:20100", "--metrics_address", "0.0.0.0:5555"]
+    image: ghcr.io/valkey-io/valkey:9.1.3-alpine
+    command:
+      - "valkey-server"
+      - "--maxmemory"
+      - "256mb"
+      - "--maxmemory-policy"
+      - "volatile-lru"
+      - "--save"
+      - ""
     expose:
-      - "20100"
-    ports:
-      - "5555:5555"
+      - "6379"
     healthcheck:
-      test: ["CMD", "/busybox/wget", "-qO-", "http://localhost:5555/metrics"]
+      test: ["CMD", "valkey-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 5

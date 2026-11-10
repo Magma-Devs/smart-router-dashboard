@@ -5,6 +5,25 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.56.1]
+
+### Changed
+
+- **The local stack caches in Valkey** (MAG-5100). The `cache` profile of
+  both compose files runs `ghcr.io/valkey-io/valkey:9.1.3-alpine` (256 MB,
+  `volatile-lru`, nothing written to disk, no host port) in place of the
+  router's cache sidecar, and `make up-cache` points the router at it with
+  `--resp-cache-addresses valkey:6379` (`SR_RESP_CACHE_ADDRESSES`). No
+  `--cache-be` flag and no `cache` subcommand remain. The router publishes
+  the cache's series itself, so Prometheus has no `smart-router-cache` job.
+  `make up` still runs with no cache, and `make dev-down` stops the `cache`
+  profile too.
+
+  The address is a flag rather than a `resp-cache:` block in
+  `dev-config/values.yml`: the router refuses a block without addresses and
+  has no flag that switches one off, so a block in that file would make
+  every stack mounting it need a Valkey.
+
 ## [0.56.0]
 
 ### Changed

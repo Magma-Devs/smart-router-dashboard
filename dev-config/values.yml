@@ -18,8 +18,10 @@
 # Prometheus scrape address (the --metrics-listen-address flag overrides).
 metrics-listen-address: "0.0.0.0:7779"
 
-# Relay cache is wired via the router's --cache-be flag (compose/SR_CACHE_BE),
-# not from this file.
+# Relay cache: the compose passes --resp-cache-addresses (SR_RESP_CACHE_ADDRESSES,
+# set by `make up-cache`), not a resp-cache: block here. The router has no flag
+# that switches a block off, so a block in this file would make every stack
+# mounting it need a Valkey.
 
 endpoints:
   - listen-address: "0.0.0.0:3360"
