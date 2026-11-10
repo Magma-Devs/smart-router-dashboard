@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.56.1]
+
 ### Changed
 
 - **The local stack caches in Valkey** (MAG-5100). The `cache` profile of
