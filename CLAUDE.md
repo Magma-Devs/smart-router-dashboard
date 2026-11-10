@@ -1102,6 +1102,7 @@ Compose / Makefile knobs:
 | `ROUTER_DIR` | `~/projects/smart-router` (make) / `../../smart-router` (compose) | router-profile build context |
 | `SR_SPEC` | `specs/` | `--use-static-spec` dir inside the router image |
 | `SR_LOG_LEVEL` / `SR_LOG_FORMAT` | `info` / `json` | router logging |
+| `SR_RESP_CACHE_ADDRESSES` | (empty: no cache) | router `--resp-cache-addresses`; `make up-cache` sets `valkey:6379` and starts the `cache` profile's Valkey |
 | `BUILDER` / `API_IMAGE` / `WEB_IMAGE` / `API_PORT` / `WEB_PORT` / `API_URL` | see Makefile | `make build` image names + printed URLs |
 
 ## Docker / images / isolation

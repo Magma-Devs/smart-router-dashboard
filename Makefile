@@ -56,13 +56,13 @@ up:
 	@echo ""
 	@echo "  logs    → docker compose logs -f   (make dev runs in the foreground and streams them)"
 
-## up-cache: like `up`, plus the smart-router cache sidecar (:20100, metrics :5555)
-## Wires the router to the cache via --cache-be — no values.yml edit needed.
+## up-cache: like `up`, plus a Valkey relay cache for the router
+## Points the router at it via --resp-cache-addresses — no values.yml edit needed.
 up-cache:
-	SR_CACHE_BE=cache:20100 docker compose --profile router --profile cache --profile logs up -d --build
+	SR_RESP_CACHE_ADDRESSES=valkey:6379 docker compose --profile router --profile cache --profile logs up -d --build
 	@echo ""
-	@echo "  ✅ Dashboard + cache up. Cache metrics → http://localhost:5555/metrics"
-	@echo "     Router is wired to the cache via --cache-be cache:20100."
+	@echo "  ✅ Dashboard + Valkey cache up. The router caches in valkey:6379 (keys under sr:)."
+	@echo "     Cached keys → docker compose exec valkey valkey-cli --scan --pattern 'sr:*'"
 
 ## down: stop the whole stack (auth + logs + cache profiles included so everything stops)
 down:
