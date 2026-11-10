@@ -41,7 +41,7 @@ vi.mock("@sr/db", async (importOriginal) => {
   };
 });
 
-const { dbPlugin } = await import("../plugins/db.js");
+const { dbPlugin, dbFailureReason } = await import("../plugins/db.js");
 
 const URL = "postgres://sr:x@192.0.2.1:5432/na";
 const KNOBS = ["DATABASE_URL", "DB_POOL_MAX", "DB_IDLE_TIMEOUT_S", "DB_TLS_SERVERNAME"] as const;
@@ -72,8 +72,21 @@ afterEach(async () => {
   }
 });
 
+/** What the ORM throws: its own message, the driver's error on `cause`. */
+function failedQuery(cause: Error & { code?: string }): Error {
+  return new Error('Failed query: CREATE SCHEMA IF NOT EXISTS "drizzle"\nparams: ', { cause });
+}
+
+const logged: Array<Record<string, unknown>> = [];
+
 async function register(): Promise<FastifyInstance> {
-  const instance = Fastify({ logger: false });
+  logged.length = 0;
+  const instance = Fastify({
+    logger: {
+      level: "warn",
+      stream: { write: (line: string) => void logged.push(JSON.parse(line) as Record<string, unknown>) },
+    },
+  });
   await instance.register(dbPlugin);
   await instance.ready();
   return instance;
@@ -135,6 +148,24 @@ describe("the db plugin's connect loop", () => {
     expect(driver.pools[2]!.end).toHaveBeenCalledExactlyOnceWith({ timeout: 5 });
   });
 
+  it("logs why an attempt failed, not only the query that did", async () => {
+    driver.migrate
+      .mockRejectedValueOnce(
+        failedQuery(Object.assign(new Error('password authentication failed for user "acme"'), { code: "28P01" })),
+      )
+      .mockResolvedValue(undefined);
+    app = await register();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(logged).toHaveLength(1);
+    expect(logged[0]).toMatchObject({
+      msg: "database not ready, retrying",
+      attempt: 1,
+      reason: '28P01: password authentication failed for user "acme"',
+    });
+    await vi.advanceTimersByTimeAsync(2_000);
+    await app.dbReady;
+  });
+
   it("keeps retrying when closing the failed pool fails too", async () => {
     driver.endFails = true;
     driver.migrate.mockRejectedValueOnce(new Error("connection reset")).mockResolvedValue(undefined);
@@ -146,5 +177,22 @@ describe("the db plugin's connect loop", () => {
     await app.dbReady;
     expect(app.db).toBe(driver.pools[1]!.db);
     driver.endFails = false;
+  });
+});
+
+describe("dbFailureReason", () => {
+  it("names the driver's code and message behind the ORM's wrapper", () => {
+    expect(
+      dbFailureReason(
+        failedQuery(Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:5432"), { code: "ECONNREFUSED" })),
+      ),
+    ).toBe("ECONNREFUSED: connect ECONNREFUSED 127.0.0.1:5432");
+    expect(dbFailureReason(failedQuery(new Error("socket hang up")))).toBe("socket hang up");
+  });
+
+  it("says nothing for an error with no cause", () => {
+    expect(dbFailureReason(new Error("boom"))).toBeUndefined();
+    expect(dbFailureReason("boom")).toBeUndefined();
+    expect(dbFailureReason(null)).toBeUndefined();
   });
 });

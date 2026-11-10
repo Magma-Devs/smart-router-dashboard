@@ -82,6 +82,14 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   for the backends serving on the same role. Each failed attempt now closes
   its pool before the next opens one; the same backend holds none between
   attempts. `db-connect-loop.test.ts` pins it.
+- **The api's log says why the database refused.** The retry line and the
+  readiness warning carried the ORM's message alone, `Failed query: <sql>`,
+  which reads the same for a wrong password, a database that does not exist,
+  nothing listening on the address and a certificate that names another
+  host. Both now carry `reason`: the driver's code and message, for example
+  `28P01: password authentication failed for user "acme"` or
+  `ECONNREFUSED: connect ECONNREFUSED 127.0.0.1:5432`. The readiness body is
+  unchanged.
 
 ## [0.56.0]
 

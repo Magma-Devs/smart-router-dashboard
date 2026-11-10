@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { sql } from "drizzle-orm";
+import { dbFailureReason } from "../plugins/db.js";
 
 /**
  * How long readiness waits for the database to answer `select 1`. Under the
@@ -50,7 +51,7 @@ async function databaseReadiness(app: FastifyInstance): Promise<DatabaseReadines
     () => "ok" as const,
     (err: unknown) => {
       app.log.warn(
-        { err: err instanceof Error ? err.message : String(err) },
+        { err: err instanceof Error ? err.message : String(err), reason: dbFailureReason(err) },
         "readiness: the database did not answer select 1",
       );
       return "query_failed" as const;
