@@ -71,6 +71,18 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   `smoke-arm64` runs it in the arm64 image before any tag is published, so
   an image whose helper cannot run is never published.
 
+### Fixed
+
+- **A connect attempt that fails closes its pool.** With auth on, the api
+  retries the database every 2 s at first. An attempt can fail after it
+  connected (a migration that lost a race, or one the role may not run), and
+  its pool then kept that connection for the idle timeout while the next
+  attempt opened another. Against a role with a connection limit of 7 a
+  backend that could not migrate held all 7 within 25 s, which leaves none
+  for the backends serving on the same role. Each failed attempt now closes
+  its pool before the next opens one; the same backend holds none between
+  attempts. `db-connect-loop.test.ts` pins it.
+
 ## [0.56.0]
 
 ### Changed

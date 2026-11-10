@@ -85,8 +85,9 @@ export const dbPlugin = fp(async (app: FastifyInstance) => {
 
   const connectLoop = (async () => {
     for (let attempt = 1; !stopped; attempt++) {
+      let candidate: DbHandle | null = null;
       try {
-        const candidate = createDb(url, pool);
+        candidate = createDb(url, pool);
         await migrate(candidate.db);
         await maybeSeedAdmin(app, candidate.db);
         handle = candidate;
@@ -94,6 +95,12 @@ export const dbPlugin = fp(async (app: FastifyInstance) => {
         app.log.info({ attempt, pool }, "database connected, migrations applied");
         return;
       } catch (err) {
+        // An attempt can fail after it connected: a migration that lost a race
+        // or that the role may not run. Its pool is closed before the next
+        // attempt opens one; left open, each retry holds a connection for the
+        // idle timeout, and the retries fill the role's connection limit,
+        // which the deployment's serving backends share.
+        await candidate?.sql.end({ timeout: 0 }).catch(() => undefined);
         const delay = Math.min(RETRY_DELAY_MS * Math.ceil(attempt / 10), RETRY_DELAY_MAX_MS);
         app.log.warn(
           { attempt, retryInMs: delay, err: (err as Error).message },
