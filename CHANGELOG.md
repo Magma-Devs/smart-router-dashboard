@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.56.0]
+
 ### Changed
 
 - **"Cache offload" reads the router's own cache series** (MAG-5087). The
