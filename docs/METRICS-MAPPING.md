@@ -241,7 +241,7 @@ as not to disturb the other agent's checkout):
 
 | Family (`OPTIONAL_METRICS`) | API meanwhile | Panels it would light up |
 |---|---|---|
-| `cache_total_{hits,misses}` | `dashboard-summary.cacheOffloadPct = {null,null}` + `emitted.cache:false`; `dashboard.cacheHitRate: null` | Cache offload / hit rate |
+| `smartrouter_cache_{requests,success}_total` `{spec, apiInterface, method, cache_tier}` | `dashboard-summary.cacheOffloadPct = {null,null}` + `emitted.cache:false`; `dashboard.cacheHitRate: null`. **Published by the router on either cache backend** (the cache pod or a RESP store), from router v1.5.0; absent while the router's cache is off. The card is hits on both tiers over lookups on the `primary` tier | Cache offload / hit rate |
 | `smartrouter_retries_{total,success,failed}_total` + `smartrouter_retry_attempts` `{spec, apiInterface, method}` | `dashboard-summary.retriesRecovered = {null,null}` + `emitted.retries:false`; `/retries` → `emitted:false`, null totals. **Emitted by the current router** - created on the first retry, so absence means "no retry yet", not an old build | "Recovered by retries" hero card; the Errors tab's retry cards |
 | `smartrouter_hedge_total` | `dashboard.kpis.errorsHandled: {null,null}`; `errorsHandledBreakdown`/`failoverRatio`/`internalAvailability`/`contribution: null` | Errors-handled / hedge win / failover panels |
 | `smartrouter_cross_validation_{requests,success,failed,failures}_total` + `provider_{agreements,disagreements}_total` | `/cross-validation` → `emitted:false`, null rounds/consensus/disagreements, empty `byChain` (`consistency` stays real). Fires on the first policy-matched request | Cross-validation panel + per-upstream disagreement rate |
