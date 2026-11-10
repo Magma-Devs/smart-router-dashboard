@@ -100,8 +100,11 @@ export const OPTIONAL_METRICS = {
   // retryable}: chain_id (NOT spec), category ∈ {internal, external}, bounded
   // error_name codes (e.g. PROTOCOL_CONNECTION_RESET). No provider label.
   errorsClassifiedTotal: "smartrouter_errors_total",
-  cacheTotalHits: "cache_total_hits",
-  cacheTotalMisses: "cache_total_misses",
+  // Cache lookups the router made and the ones a cache answered, per tier —
+  // labels {spec, apiInterface, method, cache_tier}. Published by the router
+  // on either cache backend; absent while its cache is off.
+  cacheRequestsTotal: "smartrouter_cache_requests_total",
+  cacheSuccessTotal: "smartrouter_cache_success_total",
   // Retry families - labels {spec, apiInterface, method}: NO provider and NO
   // reason. Recorded once per client REQUEST that needed an extra attempt
   // (smart-router rpcsmartrouter_server.go), so these count retried requests,

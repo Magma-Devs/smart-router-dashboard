@@ -224,18 +224,18 @@ export class MetricsService {
    */
   async dashboardSummary(window: MetricWindow, spec?: string): Promise<HeroSummary> {
     const r = rangeFor(window);
-    // Label selector for the metrics that carry a `spec` label, so the hero
-    // KPIs scope to the selected chain (empty = account-wide across all chains).
-    const specSel = spec ? `{spec="${spec}"}` : "";
     const kpi = async (cur: string, prior: string): Promise<Kpi> => {
       const [value, p] = await Promise.all([this.prom.scalar(cur), this.prom.scalar(prior)]);
       return { value, prior: p };
     };
-    // hits / (hits + misses) over the window; `offset` reads the window before.
+    // Answers a cache served, on either tier, over the lookups on the router's
+    // own cache: a secondary hit follows a primary miss of the same request,
+    // so the primary's lookups are the denominator. `offset` reads the window before.
     const cacheOffload = (offset?: string): string => {
       const o = offset ? ` offset ${offset}` : "";
-      const inc = (metric: string) => `sum(increase(${metric}${specSel}[${r}]${o}))`;
-      return `${inc(OPTIONAL_METRICS.cacheTotalHits)} / (${inc(OPTIONAL_METRICS.cacheTotalHits)} + ${inc(OPTIONAL_METRICS.cacheTotalMisses)})`;
+      const inc = (metric: string, tier?: string) =>
+        `sum(increase(${metric}${selector({ spec, cache_tier: tier })}[${r}]${o}))`;
+      return `${inc(OPTIONAL_METRICS.cacheSuccessTotal)} / ${inc(OPTIONAL_METRICS.cacheRequestsTotal, "primary")}`;
     };
 
     const [
@@ -253,7 +253,7 @@ export class MetricsService {
       healthGauge,
     ] = await Promise.all([
       this.familyPresent(OPTIONAL_METRICS.retriesSuccessTotal),
-      this.familyPresent(OPTIONAL_METRICS.cacheTotalHits),
+      this.familyPresent(OPTIONAL_METRICS.cacheRequestsTotal),
       this.familyPresent(OPTIONAL_METRICS.consistencyFailedTotal),
       // CLIENT-scoped: the latency-histogram _count increments exactly once
       // per client request. requests_total is relay-scoped (per participant,

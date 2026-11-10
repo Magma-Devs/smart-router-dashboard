@@ -1172,7 +1172,7 @@ export interface DashboardData {
   failoverRatio: TimePoint[] | null;
   /** Needs internal-vs-fallback classification + failover math — null. */
   internalAvailability: TimePoint[] | null;
-  /** cache_total_hits/misses absent until the cache fires — null. */
+  /** No series is built for it; the hero card carries the cache figure — null. */
   cacheHitRate: TimePoint[] | null;
   /** Labelled error-class layers — null until node/protocol counters exist
    *  (series.errorRate carries the single derived "unclassified" layer). */

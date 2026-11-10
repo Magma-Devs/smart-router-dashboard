@@ -297,8 +297,34 @@ describe("MetricsService.dashboardSummary · one round of reads (MAG-4322)", () 
     expect(issued.filter((q) => q.startsWith(PRESENCE))).toHaveLength(3);
     const reads = issued.filter((q) => !q.startsWith(PRESENCE));
     expect(reads.filter((q) => q.includes("smartrouter_retries_success_total"))).toHaveLength(2);
-    expect(reads.filter((q) => q.includes("cache_total_hits"))).toHaveLength(2);
+    expect(reads.filter((q) => q.includes("smartrouter_cache_success_total"))).toHaveLength(2);
     expect(reads.filter((q) => q.includes("smartrouter_consistency_failed_total"))).toHaveLength(2);
+    release();
+    await pending;
+  });
+
+  it("the cache card divides hits on both tiers by the primary tier's lookups", async () => {
+    const { prom, issued, release } = gatedProm(() => 1);
+    const pending = new MetricsService(prom).dashboardSummary("6h");
+    await Promise.resolve();
+    expect(issued).toContain(`count({__name__="smartrouter_cache_requests_total"})`);
+    expect(issued).toContain(
+      'sum(increase(smartrouter_cache_success_total[21600s])) / sum(increase(smartrouter_cache_requests_total{cache_tier="primary"}[21600s]))',
+    );
+    expect(issued).toContain(
+      'sum(increase(smartrouter_cache_success_total[21600s] offset 21600s)) / sum(increase(smartrouter_cache_requests_total{cache_tier="primary"}[21600s] offset 21600s))',
+    );
+    release();
+    await pending;
+  });
+
+  it("with a chain selected, the cache card's tier matcher joins the chain's", async () => {
+    const { prom, issued, release } = gatedProm(() => 1);
+    const pending = new MetricsService(prom).dashboardSummary("6h", "ETH1");
+    await Promise.resolve();
+    expect(issued).toContain(
+      'sum(increase(smartrouter_cache_success_total{spec="ETH1"}[21600s])) / sum(increase(smartrouter_cache_requests_total{spec="ETH1",cache_tier="primary"}[21600s]))',
+    );
     release();
     await pending;
   });

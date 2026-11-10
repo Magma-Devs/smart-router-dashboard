@@ -5,6 +5,21 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Changed
+
+- **"Cache offload" reads the router's own cache series** (MAG-5087). The
+  card was computed from `cache_total_hits` and `cache_total_misses`, which
+  only the router's cache pod publishes, so a deployment whose routers keep
+  their cache in a RESP store (Valkey, Redis) showed "cache not enabled on
+  this build". It now divides `smartrouter_cache_success_total` on both
+  tiers by `smartrouter_cache_requests_total` on the primary tier. Every
+  router publishes those on either cache backend, from v1.5.0.
+
+  The card keeps its meaning: answers served from a cache over cache
+  lookups. It now follows the router filter as well as the chain filter,
+  because each router reports its own lookups. The cache pod's counters are
+  shared by every router.
+
 ## [0.55.0]
 
 ### Added
