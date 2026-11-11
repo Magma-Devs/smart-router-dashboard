@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.59.0]
+
 ### Added
 
 - **The member is emailed when an admin resets their two-factor
