@@ -37,7 +37,6 @@ export function HeroPanel({ tw, spec }: { tw: MetricWindow; spec?: string | null
   // gave up on aren't in it, so together they are every request.
   const failedPct = failedN != null && reqServed != null && failedN + reqServed > 0 ? failedN / (failedN + reqServed) : null;
   const stale = data?.staleCaught.value ?? null;
-  const provCount = data?.upstreamCount ?? 0;
 
   const headline: {
     label: string;
@@ -61,8 +60,7 @@ export function HeroPanel({ tw, spec }: { tw: MetricWindow; spec?: string | null
     color: string;
     note: string;
   }[] = [
-    { display: reqServed != null ? fmtNum(reqServed) : "—", label: "Requests served", tipKey: "reqServed", color: "var(--text-3)",
-      note: "across " + provCount + " upstream" + (provCount === 1 ? "" : "s") },
+    { display: reqServed != null ? fmtNum(reqServed) : "—", label: "Requests served", tipKey: "reqServed", color: "var(--text-3)", note: "" },
     { display: failedN != null
         ? <span style={{ color: failedN > 0 ? "var(--err)" : "var(--ok)" }}>{fmtNum(failedN)}</span>
         : "—",

@@ -44,20 +44,22 @@ export function ThemeToggle() {
 }
 
 /**
- * The sidebar folds to its icons. Beside the chains drawer (Metrics) it folds
- * on its own, so the two lists don't take a third of the screen; opening it
- * there lasts for that visit. Elsewhere it is the user's choice, remembered
- * (`sr:sidebar`).
+ * The sidebar folds to its icons. Beside a page's own list - the chains on
+ * Metrics, the providers on Providers - it folds on its own, so the two lists
+ * don't take a third of the screen; opening it there lasts for that visit.
+ * Elsewhere it is the user's choice, remembered (`sr:sidebar`).
  */
 const SIDEBAR_KEY = "sr:sidebar";
-function useSidebarCollapsed(drawerOpen: boolean): { collapsed: boolean; animate: boolean; toggle: () => void } {
+/** Pages that put their own list beside the sidebar, besides Metrics' chains drawer. */
+const PAGE_LIST_PATHS = ["/providers"];
+function useSidebarCollapsed(listPage: string | null): { collapsed: boolean; animate: boolean; toggle: () => void } {
   const [saved, setSaved] = useState(false);
-  const [openBesideDrawer, setOpenBesideDrawer] = useState(false);
-  // Leaving the drawer's page forgets an opened menu: the next visit folds again.
-  const [wasDrawer, setWasDrawer] = useState(drawerOpen);
-  if (wasDrawer !== drawerOpen) {
-    setWasDrawer(drawerOpen);
-    if (!drawerOpen) setOpenBesideDrawer(false);
+  const [openBesideList, setOpenBesideList] = useState(false);
+  // Another page forgets an opened menu: the next visit to a list page folds again.
+  const [lastPage, setLastPage] = useState(listPage);
+  if (lastPage !== listPage) {
+    setLastPage(listPage);
+    setOpenBesideList(false);
   }
   // No animation for the state a page loads in: restoring it must not shrink
   // the menu in front of the reader (and a background tab freezes it midway).
@@ -69,20 +71,23 @@ function useSidebarCollapsed(drawerOpen: boolean): { collapsed: boolean; animate
     return () => cancelAnimationFrame(frame);
   }, []);
   const toggle = () => {
-    if (drawerOpen) { setOpenBesideDrawer((o) => !o); return; }
+    if (listPage) { setOpenBesideList((o) => !o); return; }
     setSaved((c) => {
       try { localStorage.setItem(SIDEBAR_KEY, c ? "expanded" : "collapsed"); } catch { /* storage blocked */ }
       return !c;
     });
   };
-  return { collapsed: drawerOpen ? !openBesideDrawer : saved, animate, toggle };
+  return { collapsed: listPage ? !openBesideList : saved, animate, toggle };
 }
 
 function Sidebar({ grafanaDashboardUrl }: { grafanaDashboardUrl?: string | null }) {
   const pathname = usePathname();
-  const sections = visibleNavSections(useAuthMode(), grafanaDashboardUrl, useNewUi());
+  const newUi = useNewUi();
+  const sections = visibleNavSections(useAuthMode(), grafanaDashboardUrl, newUi);
   const drawerOpen = useChainDrawer().visible;
-  const { collapsed, animate, toggle: toggleCollapsed } = useSidebarCollapsed(drawerOpen);
+  const pageList = newUi ? PAGE_LIST_PATHS.find((p) => pathname === p || pathname.startsWith(`${p}/`)) : undefined;
+  const listPage = drawerOpen ? CHAIN_DRAWER_PATH : pageList ?? null;
+  const { collapsed, animate, toggle: toggleCollapsed } = useSidebarCollapsed(listPage);
   const { setChain, setRouterId, setRouter } = useFilters();
   // Home or Metrics while on Metrics: back to every chain, as the drawer's
   // first row does. Navigating would land on the same page with the chain kept.

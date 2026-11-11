@@ -3,18 +3,15 @@
 /* The providers list beside the sidebar, as the chains list sits beside it on
  * Metrics: one row per provider with its requests and error rate, problems
  * first, and a search. "All providers" at the top is the comparison table;
- * a row is that provider's page. Rows that are no provider company - a
- * chain's free public node, or a node of the customer's own - sit apart at
- * the bottom: their numbers are real, but there is nobody to send a report to. */
+ * a row is that provider's page. One list: a chain's free public node or the
+ * customer's own node sits among the companies, ranked by the same rule. */
 
 import { useState } from "react";
-import { PROVIDER_COMPANIES, WINDOWS, type MetricWindow, type ProviderSummary, type ProvidersReport } from "@sr/shared";
+import { WINDOWS, type MetricWindow, type ProviderSummary, type ProvidersReport } from "@sr/shared";
 import { IconSearch } from "@/components/gateway/icons";
 import { UpstreamLogo } from "@/components/upstreams/UpstreamLogo";
 import { errRateColor } from "@/lib/colors";
 import { fmtNum } from "@/lib/format";
-
-const KNOWN = new Set(PROVIDER_COMPANIES.map((c) => c.id));
 
 export function ProvidersDrawer({ report, loading, selectedId, onSelect, timeWindow }: {
   report: ProvidersReport | undefined;
@@ -27,8 +24,6 @@ export function ProvidersDrawer({ report, loading, selectedId, onSelect, timeWin
   const all = report?.providers ?? [];
   const q = query.trim().toLowerCase();
   const shown = q ? all.filter((p) => p.name.toLowerCase().includes(q) || p.id.includes(q)) : all;
-  const companies = shown.filter((p) => KNOWN.has(p.id));
-  const others = shown.filter((p) => !KNOWN.has(p.id));
   const blocked = all.filter((p) => p.blockedNow).length;
   // Every provider's failed tries over every try - the same ratio as each row's.
   const tries = all.reduce((a, p) => a + p.requests, 0);
@@ -75,18 +70,9 @@ export function ProvidersDrawer({ report, loading, selectedId, onSelect, timeWin
           <ErrRate pct={loading ? null : allPct} />
           <span className="dot" style={{ visibility: "hidden" }} />
         </a>
-        {companies.length > 0 && (
+        {shown.length > 0 && (
           <div className="gw-chains__group">
-            {others.length > 0 && <div className="gw-chains__group-label">Provider companies</div>}
-            {companies.map((p) => <Row key={p.id} p={p} active={selectedId === p.id} onPick={pick(p.id)} />)}
-          </div>
-        )}
-        {others.length > 0 && (
-          <div className="gw-chains__group">
-            <div className="gw-chains__group-label" title="A chain's free public node, or a node of your own. Their numbers are real, but there is no provider to report to.">
-              Not a provider company
-            </div>
-            {others.map((p) => <Row key={p.id} p={p} active={selectedId === p.id} onPick={pick(p.id)} />)}
+            {shown.map((p) => <Row key={p.id} p={p} active={selectedId === p.id} onPick={pick(p.id)} />)}
           </div>
         )}
         {q && shown.length === 0 && <div className="gw-chains__empty">No provider matches &ldquo;{query}&rdquo;.</div>}
