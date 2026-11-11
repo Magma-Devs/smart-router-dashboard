@@ -5,6 +5,28 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Added
+
+- **Providers page** (MAG-5152, on hold), its own entry in the menu beside
+  Metrics and Upstreams: upstreams grouped by the company that runs them,
+  across every chain. A list beside the menu, as Metrics lists chains, with
+  each provider's requests and error rate; "All providers" is the
+  side-by-side table, and a provider's page has its chains (each beside the
+  chain's other providers), its methods and graphs over the window.
+  - **Uptime in minutes**: a minute is down when half or more of a
+    provider's attempts on a chain failed. Rate-limited minutes are counted
+    apart: a rate limit is often the plan's limit, not the provider failing.
+  - **Node errors** beside the error rate: the router counts an attempt the
+    provider answered with an error as served.
+  - **Report + CSV**: a report for one provider on one chain over a time
+    range, with example failed requests and the provider's own request ID,
+    ready to send to the provider; a CSV of every provider for the window.
+  - Health in the dashboard's own words: a provider the router has blocked
+    is Unhealthy.
+  - New endpoints: `GET /api/metrics/providers`, `/api/metrics/provider-detail`,
+    `/api/metrics/provider-series` (all three from the response snapshot),
+    `GET /api/providers/report`, `/report.csv` and `/export.csv`.
+
 ## [0.57.0]
 
 ### Added
