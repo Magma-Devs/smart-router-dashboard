@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { useEffect, useState, useSyncExternalStore, type ComponentType } from "react";
+import { useEffect, useLayoutEffect, useState, useSyncExternalStore, type ComponentType } from "react";
 import { signOut } from "next-auth/react";
 import { buildChainMetaByIndex } from "@sr/shared";
 import { NAV_SECTIONS, visibleNavSections } from "./nav";
@@ -43,10 +43,46 @@ export function ThemeToggle() {
   );
 }
 
+/**
+ * The sidebar folds to its icons. Beside the chains drawer (Metrics) it folds
+ * on its own, so the two lists don't take a third of the screen; opening it
+ * there lasts for that visit. Elsewhere it is the user's choice, remembered
+ * (`sr:sidebar`).
+ */
+const SIDEBAR_KEY = "sr:sidebar";
+function useSidebarCollapsed(drawerOpen: boolean): { collapsed: boolean; animate: boolean; toggle: () => void } {
+  const [saved, setSaved] = useState(false);
+  const [openBesideDrawer, setOpenBesideDrawer] = useState(false);
+  // Leaving the drawer's page forgets an opened menu: the next visit folds again.
+  const [wasDrawer, setWasDrawer] = useState(drawerOpen);
+  if (wasDrawer !== drawerOpen) {
+    setWasDrawer(drawerOpen);
+    if (!drawerOpen) setOpenBesideDrawer(false);
+  }
+  // No animation for the state a page loads in: restoring it must not shrink
+  // the menu in front of the reader (and a background tab freezes it midway).
+  // From the first frame on, every change animates, a page change included.
+  const [animate, setAnimate] = useState(false);
+  useLayoutEffect(() => {
+    try { setSaved(localStorage.getItem(SIDEBAR_KEY) === "collapsed"); } catch { /* storage blocked: stay open */ }
+    const frame = requestAnimationFrame(() => setAnimate(true));
+    return () => cancelAnimationFrame(frame);
+  }, []);
+  const toggle = () => {
+    if (drawerOpen) { setOpenBesideDrawer((o) => !o); return; }
+    setSaved((c) => {
+      try { localStorage.setItem(SIDEBAR_KEY, c ? "expanded" : "collapsed"); } catch { /* storage blocked */ }
+      return !c;
+    });
+  };
+  return { collapsed: drawerOpen ? !openBesideDrawer : saved, animate, toggle };
+}
+
 function Sidebar({ grafanaDashboardUrl }: { grafanaDashboardUrl?: string | null }) {
   const pathname = usePathname();
   const sections = visibleNavSections(useAuthMode(), grafanaDashboardUrl, useNewUi());
   const drawerOpen = useChainDrawer().visible;
+  const { collapsed, animate, toggle: toggleCollapsed } = useSidebarCollapsed(drawerOpen);
   const { setChain, setRouterId, setRouter } = useFilters();
   // Home or Metrics while on Metrics: back to every chain, as the drawer's
   // first row does. Navigating would land on the same page with the chain kept.
@@ -58,7 +94,7 @@ function Sidebar({ grafanaDashboardUrl }: { grafanaDashboardUrl?: string | null 
     setChain(null);
   } : undefined;
   return (
-    <aside className="gw-side">
+    <aside className={`gw-side${collapsed ? " gw-side--compact" : ""}${animate ? " gw-side--animate" : ""}`}>
       {/* The brand is the way home, as it is on every product: `/` redirects to
           whatever the default surface is (Metrics), so home stays defined in one
           place rather than being restated here. */}
@@ -67,6 +103,7 @@ function Sidebar({ grafanaDashboardUrl }: { grafanaDashboardUrl?: string | null 
         className="gw-side__brand"
         style={{ textDecoration: "none", color: "inherit" }}
         onClick={toAllChains}
+        title={collapsed ? "Smart Router" : undefined}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
@@ -96,6 +133,7 @@ function Sidebar({ grafanaDashboardUrl }: { grafanaDashboardUrl?: string | null 
                     target="_blank"
                     rel="noopener noreferrer"
                     aria-label={`${item.label} (opens in a new tab)`}
+                    title={collapsed ? item.label : undefined}
                   >
                     <Icon size={16} className="ic" strokeWidth={1.75} />
                     <span>{item.label}</span>
@@ -109,6 +147,8 @@ function Sidebar({ grafanaDashboardUrl }: { grafanaDashboardUrl?: string | null 
                   href={item.href}
                   className={`gw-nav-item${active ? " active" : ""}`}
                   onClick={item.href === CHAIN_DRAWER_PATH ? toAllChains : undefined}
+                  title={collapsed ? item.label : undefined}
+                  aria-label={item.label}
                 >
                   <Icon
                     size={16}
@@ -123,6 +163,21 @@ function Sidebar({ grafanaDashboardUrl }: { grafanaDashboardUrl?: string | null 
           </div>
         ))}
       </nav>
+      <button
+        type="button"
+        className="gw-nav-item gw-side__toggle"
+        onClick={toggleCollapsed}
+        aria-label={collapsed ? "Expand menu" : "Collapse menu"}
+        aria-expanded={!collapsed}
+        title={collapsed ? "Expand menu" : undefined}
+      >
+        <svg className="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <rect x="3" y="4" width="18" height="16" rx="2" />
+          <line x1="9" y1="4" x2="9" y2="20" />
+          <polyline points={collapsed ? "13 10 15 12 13 14" : "15 10 13 12 15 14"} />
+        </svg>
+        <span>Collapse menu</span>
+      </button>
       <SidebarUser />
     </aside>
   );
