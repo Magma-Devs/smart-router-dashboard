@@ -16,7 +16,7 @@ so the ticket can be checked off rather than taken on trust.
 
 ## Verdict
 
-Everything the ticket asks for is implemented and nothing is open for decision, with one partial row: somebody whose 2FA an admin resets finds out at their next sign-in rather than by email, because that email is MAG-2869's.
+Everything the ticket asks for is implemented and nothing is open for decision. Somebody whose 2FA is reset is emailed on a managed deployment (MAG-2869); on-prem, which sends no email, they find out at their next sign-in and the `2fa.reset` row naming both people is the record.
 
 **Nothing was taken from lava-connect.** It was checked first, since it is this
 repo's shape reference and carries a mature account system: it has **no TOTP
@@ -85,7 +85,7 @@ Two defects were found while building and are fixed on the branch —
 | The old secret is destroyed | ✅ | `clearEnrolment` nulls all three columns |
 | The user sets it up again on their next sign-in | ✅ | the gate does this — no separate flow |
 | The admin never sees or sets the user's code | ✅ | no endpoint returns or accepts one for another account |
-| The user is told it happened | ◐ | At their next sign-in, on both deployments: their sessions just ended and the enrolment screen says an administrator reset it. An email is MAG-2869's — MAG-2870's transport sends only the invitation and the password reset |
+| The user is told it happened | ✅ | Managed: emailed once the reset commits — who reset it, when (UTC), and what to do if they did not ask — by `services/two-factor-reset-notice.ts` (MAG-2869), with the outcome on a `2fa.reset_notice` row. On-prem sends no email: they find out at their next sign-in, where their sessions have ended and the enrolment screen says an administrator reset it, and the `2fa.reset` row names both people |
 | Logs `2fa.reset`, naming both people | ✅ | actor + target on the row |
 
 ### When nobody can get in

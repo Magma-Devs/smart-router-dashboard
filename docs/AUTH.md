@@ -349,16 +349,18 @@ For an account with no password — one that signs in through a linked provider
 
 ## Email (MAG-2870)
 
-Exactly two transactional emails, and the ticket is explicit that nothing else
-is in scope: the invitation, and the password reset. Both are ports of
-lava-connect's approach — SES v2 behind a single send function, table-based HTML
-with inline styles because that is what renders the same in Gmail, Outlook and
-Apple Mail.
+MAG-2870's two transactional emails are the invitation and the password reset.
+Both are ports of lava-connect's approach — SES v2 behind a single send
+function, table-based HTML with inline styles because that is what renders the
+same in Gmail, Outlook and Apple Mail. A third, the notice that somebody's
+two-factor authentication was reset, is MAG-2869's and goes through the same
+transport — see [`TWO-FACTOR.md`](./TWO-FACTOR.md) → "Lost phone".
 
-**On-prem sends nothing, ever.** That is the design, not a limitation: both
-flows produce a link the admin hands over, and no customer deployment needs a
-mail server. The copy still matters there, because the same link lands in a chat
-message instead.
+**On-prem sends nothing, ever.** That is the design, not a limitation: the
+invitation and the reset produce a link the admin hands over, and no customer
+deployment needs a mail server. The copy still matters there, because the same
+link lands in a chat message instead. A two-factor reset there is recorded by
+its `2fa.reset` row, which names both people.
 
 | Setting | Effect |
 |---|---|
@@ -427,7 +429,10 @@ link shown to the admin` in their `note` — on `member.invited`, after the role
 and expiry the row already carries (`as approver, expires …; emailed`).
 `password.reset_requested` has no admin to hold a link, so it records `emailed`
 or `email failed, no link delivered`. That is where somebody investigating
-already looks.
+already looks. The two-factor reset notice cannot ride on its event's row:
+`2fa.reset` commits in the reset's transaction, before anything is sent, so the
+notice's outcome is a row of its own, `2fa.reset_notice` (`emailed`, `not sent,
+no mail transport` or `email failed, not delivered`).
 
 **The body is never persisted**, in either design — not in a table, and outside
 development not in a log line either. A rendered invitation contains a live
