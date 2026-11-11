@@ -43,24 +43,20 @@ export async function closeDb(): Promise<void> {
 /**
  * Back to a deployment with nobody in it — the state `/auth/setup` requires.
  *
- * `users` cascades to sessions, invitations, resets and two-factor challenges,
- * but the audit log and the login-attempt counters are deliberately not tied to
- * a user row (an attempt against an address that does not exist is still worth
- * counting), so they are cleared by name.
+ * Every table in `public`, read from the catalog rather than listed, so a table
+ * a later migration adds starts empty too. Drizzle's own journal lives in the
+ * `drizzle` schema and is untouched, so the api does not re-run migrations.
  */
 export async function resetDeployment(): Promise<void> {
-  await db().sql`
-    truncate table
-      users,
-      sessions,
-      invitations,
-      password_resets,
-      two_factor_challenges,
-      login_attempts,
-      audit_event_changes,
-      audit_events
-    restart identity cascade
+  const { sql } = db();
+  const tables = await sql<{ name: string }[]>`
+    select format('%I.%I', schemaname, tablename) as name
+    from pg_tables where schemaname = 'public'
   `;
+  if (tables.length === 0) return;
+  await sql.unsafe(
+    `truncate table ${tables.map((t) => t.name).join(", ")} restart identity cascade`,
+  );
 }
 
 /**
