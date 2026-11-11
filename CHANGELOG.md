@@ -5,6 +5,26 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.59.0]
+
+### Changed
+
+- **Try-me and Test connection work with a router on either side of its
+  Lava → Smart Router header rename.** A router from the rename on reads
+  `smartrouter-select-provider` / `smartrouter-force-cache-refresh` and answers
+  with `Smart-Router-Provider-Address`, `Smart-Router-Retries` and
+  `smartrouter-cross-validation-*`; an earlier one knows only the `lava-*` /
+  `Lava-*` names. The dashboard now sends each directive under both names (a
+  router acts on its own and drops the other before the upstream, so a pin and
+  a cache skip take effect on both) and reads each reply header under either,
+  the new name first. That covers `POST /api/routers/relay`, the drawer's
+  browser send, the Test connection modal and the copied snippets, which now
+  carry both names. Nothing changes in the api's request or response shape.
+  The compose stacks' `--cors-expose-headers` lists both families. A router
+  started with an explicit `--cors-headers` list must allow both directive
+  names for a pinned send from the browser (`ROUTER_RELAY_ENABLED=false`, Test
+  connection); its default allows every header.
+
 ## [0.58.1]
 
 ### Fixed

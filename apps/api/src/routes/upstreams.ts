@@ -3,7 +3,7 @@
  * bypassing the router, and hand back what it answered.
  *
  * The Try-me drawer's "Direct to upstream" mode is the only caller. It exists
- * because pinning a relay with `lava-select-provider` still measures the
+ * because pinning a relay with `smartrouter-select-provider` still measures the
  * router's path (its cache, its retries, its hedging); to see what an upstream
  * does on its own you have to leave the router out, and only the api can —
  * the browser never holds the credentialed url. See

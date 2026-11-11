@@ -11,6 +11,9 @@ import {
 import { createPortal } from "react-dom";
 import {
   buildChainMetaByIndex,
+  readRouterHeader,
+  routerDirectiveHeaders,
+  ROUTER_REPLY_HEADERS,
   type HealthState,
   type RouterConfigResponse,
   type RouterRelayResponse,
@@ -142,7 +145,8 @@ interface TryMeDrawerProps {
    *  tag is omitted entirely when undefined — never a hardcoded status. */
   health?: HealthState;
   /** When set, pin the relay to THIS provider via the router's
-   *  `lava-select-provider` directive: a header on HTTP, call metadata in the
+   *  `smartrouter-select-provider` directive (`lava-select-provider` on a
+   *  router before the rename; both are sent): a header on HTTP, call metadata in the
    *  gRPC snippets. A WebSocket can't be pinned — the router reads no
    *  directives on one (see `pinCarrierFor`). Used by the per-upstream Try-now. */
   selectUpstream?: string;
@@ -512,7 +516,9 @@ async function readRelay(url: string, init: RequestInit, t0: number): Promise<Ou
     const text = await res.text();
     json = { _raw: text };
   }
-  const retriesHdr = res.headers.get("Lava-Retries");
+  // Each header under either spelling: `Smart-Router-*`, or `Lava-*` from a
+  // router before the rename (`readRouterHeader`).
+  const retriesHdr = readRouterHeader(res.headers, ROUTER_REPLY_HEADERS.retries);
   return {
     errored:
       !res.ok ||
@@ -521,14 +527,14 @@ async function readRelay(url: string, init: RequestInit, t0: number): Promise<Ou
     httpStatus: res.status,
     latencyMs: dt,
     body: json,
-    // Which upstream served the relay — the router's Lava-Provider-Address
+    // Which upstream served the relay — the router's provider-address
     // header (a real endpoint name, or "Cached" on a cache hit). Readable
     // only when the router CORS-exposes it; null otherwise.
-    servedBy: res.headers.get("Lava-Provider-Address"),
+    servedBy: readRouterHeader(res.headers, ROUTER_REPLY_HEADERS.providerAddress),
     retries: retriesHdr !== null && retriesHdr !== "" ? Number(retriesHdr) || 0 : null,
-    cvStatus: res.headers.get("Lava-Cross-Validation-Status"),
-    cvAgreeing: res.headers.get("Lava-Cross-Validation-Agreeing-Providers"),
-    cvDisagreeing: res.headers.get("Lava-Cross-Validation-Disagreeing-Providers"),
+    cvStatus: readRouterHeader(res.headers, ROUTER_REPLY_HEADERS.crossValidationStatus),
+    cvAgreeing: readRouterHeader(res.headers, ROUTER_REPLY_HEADERS.crossValidationAgreeing),
+    cvDisagreeing: readRouterHeader(res.headers, ROUTER_REPLY_HEADERS.crossValidationDisagreeing),
     truncated: false,
   };
 }
@@ -567,7 +573,7 @@ export function TryMeDrawer({
     canToggleTransport && initialTransport === "ws" ? "ws" : "http",
   );
   /** Why the router can't be pinned to this upstream, when it can't — a
-   *  backup lives outside the pool `lava-select-provider` is matched against.
+   *  backup lives outside the pool the select-provider directive is matched against.
    *  The long form goes in the banner; the hint is the hover on every control
    *  this turns off. */
   const pinRefusal = pinRefusalFor(upstreamTier);
@@ -641,13 +647,14 @@ export function TryMeDrawer({
   const [response, setResponse] = useState<unknown>(null);
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
   const [httpStatus, setHttpStatus] = useState<number | null>(null);
-  /** Raw `Lava-Provider-Address` response header — which upstream(s) served
+  /** Raw `Smart-Router-Provider-Address` response header (`Lava-Provider-Address`
+   *  from a router before the rename) — which upstream(s) served
    *  the relay, or "Cached" when the router answered from cache. Null when the
    *  header wasn't readable (e.g. not CORS-exposed by the router). */
   const [servedBy, setServedBy] = useState<string | null>(null);
   // Per-request relay telemetry from the router's CORS-exposed headers:
-  // Lava-Retries (how many times the relay was retried before succeeding) and
-  // Lava-Cross-Validation-Status/…-Agreeing-Providers.
+  // the retries header (how many times the relay was retried before
+  // succeeding) and the cross-validation status and provider lists.
   const [retries, setRetries] = useState<number | null>(null);
   const [cvStatus, setCvStatus] = useState<string | null>(null);
   const [cvAgreeing, setCvAgreeing] = useState<string | null>(null);
@@ -657,7 +664,7 @@ export function TryMeDrawer({
    *  send. */
   const [resultVia, setResultVia] = useState<Via | null>(null);
   const [truncated, setTruncated] = useState(false);
-  /** Send with `lava-force-cache-refresh`, so the router bypasses its relay
+  /** Send with `smartrouter-force-cache-refresh` (and its `lava-` spelling), so the router bypasses its relay
    *  cache and asks an upstream even when a cached answer exists. Router HTTP
    *  only — the router reads no directives on a WebSocket, and the direct leg
    *  has no router cache to skip. */
@@ -987,11 +994,16 @@ export function TryMeDrawer({
     }
     // Pin the relay to a specific upstream when the caller asked for it
     // (per-upstream Try-now) — the router routes it to that upstream only.
-    const headers: Record<string, string> = {};
-    if (selectUpstream) headers["lava-select-provider"] = selectUpstream;
-    // The router's cache-skip directive: presence of the header makes the
+    // And the router's cache-skip directive: presence of the header makes the
     // relay bypass the cache read (a hit would answer as "Cached" otherwise).
-    if (skipCache) headers["lava-force-cache-refresh"] = "true";
+    // Each goes out under both spellings, `smartrouter-*` and `lava-*`: the
+    // router reads the one its generation knows and drops the other. A router
+    // started with an explicit `--cors-headers` list has to allow both for
+    // the browser's preflight to pass; its default allows every header.
+    const headers: Record<string, string> = routerDirectiveHeaders({
+      selectProvider: selectUpstream,
+      forceCacheRefresh: skipCache,
+    });
     const init: RequestInit = { headers };
     if (resolved.httpMethod === "POST") {
       init.method = "POST";
@@ -1458,7 +1470,7 @@ export function TryMeDrawer({
                 ) : pinRefusal ? (
                   <>
                     <strong style={{ color: "var(--text)" }}>The router can&apos;t be told to use this upstream.</strong>{" "}
-                    It matches <span className="gw-mono">lava-select-provider</span> against its primary pool only. A backup is reached
+                    It matches <span className="gw-mono">smartrouter-select-provider</span> (<span className="gw-mono">lava-select-provider</span> before the rename) against its primary pool only. A backup is reached
                     solely when every primary is exhausted, and the router picks among the backups itself — so a pinned request comes back{" "}
                     <span className="gw-mono">-32000 Selected provider not available</span> however healthy this upstream is. Send it{" "}
                     {directTarget ? "direct to the upstream instead" : "through the router unpinned, or read it on the Upstreams roster"}.
@@ -1466,17 +1478,17 @@ export function TryMeDrawer({
                 ) : selectUpstream && pinCarrier === null ? (
                   <>
                     <strong style={{ color: "var(--text)" }}>A pin doesn&apos;t apply on a WebSocket.</strong>{" "}
-                    The router reads no <span className="gw-mono">lava-select-provider</span> on a WebSocket connection, from any client, so it picks the upstream for this one itself. Switch to HTTP to pin it to{" "}
+                    The router reads no <span className="gw-mono">smartrouter-select-provider</span> (or <span className="gw-mono">lava-select-provider</span>) on a WebSocket connection, from any client, so it picks the upstream for this one itself. Switch to HTTP to pin it to{" "}
                     <strong style={{ color: "var(--text)", fontFamily: "var(--font-mono)", fontWeight: 600 }}>{selectUpstream}</strong>
                     {directAvailable ? ", or send it direct to the upstream." : "."}
                   </>
                 ) : selectUpstream && pinCarrier === "metadata" ? (
                   <>
-                    Pinned to <strong style={{ color: "var(--text)", fontFamily: "var(--font-mono)", fontWeight: 600 }}>{selectUpstream}</strong> — the snippets below send <span className="gw-mono">lava-select-provider</span> as gRPC metadata so the router routes the call to that upstream (a cache hit may still answer as &quot;Cached&quot;).
+                    Pinned to <strong style={{ color: "var(--text)", fontFamily: "var(--font-mono)", fontWeight: 600 }}>{selectUpstream}</strong> — the snippets below send <span className="gw-mono">smartrouter-select-provider</span> (and <span className="gw-mono">lava-select-provider</span>, for a router before the rename) as gRPC metadata so the router routes the call to that upstream (a cache hit may still answer as &quot;Cached&quot;).
                   </>
                 ) : selectUpstream ? (
                   <>
-                    Pinned to <strong style={{ color: "var(--text)", fontFamily: "var(--font-mono)", fontWeight: 600 }}>{selectUpstream}</strong> — sent with the <span className="gw-mono">lava-select-provider</span> header so the router routes this request to that upstream (a cache hit may still answer as &quot;Cached&quot;).
+                    Pinned to <strong style={{ color: "var(--text)", fontFamily: "var(--font-mono)", fontWeight: 600 }}>{selectUpstream}</strong> — sent with the <span className="gw-mono">smartrouter-select-provider</span> header (and <span className="gw-mono">lava-select-provider</span>, for a router before the rename) so the router routes this request to that upstream (a cache hit may still answer as &quot;Cached&quot;).
                   </>
                 ) : (
                   <>Sent through the router, which picks the upstream.</>
@@ -1737,7 +1749,7 @@ export function TryMeDrawer({
                     pin). */}
                 {!onWs && pinRefusal === null && (
                   <label
-                    title="Send with the lava-force-cache-refresh header — the router bypasses its relay cache and asks an upstream even when a cached answer exists (no more 'Cached' in Served by). Applies to sends through the router."
+                    title="Send with the smartrouter-force-cache-refresh header (and lava-force-cache-refresh, for a router before the rename) — the router bypasses its relay cache and asks an upstream even when a cached answer exists (no more 'Cached' in Served by). Applies to sends through the router."
                     style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-2)", cursor: "pointer", userSelect: "none" }}
                   >
                     <input
@@ -1822,7 +1834,8 @@ export function TryMeDrawer({
                     truncated
                   </span>
                 )}
-                {/* Which upstream served the relay (Lava-Provider-Address).
+                {/* Which upstream served the relay (Smart-Router-Provider-Address, or
+                    Lava-Provider-Address from a router before the rename).
                     "Cached" → the router answered from its cache; otherwise the
                     real upstream name(s). Shown only when the header is
                     readable — never guessed. */}
@@ -1836,7 +1849,7 @@ export function TryMeDrawer({
                     return (
                       <span
                         className="gw-tag"
-                        title="Served from the router's cache (Lava-Provider-Address: Cached)"
+                        title="Served from the router's cache (Smart-Router-Provider-Address: Cached)"
                         style={{ fontSize: 11, color: "#22d3ee", background: "rgba(34,211,238,0.12)", borderColor: "rgba(34,211,238,0.25)", display: "inline-flex", alignItems: "center", gap: 4 }}
                       >
                         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg>
@@ -1847,7 +1860,7 @@ export function TryMeDrawer({
                   return (
                     <span
                       className="gw-tag"
-                      title="Upstream that served this relay (Lava-Provider-Address)"
+                      title="Upstream that served this relay (Smart-Router-Provider-Address)"
                       style={{ fontSize: 11, color: "var(--text-3)", display: "inline-flex", alignItems: "center", gap: 4, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
                     >
                       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>
@@ -1855,12 +1868,12 @@ export function TryMeDrawer({
                     </span>
                   );
                 })()}
-                {/* Retry indicator — the router's Lava-Retries header counts how
+                {/* Retry indicator — the router's Smart-Router-Retries header counts how
                     many times this relay was retried before the answer you got. */}
                 {retries !== null && retries > 0 && (
                   <span
                     className="gw-tag"
-                    title={`This relay was retried ${retries}× before succeeding (Lava-Retries)`}
+                    title={`This relay was retried ${retries}× before succeeding (Smart-Router-Retries)`}
                     style={{ fontSize: 11, color: "var(--warn)", background: "rgba(251,191,36,0.10)", borderColor: "rgba(251,191,36,0.25)", display: "inline-flex", alignItems: "center", gap: 4 }}
                   >
                     <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
@@ -1868,8 +1881,8 @@ export function TryMeDrawer({
                   </span>
                 )}
                 {/* Cross-validation outcome. The router CORS-exposes only the
-                    agreeing/disagreeing provider lists (plus Lava-Retries) —
-                    NOT Lava-Cross-Validation-Status — so a browser send never
+                    agreeing/disagreeing provider lists (plus the retries
+                    header) — NOT the cross-validation status — so a browser send never
                     has the status, and the badge keys on the lists, which
                     every send has. A send by the api reads the status too. */}
                 {(cvStatus || cvAgreeing || cvDisagreeing) && (() => {

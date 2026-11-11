@@ -169,7 +169,7 @@ export function endpointKey(routerId: string, node: string, index: number): stri
 
 /* Temporary: mirror the chart's `lower | replace " " "-"` so node names match
    what the router registers (and reports on `provider_address`). Drop once the
-   router matches `lava-select-provider` case-insensitively. */
+   router matches `smartrouter-select-provider` case-insensitively. */
 export function normalizeHelmNodeName(name: string): string {
   return name.toLowerCase().replace(/ /g, "-");
 }

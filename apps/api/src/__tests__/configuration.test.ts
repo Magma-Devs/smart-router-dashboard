@@ -251,7 +251,7 @@ routers:
         endpoints: [{ url: "https://iota.blockdaemon.com", interface: jsonrpc }]
 `).getRouters();
       // Prometheus reports `provider_address="lava"`, and the router only
-      // honours `lava-select-provider: lava`. Both read this field.
+      // honours `smartrouter-select-provider: lava`. Both read this field.
       expect(routers[0]!.nodes.map((n) => n.name)).toEqual(["lava", "blockdaemon"]);
     });
 

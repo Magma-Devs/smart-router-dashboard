@@ -48,7 +48,7 @@ interface TryNowButtonProps {
   health?: HealthState;
   /** Optional visibility control for hover-reveal parents (Endpoints rows). */
   visible?: boolean;
-  /** Pin the relay to a specific provider via `lava-select-provider` (HTTP
+  /** Pin the relay to a specific provider via `smartrouter-select-provider` (HTTP
    *  only). Set by the per-upstream Try-now so the call hits that upstream. */
   selectUpstream?: string;
   /** Identity of the upstream endpoint(s) behind this row, enabling the

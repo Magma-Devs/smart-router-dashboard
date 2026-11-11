@@ -14,7 +14,10 @@ for (let id = 1; id <= count; id++) {
     results.push({
       at: new Date().toISOString(),
       status: response.status,
-      provider: response.headers.get("lava-provider-address"),
+      // `lava-provider-address` is the same header from a router before the rename.
+      provider:
+        response.headers.get("smart-router-provider-address") ??
+        response.headers.get("lava-provider-address"),
       body,
     });
   } catch {

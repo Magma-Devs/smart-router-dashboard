@@ -10,3 +10,4 @@ export * from "./account-links.js";
 export * from "./incidents.js";
 export * from "./request-log.js";
 export * from "./error-codes.js";
+export * from "./router-wire.js";

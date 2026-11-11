@@ -7,7 +7,7 @@
  * disabled-honest. */
 
 import { useEffect, useMemo, useState } from "react";
-import type { RouterTopology } from "@sr/shared";
+import { routerDirectiveHeaders, type RouterTopology } from "@sr/shared";
 import { Modal } from "@/components/gateway/Modal";
 import { HealthDot } from "@/components/gateway/HealthTag";
 import type { UpstreamRow } from "@/components/upstreams/catalog";
@@ -80,8 +80,11 @@ export function TestModal({ open, onClose, upstream, routers }: {
           // router picks whichever upstream it likes and a green "Connection
           // successful" says nothing about the one under test. The name is the
           // node name the api reflects — already folded to what the router
-          // registers, so it matches `provider_address` exactly.
-          "lava-select-provider": upstream.name,
+          // registers, so it matches `provider_address` exactly. Sent under
+          // both spellings (`smartrouter-select-provider` and the
+          // `lava-select-provider` of a router before the rename), so the pin
+          // holds on either generation.
+          ...routerDirectiveHeaders({ selectProvider: upstream.name }),
         },
         body: target.body,
       });
@@ -140,7 +143,8 @@ export function TestModal({ open, onClose, upstream, routers }: {
           {target && !pinRefusal && (
             <div style={{ fontSize: 12, color: "var(--text-3)", lineHeight: 1.5 }}>
               Sent through the router, pinned to this upstream with the{" "}
-              <span className="gw-mono">lava-select-provider</span> header — the router&apos;s
+              <span className="gw-mono">smartrouter-select-provider</span> header (and{" "}
+              <span className="gw-mono">lava-select-provider</span>, for a router before the rename) — the router&apos;s
               cache can still answer it.
             </div>
           )}
