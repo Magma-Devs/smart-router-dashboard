@@ -106,8 +106,10 @@ jobs:
       - name: Build workspace packages
         run: pnpm --filter @sr/shared build && pnpm --filter @sr/db build
 
+      # Headless runs launch the headless shell only; the full browser is
+      # a second download nothing here starts.
       - name: Install Chromium
-        run: pnpm --filter @sr/e2e exec playwright install --with-deps chromium
+        run: pnpm --filter @sr/e2e exec playwright install --with-deps --only-shell chromium
 
       # Playwright boots the api and the web itself (see e2e/playwright.config.ts)
       # — there is no compose stack in CI, and the dev one bind-mounts a
