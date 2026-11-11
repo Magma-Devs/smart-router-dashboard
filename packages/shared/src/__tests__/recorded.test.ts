@@ -60,9 +60,9 @@ import {
 
 const REF = { spec: "ETH1", endpointId: "eth-lava" };
 // A raw family name standing on its own — not the one inside a recorded name
-// (`spec_router:smartrouter_requests_total:rate2m` carries it between colons).
+// (`spec_router:smartrouter_requests_total:rate2m15s` carries it between colons).
 const RAW_FAMILIES = /(?<![:a-z_])(smartrouter_requests_(?:total|success_total|read_total)|smartrouter_end_to_end_latency_milliseconds_(?:bucket|count)|rpc_endpoint_end_to_end_latency_milliseconds_bucket|rpc_endpoint_total_relays_serviced)(?![:a-z_])/;
-const RECORDED_NAME = /\b[a-z_]+:(?:smartrouter|rpc_endpoint)_[a-z_]+:rate2m\b/;
+const RECORDED_NAME = /\b[a-z_]+:(?:smartrouter|rpc_endpoint)_[a-z_]+:rate2m15s\b/;
 
 /** Every builder that reads a family the rules record, called for one window. */
 const BUILDERS: Array<[string, (w: "1h" | "6h" | "1d") => string]> = [
@@ -239,7 +239,7 @@ describe("router scope on recorded reads", () => {
     const reads = [...BUILDERS.map(([, b]) => b("6h")), ...SERIES.map(([, b]) => b("1d"))];
     for (const expr of reads) {
       const scoped = applyScope(expr, scope);
-      const names = scoped.match(/[a-z_]+:(?:smartrouter|rpc_endpoint)_[a-z_]+:rate2m(\{[^}]*\})?/g) ?? [];
+      const names = scoped.match(/[a-z_]+:(?:smartrouter|rpc_endpoint)_[a-z_]+:rate2m15s(\{[^}]*\})?/g) ?? [];
       expect(names.length).toBeGreaterThan(0);
       for (const n of names) expect(n).toContain('router="eth-router"');
     }

@@ -101,9 +101,9 @@ Long windows read the raw router metrics unless the store evaluates the
 twelve recording rules in [docs/RECORDING-RULES.md](docs/RECORDING-RULES.md);
 with them, windows of three hours and up read a few hundred recorded series
 instead of every raw histogram bucket, within a fraction of a percent of the
-same numbers. Without them everything works, only slower on long windows, and
-the Metrics page says so. `GET /api/metrics/reads` reports which case a
-deployment is in.
+same numbers, provided the routers are scraped every 15 seconds, which the
+api checks. Without them everything works, only slower on long windows.
+`GET /api/metrics/reads` reports which case a deployment is in.
 
 ## Pages
 
@@ -126,6 +126,14 @@ AUTH_SECRET=$(openssl rand -base64 32) make up-auth
 # setup token: the SETUP_TOKEN you set, or: docker compose logs api | grep -iE 'setup_?token'
 # (make dev-auth seeds a development admin instead — see docs/AUTH.md)
 ```
+
+## Incident reports
+
+With `INCIDENTS_ENABLED=true` on both containers, the top bar carries a
+**Report incident** button. A report (Critical / High / Medium / Low) goes to the
+deployment's own inbound webhook in Magma's on-call system, which decides who
+hears about it: Critical calls the on-call engineer. Off by default. Full guide:
+[`docs/INCIDENTS.md`](./docs/INCIDENTS.md).
 
 ## Development
 

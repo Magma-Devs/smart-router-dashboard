@@ -7,4 +7,5 @@ export * from "./two-factor.js";
 export * from "./audit-events.js";
 export * from "./emails.js";
 export * from "./account-links.js";
+export * from "./incidents.js";
 export * from "./providers.js";

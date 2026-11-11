@@ -1,5 +1,6 @@
 import type { ScoreType } from "../constants/metrics.js";
 import type { MetricWindow } from "../constants/windows.js";
+import type { IncidentSeverity } from "../constants/incidents.js";
 
 export type { MetricWindow, ScoreType };
 
@@ -1286,7 +1287,7 @@ export interface ProviderReport {
   text: string;
 }
 
-/* ── Recorded reads (the api's read policy, reported to the dashboard) ──── */
+/* ── Recorded reads (the api's read policy, as /api/metrics/reads reports it) ── */
 
 /**
  * How the api reads long windows right now. `reason` says why recorded
@@ -1300,9 +1301,46 @@ export interface RecordedReadsState {
   from: MetricWindow | null;
   chartFloor: MetricWindow;
   available: boolean;
-  reason: "off" | "unprobed" | "absent" | "stale" | "fresh";
+  reason: "off" | "unprobed" | "absent" | "stale" | "scrape" | "fresh";
   ageSec: number | null;
   historySec: number | null;
+  /** The sample spacing of the densest raw router series, seconds; the rules assume 15. */
+  scrapeSec: number | null;
   probedAt: string | null;
   windows: { recorded: MetricWindow[]; raw: MetricWindow[] };
+}
+
+/* ── Customer-reported incidents (POST /api/incidents) ──────────────────── */
+
+/** Who reported, as typed into the form. Only read when `AUTH_MODE=disabled`;
+ *  with accounts on, the reporter is the signed-in user and this is ignored. */
+export interface IncidentReporter {
+  name: string;
+  email: string;
+  phone?: string | null;
+}
+
+export interface IncidentReportRequest {
+  /**
+   * Minted by the form when it opens (a UUID). Sending it again after a timeout
+   * joins the report already filed instead of filing a second one, so a retry
+   * is always safe.
+   */
+  id: string;
+  severity: IncidentSeverity;
+  title: string;
+  description?: string | null;
+  /** Spec index of the chain the report is about (`ETH1`), when it is about one. */
+  chain?: string | null;
+  /** Config router id, when the report is about one router. */
+  routerId?: string | null;
+  reporter?: IncidentReporter | null;
+}
+
+export interface IncidentReportResponse {
+  id: string;
+  severity: IncidentSeverity;
+  /** When our on-call system accepted it. Accepted, not acted on: it queues the
+   *  report and routes it after answering. */
+  sentAt: string;
 }

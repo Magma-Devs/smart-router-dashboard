@@ -72,6 +72,92 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   so a backup's failure (a 429, a timeout) was dropped from the Errors and
   Transactions rows.
 
+## [0.41.0]
+
+### Added
+
+- **Incidents:** a **Report incident** button in the top bar sends a report (Critical, High, Medium or Low) to the deployment's own inbound webhook in Magma's on-call system, which routes it by severity; Critical calls the on-call engineer. Off unless `INCIDENTS_ENABLED=true`. With accounts off anyone who reaches the dashboard may report; with them on the reporter is the signed-in user, audited as `incident.reported`. A retry never files twice, Critical calls at most once an hour, and two limits keep a flood off the on-call system's shared budget. See `docs/INCIDENTS.md` (MAG-4403).
+
+## [0.40.0]
+
+### Added
+
+- **Transactions and Errors tabs: smart-router's `relay_end` event**
+  (MAG-4422). From smart-router #543, a router ends each request in one
+  `relay_end` line, written at every log level, and stops writing `relay
+  finished`, `failed getting responses from RPC endpoints`, `write outcome
+  unknown` and `failed processing responses from RPC endpoints`. The tabs,
+  the request look-up and the Failed requests card read those lines, so on
+  such a router they lost the end of every request, and showed nothing at
+  `warn`. A request that has a `relay_end` is now read from it alone: its
+  chain, method, outcome and every try, with the router's code, verdict,
+  words and timings, and the upstreams the consistency check passed over.
+  Each tab also finds requests by the event, next to the old lines, so a
+  window across an upgrade reads both shapes. The failed count adds the
+  event's failed requests to the old lines, with the server-errors alert's
+  definition: parsed, not a subscription request, and an outcome of
+  `no_answer`, `write_unknown`, `rejected_before_dispatch` or
+  `router_error`. Two things the old lines could not show: a Cosmos node's
+  refusal inside a normal reply is read from the event's `tx_code`, and a
+  transaction submitted over a WebSocket subscription (Substrate's
+  submit-and-watch) is a row.
+
+## [0.39.1]
+
+### Fixed
+
+- **Metrics:** the recorded reads follow the fleet store's second generation
+  of recording rules, `…:rate2m15s`. The first (`…:rate2m`) was phase-biased
+  on sparse counters: the routers report every 15 s, a counter step sat
+  inside a two-minute window for 105 s, and the one-minute evaluation grid
+  hit that span once or twice depending on how the scrape clock met the
+  ruler's — a busy series averaged out, a quiet method, provider or chain
+  counted every step at 57 % or 114 % of raw at every window. A 2m15s window
+  lands every step in exactly two evaluations at half each: measured within
+  0.1 % of the exact counter delta on quiet and busy routers alike. The read
+  math is unchanged. Because the exactness assumes the 15-second scrape, the
+  api's probe now also measures the raw sample spacing and reads raw on a
+  store that scrapes at another interval (`GET /api/metrics/reads` reports
+  `scrapeSec` and the reason `scrape`). The renamed series start with no
+  history, so every window reads raw until the ruler or a backfill covers it
+  (MAG-4393).
+
+## [0.39.0]
+
+### Added
+
+- **Pepecoin arrived upstream** (MAG-4391). lava-specs added `pep.json`:
+  `PEP` is the mainnet and `PEPT` the testnet. Pepecoin is a Dogecoin fork
+  whose spec imports `DOGE`, so it inherits Dogecoin's JSON-RPC surface and
+  its runnable defaults. It adds `estimatefee` and `getcoincount`, and
+  disables five Dogecoin methods: `getblockfilter`, `getchaintxstats`,
+  `getindexinfo`, `submitpackage` and `testmempoolaccept`.
+
+  `pepecoin.svg` is reduced from the badge in Pepecoin Core's own
+  `share/pixmaps`, because web3icons' `PEPE` is the unrelated ERC-20. The
+  testnet inherits it. Both explorers are curated, and both block pages were
+  watched rendering height 1000. Each one's genesis page shows the hash the
+  spec verifies as its chain-id:
+  - **mainnet:** Peppool (`peppool.space/block/<height>`). PepeBlocks, which
+    pepecoin.com lists first, puts a Cloudflare challenge in front of headless
+    browsers, so its block page could not be watched.
+  - **testnet:** Pepeblocks Testnet (`testnet.pepeblocks.com/block/<height>`)
+
+  The registry snapshot was not refreshed, so no other chain moved.
+
+  294 chains, 251 with an explorer, 204 primaries linking a height.
+
+## [0.38.1]
+
+### Removed
+
+- **Metrics:** the recording-rules notice above the Metrics tabs, in both UIs.
+  It told the viewer whether the store has the rules, whether they are behind,
+  and how far their history reaches — detail for whoever runs the store, not
+  for someone reading the page. Reads are unchanged: each window still picks
+  recorded or raw series by the same policy, and `GET /api/metrics/reads`
+  still reports which case a deployment is in (MAG-4353).
+
 ## [0.38.0]
 
 ### Added

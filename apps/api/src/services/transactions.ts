@@ -20,11 +20,29 @@
  * What each upstream answered comes from the per-try lines `triesOf` reads
  * (router-log.ts) - the same ones the Errors tab's request list shows.
  *
+ * A router on smart-router #543 or later ends each request in one `relay_end`
+ * event instead (relay-end.ts): a transaction is read from it alone, and found
+ * by it too - `stateful:true`, or a transaction method by name - at any log
+ * level. The event also reads a Cosmos node's refusal out of its normal reply
+ * (`tx_code`), and covers a transaction submitted over a WebSocket
+ * subscription (Substrate's submit-and-watch), which the old lines never did.
+ *
  * The counters can't do this job: a rejected transaction counts as a success
  * on `requests_success_total` (the router got a reply), and node errors on a
  * broadcast are not counted per upstream at all.
  */
 import type { LogUnavailable, RouterTopology, TransactionLookup, TransactionsReport, TxLogRow, TxOutcome } from "@sr/shared";
+import {
+  attemptsOf,
+  FAILED_OUTCOMES,
+  isRelayEnd,
+  isSubscription,
+  methodOf as methodOfEvent,
+  methodsOf,
+  nodeRefusalOf,
+  RELAY_END,
+  startMs as startOf,
+} from "./relay-end.js";
 import { readEnd, readOnFrom, type ReadRange } from "./read-range.js";
 import type { LokiClient } from "./loki-client.js";
 import type { ConfigurationService } from "./configuration.js";
@@ -33,6 +51,8 @@ import {
   END_MSG,
   escapeRe,
   inRawString,
+  LABEL_TOKEN,
+  lastWhere,
   linesForGuids,
   linesOfRequest,
   REQUEST_ID,
@@ -75,6 +95,7 @@ export const TX_METHODS = [
   "broadcast_tx_commit",
 ] as const;
 const TX_METHOD_SET: ReadonlySet<string> = new Set(TX_METHODS);
+const FAILED_SET: ReadonlySet<string> = new Set(FAILED_OUTCOMES);
 
 /**
  * Where a refused transaction still gets a normal reply, with the refusal as
@@ -112,6 +133,12 @@ export function buildTxRows(lines: RouterLine[], index: UpstreamIndex): TxLogRow
   for (const [guid, unordered] of byGuid) {
     // Time order, not arrival order: each log level can be its own stream.
     const group = [...unordered].sort((a, b) => a.tsMs - b.tsMs);
+    const event = lastWhere(group, isRelayEnd);
+    if (event) {
+      const row = rowOfEvent(event, guid, index);
+      if (row) rows.push(row);
+      continue;
+    }
     const choosing = group.find((l) => l.message === MSG.choosing);
     const received = group.find((l) => l.message.startsWith(MSG.received));
     const method = methodOf(received);
@@ -189,6 +216,64 @@ export function buildTxRows(lines: RouterLine[], index: UpstreamIndex): TxLogRow
     });
   }
   return rows.sort((a, b) => b.time - a.time);
+}
+
+/** A transaction's row from its `relay_end` alone; null when the request isn't a transaction. */
+function rowOfEvent(e: RouterLine, guid: string, index: UpstreamIndex): TxLogRow | null {
+  if (!(e.f.stateful === true || methodsOf(e).some((m) => TX_METHOD_SET.has(m)))) return null;
+  const attempts = attemptsOf(e);
+  const outcome = str(e.f.outcome);
+  const replied = attempts.find((a) => a.replied);
+
+  let txOutcome: TxOutcome = "accepted";
+  let error: TxLogRow["error"] = null;
+  let note: string | null = null;
+  if (outcome === "write_unknown") {
+    txOutcome = "unknown";
+    note = NOTE.writeUnknown;
+  } else if (outcome === "node_error") {
+    txOutcome = "rejected";
+    error = { code: str(e.f.error_code) || "NODE_ERROR", message: scrubUrls(str(e.f.error)) };
+  } else if (FAILED_SET.has(outcome)) {
+    // A subscription request keeps a node's refusal on its try: the router
+    // answers the client itself rather than pass the refusal through.
+    const refusal = isSubscription(e) ? nodeRefusalOf(e) : null;
+    txOutcome = refusal ? "rejected" : "failed";
+    error = refusal
+      ? { code: refusal.code || "NODE_ERROR", message: scrubUrls(refusal.message) }
+      : { code: str(e.f.error_code) || "NO_REPLY", message: scrubUrls(withoutGuid(str(e.f.error)) || "no upstream replied") };
+  } else if (outcome === "ok") {
+    const txCode = typeof e.f.tx_code === "number" ? e.f.tx_code : null;
+    if (txCode !== null && txCode !== 0) {
+      // A Cosmos node refuses a transaction inside a normal reply; the router reads the code out of it.
+      txOutcome = "rejected";
+      const space = str(e.f.tx_codespace);
+      error = { code: space ? `${space}:${txCode}` : `code ${txCode}`, message: scrubUrls(str(e.f.tx_log)) || "the node refused the transaction" };
+      if (replied) Object.assign(replied, { outcome: "failed", code: error.code, message: error.message });
+    } else if (txCode === null && str(e.f.api_interface) === "grpc") {
+      // The router reads no code out of a gRPC reply: protobuf.
+      txOutcome = "unknown";
+      note = NOTE.replyNotLogged;
+      if (replied?.outcome === "ok") Object.assign(replied, { outcome: "no-result", note: "Responded; the response body isn't in the logs." });
+    }
+  } else {
+    txOutcome = "unknown";
+    note = `The router ended it as "${outcome}", an outcome this dashboard doesn't know.`;
+  }
+
+  const chain = str(e.f.chain);
+  return {
+    guid,
+    time: Math.round(startOf(e)),
+    ...(chain ? { spec: chain } : chainOf([e], attempts.map((a) => a.upstream), index)),
+    method: methodOfEvent(e),
+    attempts,
+    answeredBy: str(e.f.served_by) || null,
+    replyMs: typeof e.f.latency_ms === "number" ? Math.round(e.f.latency_ms) : null,
+    outcome: txOutcome,
+    error,
+    note,
+  };
 }
 
 /** Totals and success rate over the rows. `unknown` rows are counted in
@@ -271,38 +356,56 @@ export class TransactionsService {
     const narrow = safe?.length
       ? ` |~ \`"chosenProviders":"([^"]*,)?(${safe.map(escapeRe).join("|")})[,"]\``
       : "";
-    const [byFlag, byMethod] = await Promise.all([
+    // A relay_end names its chain: a write by the spec, or a transaction
+    // method by name - unlisted (`Default-`) or inside a batch (`&`) too.
+    const chain = routerId ? this.routers().find((r) => r.id === routerId)?.spec : spec;
+    const eventNarrow = chain && LABEL_TOKEN.test(chain) ? ` |= \`"chain":"${chain}"\`` : "";
+    const [byFlag, byMethod, byEvent] = await Promise.all([
       loki.queryRange(`${this.selector} |= "${MSG.choosing}" |= \`"stateful":"1"\`${narrow}`, startMs, endMs, this.cap, "backward"),
       loki.queryRange(`${this.selector} |= "${MSG.received}" |~ \`(${TX_METHODS.join("|")})\``, startMs, endMs, this.cap, "backward"),
+      loki.queryRange(
+        `${this.selector} |= \`${RELAY_END}\` |~ \`"stateful":true|"method":"([^"]*[&-])?(${TX_METHODS.join("|")})[&"]\`${eventNarrow}`,
+        startMs,
+        endMs,
+        this.cap,
+        "backward",
+      ),
     ]);
-    if (byFlag === null || byMethod === null) return emptyReport(false, "unreachable");
+    if (byFlag === null || byMethod === null || byEvent === null) return emptyReport(false, "unreachable");
 
-    const found = parseAll([...byFlag, ...byMethod]);
+    const found = parseAll([...byFlag, ...byMethod, ...byEvent]);
     const newest = new Map<string, number>();
     for (const l of found) newest.set(l.guid, Math.max(newest.get(l.guid) ?? 0, l.tsMs));
     const ranked = [...newest].sort((a, b) => b[1] - a[1]);
     const picked = ranked.slice(0, this.cap);
     if (!picked.length) return { ...emptyReport(true), range: read };
     const kept = new Set(picked.map(([g]) => g));
-    const keptTimes = found.filter((l) => kept.has(l.guid)).map((l) => l.tsMs);
     const cutOf = (read: { tsMs: number }[]) => (read.length >= this.cap ? [Math.min(...read.map((l) => l.tsMs))] : []);
-    const nextBefore = readOnFrom(ranked, this.cap, [...cutOf(byFlag), ...cutOf(byMethod)], endMs);
+    const nextBefore = readOnFrom(ranked, this.cap, [...cutOf(byFlag), ...cutOf(byMethod), ...cutOf(byEvent)], endMs);
 
-    // Every line of those requests. The received line comes a few ms before
-    // the choice, and the reply can land after the range closed.
-    const guidLines = await linesForGuids(
-      loki,
-      this.selector,
-      [...kept],
-      Math.min(...keptTimes) - 5_000,
-      Object.values(MSG),
-      30,
-      Math.min(Date.now(), Math.max(...keptTimes) + REPLY_SPAN_MS),
-    );
+    // A transaction found by its relay_end needs nothing more. One found by
+    // its lines needs the rest of them, and its relay_end when it has one:
+    // the received line comes a few ms before the choice, and the reply can
+    // land after the range closed.
+    const ends = found.filter((l) => isRelayEnd(l) && kept.has(l.guid));
+    const inHand = new Set(ends.map((l) => l.guid));
+    const toRead = new Set([...kept].filter((g) => !inHand.has(g)));
+    const toReadTimes = found.filter((l) => toRead.has(l.guid)).map((l) => l.tsMs);
+    const guidLines = toRead.size
+      ? await linesForGuids(
+          loki,
+          this.selector,
+          [...toRead],
+          Math.min(...toReadTimes) - 5_000,
+          [...Object.values(MSG), RELAY_END],
+          30,
+          Math.min(Date.now(), Math.max(...toReadTimes) + REPLY_SPAN_MS),
+        )
+      : { lines: [], unread: [] };
     if (guidLines === null) return emptyReport(false, "unreachable");
 
     const routers = this.routers();
-    let rows = buildTxRows(guidLines.lines, new UpstreamIndex(routers));
+    let rows = buildTxRows([...guidLines.lines, ...ends], new UpstreamIndex(routers));
     if (spec) rows = rows.filter((r) => onChain(r, spec));
     if (routerId) {
       const router = routers.find((r) => r.id === routerId);

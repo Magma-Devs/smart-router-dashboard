@@ -34,6 +34,7 @@ const GROUP_TONE: Record<string, string> = {
   people: "gw-tag--ok",
   "2fa": "gw-tag--info",
   recovery: "gw-tag--warn",
+  incidents: "gw-tag--warn",
   config: "gw-tag--warn",
   approval: "gw-tag--ok",
 };
