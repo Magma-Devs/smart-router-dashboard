@@ -19,7 +19,14 @@
  */
 
 import type { RouterRelayResponse } from "@sr/shared";
-import { RelayTransportError, describeCause, parseBody, readCapped } from "./upstream-relay.js";
+import {
+  RelayTransportError,
+  describeCause,
+  parseBody,
+  readCapped,
+  wsTransportError,
+} from "./upstream-relay.js";
+import { wsProbe, wsSendOnce, type WsReply } from "./ws-once.js";
 
 /** `status` tells the caller's mistake (400) from an address the mounted
  *  config gives us that cannot be dialled (502). */
@@ -74,9 +81,8 @@ export function buildRouterUrl(origin: string, path?: string): RouterUrlResult {
  * How many relays may be in flight at once, per caller and in all.
  *
  * A relay holds its reply several times over while it is read, parsed and
- * sent on, and a WebSocket message arrives whole before any cap can cut it.
- * The per-minute limit does not bound that: sixty slow calls can all be open
- * together.
+ * sent on. The per-minute limit does not bound that: sixty slow calls can all
+ * be open together.
  */
 export class RelaySlots {
   private total = 0;
@@ -220,66 +226,32 @@ export async function relayRouterHttp(url: string, opts: RouterHttpOptions): Pro
  * request/response, as it is from the browser.
  *
  * No directives: the router reads none on a WebSocket, so there is nothing to
- * put on the handshake.
+ * put on the handshake. A message past `maxBodyBytes` is not read at all, so
+ * it comes back `truncated` with no body.
  */
 export async function relayRouterWs(
   url: string,
   body: unknown,
   opts: { timeoutMs: number; maxBodyBytes: number },
 ): Promise<RouterRelayResponse> {
-  if (typeof WebSocket === "undefined") {
-    throw new RelayTransportError("This api runtime has no WebSocket client.", "connect");
-  }
   const t0 = performance.now();
-  return await new Promise<RouterRelayResponse>((resolve, reject) => {
-    let ws: WebSocket;
-    try {
-      ws = new WebSocket(url);
-    } catch (e) {
-      reject(new RelayTransportError(`Could not open the socket (${describeCause(e)}).`, "connect"));
-      return;
-    }
-    let settled = false;
-    const finish = (fn: () => void) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      try {
-        ws.close();
-      } catch {
-        /* already gone */
-      }
-      fn();
-    };
-    const timer = setTimeout(() => {
-      finish(() =>
-        reject(new RelayTransportError(`The router did not answer within ${opts.timeoutMs}ms.`, "timeout")),
-      );
-    }, opts.timeoutMs);
-    ws.onopen = () => ws.send(JSON.stringify(body ?? {}));
-    ws.onmessage = (ev: MessageEvent) => {
-      const raw = typeof ev.data === "string" ? ev.data : "";
-      const capped = raw.length > opts.maxBodyBytes;
-      finish(() =>
-        resolve({
-          httpStatus: null,
-          latencyMs: Math.round(performance.now() - t0),
-          body: parseBody(capped ? raw.slice(0, opts.maxBodyBytes) : raw),
-          truncated: capped,
-          transport: "ws",
-          ...NO_TELEMETRY,
-        }),
-      );
-    };
-    ws.onerror = () => {
-      finish(() => reject(new RelayTransportError("The router refused or dropped the socket.", "connect")));
-    };
-    ws.onclose = () => {
-      finish(() =>
-        reject(new RelayTransportError("The router closed the socket before answering.", "connect")),
-      );
-    };
-  });
+  let reply: WsReply;
+  try {
+    reply = await wsSendOnce(url, JSON.stringify(body ?? {}), {
+      timeoutMs: opts.timeoutMs,
+      maxBytes: opts.maxBodyBytes,
+    });
+  } catch (e) {
+    throw wsTransportError(e, "router", opts.timeoutMs);
+  }
+  return {
+    httpStatus: null,
+    latencyMs: Math.round(performance.now() - t0),
+    body: parseBody(reply.text),
+    truncated: reply.tooLarge,
+    transport: "ws",
+    ...NO_TELEMETRY,
+  };
 }
 
 /**
@@ -288,30 +260,5 @@ export async function relayRouterWs(
  * the whole test — the router answers a handshake on the wrong path with 405.
  */
 export async function probeRouterWs(url: string, timeoutMs: number): Promise<boolean> {
-  if (typeof WebSocket === "undefined") return false;
-  return await new Promise<boolean>((resolve) => {
-    let ws: WebSocket;
-    try {
-      ws = new WebSocket(url);
-    } catch {
-      resolve(false);
-      return;
-    }
-    let settled = false;
-    const finish = (online: boolean) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      try {
-        ws.close();
-      } catch {
-        /* already gone */
-      }
-      resolve(online);
-    };
-    const timer = setTimeout(() => finish(false), timeoutMs);
-    ws.onopen = () => finish(true);
-    ws.onerror = () => finish(false);
-    ws.onclose = () => finish(false);
-  });
+  return await wsProbe(url, timeoutMs);
 }

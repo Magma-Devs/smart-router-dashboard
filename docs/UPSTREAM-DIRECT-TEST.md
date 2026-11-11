@@ -81,8 +81,10 @@ index a row shows and the url the relay dials can never drift apart.
   the credentialed path onward to a host nobody vetted.
 - **The caller's headers are dropped.** The relay sends only `accept`, on a POST
   `content-type`, and the endpoint's own `auth-config` credential (below).
-- **Bounded**: 10 s deadline, 256 KB response cap (`truncated: true` past it),
-  20 requests/minute/IP.
+- **Bounded**: 10 s deadline, 256 KB response cap (`truncated: true` past it;
+  a WebSocket message past it is not read at all), 20 requests/minute/IP. A
+  path stays under the endpoint's own: dot segments are refused, percent-encoded
+  ones included.
 - **gRPC upstreams are refused** — the relay has no gRPC client, so `grpcs://`
   endpoints are marked `directable: false` and rejected with that reason.
 

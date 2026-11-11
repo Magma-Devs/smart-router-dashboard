@@ -92,7 +92,7 @@ set `ROUTER_RELAY_ENABLED=false`.
 | Status | Meaning |
 |---|---|
 | `200` | The router answered. Its own status is `httpStatus`; a router `503` is a result to show, not a relay failure. |
-| `400` | A gRPC listener, a path that is not one on this listener (no leading `/`, a leading `//`, a `.` or `..` segment, a backslash, spaces or control characters), or a `selectProvider` a header cannot carry (a control character, or one past U+00FF). |
+| `400` | A gRPC listener, a path that is not one on this listener (no leading `/`, a leading `//`, a `.` or `..` segment, a backslash, spaces or control characters), or a `selectProvider` a header cannot carry (a control character, or one past U+00FF). Also a JSON body with a `__proto__` key, which the api refuses on every route. |
 | `401` | Accounts are on and nobody is signed in. |
 | `404` | The values file names no such router, or no listener for that interface. Also every call while `ROUTER_RELAY_ENABLED=false`. |
 | `413` | The request body is over the api's 1 MiB limit. |
@@ -111,10 +111,12 @@ set `ROUTER_RELAY_ENABLED=false`.
   accounts off.
 - **In flight:** two relays per caller, `ROUTER_RELAY_MAX_IN_FLIGHT` across all.
   A relay holds its reply several times over while it is read, parsed and sent
-  on, and a WebSocket message arrives whole before the size cap can cut it, so
-  this, not the per-minute limit, bounds the api's memory.
-- **Size:** an HTTP answer past `ROUTER_RELAY_MAX_BODY_BYTES` comes back
-  `truncated: true`.
+  on, so this, not the per-minute limit, bounds the api's memory.
+- **Size:** an HTTP answer past `ROUTER_RELAY_MAX_BODY_BYTES` comes back cut
+  there, `truncated: true`. A WebSocket message past it is refused from its
+  frame header and not read: `truncated: true` with no body.
+- **Sockets:** a WebSocket the router does not close within 2 s of the relay's
+  close is dropped.
 
 ## What the drawer shows
 

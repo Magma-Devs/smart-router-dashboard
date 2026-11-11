@@ -75,9 +75,22 @@ describe("buildTargetUrl", () => {
     ["/../../admin", "traversal"],
     ["/blocks\nHost: evil", "control character"],
     ["/blocks latest", "space"],
+    ["/%2e%2e/%2e%2e/admin", "percent-encoded dot segments"],
+    ["/%2E%2E/other", "percent-encoded dot segments, upper case"],
+    ["/a/%2e/b", "a percent-encoded single dot"],
+    ["/.%2e/admin", "a half-encoded dot segment"],
   ])("rejects %s (%s)", (path) => {
     const out = buildTargetUrl("https://rest.example.com/api", path);
     expect(out.ok).toBe(false);
+  });
+
+  it("keeps every path it accepts under the endpoint's own", () => {
+    const base = "https://rest.example.com/v2/apikey-abcdef12";
+    for (const path of ["/blocks", "/a/b/c?x=1", "/%2Fblocks", "/a%2e%2eb", "/~user", "/a;b=c"]) {
+      const out = buildTargetUrl(base, path);
+      if (!out.ok) continue;
+      expect(new URL(out.url).pathname.startsWith("/v2/apikey-abcdef12/"), path).toBe(true);
+    }
   });
 });
 
@@ -269,11 +282,10 @@ describe("relayHttp", () => {
 });
 
 /**
- * The ws leg's credential rides on the HANDSHAKE, through an undici extension
- * the standard WebSocket types don't describe. A raw TCP listener reading the
- * upgrade request is the only way to prove it left the process — without this,
- * a Node release that drops the extension would silently stop sending the
- * operator's auth header and every gated ws upstream would look broken.
+ * The ws leg's credential rides on the HANDSHAKE. A raw TCP listener reading
+ * the upgrade request is the only way to prove it left the process: without
+ * this, a client that stopped sending the operator's auth header would make
+ * every gated ws upstream look broken.
  */
 describe("relayWs · handshake", () => {
   it("carries the endpoint's auth headers and auth-query on the upgrade request", async () => {
