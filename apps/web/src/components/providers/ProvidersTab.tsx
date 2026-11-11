@@ -93,10 +93,11 @@ const numCell = (n: number | null, emitted = true, color = "var(--text)") =>
   ) : (
     <span className="gw-mono gw-tnum" style={{ fontSize: 12, color: n > 0 ? color : "var(--text-4)" }}>{fmtNum(n)}</span>
   );
-const LATENCY_NOT_READ = "Latency isn't read for windows longer than a day - the read is too heavy for the metrics store. Pick a day or less to see it.";
-const msCell = (ms: number | null, read = true) =>
+const LATENCY_NOT_READ = "Latency isn't read for this window: past a day it comes from the metrics store's recorded series, and they don't cover this window. Pick a day or less to see it.";
+const METHOD_LATENCY_NOT_READ = "Latency per method is read for a day or less: past a day there are no recorded series for it. The provider's and chains' p95 above still show.";
+const msCell = (ms: number | null, read = true, why = LATENCY_NOT_READ) =>
   ms == null ? (
-    <span style={{ fontSize: 12, color: "var(--text-4)" }} title={read ? undefined : LATENCY_NOT_READ}>—</span>
+    <span style={{ fontSize: 12, color: "var(--text-4)" }} title={read ? undefined : why}>—</span>
   ) : (
     <span className="gw-mono gw-tnum" style={{ fontSize: 12, whiteSpace: "nowrap" }}>{Math.round(ms)} ms</span>
   );
@@ -424,7 +425,9 @@ function MethodsTable({ detail, chainFilter }: { detail: ProviderDetailReport; c
   useEffect(() => { setPage(0); }, [rows.length, sort.key, sort.dir]);
   const latTip = !detail.latencyRead
     ? LATENCY_NOT_READ
-    : detail.methodLatency
+    : !detail.methodLatencyRead
+      ? METHOD_LATENCY_NOT_READ
+      : detail.methodLatency
       ? undefined
       : "This router build's latency histogram has no method label, so latency per method isn't available.";
 
@@ -459,9 +462,9 @@ function MethodsTable({ detail, chainFilter }: { detail: ProviderDetailReport; c
                 <td style={{ textAlign: "right" }}>{numCell(m.failed, true, "var(--err)")}</td>
                 <td style={{ textAlign: "right" }}>{pctCell(m.errorRate)}</td>
                 <td style={{ textAlign: "right" }}>{numCell(m.nodeErrors, detail.families.nodeErrors, "var(--err)")}</td>
-                <td style={{ textAlign: "right" }}>{msCell(m.p50Ms, detail.latencyRead)}</td>
-                <td style={{ textAlign: "right" }}>{msCell(m.p95Ms, detail.latencyRead)}</td>
-                <td style={{ textAlign: "right" }}>{msCell(m.p99Ms, detail.latencyRead)}</td>
+                <td style={{ textAlign: "right" }}>{msCell(m.p50Ms, detail.methodLatencyRead, METHOD_LATENCY_NOT_READ)}</td>
+                <td style={{ textAlign: "right" }}>{msCell(m.p95Ms, detail.methodLatencyRead, METHOD_LATENCY_NOT_READ)}</td>
+                <td style={{ textAlign: "right" }}>{msCell(m.p99Ms, detail.methodLatencyRead, METHOD_LATENCY_NOT_READ)}</td>
               </tr>
             ))}
             {rows.length === 0 && (

@@ -59,6 +59,15 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ### Changed
 
+- **Providers page, past a day: p95 from the recorded series.** On a window
+  the metrics store's recorded series cover (3 hours and up), the Providers
+  page reads tries, successes, the peak rate and each provider's and chain's
+  p95 from them, as the Metrics page does since 0.36.0. A week now has a p95
+  per provider, and reads faster than a day did. Latency per method has no
+  recorded series and stays a day at most; its tip says so.
+- **Providers page reads in one round.** The checks for which optional
+  counters the router emits go out with the reads instead of before them,
+  and a provider's page starts its per-method reads beside the rest.
 - **One rule for who runs an upstream.** The Upstreams page's logos now use
   the same matcher as the Providers page (`providerOf` in `@sr/shared`), so a
   logo and a provider row can't name two different companies. The shared list

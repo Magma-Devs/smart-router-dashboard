@@ -243,13 +243,24 @@ between the sample before it and the restart. The peak rate averages 5
 minutes until the window's step is longer (`peakWindowSec`), so no stretch
 of a long window goes unread.
 
-**Latency is not read past a day** (`latencyRead: false`, every p95 null).
-The endpoint histogram is one series per upstream × chain × method × bucket
-- 16,000 on one production deployment - and its read over a week, even
-sampled, ran a shared store out of time and into refusing queries. A gap
-that says why is the honest answer until that read has a cheaper source
-(a recording rule, or a histogram without the method label). Up to three
-hours the buckets are read whole; from there to a day, ~100 samples each.
+**Past a day, latency comes from the recorded series or not at all.** The
+endpoint histogram is one series per upstream × chain × method × bucket
+- 16,000 on one production deployment - and its raw read over a week, even
+sampled, ran a shared store out of time and into refusing queries. On a
+window the store's recorded series cover (3h and up, while fresh -
+`recordedReadsFor`, the policy `GET /api/metrics/reads` reports), the
+provider's and its chains' p95 come from the recorded per-upstream buckets
+(`spec_endpoint_le:…:rate2m15s`, one series per upstream × chain × bucket),
+and so do tries, successes and the peak rate (`spec_router_provider:…`).
+Without them, past a day the p95s are null and `latencyRead` false. Latency
+per METHOD has no recorded series, so it stays a day at most
+(`methodLatencyRead`). Up to three hours the raw buckets are read whole;
+from there to a day, ~100 samples each.
+
+**One round.** The family probes go out with the reads, as the HeroPanel's
+do (#249): a read of a family the router doesn't emit matches nothing, and
+the probe then turns it into `null`. A provider's page starts its per-method
+reads on the node names the counter has now, beside the rest.
 The service also keeps at most four reads out at once, and a read that ran
 out of time is not asked again - only a quick refusal is.
 

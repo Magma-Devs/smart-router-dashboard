@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { RECORDED, setRecordedReads } from "@sr/shared";
 import { ProvidersService, bucketsRange, countsRange, histogramQuantile, peakWindowSec } from "../services/providers.js";
 import { MetricsService } from "../services/metrics.js";
 import { StoreReadError, type PrometheusClient, type PromVectorSample } from "../services/prometheus-client.js";
@@ -27,6 +28,11 @@ function fakeProm(
       return opts.holdsHaveChain !== false && present.includes("smartrouter_rate_limit_holdoffs_total") ? [v({}, 2)] : [];
     }
     if (q.includes("by (provider_address, spec, method)")) return [];
+    // The recorded per-provider rates and per-upstream buckets (windows of 3h
+    // and up) answer as their raw counterparts do.
+    if (q.includes(RECORDED.successByProvider)) return answer("sum by (provider_address, spec) (increase(smartrouter_requests_success_total[1s]))");
+    if (q.includes(RECORDED.requestsByProvider)) return answer("sum by (provider_address, spec) (increase(smartrouter_requests_total[1s]))");
+    if (q.includes(RECORDED.endpointLatencyBucket)) return answer("rpc_endpoint_end_to_end_latency_milliseconds_bucket");
     // Rate-limited minutes, down minutes, then minutes with traffic, per (node × chain).
     if (q.includes("(sum_over_time(") && q.includes("rate_limit_holdoffs") && !q.includes("clamp_min")) {
       return [v({ provider_address: "blockdaemon", spec: "NEAR" }, 12)];
@@ -182,6 +188,83 @@ describe("long windows are read lightly", () => {
   });
 });
 
+describe("recorded series (windows of 3h and up, while the store has them)", () => {
+  afterEach(() => setRecordedReads({ from: null, available: false }));
+
+  it("the list reads tries, successes, peak rate and latency from them - so a week has a p95", async () => {
+    setRecordedReads({ from: "3h", available: true, historySeconds: 2_592_000 });
+    const { prom, queries } = fakeProm(ALL);
+    const report = await new ProvidersService(prom, null, new MetricsService(prom)).list("7d");
+    expect(queries).toContain(`sum by (provider_address, spec) (sum_over_time(${RECORDED.requestsByProvider}[604800s])) * 60`);
+    expect(queries).toContain(`sum by (provider_address, spec) (sum_over_time(${RECORDED.successByProvider}[604800s])) * 60`);
+    expect(queries).toContain(`sum by (endpoint_id, spec, le) (sum_over_time(${RECORDED.endpointLatencyBucket}[604800s])) * 60`);
+    expect(queries).toContain(`sum by (provider_address) (avg_over_time(${RECORDED.requestsByProvider}[303s]))`);
+    // Not the raw counter or histogram, which is what a shared store can't take at a week.
+    expect(queries.some((q) => q.includes("increase(smartrouter_requests_total["))).toBe(false);
+    expect(queries.some((q) => q.includes("increase(rpc_endpoint_end_to_end_latency_milliseconds_bucket") && q.includes("604800s"))).toBe(false);
+    expect(report.latencyRead).toBe(true);
+    const tatum = report.providers.find((p) => p.id === "tatum")!;
+    expect(tatum.requests).toBe(1500);
+    expect(tatum.p95Ms).toBe(500);
+  });
+
+  it("an hour stays on the raw counters, exact", async () => {
+    setRecordedReads({ from: "3h", available: true, historySeconds: 2_592_000 });
+    const { prom, queries } = fakeProm(ALL);
+    await new ProvidersService(prom, null, new MetricsService(prom)).list("1h");
+    expect(queries.some((q) => q.includes(RECORDED.requestsByProvider))).toBe(false);
+    expect(queries.some((q) => q.startsWith("sum by (provider_address, spec) (increase(smartrouter_requests_total"))).toBe(true);
+  });
+
+  it("a provider's page past a day has chain p95s but says latency per method isn't read", async () => {
+    setRecordedReads({ from: "3h", available: true, historySeconds: 2_592_000 });
+    const { prom, queries } = fakeProm(ALL);
+    const detail = await new ProvidersService(prom, null, new MetricsService(prom)).detail("tatum", "7d");
+    expect(detail.latencyRead).toBe(true);
+    expect(detail.methodLatencyRead).toBe(false);
+    expect(detail.chains.find((c) => c.spec === "ETH1")?.p95Ms).toBe(500);
+    // No per-method histogram read over a week.
+    expect(queries.some((q) => q.includes("function, le") && q.includes("604800s"))).toBe(false);
+  });
+});
+
+describe("one round", () => {
+  // The family probes and the reads go out together: no read waits for the
+  // probes to answer (as the HeroPanel's reads, #249).
+  it("the list's reads don't wait for the family probes", async () => {
+    const { prom } = fakeProm(ALL);
+    const p = prom as unknown as { queryOrNull: (q: string) => Promise<unknown> };
+    const inner = p.queryOrNull.bind(prom);
+    let probeAnswered = false;
+    let readsBeforeProbe = 0;
+    p.queryOrNull = async (q: string) => {
+      if (q.startsWith("count({__name__=") && q.includes("provider_blocked")) {
+        await new Promise((r) => setTimeout(r, 40));
+        probeAnswered = true;
+        return inner(q);
+      }
+      if (!probeAnswered && q.includes("increase(smartrouter_requests_total")) readsBeforeProbe += 1;
+      return inner(q);
+    };
+    const report = await new ProvidersService(prom, null, new MetricsService(prom)).list("1d");
+    expect(readsBeforeProbe).toBeGreaterThan(0);
+    expect(report.providers.find((p2) => p2.id === "blockdaemon")?.blockedNow).toBe(true);
+  });
+
+  it("a provider's page starts its per-method reads with the rest, on the live node names", async () => {
+    const { prom, queries } = fakeProm(ALL);
+    const p = prom as unknown as { queryOrNull: (q: string) => Promise<unknown> };
+    const inner = p.queryOrNull.bind(prom);
+    p.queryOrNull = async (q: string) =>
+      q.startsWith("count by (provider_address) (smartrouter_requests_total")
+        ? [{ metric: { provider_address: "tatum" }, value: [0, "1"] }]
+        : inner(q);
+    await new ProvidersService(prom, null, new MetricsService(prom)).detail("tatum", "1d");
+    // Once, from the early start: the list named the same node, so no second read.
+    expect(queries.filter((q) => q.includes("by (provider_address, spec, method)") && q.includes("smartrouter_requests_total{")).length).toBe(1);
+  });
+});
+
 describe("ProvidersService.list", () => {
   it("groups node names by company and keeps cache and junk labels out", async () => {
     const { prom } = fakeProm(ALL);
@@ -222,7 +305,9 @@ describe("ProvidersService.list", () => {
       blocked: false,
       endpointErrored: false,
     });
-    expect(queries.some((q) => q.includes("smartrouter_rate_limit_holdoffs_total{event"))).toBe(false);
+    // Read in the same round as the probes (they match nothing on such a
+    // store); the probes, not the reads, decide what is null.
+    expect(queries.some((q) => q.includes("smartrouter_rate_limit_holdoffs_total{event"))).toBe(true);
   });
 
   // The shared client turns a refused call into "no series". Here that would
@@ -280,7 +365,8 @@ describe("ProvidersService.list", () => {
     const { prom, queries } = fakeProm(ALL, undefined, { holdsHaveChain: false });
     const report = await new ProvidersService(prom, null, new MetricsService(prom)).list("1d");
     expect(report.families.rateLimitByChain).toBe(false);
-    expect(queries.some((q) => q.includes("(sum_over_time(") && q.includes("rate_limit_holdoffs"))).toBe(false);
+    // The rate-limited minutes are read in the same round, then dropped.
+    expect(queries.some((q) => q.includes("(sum_over_time(") && q.includes("rate_limit_holdoffs") && !q.includes("clamp_min"))).toBe(true);
     expect(report.providers.every((p) => p.rateLimitedMinutes === null)).toBe(true);
     // Uptime still reads, on the old rule.
     expect(report.providers.find((p) => p.id === "tatum")?.downMinutes).toBe(30);

@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { useEffect, useLayoutEffect, useState, useSyncExternalStore, type ComponentType } from "react";
+import { useEffect, useState, useSyncExternalStore, type ComponentType } from "react";
 import { signOut } from "next-auth/react";
 import { buildChainMetaByIndex } from "@sr/shared";
 import { NAV_SECTIONS, visibleNavSections } from "./nav";
@@ -52,8 +52,22 @@ export function ThemeToggle() {
 const SIDEBAR_KEY = "sr:sidebar";
 /** Pages that put their own list beside the sidebar, besides Metrics' chains drawer. */
 const PAGE_LIST_PATHS = ["/providers"];
+/** The saved choice, read from the browser's storage; the server draws the menu open. */
+const sidebarListeners = new Set<() => void>();
+const readSidebarSaved = (): boolean => {
+  try { return localStorage.getItem(SIDEBAR_KEY) === "collapsed"; } catch { return false; /* storage blocked: stay open */ }
+};
+const subscribeSidebarSaved = (onChange: () => void) => {
+  sidebarListeners.add(onChange);
+  return () => { sidebarListeners.delete(onChange); };
+};
+const saveSidebar = (collapsed: boolean): void => {
+  try { localStorage.setItem(SIDEBAR_KEY, collapsed ? "collapsed" : "expanded"); } catch { /* storage blocked */ }
+  for (const l of sidebarListeners) l();
+};
+
 function useSidebarCollapsed(listPage: string | null): { collapsed: boolean; animate: boolean; toggle: () => void } {
-  const [saved, setSaved] = useState(false);
+  const saved = useSyncExternalStore(subscribeSidebarSaved, readSidebarSaved, () => false);
   const [openBesideList, setOpenBesideList] = useState(false);
   // Another page forgets an opened menu: the next visit to a list page folds again.
   const [lastPage, setLastPage] = useState(listPage);
@@ -65,17 +79,13 @@ function useSidebarCollapsed(listPage: string | null): { collapsed: boolean; ani
   // the menu in front of the reader (and a background tab freezes it midway).
   // From the first frame on, every change animates, a page change included.
   const [animate, setAnimate] = useState(false);
-  useLayoutEffect(() => {
-    try { setSaved(localStorage.getItem(SIDEBAR_KEY) === "collapsed"); } catch { /* storage blocked: stay open */ }
+  useEffect(() => {
     const frame = requestAnimationFrame(() => setAnimate(true));
     return () => cancelAnimationFrame(frame);
   }, []);
   const toggle = () => {
     if (listPage) { setOpenBesideList((o) => !o); return; }
-    setSaved((c) => {
-      try { localStorage.setItem(SIDEBAR_KEY, c ? "expanded" : "collapsed"); } catch { /* storage blocked */ }
-      return !c;
-    });
+    saveSidebar(!saved);
   };
   return { collapsed: listPage ? !openBesideList : saved, animate, toggle };
 }

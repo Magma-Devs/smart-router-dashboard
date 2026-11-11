@@ -1135,7 +1135,10 @@ export interface ProvidersReport {
   families: ProviderFamilies;
   /** What `peakRps` averages over, seconds: 300, or longer on a window too long to read every 5 minutes of. */
   peakWindowSec: number;
-  /** False on a window longer than a day: latency isn't read there (too heavy a read for a shared store), so every `p95Ms` is null. */
+  /**
+   * False when `p95Ms` isn't read: a window longer than a day (too heavy a raw
+   * read for a shared store) that the store's recorded series don't cover.
+   */
   latencyRead: boolean;
   /** False on a window longer than a day: uptime needs every minute of it, so `uptime` and `downMinutes` are null. */
   uptimeRead: boolean;
@@ -1201,8 +1204,13 @@ export interface ProviderDetailReport {
   methods: ProviderMethodStats[];
   /** False when the per-endpoint latency histogram has no method label on this build. */
   methodLatency: boolean;
-  /** False on a window longer than a day: latency isn't read there, so every p50/p95/p99 is null. */
+  /**
+   * False when the provider's and chains' p95 aren't read: a window longer
+   * than a day that the store's recorded series don't cover.
+   */
   latencyRead: boolean;
+  /** False on a window longer than a day: latency per method has no recorded series, so its p50/p95/p99 are null there. */
+  methodLatencyRead: boolean;
   /** False on a window longer than a day: uptime isn't read there. */
   uptimeRead: boolean;
   families: ProviderFamilies;

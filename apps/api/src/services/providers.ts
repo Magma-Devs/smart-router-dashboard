@@ -4,8 +4,9 @@
  * Every number is read per node name (`provider_address` / `endpoint_id`) and
  * per chain (`spec`), then rolled up to the company in TypeScript with
  * `providerOf` — company logic never goes into PromQL. Optional families are
- * probed first; a family the router doesn't emit comes back as `null` and a
- * false flag in `families`, never as zero.
+ * probed alongside the reads, in one round: a read of a family the router
+ * doesn't emit matches nothing, and the probe then turns it into `null` and a
+ * false flag in `families`, never into zero.
  *
  * Every read here has to answer. The shared client turns a refused call into
  * an empty result, which on this page would read as "no traffic", "0 hits",
@@ -18,11 +19,14 @@ import {
   errorBuckets,
   ENDPOINT_METRICS,
   OPTIONAL_METRICS,
+  RECORDED,
+  RECORDED_INTERVAL_SECONDS,
   ROUTER_METRICS,
   WINDOWS,
   looksLikeNodeName,
   providerOf,
   qPresence,
+  recordedReadsFor,
   type ChainOthers,
   type MetricWindow,
   type ProviderChainStats,
@@ -88,6 +92,19 @@ export const bucketsRange = (sec: number): string => sampledRange(sec, 10_800, 9
 export const LATENCY_MAX_SEC = 86_400;
 export const latencyReadFor = (window: MetricWindow): boolean => WINDOWS[window].rangeSeconds <= LATENCY_MAX_SEC;
 
+/** The seconds each recorded sample stands for: a recorded count is its samples summed, times this. */
+const K = RECORDED_INTERVAL_SECONDS;
+
+/**
+ * Provider and chain p95 are read on any window the raw histogram can be read
+ * on (a day at most) and on any window the store's recorded per-upstream
+ * buckets cover (3h and up, while fresh - `recordedReadsFor`): those are one
+ * series per upstream × chain × bucket, cheap at a month. Latency per METHOD
+ * has no recorded series, so it stays a day at most (`latencyReadFor`).
+ */
+export const providerLatencyReadFor = (window: MetricWindow): boolean =>
+  latencyReadFor(window) || recordedReadsFor(window);
+
 /**
  * Uptime, the PRD's way: a minute is down when half or more of a provider's
  * tries on a chain failed. Read per minute, so only up to a day - a week of
@@ -95,6 +112,12 @@ export const latencyReadFor = (window: MetricWindow): boolean => WINDOWS[window]
  */
 export const UPTIME_MAX_SEC = 86_400;
 export const uptimeReadFor = (window: MetricWindow): boolean => WINDOWS[window].rangeSeconds <= UPTIME_MAX_SEC;
+/**
+ * The hold-offs the minute rules read: the ones the scrape target put on a
+ * chain. Read whether or not any exist - with none, the rules' "or ... * 0"
+ * leaves every minute's rate-limited tries at zero.
+ */
+const HOLDS_ON_CHAIN = `{event="recorded",chain!=""}`;
 /** A minute is down (or rate-limited) when at least this share of the tries in it failed (or got "too many requests"). */
 const DOWN_SHARE = 0.5;
 
@@ -312,23 +335,34 @@ export class ProvidersService {
   /** Per (node × chain) counts the list and the detail both read. */
   private async nodeCounts(
     window: MetricWindow,
-    fam: ProviderFamilies,
+    famP: Promise<ProviderFamilies>,
   ): Promise<{
     counts: Map<string, NodeCounts & { node: string; spec: string }>;
     unattributed: { requests: number; labels: string[] } | null;
   }> {
-    const r = countsRange(WINDOWS[window].rangeSeconds);
+    const sec = WINDOWS[window].rangeSeconds;
+    const r = countsRange(sec);
     const by = "sum by (provider_address, spec)";
-    const [tot, ok, nodeErr, protoErr] = await Promise.all([
-      this.read(`${by} (increase(${ROUTER_METRICS.requestsTotal}[${r}]))`),
-      this.read(`${by} (increase(${ROUTER_METRICS.requestsSuccessTotal}[${r}]))`),
-      fam.nodeErrors
-        ? this.read(`${by} (increase(${OPTIONAL_METRICS.nodeErrorsTotal}[${r}]))`)
-        : Promise.resolve(null),
-      fam.protocolErrors
-        ? this.read(`${by} (increase(${OPTIONAL_METRICS.protocolErrorsTotal}[${r}]))`)
-        : Promise.resolve(null),
+    // Tries and successes from the recorded per-provider rates where the store
+    // has them (3h and up), else from the raw counters - 25,000 series on a
+    // real deployment. The error families have no recorded series; they are
+    // a few hundred.
+    const recorded = recordedReadsFor(window);
+    const tries = recorded
+      ? `${by} (sum_over_time(${RECORDED.requestsByProvider}[${sec}s])) * ${K}`
+      : `${by} (increase(${ROUTER_METRICS.requestsTotal}[${r}]))`;
+    const successes = recorded
+      ? `${by} (sum_over_time(${RECORDED.successByProvider}[${sec}s])) * ${K}`
+      : `${by} (increase(${ROUTER_METRICS.requestsSuccessTotal}[${r}]))`;
+    const [tot, ok, nodeErrRows, protoErrRows, fam] = await Promise.all([
+      this.read(tries),
+      this.read(successes),
+      this.read(`${by} (increase(${OPTIONAL_METRICS.nodeErrorsTotal}[${r}]))`),
+      this.read(`${by} (increase(${OPTIONAL_METRICS.protocolErrorsTotal}[${r}]))`),
+      famP,
     ]);
+    const nodeErr = fam.nodeErrors ? nodeErrRows : null;
+    const protoErr = fam.protocolErrors ? protoErrRows : null;
 
     const counts = new Map<string, NodeCounts & { node: string; spec: string }>();
     let unattributedRequests = 0;
@@ -377,11 +411,16 @@ export class ProvidersService {
     withMethod: boolean,
     names?: string[],
   ): Promise<{ groups: Map<string, Map<number, number>>; sawMethod: boolean }> {
-    if (!latencyReadFor(window)) return { groups: new Map(), sawMethod: false };
+    // The recorded buckets carry no method: per method stays on the raw histogram.
+    const recorded = !withMethod && recordedReadsFor(window);
+    if (!recorded && !latencyReadFor(window)) return { groups: new Map(), sawMethod: false };
     const sel = names?.length ? `{endpoint_id=~"${nameAlternation(names)}"}` : "";
     const by = withMethod ? "endpoint_id, spec, function, le" : "endpoint_id, spec, le";
+    const sec = WINDOWS[window].rangeSeconds;
     const rows = await this.read(
-      `sum by (${by}) (increase(${ENDPOINT_METRICS.latencyBucket}${sel}[${bucketsRange(WINDOWS[window].rangeSeconds)}]))`,
+      recorded
+        ? `sum by (${by}) (sum_over_time(${RECORDED.endpointLatencyBucket}${sel}[${sec}s])) * ${K}`
+        : `sum by (${by}) (increase(${ENDPOINT_METRICS.latencyBucket}${sel}[${bucketsRange(sec)}]))`,
     );
     const groups = new Map<string, Map<number, number>>();
     let sawMethod = false;
@@ -416,16 +455,21 @@ export class ProvidersService {
    * Down, rate-limited and traffic minutes per (node × chain), counted by the
    * store at a one-minute step (`minuteRules`).
    */
-  private async minutes(window: MetricWindow, fam: ProviderFamilies): Promise<Map<string, Minutes> | null> {
+  private async minutes(window: MetricWindow, famP: Promise<ProviderFamilies>): Promise<Map<string, Minutes> | null> {
     if (!uptimeReadFor(window)) return null;
     const r = `${WINDOWS[window].rangeSeconds}s`;
     const by = "sum by (provider_address, spec)";
-    const rules = minuteRules("", ProvidersService.holdSel(fam));
-    const [down, traffic, limited] = await Promise.all([
+    // Hold-offs with no chain label match nothing here, so the down rule is
+    // then the plain one - what `holdSel` would pick - and the probe nulls
+    // the rate-limited minutes after.
+    const rules = minuteRules("", HOLDS_ON_CHAIN);
+    const [down, traffic, limitedRows, fam] = await Promise.all([
       this.read(`${by} (sum_over_time((${rules.down})[${r}:1m]))`),
       this.read(`${by} (count_over_time((${rules.tries} > 0)[${r}:1m]))`),
-      rules.limited ? this.read(`${by} (sum_over_time((${rules.limited})[${r}:1m]))`) : Promise.resolve(null),
+      this.read(`${by} (sum_over_time((${rules.limited})[${r}:1m]))`),
+      famP,
     ]);
+    const limited = fam.rateLimitByChain ? limitedRows : null;
     const out = new Map<string, Minutes>();
     for (const s of traffic) {
       out.set(key(s.metric.provider_address ?? "", s.metric.spec ?? ""), {
@@ -449,18 +493,22 @@ export class ProvidersService {
   }
 
   /** Rate-limit hold-offs. The family has no spec label; a `chain` target label maps by upper-case. */
-  private async holdoffs(window: MetricWindow, fam: ProviderFamilies): Promise<PromVectorSample[] | null> {
-    if (!fam.rateLimit) return null;
-    return this.read(
-      `sum by (provider, spec, chain) (increase(${OPTIONAL_METRICS.rateLimitHoldoffsTotal}{event="recorded"}[${countsRange(WINDOWS[window].rangeSeconds)}]))`,
-    );
+  private async holdoffs(window: MetricWindow, famP: Promise<ProviderFamilies>): Promise<PromVectorSample[] | null> {
+    const [rows, fam] = await Promise.all([
+      this.read(
+        `sum by (provider, spec, chain) (increase(${OPTIONAL_METRICS.rateLimitHoldoffsTotal}{event="recorded"}[${countsRange(WINDOWS[window].rangeSeconds)}]))`,
+      ),
+      famP,
+    ]);
+    return fam.rateLimit ? rows : null;
   }
 
-  private async blocked(fam: ProviderFamilies): Promise<Map<string, boolean> | null> {
+  private async blocked(famP: Promise<ProviderFamilies>): Promise<Map<string, boolean> | null> {
+    const [rows, fam] = await Promise.all([
+      this.read(`max by (provider_address, spec) (${OPTIONAL_METRICS.csmProviderBlocked})`),
+      famP,
+    ]);
     if (!fam.blocked) return null;
-    const rows = await this.read(
-      `max by (provider_address, spec) (${OPTIONAL_METRICS.csmProviderBlocked})`,
-    );
     return new Map(rows.map((s) => [key(s.metric.provider_address ?? "", s.metric.spec ?? ""), num(s) > 0]));
   }
 
@@ -473,8 +521,11 @@ export class ProvidersService {
     const range = WINDOWS[window].rangeSeconds;
     const end = Math.floor(Date.now() / 1000);
     const step = Math.max(60, Math.ceil(range / 2000));
+    const peak = peakWindowSec(window);
     const matrix = await this.readRange(
-      `sum by (provider_address) (rate(${ROUTER_METRICS.requestsTotal}[${peakWindowSec(window)}s]))`,
+      recordedReadsFor(window)
+        ? `sum by (provider_address) (avg_over_time(${RECORDED.requestsByProvider}[${peak}s]))`
+        : `sum by (provider_address) (rate(${ROUTER_METRICS.requestsTotal}[${peak}s]))`,
       end - range,
       end,
       `${step}s`,
@@ -529,20 +580,17 @@ export class ProvidersService {
       const m = await this.readRange(expr, endSec, endSec, "60s");
       return m.map((x) => ({ metric: x.metric, value: (x.values.at(-1) ?? [endSec, "0"]) as [number, string] }));
     };
-    const [rateLimit, nodeErrors] = await Promise.all([
+    // One round: the optional families are read whether or not they exist.
+    const [rateLimit, nodeErrors, tot, ok, replyRows, holdRows] = await Promise.all([
       this.present(OPTIONAL_METRICS.rateLimitHoldoffsTotal),
       this.present(OPTIONAL_METRICS.nodeErrorsTotal),
-    ]);
-    const [tot, ok, replies, hold] = await Promise.all([
       at(`sum by (method) (increase(${ROUTER_METRICS.requestsTotal}${sel}[${r}]))`),
       at(`sum by (method) (increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${r}]))`),
-      nodeErrors
-        ? at(`sum by (method) (increase(${OPTIONAL_METRICS.nodeErrorsTotal}${sel}[${r}]))`)
-        : Promise.resolve(null),
-      rateLimit
-        ? at(`sum by (provider, chain) (increase(${OPTIONAL_METRICS.rateLimitHoldoffsTotal}{provider=~"${alt}",event="recorded"}[${r}]))`)
-        : Promise.resolve(null),
+      at(`sum by (method) (increase(${OPTIONAL_METRICS.nodeErrorsTotal}${sel}[${r}]))`),
+      at(`sum by (provider, chain) (increase(${OPTIONAL_METRICS.rateLimitHoldoffsTotal}{provider=~"${alt}",event="recorded"}[${r}]))`),
     ]);
+    const replies = nodeErrors ? replyRows : null;
+    const hold = rateLimit ? holdRows : null;
     const okBy = new Map(ok.map((s) => [s.metric.method ?? "", Math.round(num(s))]));
     const repliesBy = replies ? new Map(replies.map((s) => [s.metric.method ?? "", Math.round(num(s))])) : null;
     const methods = tot
@@ -576,14 +624,17 @@ export class ProvidersService {
 
   /** The reads the list, the detail and the export share - one set per response. */
   private async load(window: MetricWindow): Promise<Loaded> {
-    const fam = await this.families();
-    const [{ counts, unattributed }, lat, health, holdoffs, blocked, minutes] = await Promise.all([
-      this.nodeCounts(window, fam),
+    // One round, as the HeroPanel's reads (#249): every read goes out with the
+    // family probes, and the probes only decide which answers count.
+    const famP = this.families();
+    const [fam, { counts, unattributed }, lat, health, holdoffs, blocked, minutes] = await Promise.all([
+      famP,
+      this.nodeCounts(window, famP),
       this.buckets(window, false),
       this.health(window),
-      this.holdoffs(window, fam),
-      this.blocked(fam),
-      this.minutes(window, fam),
+      this.holdoffs(window, famP),
+      this.blocked(famP),
+      this.minutes(window, famP),
     ]);
     return { fam, cfg: this.configIndex(), counts, unattributed, lat, health, holdoffs, blocked, minutes };
   }
@@ -852,7 +903,7 @@ export class ProvidersService {
       unattributed: l.unattributed,
       families: l.fam,
       peakWindowSec: peakWindowSec(window),
-      latencyRead: latencyReadFor(window),
+      latencyRead: providerLatencyReadFor(window),
       uptimeRead: uptimeReadFor(window),
     };
   }
@@ -1019,28 +1070,37 @@ export class ProvidersService {
 
   /** GET /api/metrics/provider-detail */
   async detail(providerId: string, window: MetricWindow): Promise<ProviderDetailReport> {
-    const [l, rates, upstreams] = await Promise.all([
+    const r = countsRange(WINDOWS[window].rangeSeconds);
+    const byM = "sum by (provider_address, spec, method)";
+    const methodReads = (names: string[]) => {
+      const alt = nameAlternation(names);
+      return Promise.all([
+        this.read(`${byM} (increase(${ROUTER_METRICS.requestsTotal}{provider_address=~"${alt}"}[${r}]))`),
+        this.read(`${byM} (increase(${ROUTER_METRICS.requestsSuccessTotal}{provider_address=~"${alt}"}[${r}]))`),
+        this.read(`${byM} (increase(${OPTIONAL_METRICS.nodeErrorsTotal}{provider_address=~"${alt}"}[${r}]))`),
+        this.buckets(window, true, names),
+      ]);
+    };
+    // The per-method reads start with the rest, on the node names the counter
+    // has now (one light read), instead of waiting for the list to name them.
+    const early = this.nodesOf(providerId).then(async ({ names }) => (names.length ? { names, reads: await methodReads(names) } : null));
+    const [l, rates, upstreams, pre] = await Promise.all([
       this.load(window),
       this.rateSeries(window),
       this.metrics.upstreams(undefined, LAG_WINDOW),
+      early,
     ]);
     const fam = l.fam;
+    const flags = { latencyRead: providerLatencyReadFor(window), methodLatencyRead: latencyReadFor(window), uptimeRead: uptimeReadFor(window) };
     const provider = this.summaries(l, rates).find((p) => p.id === providerId) ?? null;
     if (!provider || provider.nodes.length === 0) {
-      return { window, provider, chains: [], methods: [], methodLatency: false, latencyRead: latencyReadFor(window), uptimeRead: uptimeReadFor(window), families: fam };
+      return { window, provider, chains: [], methods: [], methodLatency: false, ...flags, families: fam };
     }
     const names = provider.nodes;
-    const alt = nameAlternation(names);
-    const r = countsRange(WINDOWS[window].rangeSeconds);
-    const byM = "sum by (provider_address, spec, method)";
-    const [mTot, mOk, mNodeErr, mLat] = await Promise.all([
-      this.read(`${byM} (increase(${ROUTER_METRICS.requestsTotal}{provider_address=~"${alt}"}[${r}]))`),
-      this.read(`${byM} (increase(${ROUTER_METRICS.requestsSuccessTotal}{provider_address=~"${alt}"}[${r}]))`),
-      fam.nodeErrors
-        ? this.read(`${byM} (increase(${OPTIONAL_METRICS.nodeErrorsTotal}{provider_address=~"${alt}"}[${r}]))`)
-        : Promise.resolve(null),
-      this.buckets(window, true, names),
-    ]);
+    // A node with traffic in the window but no live series now: read again with every name.
+    const covered = pre && names.every((n) => pre.names.includes(n));
+    const [mTot, mOk, mNodeErrRows, mLat] = covered ? pre.reads : await methodReads(names);
+    const mNodeErr = fam.nodeErrors ? mNodeErrRows : null;
     const chains = this.chainRows(l, upstreams).filter((c) => names.includes(c.node));
 
     const mKey = (s: PromVectorSample): string =>
@@ -1072,6 +1132,6 @@ export class ProvidersService {
     }
     methods.sort((a, b) => b.failed - a.failed || b.requests - a.requests);
 
-    return { window, provider, chains, methods, methodLatency: mLat.sawMethod, latencyRead: latencyReadFor(window), uptimeRead: uptimeReadFor(window), families: fam };
+    return { window, provider, chains, methods, methodLatency: mLat.sawMethod, ...flags, families: fam };
   }
 }
