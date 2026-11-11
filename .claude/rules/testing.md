@@ -14,4 +14,4 @@
   `E2E_WEB_URL` / `E2E_API_URL` point at a stack you already have up.
 - `pnpm test` runs everything; `pnpm --filter @sr/api test` for the API only.
   `pnpm test` does NOT run `e2e/` — it needs a database and two servers, so it
-  is its own CI job.
+  is its own workflow (`e2e.yml`), run on PRs that touch the code those flows use.
