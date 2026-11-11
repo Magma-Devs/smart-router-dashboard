@@ -19,7 +19,7 @@
  *    refuses nine calls in ten would otherwise look healthy here;
  *  - a read the store didn't answer is said, never drawn as an empty table. */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   buildChainMetaByIndex,
   WINDOWS,
@@ -40,6 +40,7 @@ import { UpstreamLogo } from "@/components/upstreams/UpstreamLogo";
 import { errRateColor, tipLagColor, uptimeColorFrac } from "@/lib/colors";
 import { fmtLag, fmtNum } from "@/lib/format";
 import { PMNoVal, PMPanel, PMStat } from "@/components/metrics/upstream/PMPanel";
+import { ProviderCharts } from "./ProviderCharts";
 
 const NOT_EMITTED = "This router build doesn't emit the metric behind this number yet.";
 const TIP_TIMEOUTS =
@@ -451,36 +452,12 @@ function MethodsTable({ detail, chainFilter }: { detail: ProviderDetailReport; c
 /** A provider's numbers cover minutes to weeks: a read a minute is plenty, and each costs the store a dozen queries. */
 const REFRESH_MS = 60_000;
 
-/**
- * The picked provider rides in the URL (`?provider=tatum`), so a link opens on
- * it. A pick rewrites the history entry it is on, as a change of tab does;
- * leaving the tab takes it out again.
- */
-function useProviderInUrl(): [string | null, (id: string) => void] {
-  const [id, setId] = useState<string | null>(() =>
-    typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("provider"),
-  );
-  useEffect(() => {
-    const url = new URL(window.location.href);
-    if (url.searchParams.get("provider") === id) return;
-    if (id) url.searchParams.set("provider", id);
-    else url.searchParams.delete("provider");
-    window.history.replaceState(null, "", url);
-  }, [id]);
-  useEffect(
-    () => () => {
-      const url = new URL(window.location.href);
-      url.searchParams.delete("provider");
-      window.history.replaceState(null, "", url);
-    },
-    [],
-  );
-  return [id, useCallback((next: string) => setId(next), [])];
-}
-
-export function ProvidersTab({ timeWindow, chainFilter, rosterActions, renderChainAction, onOpenUpstream }: {
+export function ProvidersTab({ timeWindow, chainFilter, selectedId, onSelect, rosterActions, renderChainAction, onOpenUpstream }: {
   timeWindow: MetricWindow;
   chainFilter: string | null;
+  /** The provider the page shows; null = every provider, side by side. */
+  selectedId: string | null;
+  onSelect: (id: string | null) => void;
   /** Extra controls in the roster header (the CSV export). */
   rosterActions?: React.ReactNode;
   /** A per-chain action cell (the provider report). */
@@ -496,8 +473,7 @@ export function ProvidersTab({ timeWindow, chainFilter, rosterActions, renderCha
     return chainFilter ? all.filter((p) => p.chains.some((c) => c.spec === chainFilter)) : all;
   }, [report, chainFilter]);
 
-  const [selId, setSelId] = useProviderInUrl();
-  const sel = rows.find((p) => p.id === selId) ?? rows[0] ?? null;
+  const sel = selectedId ? (report?.providers.find((p) => p.id === selectedId) ?? null) : null;
   const detailRes = useApi<ProviderDetailReport>(
     sel ? `/api/metrics/provider-detail?provider=${encodeURIComponent(sel.id)}&window=${timeWindow}${scopeQ}` : null,
     REFRESH_MS,
@@ -525,15 +501,24 @@ export function ProvidersTab({ timeWindow, chainFilter, rosterActions, renderCha
           Providers serving {buildChainMetaByIndex(chainFilter).name}. Totals in the list cover all their chains.
         </div>
       )}
-      <ProvidersRoster report={report} rows={rows} activeId={sel?.id ?? null} onSelect={setSelId} timeWindow={timeWindow}
-        loading={listRes.isLoading} refreshing={listRes.isValidating} stale={!!listRes.error} actions={rosterActions} />
+      {!selectedId && (
+        <ProvidersRoster report={report} rows={rows} activeId={null} onSelect={onSelect} timeWindow={timeWindow}
+          loading={listRes.isLoading} refreshing={listRes.isValidating} stale={!!listRes.error} actions={rosterActions} />
+      )}
+
+      {selectedId && !sel && !listRes.isLoading && (
+        <div className="gw-card" style={{ padding: "32px 24px", textAlign: "center", fontSize: 13, color: "var(--text-3)" }}>
+          No traffic to this provider in this window.{" "}
+          <button onClick={() => onSelect(null)} style={{ border: "none", background: "none", color: "var(--brand)", cursor: "pointer", padding: 0, fontSize: 13, fontWeight: 600, fontFamily: "inherit" }}>See all providers</button>
+        </div>
+      )}
 
       {sel && (
         <>
           <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "4px 0 14px" }}>
-            <UpstreamLogo id={sel.id} size={18} />
-            <span style={{ fontSize: 14, fontWeight: 700 }}>{sel.name}</span>
-            <span style={{ fontSize: 12, color: "var(--text-3)" }}>· {sel.chains.length} chain{sel.chains.length === 1 ? "" : "s"} · detailed metrics</span>
+            <UpstreamLogo id={sel.id} size={20} />
+            <span style={{ fontSize: 16, fontWeight: 700 }}>{sel.name}</span>
+            <span style={{ fontSize: 12, color: "var(--text-3)" }}>· {sel.chains.length} chain{sel.chains.length === 1 ? "" : "s"}{sel.accounts.length > 1 ? ` · ${sel.accounts.length} accounts` : ""}</span>
             {sel.blockedNow && <Badge tone="err">Blocked now</Badge>}
           </div>
 
@@ -593,6 +578,8 @@ export function ProvidersTab({ timeWindow, chainFilter, rosterActions, renderCha
               ) : <PMNoVal />}
             </PMStat>
           </div>
+
+          <ProviderCharts providerId={sel.id} providerName={sel.name} timeWindow={timeWindow} />
 
           {detailRes.error && !detail ? (
             <div className="gw-card" style={{ padding: 16, fontSize: 12, color: "var(--text-3)" }}>

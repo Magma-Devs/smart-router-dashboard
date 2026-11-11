@@ -154,6 +154,26 @@ export async function metricRoutes(app: FastifyInstance) {
       .providers.detail(String(request.query.provider), parseWindow(request.query.window));
   });
 
+  app.get<{ Querystring: WindowQuery & { provider?: string } }>("/api/metrics/provider-series", {
+    schema: {
+      tags: ["Metrics"],
+      summary: "One provider company over the window, in bars on the clock: tries, failures, error replies, rate-limit hits, down minutes, average latency",
+      querystring: {
+        type: "object" as const,
+        required: ["provider"],
+        properties: {
+          provider: { type: "string" as const, pattern: "^[A-Za-z0-9 ._-]{1,64}$", description: "Provider company id from /api/metrics/providers" },
+          window: windowQuerySchema.properties.window,
+          router: windowQuerySchema.properties.router,
+        },
+      },
+    },
+  }, async (request) => {
+    return app
+      .scoped(request.query.router)
+      .providers.series(String(request.query.provider), parseWindow(request.query.window));
+  });
+
   // Upstream roster (optionally scoped to one spec and/or one config router).
   app.get<{ Querystring: WindowQuery }>("/api/metrics/upstreams", tag("Upstream roster + selection scores"), async (request) => {
     const { spec, routerId } = request.query;

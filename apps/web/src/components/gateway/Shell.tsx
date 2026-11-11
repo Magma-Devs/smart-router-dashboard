@@ -282,6 +282,9 @@ export function Shell({ children, grafanaDashboardUrl }: {
         <div className="gw-app">
           <Sidebar grafanaDashboardUrl={grafanaDashboardUrl} />
           <ChainDrawerSlot />
+          {/* A page's own list beside the sidebar (Providers), put here
+              through a portal so it sits where the chains list does. */}
+          <div id={PAGE_DRAWER_SLOT_ID} style={{ display: "contents" }} />
           <div className="gw-main">
             <Topbar here={here} sub={sub} />
             <div className="fade-in" key={pathname}>
@@ -293,6 +296,9 @@ export function Shell({ children, grafanaDashboardUrl }: {
     </TwoFactorGate>
   );
 }
+
+/** Where a page's own column beside the sidebar goes (see ProvidersView). */
+export const PAGE_DRAWER_SLOT_ID = "gw-page-drawer";
 
 function ChainDrawerSlot() {
   return useChainDrawer().visible ? <ChainDrawer /> : null;

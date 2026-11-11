@@ -142,15 +142,17 @@ export function ProviderReportSheet({ target, timeWindow, onClose }: {
 }
 
 /** The Providers tab with its export and per-chain report wired in. */
-export function ProvidersWithReports({ timeWindow, chainFilter, onOpenUpstream }: {
+export function ProvidersWithReports({ timeWindow, chainFilter, selectedId, onSelect, onOpenUpstream }: {
   timeWindow: MetricWindow;
   chainFilter: string | null;
+  selectedId: string | null;
+  onSelect: (id: string | null) => void;
   onOpenUpstream?: (ref: { endpointId: string; spec: string }) => void;
 }) {
   const [target, setTarget] = useState<{ providerId: string; providerName: string; spec: string } | null>(null);
   return (
     <>
-      <ProvidersTab timeWindow={timeWindow} chainFilter={chainFilter} onOpenUpstream={onOpenUpstream}
+      <ProvidersTab timeWindow={timeWindow} chainFilter={chainFilter} selectedId={selectedId} onSelect={onSelect} onOpenUpstream={onOpenUpstream}
         rosterActions={<ExportButton timeWindow={timeWindow} />}
         renderChainAction={(p, c) =>
           c.requests > 0 ? <ReportButton onClick={() => setTarget({ providerId: p.id, providerName: p.name, spec: c.spec })} /> : null

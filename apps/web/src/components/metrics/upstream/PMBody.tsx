@@ -34,14 +34,14 @@ import { PMPanel } from "./PMPanel";
  *  height), on the right just room for the last tick - the legend sits under
  *  the chart. The four stack on one time axis, so they must share both, or
  *  the same moment lands at a different x in each. */
-const PAD_X = 80;
-const PAD_R = 16;
+export const PAD_X = 80;
+export const PAD_R = 16;
 
 /** The peers' colours; the selected upstream is always the brand colour. */
 const PEER_COLORS = ["#38bdf8", "#a78bfa", "#22c55e", "#eab308", "#ec4899", "#14b8a6", "#f97316", "#94a3b8"];
 
 /** Every point of a grid, unix seconds: the chart's time axis. */
-function gridTimes(grid: ChartGrid | undefined): number[] {
+export function gridTimes(grid: ChartGrid | undefined): number[] {
   if (!grid || grid.stepSec <= 0) return [];
   const out: number[] = [];
   for (let t = grid.start; t <= grid.end; t += grid.stepSec) out.push(t);
@@ -50,7 +50,7 @@ function gridTimes(grid: ChartGrid | undefined): number[] {
 
 /** Series laid on a grid by time - NaN where one has no point there, which
  *  the chart draws as a gap. A point lands on its nearest slot. */
-function onGrid(times: number[], grid: ChartGrid | undefined, series: TimePoint[][]): number[][] {
+export function onGrid(times: number[], grid: ChartGrid | undefined, series: TimePoint[][]): number[][] {
   return series.map((s) => {
     const out: number[] = new Array(times.length).fill(NaN);
     if (!grid || !times.length) return out;
@@ -65,8 +65,8 @@ function onGrid(times: number[], grid: ChartGrid | undefined, series: TimePoint[
 
 const whenOf = (t: number | undefined) =>
   t ? new Date(t * 1000).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }) : "";
-const dayOf = (ms: number) => new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-const hhmm = (ms: number) => new Date(ms).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
+export const dayOf = (ms: number) => new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+export const hhmm = (ms: number) => new Date(ms).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
 
 /** Tick spacings for a time axis: the clock's own, a minute to a week. */
 const TICK_STEPS = [60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600, 43200, 86400, 172800, 259200, 604800];
@@ -74,7 +74,7 @@ const TICK_STEPS = [60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600, 4320
 /** Labels at round local times across [from, to] (unix seconds), seven at
  *  most: 00:00 · 06:00 · 12:00 · 18:00 across a day, a date a day across a
  *  week. The evenly spaced labels this replaced landed on 00:37 and 06:45. */
-function timeTicks(dom: [number, number] | undefined): XTick[] | undefined {
+export function timeTicks(dom: [number, number] | undefined): XTick[] | undefined {
   if (!dom) return undefined;
   const [from, to] = dom;
   const span = to - from;
@@ -96,16 +96,16 @@ const quantile = (xs: number[], q: number) => {
   return s.length ? s[Math.floor(q * (s.length - 1))]! : 0;
 };
 
-const fmtMs = (v: number) => `${fmtComma(Math.round(v))} ms`;
+export const fmtMs = (v: number) => `${fmtComma(Math.round(v))} ms`;
 /** "the hour", "the 16 minutes", "the 150 seconds" - how long each point averages. */
 const spanWords = (sec: number) =>
   sec % 3600 === 0 ? (sec === 3600 ? "the hour" : `the ${sec / 3600} hours`) : sec % 60 === 0 ? `the ${sec / 60} minutes` : `the ${sec} seconds`;
 const fmtRps = (v: number) => (v === 0 ? "0" : v < 0.1 ? v.toFixed(3) : v < 10 ? v.toFixed(2) : fmtComma(Math.round(v)));
 /** "10 minutes", "an hour", "6 hours", "a day" - one bar's span. */
-const barSpanWords = (sec: number) =>
+export const barSpanWords = (sec: number) =>
   sec >= 86400 ? (sec === 86400 ? "a day" : `${sec / 86400} days`) : sec >= 3600 ? (sec === 3600 ? "an hour" : `${sec / 3600} hours`) : `${sec / 60} minutes`;
 
-interface LegendRow {
+export interface LegendRow {
   key: string;
   name: string;
   color: string;
@@ -122,7 +122,7 @@ interface LegendRow {
  * (LineChart pointLabels), where the eye already is. It starts where the plot
  * starts, and pointing at a name brings its line forward.
  */
-function LegendLine({ heading, rows, foot, onFocus }: {
+export function LegendLine({ heading, rows, foot, onFocus }: {
   heading?: string;
   rows: LegendRow[];
   foot?: ReactNode;
@@ -145,7 +145,7 @@ function LegendLine({ heading, rows, foot, onFocus }: {
 }
 
 /** A chart, and its legend on one line under it. */
-function ChartRow({ height, chart, legend }: { height: number; chart: ReactNode; legend: ReactNode }) {
+export function ChartRow({ height, chart, legend }: { height: number; chart: ReactNode; legend: ReactNode }) {
   return (
     <div>
       <div style={{ height }}>{chart}</div>

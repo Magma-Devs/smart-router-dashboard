@@ -120,6 +120,7 @@ describe("?router= scoping", () => {
     "/api/metrics/upstream-peers?spec=ETH1",
     "/api/metrics/providers",
     "/api/metrics/provider-detail?provider=tatum",
+    "/api/metrics/provider-series?provider=tatum",
   ];
 
   it.each(SCOPED_ROUTES)("scopes every metric selector on %s", async (route) => {
@@ -265,6 +266,7 @@ describe("METRICS_SCOPE_LABEL / METRICS_SCOPE_VALUE (deployment scope)", () => {
     "/api/metrics/specs",
     "/api/metrics/chain-series?spec=ETH1",
     "/api/metrics/providers",
+    "/api/metrics/provider-series?provider=tatum",
   ];
 
   it.each(ROUTES)("puts the deployment matcher on every metric selector of %s", async (route) => {

@@ -1177,6 +1177,32 @@ export interface ProviderDetailReport {
   families: ProviderFamilies;
 }
 
+/**
+ * GET /api/metrics/provider-series — one provider over the window, all its
+ * chains together, in bars on the clock (`bucketGrid`, as the Upstreams
+ * tab's errors over time): a point at `t` covers the `grid.stepSec` before
+ * it, and the last bar is still filling up to `asOf`. Null where a family
+ * isn't emitted or a read isn't made on this window.
+ */
+export interface ProviderSeries {
+  window: string;
+  provider: { id: string; name: string } | null;
+  grid: ChartGrid;
+  asOf: number;
+  /** Tries sent to it, and the ones it didn't answer usefully. */
+  tries: TimePoint[];
+  failed: TimePoint[];
+  /** Tries it answered with an error. Null when the node-error family isn't emitted. */
+  errorReplies: TimePoint[] | null;
+  /** "Too many requests" hold-offs. Null when the family isn't emitted. */
+  rateLimitHits: TimePoint[] | null;
+  /** Down minutes, summed over its chains (`ProviderSummary.uptime`'s rule). Null past a day. */
+  downMinutes: TimePoint[] | null;
+  /** Average answer time, ms, from the endpoint histogram's sum and count. Null past a day. */
+  avgLatencyMs: TimePoint[] | null;
+  families: ProviderFamilies;
+}
+
 /** GET /api/providers/report — a complaint to one provider about one chain, ready to paste. */
 export interface ProviderReport {
   provider: { id: string; name: string };

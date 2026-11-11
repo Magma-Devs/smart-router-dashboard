@@ -14,6 +14,8 @@
  * whole response (`StoreReadError`), and the web keeps what it last showed.
  */
 import {
+  bucketGrid,
+  errorBuckets,
   ENDPOINT_METRICS,
   OPTIONAL_METRICS,
   ROUTER_METRICS,
@@ -27,8 +29,10 @@ import {
   type ProviderFamilies,
   type ProviderIdentity,
   type ProviderMethodStats,
+  type ProviderSeries,
   type ProviderSummary,
   type ProvidersReport,
+  type TimePoint,
   type UpstreamMetrics,
 } from "@sr/shared";
 import { StoreReadError, type PrometheusClient, type PromMatrixSample, type PromVectorSample } from "./prometheus-client.js";
@@ -769,6 +773,109 @@ export class ProvidersService {
       provider,
       chains: rows.filter((c) => provider.nodes.includes(c.node)),
     }));
+  }
+
+  /** The node names a company runs, from the request counter's series - one light read. */
+  private async nodesOf(providerId: string): Promise<{ names: string[]; name: string | null }> {
+    const cfg = this.configIndex();
+    const rows = await this.read(`count by (provider_address) (${ROUTER_METRICS.requestsTotal})`);
+    const names = rows
+      .map((r) => r.metric.provider_address ?? "")
+      .filter((n) => n.toLowerCase() !== CACHED && looksLikeNodeName(n) && cfg.identity(n).id === providerId)
+      .sort();
+    return { names, name: names.length ? cfg.identity(names[0]!).name : null };
+  }
+
+  /**
+   * One expression read as bars on the clock: the whole bars in one range
+   * read at the bar's step, then the bar still filling as one instant read
+   * over the seconds it has run (a range read would end in the future).
+   */
+  private async barsOf(exprFor: (range: string) => string, bars: ReturnType<typeof bucketGrid>, step: string): Promise<TimePoint[]> {
+    const { grid, lastFull, partialSec } = bars;
+    const [whole, filling] = await Promise.all([
+      lastFull >= grid.start ? this.readRange(exprFor(step), grid.start, lastFull, step) : Promise.resolve([]),
+      partialSec > 0 ? this.read(exprFor(`${partialSec}s`)) : Promise.resolve([]),
+    ]);
+    const points: TimePoint[] = (whole[0]?.values ?? []).map(([t, v]) => {
+      const n = Number(v);
+      return { t: Number(t), v: Number.isFinite(n) ? n : null };
+    });
+    const last = filling[0];
+    if (partialSec > 0) {
+      const n = last ? Number(last.value[1]) : NaN;
+      points.push({ t: grid.end, v: Number.isFinite(n) ? n : 0 });
+    }
+    return points;
+  }
+
+  /** GET /api/metrics/provider-series */
+  async series(providerId: string, window: MetricWindow): Promise<ProviderSeries> {
+    const asOf = Math.floor(Date.now() / 1000);
+    const bars = bucketGrid(window, asOf);
+    const step = errorBuckets(window).step;
+    const [fam, { names, name }] = await Promise.all([this.families(), this.nodesOf(providerId)]);
+    const empty: ProviderSeries = {
+      window,
+      provider: name ? { id: providerId, name } : null,
+      grid: bars.grid,
+      asOf,
+      tries: [],
+      failed: [],
+      errorReplies: fam.nodeErrors ? [] : null,
+      rateLimitHits: fam.rateLimit ? [] : null,
+      downMinutes: uptimeReadFor(window) ? [] : null,
+      avgLatencyMs: latencyReadFor(window) ? [] : null,
+      families: fam,
+    };
+    if (!names.length) return empty;
+    const alt = nameAlternation(names);
+    const sel = `{provider_address=~"${alt}"}`;
+    const sum = (metric: string, matcher: string) => (range: string) => `sum(increase(${metric}${matcher}[${range}]))`;
+    const by = "sum by (provider_address, spec)";
+    const tries1m = `${by} (increase(${ROUTER_METRICS.requestsTotal}${sel}[1m]))`;
+    const ok1m = `${by} (increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[1m]))`;
+    const [tries, ok, replies, holds, down, latSum, latCount] = await Promise.all([
+      this.barsOf(sum(ROUTER_METRICS.requestsTotal, sel), bars, step),
+      this.barsOf(sum(ROUTER_METRICS.requestsSuccessTotal, sel), bars, step),
+      fam.nodeErrors ? this.barsOf(sum(OPTIONAL_METRICS.nodeErrorsTotal, sel), bars, step) : Promise.resolve(null),
+      fam.rateLimit
+        ? this.barsOf(sum(OPTIONAL_METRICS.rateLimitHoldoffsTotal, `{provider=~"${alt}",event="recorded"}`), bars, step)
+        : Promise.resolve(null),
+      uptimeReadFor(window)
+        ? this.barsOf((range) => `sum(sum_over_time(((${tries1m} - (${ok1m} or ${tries1m} * 0)) / ${tries1m} >= bool ${DOWN_SHARE})[${range}:1m]))`, bars, step)
+        : Promise.resolve(null),
+      latencyReadFor(window)
+        ? this.barsOf((range) => `sum(increase(${ENDPOINT_METRICS.latencySum}{endpoint_id=~"${alt}"}[${range}]))`, bars, step)
+        : Promise.resolve(null),
+      latencyReadFor(window)
+        ? this.barsOf((range) => `sum(increase(${ENDPOINT_METRICS.latencyCount}{endpoint_id=~"${alt}"}[${range}]))`, bars, step)
+        : Promise.resolve(null),
+    ]);
+    const at = (points: TimePoint[]) => new Map(points.map((p) => [p.t, p.v]));
+    const okAt = at(ok);
+    const failed = tries.map((p) => ({
+      t: p.t,
+      v: p.v == null ? null : Math.max(0, Math.round(p.v - (okAt.get(p.t) ?? 0))),
+    }));
+    const round = (points: TimePoint[] | null) => points?.map((p) => ({ t: p.t, v: p.v == null ? null : Math.round(p.v) })) ?? null;
+    // Average answer time per bar; no answers in a bar is no latency there, never 0 ms.
+    const countAt = latCount ? at(latCount) : null;
+    const avgLatencyMs = latSum && countAt
+      ? latSum.map((p) => {
+          const n = countAt.get(p.t);
+          return { t: p.t, v: p.v != null && n != null && n > 0 ? p.v / n : null };
+        })
+      : null;
+    return {
+      ...empty,
+      tries: round(tries)!,
+      failed,
+      errorReplies: round(replies),
+      rateLimitHits: round(holds),
+      downMinutes: round(down),
+      avgLatencyMs,
+    };
   }
 
   /** GET /api/metrics/provider-detail */

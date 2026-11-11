@@ -22,6 +22,12 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
     never an empty list, a 100% error rate or "not emitted".
   - Windows longer than a day sample the counters instead of reading every
     scrape, and show no latency: that read is too heavy for a shared store.
+- **The Providers page lists providers beside the menu**, as Metrics lists
+  chains (MAG-4257): "All providers" is the side-by-side table, a provider is
+  its own page with graphs over the window - errors and error replies,
+  rate-limit hits, down minutes and average latency. A chain's free public node
+  and the customer's own node sit apart, under "Not a provider company". New
+  endpoint: `GET /api/metrics/provider-series`.
 - **Uptime counted in minutes** on the Providers page (MAG-4257). A minute is
   down when half or more of a provider's tries on a chain failed; it replaces
   the router's health gauge, which starts healthy and only moves with traffic,
