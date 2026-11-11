@@ -284,17 +284,17 @@ describe("METRICS_SCOPE_LABEL / METRICS_SCOPE_VALUE (deployment scope)", () => {
     expect(queries.filter((q) => !q.includes('zone="eu-west"'))).toEqual([]);
   });
 
-  it("reaches the cache sidecar's families too — the deployment owns the cache", async () => {
-    mockPrometheus([], ["cache_total_hits"]);
+  it("reaches the cache card's reads too — the router publishes them", async () => {
+    mockPrometheus([], ["smartrouter_cache_requests_total"]);
     setScope("zone", "eu-west");
     app = await buildApp();
 
     // The hero cards read the cache hit rate once its presence probe answers.
     expect((await app.inject({ method: "GET", url: "/api/metrics/dashboard-summary" })).statusCode).toBe(200);
-    const cacheReads = sent.filter((q) => q.includes("cache_total_hits") && !q.includes("__name__"));
+    const cacheReads = sent.filter((q) => q.includes("smartrouter_cache_success_total") && !q.includes("__name__"));
     expect(cacheReads.length).toBeGreaterThan(0);
     for (const q of cacheReads) {
-      expect(q).not.toMatch(/cache_total_(?:hits|misses)(?!\{zone="eu-west")/);
+      expect(q).not.toMatch(/smartrouter_cache_(?:success|requests)_total(?!\{zone="eu-west")/);
     }
   });
 
@@ -456,6 +456,19 @@ describe("ROUTER_SCOPE_LABEL left unset (MAG-4303)", () => {
     const scopedReads = metricQueries();
     expect(scopedReads.length).toBeGreaterThan(0);
     expect(scopedReads.filter((q) => !q.includes('service="eth-router"'))).toEqual([]);
+  });
+
+  it("the cache card follows the router filter", async () => {
+    mockPrometheus([], ["smartrouter_cache_requests_total"], 1, { service: ["eth-router"] });
+    app = await buildApp();
+
+    const res = await app.inject({ method: "GET", url: "/api/metrics/dashboard-summary?router=eth-router" });
+    expect(res.statusCode).toBe(200);
+    const cacheReads = sent.filter((q) => q.includes("smartrouter_cache_success_total") && !q.includes("__name__"));
+    expect(cacheReads.length).toBeGreaterThan(0);
+    for (const q of cacheReads) {
+      expect(q).not.toMatch(/smartrouter_cache_(?:success|requests)_total(?!\{service="eth-router")/);
+    }
   });
 
   it("asks again on every use until a label reports — and never at boot", async () => {

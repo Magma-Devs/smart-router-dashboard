@@ -203,6 +203,16 @@ describe("buildChainMetaByIndex", () => {
     // it; the testnet inherits through its KASPA import.
     expect(buildChainMetaByIndex("KASPA").family).toBe("kaspa");
     expect(buildChainMetaByIndex("KASPAT").family).toBe("kaspa");
+    // Siacoin serves only walletd's REST API under a bare `/api/` prefix and
+    // reached the same fallback. Its consensus and v2 txpool routes identify
+    // it; the Zen testnet inherits through its SC import.
+    expect(buildChainMetaByIndex("SC").family).toBe("siacoin");
+    expect(buildChainMetaByIndex("SCT").family).toBe("siacoin");
+    // Decred serves dcrd JSON-RPC: bitcoind's method names without a BTC
+    // import and without eth_*. Its ticket-pool methods identify it; the
+    // testnet3 spec inherits through its DCR import.
+    expect(buildChainMetaByIndex("DCR").family).toBe("decred");
+    expect(buildChainMetaByIndex("DCRT").family).toBe("decred");
   });
   it("inherits a forked chain's family from its imports", () => {
     // Dash imports BTC and Koii imports SOLANA; neither index shares a prefix
@@ -445,8 +455,8 @@ describe("health / lag / score / gauge builders", () => {
       'max(rpc_endpoint_latest_block{spec="ETH1"}) - max(rpc_endpoint_latest_block{spec="ETH1",endpoint_id="eth-lava"})',
     );
   });
-  it("chain-down is a bool comparison on the spec max", () => {
-    expect(qChainDown()).toBe("max by (spec) (rpc_endpoint_overall_health) == bool 0");
+  it("chain-down is a bool comparison on the spec min of the blocked gauge", () => {
+    expect(qChainDown()).toBe("min by (spec) (smartrouter_csm_provider_blocked) == bool 1");
   });
   it("score expressions target both scopes", () => {
     expect(qScoreExpr("composite", "ETH1", "eth-lava")).toBe(
@@ -799,9 +809,9 @@ describe("grouped per-chain reads (MAG-4294)", () => {
     );
   });
 
-  it("qPerSpecHealth reads the spec-labelled endpoint gauge, one row per chain", () => {
-    expect(qPerSpecHealth()).toBe("max by (spec) (rpc_endpoint_overall_health)");
-    expect(qPerSpecHealth("ETH1")).toBe('max by (spec) (rpc_endpoint_overall_health{spec="ETH1"})');
+  it("qPerSpecHealth reads the spec-labelled blocked gauge, one row per chain", () => {
+    expect(qPerSpecHealth()).toBe("1 - min by (spec) (smartrouter_csm_provider_blocked)");
+    expect(qPerSpecHealth("ETH1")).toBe('1 - min by (spec) (smartrouter_csm_provider_blocked{spec="ETH1"})');
   });
 
   it("qPerSpecClientRpsSeriesExpr is the client-scoped rate, one matrix row per chain", () => {
@@ -828,9 +838,11 @@ describe("grouped chain-level reads (MAG-4295)", () => {
       "histogram_quantile(0.95, sum by (spec, le) (rate(smartrouter_end_to_end_latency_milliseconds_bucket[1800s])))",
     );
     expect(qGroupedQos(["spec"])).toBe('avg by (spec) (rpc_endpoint_selection_score{score_type="composite"})');
-    expect(qGroupedHealth(["spec"])).toBe("max by (spec) (rpc_endpoint_overall_health)");
+    expect(qGroupedHealth(["spec"])).toBe("1 - min by (spec) (smartrouter_csm_provider_blocked)");
     expect(qGroupedLatestBlock(["spec"])).toBe("max by (spec) (smartrouter_latest_block)");
-    expect(qGroupedUpstreams(["spec"])).toBe("count by (spec, endpoint_id) (rpc_endpoint_overall_health)");
+    expect(qGroupedUpstreams(["spec"])).toBe(
+      'count by (spec, endpoint_id) (label_replace(smartrouter_csm_provider_blocked, "endpoint_id", "$1", "provider_address", "(.*)"))',
+    );
   });
 
   it("keeps the scrape-target label beside the chain for per-router rows", () => {
@@ -840,7 +852,9 @@ describe("grouped chain-level reads (MAG-4295)", () => {
     expect(qGroupedLatencyQuantile(0.95, perTarget, "30m")).toBe(
       "histogram_quantile(0.95, sum by (spec, service, le) (rate(smartrouter_end_to_end_latency_milliseconds_bucket[1800s])))",
     );
-    expect(qGroupedUpstreams(perTarget)).toBe("count by (spec, service, endpoint_id) (rpc_endpoint_overall_health)");
+    expect(qGroupedUpstreams(perTarget)).toBe(
+      'count by (spec, service, endpoint_id) (label_replace(smartrouter_csm_provider_blocked, "endpoint_id", "$1", "provider_address", "(.*)"))',
+    );
   });
 
   it("the per-spec readers are the grouped ones by spec", () => {

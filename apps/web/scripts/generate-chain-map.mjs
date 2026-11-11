@@ -268,6 +268,15 @@ function deriveFamily(index, interfaces, imports) {
   // so without this it reaches the `evm` tail below. Keyed on the DAG-info
   // endpoints no other ecosystem serves.
   if (serves("/info/blockdag", "/info/virtual-chain-blue-score")) return "kaspa";
+  // Siacoin's walletd API. REST only, under a bare `/api/` prefix that names
+  // no ecosystem, so without this it reaches the `evm` tail below. Keyed on
+  // the consensus and v2 txpool routes only walletd serves.
+  if (serves("/api/consensus/tipstate", "/api/txpool/transactions/v2/basis")) return "siacoin";
+  // Decred's dcrd JSON-RPC. dcrd descends from btcd and shares bitcoind's
+  // method names, but the spec does not import BTC, so without this it
+  // reaches the `evm` tail below. Keyed on the ticket-pool methods only
+  // Decred's proof-of-stake serves.
+  if (serves("getstakedifficulty", "getticketpoolvalue")) return "decred";
 
   // Polkadot ecosystem (relay chains + asset hubs) — substrate, but grouped
   // under the pre-existing family the v1 overlay already uses for them.

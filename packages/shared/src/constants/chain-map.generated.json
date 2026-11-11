@@ -784,6 +784,24 @@
     ],
     "mainnet": false
   },
+  "DCR": {
+    "name": "Decred",
+    "family": "decred",
+    "icon": "decred",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "DCRT": {
+    "name": "Decred Testnet3",
+    "family": "decred",
+    "icon": "decred",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
   "DOGE": {
     "name": "Dogecoin",
     "family": "bitcoin",
@@ -2120,6 +2138,15 @@
     ],
     "mainnet": false
   },
+  "SC": {
+    "name": "Siacoin",
+    "family": "siacoin",
+    "icon": "siacoin",
+    "interfaces": [
+      "rest"
+    ],
+    "mainnet": true
+  },
   "SCROLL": {
     "name": "Scroll",
     "family": "evm",
@@ -2135,6 +2162,15 @@
     "icon": "scroll",
     "interfaces": [
       "jsonrpc"
+    ],
+    "mainnet": false
+  },
+  "SCT": {
+    "name": "Siacoin Zen Testnet",
+    "family": "siacoin",
+    "icon": "siacoin",
+    "interfaces": [
+      "rest"
     ],
     "mainnet": false
   },

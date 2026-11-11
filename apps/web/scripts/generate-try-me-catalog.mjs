@@ -13,7 +13,8 @@
  *   { [specIndex]:
  *       string                               // alias — identical to that index
  *     | { [iface in jsonrpc|rest|tendermintrpc|grpc|graphql]?: {
- *          regular?: Cmd[]; archive?: Cmd[]; debug?: Cmd[]; trace?: Cmd[] } } }
+ *          regular?: Cmd[]; archive?: Cmd[]; debug?: Cmd[]; trace?: Cmd[];
+ *          blockbook?: Cmd[] } } }
  *
  *   Cmd = { m: string; v?: string; l?: string; p?: string; d?: string;
  *           ip?: string; a?: 1 }
@@ -36,6 +37,9 @@
  *   - collection_data.add_on "debug"   → debug
  *   - collection_data.add_on "trace"   → trace
  *   - collection_data.add_on "arbtrace"→ trace  (Arbitrum's trace add-on)
+ *   - collection_data.add_on "blockbook" → blockbook (BTC's bb_* methods,
+ *     inherited by every spec that imports BTC; a node url declares it with
+ *     `addons: ["blockbook"]`)
  *   - other add_ons (bundler, warp, blockdaemon, indexer, admin,
  *     compound-v3, aave-v3) have no tier in the drawer → skipped
  *   - archive is NOT a method list in the specs: it's a collection-level
@@ -102,7 +106,7 @@ const OUT_PATH =
 /**
  * Committed roll-call of the method lists with NO command that can be sent
  * as-is: `INDEX/iface` for a regular tier, `INDEX/iface/tier` for an add-on
- * tier (archive, debug, trace). The drawer opens each tier on its first
+ * tier (archive, debug, trace, blockbook). The drawer opens each tier on its first
  * runnable command, so every line here is a tier it opens on one that needs
  * typing into first. It exists to be diffed: a chain family nobody has
  * curated hints for lands as a line in this file, which the drift check turns
@@ -232,6 +236,29 @@ const JSONRPC_HINTS = [
   { m: "getnetworkinfo", p: "[]", d: "Returns P2P networking state." },
   { m: "getmempoolinfo", p: "[]", d: "Returns mempool state info." },
   { m: "getdifficulty", p: "[]", d: "Returns the current proof-of-work difficulty." },
+  // Blockbook add-on (`bb_*`, the `blockbook` tier), inherited by every spec
+  // that imports BTC. Argument shapes are QuickNode's, the one vendor serving
+  // Blockbook over JSON-RPC (lava-specs #202), and the same on every
+  // bitcoin-family chain. `bb_getBlockHash ["0"]` is the exact call the spec's
+  // `enabled` verification sends, so every node admitted to the add-on has
+  // answered it, and height 0 exists on every network. Every other method
+  // takes an argument no single value fits across chains, so it ships as
+  // "needs params", with the shape in its description.
+  { m: "bb_getBlockHash", p: '["0"]', d: "Returns the hash of the block at the given height, passed as a string. 0 is the genesis block." },
+  { m: "bb_getBlock", d: "Returns a block with its transactions — pass [\"<height or hash>\"], optionally followed by {\"page\": <n>}." },
+  { m: "bb_getRawBlock", d: "Returns a block as serialized hex — pass [\"<height or hash>\"]." },
+  { m: "bb_getFeeStats", d: "Returns a block's fee statistics: transaction count, total fees, and the fee per kB on average and by decile — pass [\"<height or hash>\"]." },
+  { m: "bb_getTx", d: "Returns a transaction by id — pass [\"<txid>\"]." },
+  { m: "bb_getTxSpecific", d: "Returns a transaction as the backend node returns it, with every coin-specific field — pass [\"<txid>\"]." },
+  { m: "bb_getAddress", d: "Returns an address's balance and transactions — pass [\"<address>\"], optionally followed by {\"page\", \"size\", \"details\": \"basic|txids|txs\"}." },
+  { m: "bb_getXPUB", d: "Returns the balance and transactions of an account-level xpub or output descriptor — pass [\"<xpub>\"], with the same options as bb_getAddress." },
+  { m: "bb_getUTXOs", d: "Returns the unspent outputs of an address, xpub or output descriptor — pass [\"<address>\"], optionally followed by {\"confirmed\": true}." },
+  { m: "bb_getBalanceHistory", d: "Returns the balance of an address or xpub over time — pass [\"<address>\", {\"from\": \"<unix seconds>\"}]." },
+  { m: "bb_getEstimateFee", d: "Returns the estimated fee per kB for a confirmation target — pass [<blocks>], for example [4]." },
+  { m: "bb_getTickers", d: "Returns the fiat rates at a moment — pass [{\"timestamp\": <unix seconds>}]." },
+  { m: "bb_getMultiTickers", d: "Returns the fiat rates at several moments — pass [{\"timestamp\": \"<t1>,<t2>\"}]." },
+  { m: "bb_getTickersList", d: "Lists the currencies with a rate at a moment — pass [{\"timestamp\": <unix seconds>}]." },
+  { m: "bb_sendTransaction", d: "Broadcasts a signed raw transaction and returns its txid — pass [\"<signed tx hex>\"]." },
   // Filecoin
   { m: "Filecoin.ChainHead", p: "[]", d: "Returns the current head of the chain." },
   { m: "Filecoin.Version", p: "[]", d: "Returns the node version." },
@@ -690,8 +717,8 @@ const ARCHIVE_HINTS = {
 /* ── Spec loading ────────────────────────────────────────────────────────── */
 
 const INTERFACES = ["jsonrpc", "rest", "tendermintrpc", "grpc", "graphql"];
-const TIER_BY_ADDON = { "": "regular", debug: "debug", trace: "trace", arbtrace: "trace" };
-const TIERS = ["regular", "archive", "debug", "trace"];
+const TIER_BY_ADDON = { "": "regular", debug: "debug", trace: "trace", arbtrace: "trace", blockbook: "blockbook" };
+const TIERS = ["regular", "archive", "debug", "trace", "blockbook"];
 
 const skipped = []; // { index?, file, reason }
 const specsByIndex = new Map(); // index → { spec, file }
@@ -1121,7 +1148,7 @@ function buildSpecEntry(index) {
     const ifaceEntry = {};
     let regularNames = new Set();
     let regularByName = new Map();
-    for (const tier of ["regular", "debug", "trace"]) {
+    for (const tier of ["regular", "debug", "trace", "blockbook"]) {
       const tierColls = ifaceColls.filter(
         (c) => TIER_BY_ADDON[c.cd.add_on ?? ""] === tier,
       );
@@ -1167,7 +1194,7 @@ function buildSpecEntry(index) {
 const out = {};
 const aliasOf = new Map(); // canonical JSON → first index
 let aliased = 0;
-const tierTotals = { regular: 0, archive: 0, debug: 0, trace: 0 };
+const tierTotals = { regular: 0, archive: 0, debug: 0, trace: 0, blockbook: 0 };
 let ifaceEntries = 0;
 const emptySpecs = [];
 
@@ -1232,7 +1259,7 @@ console.log(`specs dir        ${SPECS_DIR}`);
 console.log(`specs indexed    ${specsByIndex.size}`);
 console.log(`specs emitted    ${Object.keys(out).length} (${aliased} aliased to an identical entry)`);
 console.log(`iface entries    ${ifaceEntries} (canonical, aliases excluded)`);
-console.log(`methods by tier  regular=${tierTotals.regular} archive=${tierTotals.archive} debug=${tierTotals.debug} trace=${tierTotals.trace}`);
+console.log(`methods by tier  regular=${tierTotals.regular} archive=${tierTotals.archive} debug=${tierTotals.debug} trace=${tierTotals.trace} blockbook=${tierTotals.blockbook}`);
 console.log(`runnable         ${readyTotal} commands can be sent as-is`);
 console.log(`output           ${OUT_PATH} (${kb(Buffer.byteLength(json))})`);
 console.log(`no runnable      ${noRunnable.length} method lists → ${NO_RUNNABLE_PATH}`);

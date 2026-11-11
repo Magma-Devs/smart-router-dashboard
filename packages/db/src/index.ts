@@ -1,4 +1,13 @@
-export { createDb, type Database, type DbHandle, type PostgresDatabase } from "./client.js";
+export {
+  createDb,
+  DEFAULT_DB_POOL,
+  type Database,
+  type DbHandle,
+  type DbPoolOptions,
+  type DbConnectOptions,
+  isTlsServername,
+  type PostgresDatabase,
+} from "./client.js";
 export { migrate } from "./migrate.js";
 export { seedAdmin, type SeedAdminOptions, type SeedResult } from "./seed.js";
 export {

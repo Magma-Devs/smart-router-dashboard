@@ -406,6 +406,20 @@
   "DASHT": {
     "none": "no public explorer verified for this testnet"
   },
+  "DCR": {
+    "explorers": [
+      {
+        "name": "dcrdata",
+        "url": "https://dcrdata.decred.org",
+        "kind": "block",
+        "verified": "browser 2026-11-09 — /block/1000 rendered \"Block #1000\" (hash 000000…db7012, mined 2016-02-11 on mainnet)",
+        "source": "curated — dcrdata is the explorer decred.org links to"
+      }
+    ]
+  },
+  "DCRT": {
+    "none": "testnet.dcrdata.org, the testnet deployment dcrdata links to, answers 503 as of 2026-11-09 (also 503 on 2026-10-06, per lava-specs #186)"
+  },
   "DOGE": {
     "explorers": [
       {
@@ -1097,6 +1111,28 @@
         "kind": "block",
         "verified": "browser 2026-10-11 — /block/1000 rendered the requested height and network-specific block details",
         "source": "https://github.com/qtumproject/qtuminfo-api"
+      }
+    ]
+  },
+  "SC": {
+    "explorers": [
+      {
+        "name": "SiaScan",
+        "url": "https://siascan.com",
+        "kind": "block",
+        "verified": "browser 2026-11-08 — /block/1000 rendered \"Block 1,000\" (hash 000000…be0ea6, mined on mainnet)",
+        "source": "curated — the explorer app in SiaFoundation/web, whose README names siascan.com and zen.siascan.com as the deployments it powers"
+      }
+    ]
+  },
+  "SCT": {
+    "explorers": [
+      {
+        "name": "SiaScan Zen",
+        "url": "https://zen.siascan.com",
+        "kind": "block",
+        "verified": "browser 2026-11-08 — /block/1000 rendered \"Block 1,000\" under the \"siascan zen\" badge (hash 000000…e39f8a, not the mainnet block)",
+        "source": "curated — the explorer app in SiaFoundation/web, whose README names siascan.com and zen.siascan.com as the deployments it powers"
       }
     ]
   },

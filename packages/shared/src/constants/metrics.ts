@@ -30,13 +30,17 @@ export const ROUTER_METRICS = {
   protocolVersion: "smartrouter_protocol_version",
   csmBlockedProviders: "smartrouter_csm_blocked_providers",
   csmBlockedBackupProviders: "smartrouter_csm_blocked_backup_providers",
+  // {spec, apiInterface, provider_address} — 1 while the router sends the
+  // provider no traffic (none of its urls is in rotation: every url disabled
+  // after too many straight failures, or head-stalled), 0 while at least one
+  // url is. Regular and backup providers alike; republished every second.
+  csmProviderBlocked: "smartrouter_csm_provider_blocked",
   csmReportedProviders: "smartrouter_csm_reported_providers",
   csmStickySessions: "smartrouter_csm_sticky_sessions",
 } as const;
 
 /** Per-endpoint-scope metrics (label `endpoint_id` = the resolved upstream name). */
 export const ENDPOINT_METRICS = {
-  overallHealth: "rpc_endpoint_overall_health",
   latestBlock: "rpc_endpoint_latest_block",
   selectionScore: "rpc_endpoint_selection_score",
   requestsInFlight: "rpc_endpoint_requests_in_flight",
@@ -45,8 +49,9 @@ export const ENDPOINT_METRICS = {
   // the ONLY per-endpoint liveness signal that does not need relay traffic:
   // the tracker polls every configured endpoint (backups included) on the
   // chain's own block cadence, so an upstream nobody has routed to still
-  // reports whether it answers. `overallHealth` cannot do this — it is
-  // seeded optimistically at registration and only ever moved by a relay.
+  // reports whether it answers. The router's blocked gauge cannot do this —
+  // it says only whether the router took the provider out, and a provider
+  // with every url up and no traffic reads serving there.
   fetchLatestSuccess: "rpc_endpoint_fetch_latest_success",
   fetchLatestFails: "rpc_endpoint_fetch_latest_fails",
   latencyBucket: "rpc_endpoint_end_to_end_latency_milliseconds_bucket",
@@ -95,8 +100,11 @@ export const OPTIONAL_METRICS = {
   // retryable}: chain_id (NOT spec), category ∈ {internal, external}, bounded
   // error_name codes (e.g. PROTOCOL_CONNECTION_RESET). No provider label.
   errorsClassifiedTotal: "smartrouter_errors_total",
-  cacheTotalHits: "cache_total_hits",
-  cacheTotalMisses: "cache_total_misses",
+  // Cache lookups the router made and the ones a cache answered, per tier —
+  // labels {spec, apiInterface, method, cache_tier}. Published by the router
+  // on either cache backend; absent while its cache is off.
+  cacheRequestsTotal: "smartrouter_cache_requests_total",
+  cacheSuccessTotal: "smartrouter_cache_success_total",
   // Retry families - labels {spec, apiInterface, method}: NO provider and NO
   // reason. Recorded once per client REQUEST that needed an extra attempt
   // (smart-router rpcsmartrouter_server.go), so these count retried requests,

@@ -1050,6 +1050,80 @@ export interface UpstreamRelayResponse {
   transport: "http" | "ws";
 }
 
+/* ── Router relay (Try-me "via router", sent by the api) ────────────────── */
+
+/** `GET /api/config/routers`. */
+export interface RouterConfigResponse {
+  routers: RouterTopology[];
+  /** Whether this api sends the Try-me drawer's router leg
+   *  (`POST /api/routers/relay`). False, or absent from an api that has no
+   *  such route: the browser sends it. */
+  routerRelay?: boolean;
+}
+
+/**
+ * One request the api sends THROUGH a router on the Try-me drawer's behalf.
+ *
+ * Exists for a tenant whose public hostnames admit only a list of source
+ * addresses: a browser elsewhere is refused at the edge, while the api reaches
+ * the router inside the cluster. Addressed by identity, not by url: the api
+ * works the router's in-cluster address out of the mounted values file, so the
+ * caller can never point it anywhere else.
+ */
+export interface RouterRelayRequest {
+  /** As published by `GET /api/config/routers`. */
+  routerId: string;
+  /** The config api-interface whose listener to dial (`jsonrpc`, `rest`, …).
+   *  A WebSocket rides its base interface's listener: `jsonrpc` with transport
+   *  `ws` and path `/ws`. */
+  iface: string;
+  transport?: "http" | "ws";
+  httpMethod?: "GET" | "POST";
+  /** Path and query on the router: a REST call's arguments, a socket's `/ws`. */
+  path?: string;
+  body?: unknown;
+  /** Sent as `lava-select-provider`: pin the relay to this upstream. The router
+   *  reads directives on HTTP only, so the api drops it on a WebSocket. */
+  selectProvider?: string;
+  /** Sent as `lava-force-cache-refresh`: skip the router's relay cache. HTTP
+   *  only, like `selectProvider`. */
+  forceCacheRefresh?: boolean;
+}
+
+export interface RouterRelayResponse {
+  /** The ROUTER's status code. The relay answers 200 whatever the router
+   *  said; null on a WebSocket, whose reply carries no status. */
+  httpStatus: number | null;
+  /** Measured around the api→router call, inside the cluster. */
+  latencyMs: number;
+  body: unknown;
+  /** Set when the router's body exceeded the relay's size cap. */
+  truncated: boolean;
+  transport: "http" | "ws";
+  /** `Lava-Provider-Address`: the upstream(s) that served it, or `Cached`. */
+  servedBy: string | null;
+  /** `Lava-Retries`, as a count. Null when the header is absent. */
+  retries: number | null;
+  /** `Lava-Cross-Validation-Status` and the two provider lists. */
+  cvStatus: string | null;
+  cvAgreeing: string | null;
+  cvDisagreeing: string | null;
+}
+
+/** Open a WebSocket to a router listener from the api, and report whether the
+ *  upgrade was served. The drawer's "ws · online" tag, measured where the
+ *  relay will actually send from. */
+export interface RouterWsProbeRequest {
+  routerId: string;
+  iface: string;
+  /** `/ws` for jsonrpc, `/websocket` for tendermintrpc. */
+  path?: string;
+}
+
+export interface RouterWsProbeResponse {
+  online: boolean;
+}
+
 /* ── Ops Dashboard page (2-tab surface: Overview + Metrics) ──────────────── */
 
 /** One per-chain series (requests / success-rate / latency per chain). */
@@ -1172,7 +1246,7 @@ export interface DashboardData {
   failoverRatio: TimePoint[] | null;
   /** Needs internal-vs-fallback classification + failover math — null. */
   internalAvailability: TimePoint[] | null;
-  /** cache_total_hits/misses absent until the cache fires — null. */
+  /** No series is built for it; the hero card carries the cache figure — null. */
   cacheHitRate: TimePoint[] | null;
   /** Labelled error-class layers — null until node/protocol counters exist
    *  (series.errorRate carries the single derived "unclassified" layer). */

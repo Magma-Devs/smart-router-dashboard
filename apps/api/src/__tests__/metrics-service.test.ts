@@ -96,10 +96,10 @@ describe("MetricsService query construction (bug regressions)", () => {
     expect(queries.every((q) => !q.includes("consistency_success_total"))).toBe(true);
   });
 
-  it("per-chain health reads the spec-labelled ENDPOINT gauge, not the global router gauge", async () => {
+  it("per-chain health reads the spec-labelled blocked gauge, not the global router gauge", async () => {
     const { prom, queries } = capturingProm();
     await new MetricsService(prom).chains("1d");
-    expect(queries.some((q) => q === "max by (spec) (rpc_endpoint_overall_health)")).toBe(true);
+    expect(queries.some((q) => q === "1 - min by (spec) (smartrouter_csm_provider_blocked)")).toBe(true);
     // The label-less router gauge must not be used with a spec in mind:
     // it may appear alone (global health) but never filtered per chain.
     expect(queries.every((q) => !q.includes("smartrouter_overall_health{spec="))).toBe(true);
@@ -114,12 +114,12 @@ describe("MetricsService query construction (bug regressions)", () => {
     await new MetricsService(prom).dashboardSummary("1d", "ETH1");
     expect(
       queries.some((q) =>
-        q.includes('count by (endpoint_id) (rpc_endpoint_overall_health{spec="ETH1"}'),
+        q.includes('count by (endpoint_id) (label_replace(smartrouter_csm_provider_blocked{spec="ETH1"}'),
       ),
     ).toBe(true);
     // The unfiltered form is what produced the wrong count — it must be gone.
     expect(
-      queries.every((q) => !q.includes("count by (endpoint_id) (rpc_endpoint_overall_health)")),
+      queries.every((q) => !q.includes("count by (endpoint_id) (label_replace(smartrouter_csm_provider_blocked,")),
     ).toBe(true);
   });
 
@@ -127,7 +127,7 @@ describe("MetricsService query construction (bug regressions)", () => {
     const { prom, queries } = capturingProm();
     await new MetricsService(prom).dashboardSummary("1d", "ETH1");
     expect(
-      queries.some((q) => q.includes('max by (spec) (rpc_endpoint_overall_health{spec="ETH1"}')),
+      queries.some((q) => q.includes('1 - min by (spec) (smartrouter_csm_provider_blocked{spec="ETH1"}')),
     ).toBe(true);
     // The label-less router gauge answers "is the deployment healthy", which is
     // the wrong question once a chain is selected.
@@ -139,7 +139,7 @@ describe("MetricsService query construction (bug regressions)", () => {
     await new MetricsService(prom).dashboardSummary("1d");
     // selector({ spec: undefined }) collapses to "" — no empty `{}` selector.
     expect(
-      queries.some((q) => q === "count by (endpoint_id) (rpc_endpoint_overall_health)"),
+      queries.some((q) => q === 'count by (endpoint_id) (label_replace(smartrouter_csm_provider_blocked, "endpoint_id", "$1", "provider_address", "(.*)"))'),
     ).toBe(true);
     expect(queries.some((q) => q === "smartrouter_overall_health")).toBe(true);
   });
@@ -196,7 +196,7 @@ describe("MetricsService · latency with no chain selected reads all chains as o
 // spec label.
 describe("MetricsService.overview · per-chain panels read grouped series (MAG-4294)", () => {
   const perSpecP50 = "histogram_quantile(0.5, sum by (spec, le) (rate(smartrouter_end_to_end_latency_milliseconds_bucket";
-  const perSpecHealth = "max by (spec) (rpc_endpoint_overall_health";
+  const perSpecHealth = "1 - min by (spec) (smartrouter_csm_provider_blocked";
   const perSpecTrend = "sum by (spec) (rate(smartrouter_end_to_end_latency_milliseconds_count";
   const row = (spec: string, v: string): PromVectorSample => ({ metric: { spec }, value: [1, v] });
 
@@ -242,7 +242,7 @@ describe("MetricsService.overview · per-chain panels read grouped series (MAG-4
     const data = await new MetricsService(prom).overview("1h", "ETH1");
     expect(queries.find((q) => q.startsWith(perSpecP50))).toContain('{spec="ETH1"}[3600s]');
     expect(queries.find((q) => q.startsWith(perSpecHealth))).toBe(
-      'max by (spec) (rpc_endpoint_overall_health{spec="ETH1"})',
+      '1 - min by (spec) (smartrouter_csm_provider_blocked{spec="ETH1"})',
     );
     expect(ranges.find((q) => q.startsWith(perSpecTrend))).toBe(
       // Never a rate over less than a minute: a 30-second range misses series whose scrapes don't land twice in it.
@@ -297,8 +297,34 @@ describe("MetricsService.dashboardSummary · one round of reads (MAG-4322)", () 
     expect(issued.filter((q) => q.startsWith(PRESENCE))).toHaveLength(3);
     const reads = issued.filter((q) => !q.startsWith(PRESENCE));
     expect(reads.filter((q) => q.includes("smartrouter_retries_success_total"))).toHaveLength(2);
-    expect(reads.filter((q) => q.includes("cache_total_hits"))).toHaveLength(2);
+    expect(reads.filter((q) => q.includes("smartrouter_cache_success_total"))).toHaveLength(2);
     expect(reads.filter((q) => q.includes("smartrouter_consistency_failed_total"))).toHaveLength(2);
+    release();
+    await pending;
+  });
+
+  it("the cache card divides hits on both tiers by the primary tier's lookups", async () => {
+    const { prom, issued, release } = gatedProm(() => 1);
+    const pending = new MetricsService(prom).dashboardSummary("6h");
+    await Promise.resolve();
+    expect(issued).toContain(`count({__name__="smartrouter_cache_requests_total"})`);
+    expect(issued).toContain(
+      'sum(increase(smartrouter_cache_success_total[21600s])) / sum(increase(smartrouter_cache_requests_total{cache_tier="primary"}[21600s]))',
+    );
+    expect(issued).toContain(
+      'sum(increase(smartrouter_cache_success_total[21600s] offset 21600s)) / sum(increase(smartrouter_cache_requests_total{cache_tier="primary"}[21600s] offset 21600s))',
+    );
+    release();
+    await pending;
+  });
+
+  it("with a chain selected, the cache card's tier matcher joins the chain's", async () => {
+    const { prom, issued, release } = gatedProm(() => 1);
+    const pending = new MetricsService(prom).dashboardSummary("6h", "ETH1");
+    await Promise.resolve();
+    expect(issued).toContain(
+      'sum(increase(smartrouter_cache_success_total{spec="ETH1"}[21600s])) / sum(increase(smartrouter_cache_requests_total{spec="ETH1",cache_tier="primary"}[21600s]))',
+    );
     release();
     await pending;
   });
@@ -749,9 +775,9 @@ describe("MetricsService · chain-level figures read grouped series (MAG-4295)",
     if (expr.startsWith("clamp_max(sum by (spec) (increase(smartrouter_requests_success_total")) return [row({ spec: "ETH1" }, "0.995")];
     if (expr.startsWith("histogram_quantile(0.95, sum by (spec, le)")) return [row({ spec: "ETH1" }, "42"), row({ spec: "SOLANA" }, "NaN")];
     if (expr.startsWith("avg by (spec) (rpc_endpoint_selection_score")) return [row({ spec: "ETH1" }, "0.9")];
-    if (expr === "max by (spec) (rpc_endpoint_overall_health)") return [row({ spec: "ETH1" }, "1"), row({ spec: "SOLANA" }, "0")];
+    if (expr === "1 - min by (spec) (smartrouter_csm_provider_blocked)") return [row({ spec: "ETH1" }, "1"), row({ spec: "SOLANA" }, "0")];
     if (expr === "max by (spec) (smartrouter_latest_block)") return [row({ spec: "ETH1" }, "100")];
-    if (expr === "count by (spec, endpoint_id) (rpc_endpoint_overall_health)") {
+    if (expr === 'count by (spec, endpoint_id) (label_replace(smartrouter_csm_provider_blocked, "endpoint_id", "$1", "provider_address", "(.*)"))') {
       return [row({ spec: "ETH1", endpoint_id: "a" }, "1"), row({ spec: "ETH1", endpoint_id: "b" }, "1"), row({ endpoint_id: "orphan" }, "1")];
     }
     return undefined;
@@ -833,7 +859,7 @@ describe("MetricsService.pulse · the topbar reads six series, not the overview 
   it("under a chain filter reads that chain's endpoint gauge and RPS, like the hero", async () => {
     const { prom, queries } = capturingProm();
     await new MetricsService(prom).pulse("ETH1");
-    expect(queries).toContain('max by (spec) (rpc_endpoint_overall_health{spec="ETH1"})');
+    expect(queries).toContain('1 - min by (spec) (smartrouter_csm_provider_blocked{spec="ETH1"})');
     expect(queries).toContain('sum(rate(smartrouter_end_to_end_latency_milliseconds_count{spec="ETH1"}[5m]))');
     expect(queries.every((q) => q !== "smartrouter_overall_health")).toBe(true);
   });

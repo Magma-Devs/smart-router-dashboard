@@ -5,7 +5,7 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
-## [0.53.0]
+## [0.59.0]
 
 ### Changed
 
@@ -41,6 +41,232 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 - **One word for the provider.** "Node error" is now **Provider error**, the
   upstream filters read "All providers", and the Upstreams tab's errors chart
   says "Provider errors".
+
+## [0.58.0]
+
+### Added
+
+- **Try-me's "via router" leg goes through the api.** A deployment can admit
+  only a list of source addresses at its public hostnames, and a browser
+  anywhere else is refused before the router sees the request, so Send, the
+  WebSocket `online` check and **Compare both** failed for anyone off the
+  list. The drawer now calls `POST /api/routers/relay`, and the api sends the
+  request to the router's listener inside the deployment: on a helm mount the
+  router's Service (`<id>-router`, on the chart's `300<N>` port), on an
+  SR_CONFIG mount `ROUTER_RELAY_HOST` and the listen port. The caller names a
+  router and an interface, never a url; only `lava-select-provider` and
+  `lava-force-cache-refresh` are forwarded; the router's `Lava-*` telemetry
+  comes back in the JSON. `POST /api/routers/ws-probe` answers the WebSocket
+  check from the same place. The address bar keeps the public url and gains a
+  `sent from server` tag, so a working Try-me is no proof that the viewer's
+  own address gets through. Settings: `ROUTER_RELAY_ENABLED`,
+  `ROUTER_RELAY_HOST`, `ROUTER_RELAY_TIMEOUT_MS`,
+  `ROUTER_RELAY_MAX_BODY_BYTES`, `ROUTER_RELAY_RATE_LIMIT_MAX`,
+  `ROUTER_RELAY_MAX_IN_FLIGHT`. See `docs/ROUTER-RELAY.md`.
+- **It is on in both auth modes.** With accounts on, any signed-in role may
+  use it. With accounts off the api answers anyone who can reach it, so anyone
+  who can reach the api can send requests through the routers, past an address
+  list at their edge. `ROUTER_RELAY_ENABLED=false` turns both routes off and
+  the drawer sends from the browser, as it did before this release.
+- **Upgrading an SR_CONFIG deployment:** the api has to reach the router at
+  `ROUTER_RELAY_HOST` (default `localhost`; the compose stacks set `router`).
+  Where it cannot, every Send answers 502: set the host, or set
+  `ROUTER_RELAY_ENABLED=false`. A helm deployment needs nothing: the api dials
+  each router's Service in its own namespace.
+
+## [0.57.0]
+
+### Added
+
+- **The Postgres pool is configurable: `DB_POOL_MAX` and `DB_IDLE_TIMEOUT_S`.**
+  Both default to what the api always ran with (20 connections, each closed
+  after 30 s idle), so a deployment that sets neither is unchanged. Every
+  authenticated request takes a connection for the session join, so the pool
+  bounds a backend's concurrency and, summed over a deployment's backends,
+  what its Postgres has to admit: the fleet runs one backend per node against
+  a shared instance and sets the pool per backend from that instance's
+  connection budget. `DB_IDLE_TIMEOUT_S=0` keeps idle connections for the life
+  of the process; the first request after an idle close pays for a new
+  connection (TCP, TLS and three SCRAM legs). A value that is not a whole
+  number in range refuses the boot, naming the variable, rather than quietly
+  becoming the default (`readDbPoolOptions` in `config.ts`; `createDb` in
+  `@sr/db` takes the same options and refuses a pool of nothing).
+  `db-pool.test.ts` and `packages/db`'s `client.test.ts` pin both.
+- **`DB_TLS_SERVERNAME` verifies the server certificate against a name of
+  its own.** The fleet keeps its Postgres private and reaches it through a
+  Cloudflare Tunnel: a cloudflared sidecar listens on `127.0.0.1:5432` in the
+  pod, so `DATABASE_URL` names the loopback address while the TLS session
+  still ends on RDS, whose certificate names the endpoint. For an IP address
+  the driver sends no server name and Node checks the certificate against
+  `localhost`, so `sslmode=verify-full` alone refuses every connection through
+  the sidecar (and would accept a certificate that names `localhost`). Set, the
+  driver gets `ssl: { servername }`: TLS is always on, the chain is checked
+  against the trusted CAs (`NODE_EXTRA_CA_CERTS` for the RDS bundle) and the
+  certificate must name exactly that host — `sslmode=verify-full` with the
+  name supplied — whatever the URL's own `sslmode` says. Unset, nothing
+  changes. A value that is not a DNS name (a scheme, a port, an IP address)
+  refuses the boot, naming the variable, because the driver would accept it
+  and every connection would then fail its name check, which reads like an
+  outage. `createDb` takes it as `tlsServername`; the same two test files
+  pin it.
+- **`GET /health/ready` checks the database under `AUTH_MODE=enabled`.** The
+  probe pinged Prometheus only, so a backend whose database was unreachable
+  was Ready while every authenticated request answered 503 — the gate fails
+  closed by design (`plugins/auth.ts`). It now also runs `select 1`, within
+  3 s, and reports `components.database` as `ok`, `not_connected` (the lazy
+  connect loop has not succeeded: Postgres unreachable, the credential
+  refused, or migrations still running), `query_failed` or `timeout`;
+  anything but `ok` is a 503. On the fleet's surge-first rollout that makes
+  the order of a credential change mechanical: a new pod that cannot reach
+  its database never replaces the one serving. With auth off the body carries
+  no `database` key, as before. Give the probe a timeout of 5 s or more.
+  `health-ready.test.ts` pins every state.
+
+### Fixed
+
+- **A connect attempt that fails closes its pool.** With auth on, the api
+  retries the database every 2 s at first. An attempt can fail after it
+  connected (a migration that lost a race, or one the role may not run), and
+  its pool then kept that connection for the idle timeout while the next
+  attempt opened another. Against a role with a connection limit of 7 a
+  backend that could not migrate held all 7 within 25 s, which leaves none
+  for the backends serving on the same role. Each failed attempt now closes
+  its pool before the next opens one; the same backend holds none between
+  attempts. `db-connect-loop.test.ts` pins it.
+- **The api's log says why the database refused.** The retry line and the
+  readiness warning carried the ORM's message alone, `Failed query: <sql>`,
+  which reads the same for a wrong password, a database that does not exist,
+  nothing listening on the address and a certificate that names another
+  host. Both now carry `reason`: the driver's code and message, for example
+  `28P01: password authentication failed for user "acme"` or
+  `ECONNREFUSED: connect ECONNREFUSED 127.0.0.1:5432`. The readiness body is
+  unchanged.
+
+## [0.56.0]
+
+### Changed
+
+- **"Cache offload" reads the router's own cache series** (MAG-5087). The
+  card was computed from `cache_total_hits` and `cache_total_misses`, which
+  only the router's cache pod publishes, so a deployment whose routers keep
+  their cache in a RESP store (Valkey, Redis) showed "cache not enabled on
+  this build". It now divides `smartrouter_cache_success_total` on both
+  tiers by `smartrouter_cache_requests_total` on the primary tier. Every
+  router publishes those on either cache backend, from v1.5.0.
+
+  The card keeps its meaning: answers served from a cache over cache
+  lookups. It now follows the router filter as well as the chain filter,
+  because each router reports its own lookups. The cache pod's counters are
+  shared by every router.
+
+## [0.55.0]
+
+### Added
+
+- **Decred arrived upstream** (MAG-5052). lava-specs added `dcr.json`: `DCR`
+  is the mainnet and `DCRT` testnet3, which imports it. Both serve dcrd's
+  JSON-RPC only. dcrd descends from btcd and shares bitcoind's method names,
+  so Try-it opens on the same seven bitcoind-style defaults
+  (`getblockchaininfo`, `getblockcount`, `getbestblockhash`,
+  `getblockhash [800000]`, `getnetworkinfo`, `getmempoolinfo`,
+  `getdifficulty`). All seven answered on a live mainnet node in the
+  maintainer run on lava-specs #186. Height 800000 exists on both networks:
+  mainnet is past 1,130,000, and dcrd's testnet3 assume-valid block is
+  1,780,540. No keyless dcrd RPC exists, so no Decred-only defaults were
+  added. The ticket-pool and treasury methods are listed without one.
+
+  Decred has its own `decred` family. Its spec does not import BTC and serves
+  no `eth_*`, so the map generator labelled it EVM through its last-resort
+  fallback, as it did Kaspa and Siacoin. The ticket-pool methods only
+  Decred's proof-of-stake serves now identify it.
+
+  `decred.svg` is web3icons' `tokens/mono/DCR` glyph on the source's
+  `#2970FF`. White reaches 4.32:1, so the glyph stays white. The testnet
+  resolves to the same file.
+  - **mainnet:** dcrdata (`dcrdata.decred.org/block/<height>`), the explorer
+    decred.org links to. Its block page was watched rendering "Block #1000",
+    mined 2016-02-11.
+  - **testnet:** none. `testnet.dcrdata.org`, the deployment dcrdata links
+    to, answers 503, as it did when the spec was written. The gap is recorded
+    in the overlay.
+
+  298 chains, 254 with an explorer, 207 primaries linking a height.
+
+## [0.54.0]
+
+### Added
+
+- **Try it: a Blockbook request type** (MAG-5032). lava-specs #202 put the
+  15 Blockbook `bb_*` methods in a `blockbook` add-on collection on BTC's
+  JSON-RPC interface, inherited by every spec that imports BTC: 18 specs,
+  including BCH, LTC, DOGE, DASH, ZCASH, Qtum, Pepecoin and their testnets.
+  The drawer now offers them as a **Blockbook** request type, on routers whose
+  upstream declares `addons: ["blockbook"]` and nowhere else. A router without
+  one answers every `bb_*` call "No Providers For Addon".
+
+  The tier opens on `bb_getBlockHash ["0"]`, the exact call the spec's
+  `enabled` verification sends, so every node admitted to the add-on has
+  answered it. The other 14 take an address, xpub, txid, block or timestamp,
+  so they are marked as needing params. Each description gives the argument
+  shape from QuickNode's method pages, since QuickNode is the one vendor that
+  serves Blockbook over JSON-RPC.
+
+### Fixed
+
+- **Method names keep a plural acronym whole.** AVAX's `getUTXOs` read as
+  "Get UTX Os", and NFTs, CIDs, CSRs and chain IDs split the same way, in 10
+  catalog ids (Cosmos `NFTs`, Filecoin's `StateActorCodeCIDs`, …). They now
+  read "Get UTXOs", "NFTs" and "State Actor Code CIDs".
+
+## [0.53.0]
+
+### Added
+
+- **Siacoin arrived upstream** (MAG-5031). lava-specs added `sc.json`: `SC`
+  is the mainnet and `SCT` the Zen testnet, which imports it. Both serve
+  walletd's REST API only. Try-it opens on `/api/consensus/network`, one of
+  eight GETs that run as-is. The 14 routes that take an address, id or height
+  are marked as needing input, and the 8 POST routes are left unmarked, like
+  every REST POST.
+
+  Siacoin has its own `siacoin` family. Its paths sit under a bare `/api/`
+  prefix that names no ecosystem, so the map generator labelled it EVM through
+  its last-resort fallback, as it once did Kaspa. walletd's consensus and v2
+  txpool routes now identify it.
+
+  `siacoin.svg` is web3icons' `tokens/mono/SC` glyph on the source's
+  `#15D47B`. White reaches only 1.96:1 on that green, so the glyph is `#111`.
+  The testnet resolves to the same file. Both explorers come from the Sia
+  Foundation's own explorer app, and both block pages were watched rendering
+  height 1000:
+  - **mainnet:** SiaScan (`siascan.com/block/<height>`)
+  - **testnet:** SiaScan Zen (`zen.siascan.com/block/<height>`), which shows
+    a different block 1000 from mainnet, under its "zen" badge
+
+  The registry snapshot was refreshed, and it moved two chains. Arc Testnet's
+  explorer is now Arc Explorer (`explorer.testnet.arc.io`) instead of Arcscan.
+  Robinhood Chain lost robinscan, so Blockscout is its primary and hoodscan
+  its second.
+
+  The BTC Blockbook `bb_*` methods that lava-specs added in the same window
+  sit in a `blockbook` add-on collection. Try-it has no tier for that add-on
+  (nor for `blockdaemon`), so the drawer does not offer them and the catalog
+  did not move.
+
+  296 chains, 253 with an explorer, 206 primaries linking a height.
+
+### Changed
+
+- **Upstream state reads the router's own blocked gauge.** Status, the chain
+  health colour, "chains fully down", the hero health and the upstream count
+  read `smartrouter_csm_provider_blocked` (1 while the router sends a provider
+  no traffic because none of its urls is in rotation, 0 while at least one is)
+  instead of `rpc_endpoint_overall_health`, which dropped to 0 on a single
+  failed request and stayed there until that same url answered again, so a
+  provider with one failing url and one serving url read Unhealthy while it
+  served. The block polls still decide for a provider nobody routes to. A
+  backup provider appears in the gauge from smart-router MAG-4735 on; before
+  that its Status comes from the polls alone.
 
 ## [0.51.1]
 

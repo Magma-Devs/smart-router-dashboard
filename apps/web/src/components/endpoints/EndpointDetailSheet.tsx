@@ -202,10 +202,10 @@ export function EndpointDetailSheet({ open, ep, onClose, upstreams }: {
                 })()
               ) : (
                 /* Read mode - the config's upstream nodes, one line per url
-                   with that url's add-ons. No health tag: it read the
-                   router's rpc_endpoint_overall_health, which starts healthy
-                   and moves only when a relay fails, so an upstream with no
-                   traffic read Operational however broken it was. No
+                   with that url's add-ons. No health tag: the router's
+                   per-provider state (smartrouter_csm_provider_blocked) says
+                   only whether the router took the provider out, so a url
+                   nobody routes to would read Operational however broken. No
                    interface chip either - it repeated the sheet's own.
                    minmax(0, 1fr): an auto column grows to the widest line
                    that can't wrap and pushes the rows past the sheet's edge. */
