@@ -57,7 +57,8 @@ export type AuditGroup = (typeof AUDIT_GROUPS)[number];
 export const AUDIT_GROUP_FALLBACK = "unclassified";
 
 /** Which ticket emits an event. Provenance for the docs; drives no behaviour. */
-export type AuditOrigin = "MAG-2729" | "MAG-2730" | "MAG-2731" | "MAG-2770" | "MAG-4403";
+export type AuditOrigin =
+  "MAG-2729" | "MAG-2730" | "MAG-2731" | "MAG-2770" | "MAG-4403" | "MAG-2869";
 
 export interface AuditEventSpec {
   readonly group: AuditGroup;
@@ -254,6 +255,16 @@ export const AUDIT_EVENTS = {
     carriesChanges: false,
     carriesAccessContext: true,
     origin: "MAG-2730",
+  },
+  // Its own row because `2fa.reset` commits in the reset's transaction, before
+  // the email is attempted, and a row cannot be amended afterwards.
+  "2fa.reset_notice": {
+    group: "2fa",
+    description:
+      "The email telling someone their two-factor authentication was reset: whether it was sent, and if not, why. Managed deployments only; on-prem sends no email, and the 2fa.reset row naming both people is the record there.",
+    carriesChanges: false,
+    carriesAccessContext: false,
+    origin: "MAG-2869",
   },
 
   // ── Recovery ──────────────────────────────────────────────────────────────
