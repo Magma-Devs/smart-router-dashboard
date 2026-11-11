@@ -69,6 +69,33 @@ export function methodOf(received: RouterLine | undefined, others: RouterLine[] 
   return redacted ? METHOD_REDACTED : "unknown";
 }
 
+/** How much of a request body a report carries. */
+const REQUEST_BODY_MAX = 2000;
+/** What the router writes where it cut a long body short. */
+const TRUNCATED = "...truncated...";
+
+/**
+ * What the client sent, off the "received" line: the body as the router
+ * logged it and the path. The router cuts a long body short, which breaks
+ * its JSON - `cut` says so. The line also carries the client's headers; they
+ * hold credentials and are never read.
+ */
+export function requestOf(received: RouterLine): { path: string | null; body: string | null; cut: boolean } {
+  const rawPath = str(received.f.path);
+  const path = rawPath && rawPath !== REDACTED ? rawPath : null;
+  const raw = str(received.f.body).trim();
+  if (!raw) return { path, body: null, cut: false };
+  // The router cuts a long body in the middle and marks the cut; a cut can
+  // also land in a string and leave the JSON valid, so the marker decides.
+  let cut = raw.includes(TRUNCATED);
+  try {
+    JSON.parse(raw);
+  } catch {
+    cut ||= raw.startsWith("{") || raw.startsWith("[");
+  }
+  return { path, body: scrubUrls(raw).slice(0, REQUEST_BODY_MAX), cut };
+}
+
 /** What a log collector that masks paths leaves of one (the fleet's does). */
 const REDACTED = "/REDACTED";
 /** The method of a REST request whose path the collector masked. */

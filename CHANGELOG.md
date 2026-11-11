@@ -21,6 +21,14 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
     never an empty list, a 100% error rate or "not emitted".
   - Windows longer than a day sample the counters instead of reading every
     scrape, and show no latency: that read is too heavy for a shared store.
+- **Uptime counted in minutes** on the Providers tab (MAG-4257). A minute is
+  down when half or more of a provider's tries on a chain failed; it replaces
+  the router's health gauge, which starts healthy and only moves with traffic,
+  so an idle or disabled upstream read 100%. Windows up to a day.
+- **The provider report follows the customer's outreach template** (MAG-4258):
+  the same fields in the same order, times in the reader's time zone, and an
+  example's raw request, the provider's reply and its `x-request-id` where the
+  router logged them.
 - **Provider report and CSV export** (MAG-4258). "Report" on a chain row
   builds the text for a complaint to that provider: counts for the range,
   first and last failure and example requests from the router's logs, and

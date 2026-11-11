@@ -73,8 +73,10 @@ export function ProviderReportSheet({ target, timeWindow, onClose }: {
     return { from: to - WINDOWS[timeWindow].rangeSeconds * 1000, to };
   });
   const [draft, setDraft] = useState(range);
+  // The report's times in the reader's own zone, as the customer's outreach template writes them.
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const q = target
-    ? `provider=${encodeURIComponent(target.providerId)}&spec=${encodeURIComponent(target.spec)}&from=${range.from}&to=${range.to}${scopeQ}`
+    ? `provider=${encodeURIComponent(target.providerId)}&spec=${encodeURIComponent(target.spec)}&from=${range.from}&to=${range.to}&tz=${encodeURIComponent(tz)}${scopeQ}`
     : null;
   const res = useApi<ProviderReport>(q ? `/api/providers/report?${q}` : null, 0);
   const r = res.data;

@@ -19,6 +19,13 @@ function fakeProm(present: string[], down?: (q: string) => boolean): { prom: Pro
       return present.includes(name) ? [v({}, 1)] : [];
     }
     if (q.includes("by (provider_address, spec, method)")) return [];
+    // Down minutes, then minutes with traffic, per (node × chain).
+    if (q.includes("(sum_over_time(")) {
+      return [v({ provider_address: "tatum", spec: "ETH1" }, 30), v({ provider_address: "tatum", spec: "SOLANA" }, 0)];
+    }
+    if (q.includes("(count_over_time(")) {
+      return [v({ provider_address: "tatum", spec: "ETH1" }, 1440), v({ provider_address: "tatum", spec: "SOLANA" }, 1440)];
+    }
     if (q.startsWith("sum by (provider_address, spec) (increase(smartrouter_requests_total")) {
       return [
         v({ provider_address: "tatum", spec: "ETH1" }, 1000),
@@ -210,6 +217,32 @@ describe("ProvidersService.list", () => {
     const probe = (q: string) => q.startsWith("count({__name__=") && q.includes("rate_limit_holdoffs");
     const probed = fakeProm(ALL, probe);
     await expect(new ProvidersService(probed.prom, null, new MetricsService(probed.prom), []).list("1d")).rejects.toBeInstanceOf(StoreReadError);
+  });
+
+  // The PRD's rule, not the health gauge: an idle or disabled upstream reads
+  // 100% on the gauge, because only traffic ever moves it.
+  it("uptime: a minute is down when half its tries failed, each chain's minute counting once", async () => {
+    const { prom, queries } = fakeProm(ALL);
+    const report = await new ProvidersService(prom, null, new MetricsService(prom)).list("1d");
+    const tatum = report.providers.find((p) => p.id === "tatum")!;
+    // 30 down of 2 × 1,440 chain-minutes.
+    expect(tatum.downMinutes).toBe(30);
+    expect(tatum.uptime).toBeCloseTo(1 - 30 / 2880);
+    expect(report.uptimeRead).toBe(true);
+    const down = queries.find((q) => q.includes("(sum_over_time("))!;
+    expect(down).toContain(">= bool 0.5)[86400s:1m]");
+    // A node that never succeeded has no success series: it reads as zero successes.
+    expect(down).toContain("or sum by (provider_address, spec) (increase(smartrouter_requests_total[1m])) * 0");
+    const detail = await new ProvidersService(prom, null, new MetricsService(prom)).detail("tatum", "1d");
+    expect(detail.chains.find((c) => c.spec === "ETH1")).toMatchObject({ downMinutes: 30, trafficMinutes: 1440 });
+  });
+
+  it("uptime isn't read past a day - it needs every minute", async () => {
+    const { prom, queries } = fakeProm(ALL);
+    const report = await new ProvidersService(prom, null, new MetricsService(prom)).list("7d");
+    expect(queries.some((q) => q.includes("(sum_over_time(") || q.includes("(count_over_time("))).toBe(false);
+    expect(report.uptimeRead).toBe(false);
+    expect(report.providers.every((p) => p.uptime === null && p.downMinutes === null)).toBe(true);
   });
 
   it("at most four reads are out at once", async () => {

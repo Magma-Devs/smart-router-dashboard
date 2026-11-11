@@ -4,7 +4,7 @@ import { buildApp } from "../app.js";
 import { buildErrorRows, ErrorRequestsService } from "../services/error-requests.js";
 import { readRange } from "../services/read-range.js";
 import type { RouterTopology } from "@sr/shared";
-import { CANCELLED_NOTE, METHOD_REDACTED, methodOf, onChain, ownRow, parseRouterLine, scrubUrls, UpstreamIndex, type RouterLine, type UpstreamInfo } from "../services/router-log.js";
+import { CANCELLED_NOTE, METHOD_REDACTED, methodOf, onChain, ownRow, parseRouterLine, requestOf, scrubUrls, UpstreamIndex, type RouterLine, type UpstreamInfo } from "../services/router-log.js";
 import type { LokiClient, LokiLine } from "../services/loki-client.js";
 import type { ConfigurationService } from "../services/configuration.js";
 
@@ -230,6 +230,20 @@ describe("requests that hit an error, from the router's log lines", () => {
     ]);
     expect(r?.result).toBe("error-reply");
     expect(r?.resolvedBy).toBe("eth-primary");
+  });
+
+  it("what the client sent comes only when asked for, never the client's headers, and a body the router cut says so", () => {
+    expect(rowsOf(BACKUP_RATE_LIMITED)[0]?.request).toBeUndefined();
+    const asked = buildErrorRows(parse(BACKUP_RATE_LIMITED), indexOf(UPSTREAMS), false, { request: true })[0];
+    expect(asked?.request).toEqual({ path: "/", body: '{"method":"eth_call","params":[{"to":"0x00"},"pending"],"id":1,"jsonrpc":"2.0"}', cut: false });
+    // The router cuts long bodies in the middle and marks it, sometimes inside a string where the JSON stays valid.
+    const long = '{"method":"eth_call","params":[{"to":"0x00","input":"0xab...truncated...cd"},"latest"],"id":1}';
+    const received = parseRouterLine(at(1, { GUID: "1", path: "/", body: long, headers: "{X-Origin-Auth:[secret]}", message: RECEIVED }))!;
+    expect(requestOf(received)).toEqual({ path: "/", body: long, cut: true });
+    expect(JSON.stringify(requestOf(received))).not.toContain("secret");
+    // A path the log collector masked is no path.
+    expect(requestOf(parseRouterLine(at(1, { GUID: "1", path: "/REDACTED", message: "Consumer received a new REST non-POST request" }))!))
+      .toEqual({ path: null, body: null, cut: false });
   });
 
   it("an error reply keeps what the upstream sent back: its own request ID and the body - a try with no reply has neither", () => {

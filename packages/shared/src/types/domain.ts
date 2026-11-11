@@ -615,6 +615,14 @@ export interface ErrorRequestRow {
   totalMs: number | null;
   /** The router's own error, for `failed`. */
   error: string | null;
+  /**
+   * What the client sent, as the router logged it - only on a read that asks
+   * for it (the provider report). `body` is cut short past a few hundred
+   * characters by the router's log (`cut`); `path` is null where the log
+   * collector masked it. The client's headers are never read: they carry
+   * credentials.
+   */
+  request?: { path: string | null; body: string | null; cut: boolean };
 }
 
 /** Why the router's logs couldn't be read: no log store configured, or it didn't answer in time. */
@@ -1069,8 +1077,16 @@ export interface ProviderSummary {
   p95Ms: number | null;
   /** Rate-limit hold-offs recorded in the window. Null when the family isn't emitted. */
   rateLimitHits: number | null;
-  /** Mean of the router's health gauge over the window, 0..1 — health-check uptime, not SLA uptime. */
+  /** Mean of the router's health gauge over the window, 0..1. Not shown: the gauge starts healthy and only traffic moves it, so an idle upstream reads 100%. */
   healthUptime: number | null;
+  /**
+   * Uptime, 0..1: of every minute it served one of your chains, the share where
+   * at least half its tries there succeeded. Each chain's minute counts once.
+   * Null past a day (`uptimeRead`) or with no traffic.
+   */
+  uptime: number | null;
+  /** Minutes, summed over its chains, where half or more of its tries failed. */
+  downMinutes: number | null;
   /** Any of its nodes blocked from routing right now. Null when the family isn't emitted. */
   blockedNow: boolean | null;
 }
@@ -1085,6 +1101,8 @@ export interface ProvidersReport {
   peakWindowSec: number;
   /** False on a window longer than a day: latency isn't read there (too heavy a read for a shared store), so every `p95Ms` is null. */
   latencyRead: boolean;
+  /** False on a window longer than a day: uptime needs every minute of it, so `uptime` and `downMinutes` are null. */
+  uptimeRead: boolean;
 }
 
 export interface ProviderChainStats {
@@ -1105,6 +1123,11 @@ export interface ProviderChainStats {
   /** Null when the family isn't emitted or the series carries no chain label. */
   rateLimitHits: number | null;
   healthUptime: number | null;
+  /** Uptime on this chain, 0..1 - see `ProviderSummary.uptime`. */
+  uptime: number | null;
+  downMinutes: number | null;
+  /** Minutes in the window it served this chain at all. */
+  trafficMinutes: number | null;
   blockedNow: boolean | null;
 }
 
@@ -1130,6 +1153,8 @@ export interface ProviderDetailReport {
   methodLatency: boolean;
   /** False on a window longer than a day: latency isn't read there, so every p50/p95/p99 is null. */
   latencyRead: boolean;
+  /** False on a window longer than a day: uptime isn't read there. */
+  uptimeRead: boolean;
   families: ProviderFamilies;
 }
 
@@ -1171,7 +1196,11 @@ export interface ProviderReport {
     providerRequestId: string | null;
     /** The provider's reply as logged, when it replied. */
     response: string | null;
+    /** What the client sent, as the router logged it; null when its log has no request line. */
+    request: { path: string | null; body: string | null; cut: boolean } | null;
   }[];
+  /** The time zone the text's times are in (IANA name), "UTC" when none was asked for. */
+  timeZone: string;
   logs: "ok" | "unconfigured" | "unreachable";
   problem: string;
   /** Plain text, one field per line — what the customer pastes. */

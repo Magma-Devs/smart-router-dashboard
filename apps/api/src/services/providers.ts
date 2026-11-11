@@ -83,6 +83,16 @@ export const bucketsRange = (sec: number): string => sampledRange(sec, 10_800, 9
 export const LATENCY_MAX_SEC = 86_400;
 export const latencyReadFor = (window: MetricWindow): boolean => WINDOWS[window].rangeSeconds <= LATENCY_MAX_SEC;
 
+/**
+ * Uptime, the PRD's way: a minute is down when half or more of a provider's
+ * tries on a chain failed. Read per minute, so only up to a day - a week of
+ * minutes for every upstream is the read that is too heavy for a shared store.
+ */
+export const UPTIME_MAX_SEC = 86_400;
+export const uptimeReadFor = (window: MetricWindow): boolean => WINDOWS[window].rangeSeconds <= UPTIME_MAX_SEC;
+/** A minute is down when at least this share of the tries in it failed. */
+const DOWN_SHARE = 0.5;
+
 /** Block lag is a "now" figure whatever the page's window, so the roster behind it is read over a short one. */
 const LAG_WINDOW: MetricWindow = "5m";
 
@@ -128,6 +138,11 @@ interface NodeCounts {
   protocolErrors: number | null;
 }
 
+interface Minutes {
+  down: number;
+  traffic: number;
+}
+
 interface Loaded {
   fam: ProviderFamilies;
   cfg: ReturnType<ProvidersService["configIndex"]>;
@@ -137,6 +152,8 @@ interface Loaded {
   health: Map<string, number>;
   holdoffs: PromVectorSample[] | null;
   blocked: Map<string, boolean> | null;
+  /** Per (node × chain); null past a day. */
+  minutes: Map<string, Minutes> | null;
 }
 
 export class ProvidersService {
@@ -345,6 +362,33 @@ export class ProvidersService {
     return new Map(rows.map((s) => [key(s.metric.endpoint_id ?? "", s.metric.spec ?? ""), num(s)]));
   }
 
+  /**
+   * Down minutes and minutes with traffic per (node × chain), counted by the
+   * store at a one-minute step. A node with no successful try at all has no
+   * success series, so the failed share reads it as zero successes, not as
+   * no data.
+   */
+  private async minutes(window: MetricWindow): Promise<Map<string, Minutes> | null> {
+    if (!uptimeReadFor(window)) return null;
+    const r = `${WINDOWS[window].rangeSeconds}s`;
+    const by = "sum by (provider_address, spec)";
+    const tries = `${by} (increase(${ROUTER_METRICS.requestsTotal}[1m]))`;
+    const ok = `${by} (increase(${ROUTER_METRICS.requestsSuccessTotal}[1m]))`;
+    const [down, traffic] = await Promise.all([
+      this.read(`${by} (sum_over_time(((${tries} - (${ok} or ${tries} * 0)) / ${tries} >= bool ${DOWN_SHARE})[${r}:1m]))`),
+      this.read(`${by} (count_over_time((${tries} > 0)[${r}:1m]))`),
+    ]);
+    const out = new Map<string, Minutes>();
+    for (const s of traffic) {
+      out.set(key(s.metric.provider_address ?? "", s.metric.spec ?? ""), { down: 0, traffic: Math.round(num(s)) });
+    }
+    for (const s of down) {
+      const row = out.get(key(s.metric.provider_address ?? "", s.metric.spec ?? ""));
+      if (row) row.down = Math.min(row.traffic, Math.round(num(s)));
+    }
+    return out;
+  }
+
   /** Rate-limit hold-offs. The family has no spec label; a `chain` target label maps by upper-case. */
   private async holdoffs(window: MetricWindow, fam: ProviderFamilies): Promise<PromVectorSample[] | null> {
     if (!fam.rateLimit) return null;
@@ -474,19 +518,20 @@ export class ProvidersService {
   /** The reads the list, the detail and the export share - one set per response. */
   private async load(window: MetricWindow): Promise<Loaded> {
     const fam = await this.families();
-    const [{ counts, unattributed }, lat, health, holdoffs, blocked] = await Promise.all([
+    const [{ counts, unattributed }, lat, health, holdoffs, blocked, minutes] = await Promise.all([
       this.nodeCounts(window, fam),
       this.buckets(window, false),
       this.health(window),
       this.holdoffs(window, fam),
       this.blocked(fam),
+      this.minutes(window),
     ]);
-    return { fam, cfg: this.configIndex(), counts, unattributed, lat, health, holdoffs, blocked };
+    return { fam, cfg: this.configIndex(), counts, unattributed, lat, health, holdoffs, blocked, minutes };
   }
 
   /** One row per company, blocked first, then by error rate. */
   private summaries(l: Loaded, rates: Map<string, Map<number, number>>): ProviderSummary[] {
-    const { fam, cfg, counts, lat, health, holdoffs, blocked } = l;
+    const { fam, cfg, counts, lat, health, holdoffs, blocked, minutes } = l;
     interface Acc {
       summary: ProviderSummary;
       ok: number;
@@ -494,6 +539,8 @@ export class ProvidersService {
       protocolErrors: number | null;
       buckets: Map<number, number>;
       health: number[];
+      down: number;
+      traffic: number;
       nodes: Set<string>;
       accounts: Set<string>;
     }
@@ -517,6 +564,8 @@ export class ProvidersService {
             p95Ms: null,
             rateLimitHits: fam.rateLimit ? 0 : null,
             healthUptime: null,
+            uptime: null,
+            downMinutes: null,
             blockedNow: fam.blocked ? false : null,
           },
           ok: 0,
@@ -524,6 +573,8 @@ export class ProvidersService {
           protocolErrors: fam.protocolErrors ? 0 : null,
           buckets: new Map(),
           health: [],
+          down: 0,
+          traffic: 0,
           nodes: new Set(),
           accounts: new Set(),
         };
@@ -546,6 +597,11 @@ export class ProvidersService {
       ProvidersService.mergeBuckets(acc.buckets, lat.groups.get(key(c.node, c.spec)));
       const h = health.get(key(c.node, c.spec));
       if (h !== undefined) acc.health.push(h);
+      const m = minutes?.get(key(c.node, c.spec));
+      if (m) {
+        acc.down += m.down;
+        acc.traffic += m.traffic;
+      }
       if (blocked?.get(key(c.node, c.spec))) acc.summary.blockedNow = true;
     }
     // A provider with health or latency but no tries in the window (an idle
@@ -585,6 +641,10 @@ export class ProvidersService {
       s.protocolErrorRate = ratio(acc.protocolErrors, s.requests);
       s.p95Ms = histogramQuantile(0.95, acc.buckets);
       s.healthUptime = acc.health.length ? acc.health.reduce((a, b) => a + b, 0) / acc.health.length : null;
+      // Every chain's minute counts once, so a provider down on one chain of
+      // ten is down for a tenth of its chain-minutes, not for none of them.
+      s.uptime = minutes && acc.traffic > 0 ? 1 - acc.down / acc.traffic : null;
+      s.downMinutes = minutes ? acc.down : null;
       const peak = peakSeries.get(s.id);
       s.peakRps = peak && peak.size ? Math.max(...peak.values()) : null;
       s.nodes = [...acc.nodes].sort();
@@ -605,7 +665,15 @@ export class ProvidersService {
 
   /** One row per (node × chain), every provider's - the detail keeps one company's, the export all. */
   private chainRows(l: Loaded, upstreams: UpstreamMetrics[]): ProviderChainStats[] {
-    const { fam, cfg, counts, lat, health, holdoffs, blocked } = l;
+    const { fam, cfg, counts, lat, health, holdoffs, blocked, minutes } = l;
+    const minuteFields = (k: string) => {
+      const m = minutes?.get(k);
+      return {
+        uptime: m && m.traffic > 0 ? 1 - m.down / m.traffic : null,
+        downMinutes: minutes ? (m?.down ?? 0) : null,
+        trafficMinutes: minutes ? (m?.traffic ?? 0) : null,
+      };
+    };
     // Chain totals for the share column: every provider's tries on the chain.
     const chainTotals = new Map<string, number>();
     for (const c of counts.values()) chainTotals.set(c.spec, (chainTotals.get(c.spec) ?? 0) + c.tries);
@@ -644,6 +712,7 @@ export class ProvidersService {
         behindSec: up?.behindSec ?? null,
         rateLimitHits: hits(c.node, c.spec),
         healthUptime: health.get(k) ?? null,
+        ...minuteFields(k),
         blockedNow: blocked ? (blocked.get(k) ?? false) : null,
       });
     }
@@ -667,6 +736,7 @@ export class ProvidersService {
         behindSec: up?.behindSec ?? null,
         rateLimitHits: hits(node, spec),
         healthUptime: health.get(k) ?? null,
+        ...minuteFields(k),
         blockedNow: blocked ? (blocked.get(k) ?? false) : null,
       });
     }
@@ -683,6 +753,7 @@ export class ProvidersService {
       families: l.fam,
       peakWindowSec: peakWindowSec(window),
       latencyRead: latencyReadFor(window),
+      uptimeRead: uptimeReadFor(window),
     };
   }
 
@@ -710,7 +781,7 @@ export class ProvidersService {
     const fam = l.fam;
     const provider = this.summaries(l, rates).find((p) => p.id === providerId) ?? null;
     if (!provider || provider.nodes.length === 0) {
-      return { window, provider, chains: [], methods: [], methodLatency: false, latencyRead: latencyReadFor(window), families: fam };
+      return { window, provider, chains: [], methods: [], methodLatency: false, latencyRead: latencyReadFor(window), uptimeRead: uptimeReadFor(window), families: fam };
     }
     const names = provider.nodes;
     const alt = nameAlternation(names);
@@ -755,6 +826,6 @@ export class ProvidersService {
     }
     methods.sort((a, b) => b.failed - a.failed || b.requests - a.requests);
 
-    return { window, provider, chains, methods, methodLatency: mLat.sawMethod, latencyRead: latencyReadFor(window), families: fam };
+    return { window, provider, chains, methods, methodLatency: mLat.sawMethod, latencyRead: latencyReadFor(window), uptimeRead: uptimeReadFor(window), families: fam };
   }
 }

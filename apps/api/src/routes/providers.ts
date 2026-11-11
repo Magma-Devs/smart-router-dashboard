@@ -8,6 +8,7 @@ interface ReportQuery extends RangeQuery {
   provider?: string;
   spec?: string;
   router?: string;
+  tz?: string;
 }
 
 const REPORT_SCHEMA = {
@@ -18,6 +19,7 @@ const REPORT_SCHEMA = {
     provider: { type: "string" as const, pattern: "^[A-Za-z0-9 ._-]{1,64}$", description: "Provider company id from /api/metrics/providers" },
     spec: { type: "string" as const, pattern: "^[A-Za-z0-9_-]{1,64}$", description: "Chain spec label, e.g. XLM" },
     router: { type: "string" as const, description: "Restrict to ONE router deployment (optional)" },
+    tz: { type: "string" as const, pattern: "^[A-Za-z0-9_+/-]{1,64}$", description: "IANA time zone for the report's times, e.g. Asia/Jerusalem (default UTC)" },
   },
 };
 
@@ -39,7 +41,7 @@ export async function providerRoutes(app: FastifyInstance) {
     }
     const report = await buildProviderReport(
       { providers: app.scoped(request.query.router).providers, errorRequests: app.errorRequests, config: app.routerConfig },
-      { providerId: String(request.query.provider), spec: String(request.query.spec), range },
+      { providerId: String(request.query.provider), spec: String(request.query.spec), range, tz: request.query.tz },
     );
     if (!report) {
       sendApiError(reply, 404, "That provider has no traffic on that chain");
@@ -58,7 +60,7 @@ export async function providerRoutes(app: FastifyInstance) {
     }
     const report = await buildProviderReport(
       { providers: app.scoped(request.query.router).providers, errorRequests: app.errorRequests, config: app.routerConfig },
-      { providerId: String(request.query.provider), spec: String(request.query.spec), range },
+      { providerId: String(request.query.provider), spec: String(request.query.spec), range, tz: request.query.tz },
     );
     if (!report) {
       sendApiError(reply, 404, "That provider has no traffic on that chain");
@@ -110,7 +112,8 @@ export async function providerRoutes(app: FastifyInstance) {
           p(c.protocolErrorRate),
           c.p95Ms == null ? "" : String(Math.round(c.p95Ms)),
           n(c.rateLimitHits),
-          p(c.healthUptime),
+          p(c.uptime),
+          n(c.downMinutes),
           new Date(start).toISOString(),
           new Date(end).toISOString(),
         ]);
@@ -121,7 +124,7 @@ export async function providerRoutes(app: FastifyInstance) {
       .header("Content-Disposition", `attachment; filename="providers-${window}.csv"`)
       .send(
         toCsv(
-          ["provider", "account", "chain", "spec", "role", "requests", "failed_requests", "error_pct", "error_reply_pct", "timeout_and_connection_error_pct", "p95_ms", "rate_limit_hits", "health_check_uptime_pct", "window_start", "window_end"],
+          ["provider", "account", "chain", "spec", "role", "requests", "failed_requests", "error_pct", "error_reply_pct", "timeout_and_connection_error_pct", "p95_ms", "rate_limit_hits", "uptime_pct", "down_minutes", "window_start", "window_end"],
           rows,
         ),
       );

@@ -49,6 +49,7 @@ import {
   linesOfRequest,
   REQUEST_ID,
   methodOf,
+  requestOf,
   namesOf,
   onChain,
   ownRow,
@@ -101,7 +102,12 @@ const REQUEST_SPAN_MS = 60_000;
  * keeps every request the lines hold - what a look-up by ID wants, for a
  * request that went fine as much as one that didn't.
  */
-export function buildErrorRows(lines: RouterLine[], index: UpstreamIndex, every = false): ErrorRequestRow[] {
+export function buildErrorRows(
+  lines: RouterLine[],
+  index: UpstreamIndex,
+  every = false,
+  opts: { request?: boolean } = {},
+): ErrorRequestRow[] {
   const byGuid = new Map<string, RouterLine[]>();
   for (const l of lines) byGuid.set(l.guid, [...(byGuid.get(l.guid) ?? []), l]);
 
@@ -139,6 +145,7 @@ export function buildErrorRows(lines: RouterLine[], index: UpstreamIndex, every 
       time: Math.round(t0),
       ...chainOf(ordered, namesOf(ordered, attempts), index),
       method: methodOf(received, ordered),
+      ...(opts.request && received ? { request: requestOf(received) } : {}),
       attempts,
       result,
       resolvedBy: result === "failed" ? null : str(finished?.f.served_by) || null,
@@ -275,6 +282,7 @@ export class ErrorRequestsService {
    * reads only lines that name the chain, which a failed try's and an error
    * reply's do - the "Relay received a node error" a 1.5.x router writes
    * alone doesn't, so a caller that gets nothing back should read without it.
+   * `withRequest` adds what the client sent to each row (the provider report).
    */
   async report(
     range: ReadRange,
@@ -282,7 +290,7 @@ export class ErrorRequestsService {
     routerId?: string,
     before?: number,
     upstream?: string,
-    opts: { onChainLines?: boolean } = {},
+    opts: { onChainLines?: boolean; withRequest?: boolean } = {},
   ): Promise<ErrorRequestsReport> {
     const read = { startMs: range.startMs, endMs: range.endMs };
     const none = (available: boolean, reason?: LogUnavailable): ErrorRequestsReport =>
@@ -338,7 +346,7 @@ export class ErrorRequestsService {
     );
     if (guidLines === null) return none(false, "unreachable");
 
-    let rows = buildErrorRows(guidLines.lines, new UpstreamIndex(routers));
+    let rows = buildErrorRows(guidLines.lines, new UpstreamIndex(routers), false, { request: opts.withRequest });
     if (spec) rows = rows.filter((r) => onChain(r, spec));
     if (routerId) rows = router ? rows.filter((r) => ownRow(r, router, routers)) : [];
     if (upstream) rows = rows.filter((r) => r.attempts.some((a) => a.upstream === upstream && a.outcome === "failed"));

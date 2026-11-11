@@ -49,15 +49,49 @@ export function maskReportUrl(url: string): string {
   }
 }
 
-const NOT_CAPTURED_ID = "Not captured - the router doesn't record the provider's request ID yet.";
-const NO_REPLY_ID = "Not captured - the router records it only when the provider replies, and none of these requests got a reply.";
-const NOT_CAPTURED_RAW = "Not captured - the router doesn't keep request bodies.";
-const NO_REPLY_RAW = "Not captured - the router keeps a response only when the provider replies with an error.";
+const NO_REPLY_ID = "Not captured - the router reads it from the provider's reply, and this try got none.";
+const NO_HEADER_ID = "Not captured - the provider's reply had no X-Request-Id header.";
+const NO_EXAMPLE = "Not captured - no example request in the router's logs for this range.";
+const NO_REQUEST_LINE = "Not captured - the router's log has no request line for this request.";
+const NO_BODY = "Not captured - the router doesn't log this request's body.";
+const NO_REPLY_RAW = "Not captured - the router keeps a reply body only when the provider answers with an error. This try failed with";
 
-const utc = (ms: number): string => new Date(ms).toISOString().replace("T", " ").slice(0, 19) + " UTC";
-const hhmm = (ms: number): string => new Date(ms).toISOString().slice(11, 16);
 const comma = (n: number): string => Math.round(n).toLocaleString("en-US");
 const pct = (part: number, whole: number): string => (whole > 0 ? `${((part / whole) * 100).toFixed(1)}%` : "0%");
+
+/** A time zone the report can print in; anything Intl doesn't know falls back to UTC. */
+function zoneOf(tz: string | undefined): string {
+  if (!tz) return "UTC";
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+    return tz;
+  } catch {
+    return "UTC";
+  }
+}
+
+/** "2026-10-12 19:47:21" and its offset ("UTC+3") in a time zone, as the customer's outreach template writes times. */
+function clock(ms: number, tz: string): { date: string; time: string; offset: string } {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+    timeZoneName: "shortOffset",
+  }).formatToParts(new Date(ms));
+  const at = (type: string) => parts.find((x) => x.type === type)?.value ?? "";
+  // "GMT+3" reads as UTC+3; UTC itself prints as plain "UTC", whichever way Intl spells a zero offset.
+  const offset = at("timeZoneName").replace(/^GMT/, "UTC").replace(/^UTC[+-]0(?::00)?$/, "UTC") || "UTC";
+  return { date: `${at("year")}-${at("month")}-${at("day")}`, time: `${at("hour")}:${at("minute")}:${at("second")}`, offset };
+}
+const stamp = (ms: number, tz: string): string => {
+  const c = clock(ms, tz);
+  return `${c.date} ${c.time} (${c.offset})`;
+};
 
 /** The most common code in a list, or null when none carries one. */
 function topCodeOf(tries: { code: string | null }[]): string | null {
@@ -74,7 +108,7 @@ export async function buildProviderReport(deps: {
   providers: ProvidersService;
   errorRequests: ErrorRequestsService;
   config: ConfigurationService | null;
-}, q: { providerId: string; spec: string; range: ReadRange }): Promise<ProviderReport | null> {
+}, q: { providerId: string; spec: string; range: ReadRange; tz?: string }): Promise<ProviderReport | null> {
   const { providers, errorRequests, config } = deps;
   const nodes = await providers.nodesOn(q.providerId, q.spec);
   if (nodes.length === 0) return null;
@@ -86,10 +120,10 @@ export async function buildProviderReport(deps: {
   // This provider's failures on this chain only: its node name serves other
   // chains too, and a busy one would fill the read before this one is reached.
   const readLogs = async (node: string) => {
-    const onChain = await errorRequests.report(q.range, q.spec, undefined, undefined, node, { onChainLines: true });
+    const onChain = await errorRequests.report(q.range, q.spec, undefined, undefined, node, { onChainLines: true, withRequest: true });
     // An older router's node-error line doesn't name the chain: read the node's lines whole.
     return onChain.available && onChain.rows.length === 0
-      ? errorRequests.report(q.range, q.spec, undefined, undefined, node)
+      ? errorRequests.report(q.range, q.spec, undefined, undefined, node, { withRequest: true })
       : onChain;
   };
   const [counts, ...logReads] = await Promise.all([
@@ -127,6 +161,7 @@ export async function buildProviderReport(deps: {
             guid: row.guid,
             providerRequestId: a.errorReply?.requestId ?? null,
             response: a.errorReply?.body ?? null,
+            request: row.request ?? null,
           })),
       ),
     )
@@ -153,11 +188,17 @@ export async function buildProviderReport(deps: {
   // The counts cover the whole range. The logs give exact times only when
   // every failure was read: with more than one read holds, the oldest one
   // read is not the first, so the range's own start stands.
+  const tz = zoneOf(q.tz);
+  // The counts cover the whole range. The logs give exact times only when
+  // every failure was read: with more than one read holds, the oldest one
+  // read is not the first, so the range's own start stands.
   const start = firstFailureMs !== null && !moreFailures ? firstFailureMs : q.range.startMs;
   const end = lastFailureMs ?? q.range.endMs;
   const replies = counts.errorReplies ?? 0;
   const to = `to ${identity.name} on ${meta.name}`;
-  const when = `Between ${hhmm(start)} and ${hhmm(end)} UTC on ${new Date(start).toISOString().slice(0, 10)}`;
+  const from = clock(start, tz);
+  const until = clock(end, tz);
+  const when = `Between ${from.time.slice(0, 5)} and ${until.time.slice(0, 5)} (${from.offset}) on ${from.date}`;
   const mostly = (code: string | null) => (code ? `, mostly ${code}` : "");
   const failedPart = `${comma(counts.failed)} of ${comma(counts.tries)} requests ${to} failed (${pct(counts.failed, counts.tries)})${mostly(topCode)}`;
   const problem =
@@ -175,48 +216,68 @@ export async function buildProviderReport(deps: {
     .map((m) => {
       const parts = [
         ...(m.failed > 0 ? [`${comma(m.failed)} failed`] : []),
-        ...((m.errorReplies ?? 0) > 0 ? [`${comma(m.errorReplies!)} error replies`] : []),
+        ...((m.errorReplies ?? 0) > 0 ? [`${comma(m.errorReplies!)} error repl${m.errorReplies === 1 ? "y" : "ies"}`] : []),
       ];
       return `${m.method} (${parts.join(", ")} of ${comma(m.tries)})`;
     })
     .join(", ");
   const timesNote =
-    logs !== "ok" ? " (the range - the router's logs couldn't be read for exact times)" : firstFailureMs === null ? " (the range)" : "";
-  const startNote = timesNote || (moreFailures ? " (the start of the range - it holds more failures than the report read)" : "");
-  const anyReplyId = examples.some((e) => e.providerRequestId);
-  const anyResponse = examples.some((e) => e.response);
-  const anyReply = examples.some((e) => e.kind === "error-reply");
+    logs !== "ok" ? " - the range; the router's logs couldn't be read for exact times" : firstFailureMs === null ? " - the range" : "";
+  const startNote = timesNote || (moreFailures ? " - the start of the range; it holds more failures than the report read" : "");
 
+  // One example carries the raw request and reply: an error reply with the
+  // provider's own request ID if there is one - the most a provider can look up.
+  const featured =
+    examples.find((e) => e.kind === "error-reply" && e.providerRequestId) ??
+    examples.find((e) => e.kind === "error-reply") ??
+    examples[0] ??
+    null;
+  const exampleLine = (e: (typeof examples)[number]) =>
+    [
+      stamp(e.time, tz),
+      e.method,
+      e.kind === "error-reply" ? "error reply" : "failed",
+      e.code ?? "no code",
+      ...(e.message ? [`"${e.message.slice(0, 200)}"`] : []),
+      `our request ID ${e.guid}`,
+      ...(e.providerRequestId ? [`x-request-id ${e.providerRequestId}`] : []),
+    ].join(" · ");
+  const xRequestId = !featured
+    ? NO_EXAMPLE
+    : featured.providerRequestId ?? (featured.kind === "error-reply" ? NO_HEADER_ID : NO_REPLY_ID);
+  const rawRequest = !featured
+    ? NO_EXAMPLE
+    : !featured.request
+      ? NO_REQUEST_LINE
+      : featured.request.body
+        ? `${featured.request.path && featured.request.path !== "/" ? `${featured.request.path} ` : ""}${featured.request.body}${featured.request.cut ? " (cut short in the router's log)" : ""}`
+        : featured.request.path ?? NO_BODY;
+  const rawResponse = !featured
+    ? NO_EXAMPLE
+    : featured.response ?? `${NO_REPLY_RAW} "${(featured.message ?? featured.code ?? "no answer").slice(0, 200)}".`;
+  const others = examples.filter((e) => e !== featured);
+
+  // The customer's outreach template, field for field: Chain, Environment, Network URL,
+  // Method(s), Problem statement, Example, Incident start, Affected volume,
+  // x-request-id, Raw request, Raw response. "Incident end" is ours.
   const lines = [
-    `Provider: ${identity.name}`,
     `Chain: ${meta.name} (${q.spec})`,
     `Environment: ${meta.mainnet ? "Mainnet" : "Testnet"}`,
     `Network URL: ${urls.size ? [...urls].join(", ") : "Not in the mounted config"}`,
     `Method(s): ${methodsLine || "None"}`,
     `Problem statement: ${problem}`,
-    `Incident start: ${utc(start)}${startNote}`,
-    `Incident end: ${utc(end)}${timesNote}`,
+    featured
+      ? `Example: ${exampleLine(featured)}`
+      : `Example: ${logs === "ok" ? "None in the router's logs for this range." : "The router's logs couldn't be read."}`,
+    ...(others.length ? ["More examples:", ...others.map((e) => `- ${exampleLine(e)}`)] : []),
+    `Incident start: ${stamp(start, tz)}${startNote}`,
+    `Incident end: ${stamp(end, tz)}${timesNote}`,
     `Affected volume: ${comma(counts.failed)} failed requests out of ${comma(counts.tries)} (${pct(counts.failed, counts.tries)}).` +
       (counts.errorReplies !== null ? ` Error replies: ${comma(replies)} (${pct(replies, counts.tries)}).` : " Error replies: not counted by this router.") +
       (counts.rateLimitHits !== null ? ` Rate-limit hold-offs: ${comma(counts.rateLimitHits)}.` : ""),
-    "Example requests:",
-    ...(examples.length
-      ? examples.map((e) =>
-          [
-            `- ${utc(e.time)}`,
-            e.method,
-            e.kind === "error-reply" ? "error reply" : "failed",
-            e.code ?? "no code",
-            ...(e.message ? [`"${e.message.slice(0, 200)}"`] : []),
-            `Smart Router request ID ${e.guid}`,
-            ...(e.providerRequestId ? [`provider request ID ${e.providerRequestId}`] : []),
-            ...(e.response ? [`response ${e.response.slice(0, 300)}`] : []),
-          ].join(" · "),
-        )
-      : [logs === "ok" ? "- None in the router's logs for this range." : "- The router's logs couldn't be read."]),
-    `Provider request ID: ${anyReplyId ? "With each example above that got a reply." : anyReply || !examples.length ? NOT_CAPTURED_ID : NO_REPLY_ID}`,
-    `Raw request: ${NOT_CAPTURED_RAW}`,
-    `Raw response: ${anyResponse ? "With each example above that got a reply." : anyReply || !examples.length ? NOT_CAPTURED_RAW : NO_REPLY_RAW}`,
+    `x-request-id: ${xRequestId}`,
+    `Raw request: ${rawRequest}`,
+    `Raw response: ${rawResponse}`,
   ];
 
   return {
@@ -239,6 +300,7 @@ export async function buildProviderReport(deps: {
     examples,
     logs,
     problem,
+    timeZone: tz,
     text: lines.join("\n"),
   };
 }

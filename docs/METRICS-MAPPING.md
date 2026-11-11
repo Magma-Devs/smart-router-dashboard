@@ -136,7 +136,7 @@ client requests) against the live router:
 | `/api/metrics/upstreams` | `sum by (endpoint_id, spec) (increase(rpc_endpoint_total_relays_serviced[$w]))`; **both** `selection_score` gauges (optimizer-first per row, `scoreSource` names the winner) + `qEndpointPolls` for the traffic-free liveness; the `overall_health` / `latest_block` / `requests_in_flight` gauges; per-endpoint p95 from the endpoint histogram; uptime + errorRate = success/total by `provider_address` on the router counters; blockLag computed as spec-max − endpoint block; `role`/`apiInterface` joined from the mounted config (not Prometheus) |
 | `/api/metrics/providers` | The Providers tab's list: upstreams grouped by the company that runs them. Read per node name and chain, rolled up to the company in TypeScript (`providerOf`), never in PromQL. `sum by (provider_address, spec) (increase(…[$w]))` on `smartrouter_requests_total`, `…_success_total`, and - when present - `smartrouter_node_errors_total` and `smartrouter_protocol_errors_total`; `sum by (endpoint_id, spec, le)` on the endpoint latency histogram, the buckets summed per company before the quantile; `avg by (endpoint_id, spec) (avg_over_time(rpc_endpoint_overall_health[$w]))` (health-check uptime); `sum by (provider, spec, chain) (increase(smartrouter_rate_limit_holdoffs_total{event="recorded"}[$w]))`; `max by (provider_address, spec) (smartrouter_csm_provider_blocked)`; peak = the highest point of `sum by (provider_address) (rate(smartrouter_requests_total[5m]))` over the window, the company's nodes summed per timestamp. Five `qPresence` probes fill `families`. See "Providers - reads that must answer" below |
 | `/api/metrics/provider-detail` | The list's reads, plus the upstream roster over five minutes for block lag (a "now" figure whatever the window), plus per method: `sum by (provider_address, spec, method) (increase(…{provider_address=~"<its nodes>"}[$w]))` on the requests, success and node-error counters, and the endpoint histogram `by (endpoint_id, spec, function, le)` for p50/p95/p99 per method (`methodLatency: false` on a build whose histogram has no `function` label) |
-| `/api/providers/report` · `/report.csv` | Counts over the report's exact range, evaluated AT its end (a one-point `query_range`): `sum by (method) (increase(…{provider_address=~"<its nodes>",spec="<spec>"}[<range>s]))` on the requests, success and node-error counters, and the hold-off counter by `(provider, chain)`. The times and the example requests come from the router's logs in Loki, not Prometheus |
+| `/api/providers/report` · `/report.csv` | Counts over the report's exact range, evaluated AT its end (a one-point `query_range`): `sum by (method) (increase(…{provider_address=~"<its nodes>",spec="<spec>"}[<range>s]))` on the requests, success and node-error counters, and the hold-off counter by `(provider, chain)`. The times, the example requests, the raw request and the provider's reply come from the router's logs in Loki, not Prometheus |
 | `/api/providers/export.csv` | The list's reads and the upstream roster, once for every provider - not one read per provider |
 | `/api/metrics/block-heights` | `qBestTipBySpec`, `qBlockRateBySpec`, `qRouterTips`, `qRouterTipChanges`, `qUpstreamTips`, `qTipChanges`, `rpc_endpoint_overall_health` — instant only (gauges; no window param). Takes both router axes: `?router=` scopes the PromQL by target label, `?routerId=` filters the upstream tips by what the config router declares — the `routers` rows can only ever be split by the first, since `smartrouter_latest_block` is labelled with the chain. Lags are reported in SECONDS as well as blocks. ⚠ `smartrouter_latest_block` advances on accepted tip observations, NOT every poll, so it trails the endpoint gauge by ~one refresh interval by construction — on a fast chain that is thousands of blocks and still healthy. The UI judges a router against its own measured `refreshSec`, never a fixed seconds threshold; the endpoint gauge is the one to read for a live tip. |
 | `/api/metrics/rps` | `sum(rate(smartrouter_requests_total{spec?}[step]))` via `query_range` |
@@ -200,6 +200,25 @@ that says why is the honest answer until that read has a cheaper source
 hours the buckets are read whole; from there to a day, ~100 samples each.
 The service also keeps at most four reads out at once, and a read that ran
 out of time is not asked again - only a quick refusal is.
+
+**Uptime is counted in minutes** (`uptime`, `downMinutes`; the PRD's rule). A
+minute is down for a provider on a chain when half or more of its tries
+there failed:
+
+```promql
+sum by (provider_address, spec) (sum_over_time(((T - (S or T * 0)) / T >= bool 0.5)[<range>:1m]))
+sum by (provider_address, spec) (count_over_time((T > 0)[<range>:1m]))   # minutes with traffic
+# T = sum by (provider_address, spec) (increase(smartrouter_requests_total[1m])), S the same on _success_total
+```
+
+`S or T * 0` reads a node that never succeeded as zero successes - it has no
+success series at all. A provider's uptime is 1 − Σdown ÷ Σtraffic over its
+chains, so each chain's minute counts once. An error reply is an answer and
+never makes a minute down. It is not the router's health gauge
+(`healthUptime`, still returned, not shown): that is seeded healthy and moved
+only by traffic, so an idle or disabled upstream reads 100% - and on a live
+deployment it read 75% for a provider that failed almost nothing. Read up to a
+day (`uptimeRead`); a day takes ~3 s.
 
 **Error replies are not failures here either.** `errorRate` is
 `(total − success) / total`: tries the provider didn't answer usefully.

@@ -8,8 +8,10 @@
  * Honest-state notes:
  *  - a family the router doesn't emit (rate-limit hold-offs, timeouts, the
  *    blocked gauge) renders "—" with a tip saying so, never 0;
- *  - "Health-check uptime" is the router's health gauge over the window, not
- *    an SLA figure, and the column says so;
+ *  - "Uptime" counts a minute as down when half or more of the provider's
+ *    tries on a chain failed (the PRD's rule). It is not the router's health
+ *    gauge: that starts healthy and only traffic moves it, so an idle or
+ *    disabled upstream would read 100%;
  *  - traffic under label values that can't be a node name is counted once,
  *    below the table, instead of inventing a provider for it;
  *  - "Error replies" are requests the provider answered with an error. The
@@ -42,8 +44,9 @@ import { PMNoVal, PMPanel, PMStat } from "../upstream/PMPanel";
 const NOT_EMITTED = "This router build doesn't emit the metric behind this number yet.";
 const TIP_TIMEOUTS =
   "**Timeouts and refused or reset connections** as a share of the tries sent to this provider. The router counts these together today - a separate timeout figure needs an error-type label on the router's counters.";
-const TIP_HEALTH =
-  "The router's **health gauge** for this provider, averaged over the window. It is the router's own check, **not** your SLA definition of downtime.";
+const TIP_UPTIME =
+  "Of every minute this provider served one of your chains, the share where **at least half** of its requests there got an answer. A minute with half or more failed counts as **down**. An error reply is an answer, so it doesn't make a minute down - it has its own column. Read for windows of a day or less.";
+const UPTIME_NOT_READ = "Uptime isn't read for windows longer than a day - it needs every minute of the window. Pick a day or less.";
 const TIP_RATE =
   "Times the provider answered **\"too many requests\"** and the router held it off. A provider that limits your whole account counts every chain here together.";
 const TIP_REPLIES =
@@ -88,11 +91,12 @@ const msCell = (ms: number | null, read = true) =>
   ) : (
     <span className="gw-mono gw-tnum" style={{ fontSize: 12, whiteSpace: "nowrap" }}>{Math.round(ms)} ms</span>
   );
-const uptimeCell = (u: number | null) =>
+const uptimeCell = (u: number | null, read = true, down: number | null = null) =>
   u == null ? (
-    <span style={{ fontSize: 12, color: "var(--text-4)" }}>—</span>
+    <span style={{ fontSize: 12, color: "var(--text-4)" }} title={read ? undefined : UPTIME_NOT_READ}>—</span>
   ) : (
-    <span className="gw-mono gw-tnum" style={{ fontSize: 12, color: uptimeColorFrac(u) }}>{(u * 100).toFixed(2)}%</span>
+    <span className="gw-mono gw-tnum" style={{ fontSize: 12, color: uptimeColorFrac(u) }}
+      title={down != null ? `${fmtNum(down)} down minute${down === 1 ? "" : "s"}` : undefined}>{(u * 100).toFixed(2)}%</span>
   );
 
 function Badge({ children, tone }: { children: React.ReactNode; tone: "err" | "primary" | "backup" | "muted" }) {
@@ -125,7 +129,7 @@ interface RosterRow {
   timeouts: number;
   p95: number;
   rate: number;
-  health: number;
+  uptime: number;
 }
 
 function ProvidersRoster({ report, rows, activeId, onSelect, timeWindow, loading, refreshing, stale, actions }: {
@@ -153,7 +157,7 @@ function ProvidersRoster({ report, rows, activeId, onSelect, timeWindow, loading
     timeouts: p.protocolErrorRate ?? -1,
     p95: p.p95Ms ?? Infinity,
     rate: p.rateLimitHits ?? -1,
-    health: p.healthUptime ?? -1,
+    uptime: p.uptime ?? -1,
   }));
   const { sorted, sort, onSort } = useSort<RosterRow>(built, { key: "natural", dir: "asc" });
 
@@ -182,7 +186,7 @@ function ProvidersRoster({ report, rows, activeId, onSelect, timeWindow, loading
               <ThCol align="right" tip={TIP_REPLIES} sortKey="replies" sort={sort} onSort={onSort}>{two("Error", "replies")}</ThCol>
               <ThCol align="right" tip={TIP_RATE} sortKey="rate" sort={sort} onSort={onSort}>{two("Rate-limit", "hits")}</ThCol>
               <ThCol align="right" sortKey="p95" sort={sort} onSort={onSort}>p95</ThCol>
-              <ThCol align="right" tip={TIP_HEALTH} sortKey="health" sort={sort} onSort={onSort}>{two("Health-check", "uptime")}</ThCol>
+              <ThCol align="right" tip={TIP_UPTIME} sortKey="uptime" sort={sort} onSort={onSort}>Uptime</ThCol>
               <ThCol align="right" tip={tipPeak(report?.peakWindowSec)} sortKey="peak" sort={sort} onSort={onSort}>{two("Peak", "req/s")}</ThCol>
               <ThCol align="right" tip={TIP_TIMEOUTS} sortKey="timeouts" sort={sort} onSort={onSort}>Timeouts</ThCol>
             </tr>
@@ -213,7 +217,7 @@ function ProvidersRoster({ report, rows, activeId, onSelect, timeWindow, loading
                   <td style={{ textAlign: "right" }}>{pctCell(p.nodeErrorRate, fam?.nodeErrors ?? true)}</td>
                   <td style={{ textAlign: "right" }}>{numCell(p.rateLimitHits, fam?.rateLimit ?? true, "var(--warn)")}</td>
                   <td style={{ textAlign: "right" }}>{msCell(p.p95Ms, report?.latencyRead ?? true)}</td>
-                  <td style={{ textAlign: "right" }}>{uptimeCell(p.healthUptime)}</td>
+                  <td style={{ textAlign: "right" }}>{uptimeCell(p.uptime, report?.uptimeRead ?? true, p.downMinutes)}</td>
                   <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{fmtRps(p.peakRps)}</span></td>
                   <td style={{ textAlign: "right" }}>{pctCell(p.protocolErrorRate, fam?.protocolErrors ?? true)}</td>
                 </tr>
@@ -253,7 +257,7 @@ interface ChainRow {
   p95: number;
   lag: number;
   rate: number;
-  health: number;
+  uptime: number;
 }
 
 function ChainsTable({ detail, chainFilter, renderAction, onOpenUpstream }: {
@@ -276,7 +280,7 @@ function ChainsTable({ detail, chainFilter, renderAction, onOpenUpstream }: {
     p95: c.p95Ms ?? Infinity,
     lag: c.behindSec ?? -1,
     rate: c.rateLimitHits ?? -1,
-    health: c.healthUptime ?? -1,
+    uptime: c.uptime ?? -1,
   }));
   const { sorted, sort, onSort } = useSort<ChainRow>(built, { key: "natural", dir: "asc" });
   const cols = renderAction ? 11 : 10;
@@ -295,7 +299,7 @@ function ChainsTable({ detail, chainFilter, renderAction, onOpenUpstream }: {
               <ThCol align="right" tip={TIP_RATE} sortKey="rate" sort={sort} onSort={onSort}>{two("Rate-limit", "hits")}</ThCol>
               <ThCol align="right" sortKey="p95" sort={sort} onSort={onSort}>p95</ThCol>
               <ThCol align="right" tip="How far this provider's newest block is behind the chain's best, in seconds." sortKey="lag" sort={sort} onSort={onSort}>Behind</ThCol>
-              <ThCol align="right" tip={TIP_HEALTH} sortKey="health" sort={sort} onSort={onSort}>{two("Health-check", "uptime")}</ThCol>
+              <ThCol align="right" tip={TIP_UPTIME} sortKey="uptime" sort={sort} onSort={onSort}>Uptime</ThCol>
               <ThCol align="right" tip={TIP_TIMEOUTS} sortKey="timeouts" sort={sort} onSort={onSort}>Timeouts</ThCol>
               {renderAction && <th style={STICKY_HEAD} />}
             </tr>
@@ -330,7 +334,7 @@ function ChainsTable({ detail, chainFilter, renderAction, onOpenUpstream }: {
                 </td>
                 <td style={{ textAlign: "right" }}>{msCell(c.p95Ms, detail.latencyRead)}</td>
                 <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12, color: tipLagColor(c.behindSec) }}>{fmtLag(c.behindSec)}</span></td>
-                <td style={{ textAlign: "right" }}>{uptimeCell(c.healthUptime)}</td>
+                <td style={{ textAlign: "right" }}>{uptimeCell(c.uptime, detail.uptimeRead, c.downMinutes)}</td>
                 <td style={{ textAlign: "right" }}>{pctCell(c.protocolErrorRate, fam.protocolErrors)}</td>
                 {renderAction && <td style={STICKY_CELL}>{renderAction(c)}</td>}
               </tr>
@@ -576,12 +580,16 @@ export function ProvidersTab({ timeWindow, chainFilter, rosterActions, renderCha
                 </>
               )}
             </PMStat>
-            <PMStat label="Health-check uptime" tip={TIP_HEALTH}>
-              {sel.healthUptime != null ? (
+            <PMStat label="Uptime" tip={TIP_UPTIME}>
+              {sel.uptime != null ? (
                 <>
-                  <div className="gw-mono gw-tnum" style={{ fontSize: 26, fontWeight: 700, lineHeight: 1, color: uptimeColorFrac(sel.healthUptime) }}>{(sel.healthUptime * 100).toFixed(2)}%</div>
-                  <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 8 }}>router health gauge · not SLA</div>
+                  <div className="gw-mono gw-tnum" style={{ fontSize: 26, fontWeight: 700, lineHeight: 1, color: uptimeColorFrac(sel.uptime) }}>{(sel.uptime * 100).toFixed(2)}%</div>
+                  <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 8 }}>
+                    {fmtNum(sel.downMinutes ?? 0)} down minute{sel.downMinutes === 1 ? "" : "s"} · {timeWindow}
+                  </div>
                 </>
+              ) : report?.uptimeRead === false ? (
+                <div style={{ fontSize: 12, color: "var(--text-4)", paddingTop: 4, lineHeight: 1.5 }}>Not read for windows longer than a day</div>
               ) : <PMNoVal />}
             </PMStat>
           </div>
