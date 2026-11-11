@@ -19,7 +19,7 @@ let member: SeededMember;
 
 test.beforeAll(async ({ operator }) => {
   member = await inviteMember(operator.token, {
-    email: "e2e.grace@magmadevs.com",
+    email: "e2e.grace@example.com",
     password: "grace-chose-this-8802",
     name: "Nia Berhane",
   });

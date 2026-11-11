@@ -45,7 +45,7 @@ export const DATABASE_URL =
 
 /** The account `/auth/setup` creates, and the one every spec invites from. */
 export const OPERATOR = {
-  email: "e2e.operator@magmadevs.com",
+  email: "e2e.operator@example.com",
   password: "operator-chose-this-4471",
   name: "E2E Operator",
 } as const;

@@ -17,7 +17,7 @@ let member: Required<SeededMember>;
 test.beforeAll(async ({ operator }) => {
   member = await enrolledMember(
     await inviteMember(operator.token, {
-      email: "e2e.signin@magmadevs.com",
+      email: "e2e.signin@example.com",
       password: "signin-chose-this-9021",
       name: "Sam Ngata",
     }),

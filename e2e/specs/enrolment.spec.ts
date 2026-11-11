@@ -18,7 +18,7 @@ let member: SeededMember;
 test.beforeAll(async ({ operator }) => {
   // Deliberately not enrolled: this spec is what happens before that.
   member = await inviteMember(operator.token, {
-    email: "e2e.enrol@magmadevs.com",
+    email: "e2e.enrol@example.com",
     password: "enrol-chose-this-3310",
     name: "Rai Oduya",
   });

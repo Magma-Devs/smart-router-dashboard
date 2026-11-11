@@ -16,7 +16,7 @@ let member: Required<SeededMember>;
 test.beforeAll(async ({ operator }) => {
   member = await enrolledMember(
     await inviteMember(operator.token, {
-      email: "e2e.lostphone@magmadevs.com",
+      email: "e2e.lostphone@example.com",
       password: "lostphone-chose-this-7715",
       name: "Kito Alvarez",
     }),
@@ -53,7 +53,7 @@ test("an admin clears a member's authenticator, and the row says so", async ({
 
 test("a member with no authenticator is not offered a reset", async ({ page, operator }) => {
   const unenrolled = await inviteMember(operator.token, {
-    email: "e2e.noauthenticator@magmadevs.com",
+    email: "e2e.noauthenticator@example.com",
     password: "noauth-chose-this-5520",
     name: "Pia Lindqvist",
   });
