@@ -21,6 +21,7 @@
  */
 
 import type { UpstreamRelayResponse } from "@sr/shared";
+import { WsFailure, wsSendOnce, type WsReply } from "./ws-once.js";
 
 export type BuildUrlResult = { ok: true; url: string } | { ok: false; error: string };
 
@@ -36,6 +37,12 @@ function stripTrailingSlashes(path: string): string {
   let end = path.length;
   while (end > 0 && path[end - 1] === "/") end -= 1;
   return path.slice(0, end);
+}
+
+/** `.` or `..`, spelled out or percent-encoded. */
+function isDotSegment(segment: string): boolean {
+  const plain = segment.replace(/%2e/gi, ".");
+  return plain === "." || plain === "..";
 }
 
 /** Space and control characters — a path carrying either is a request-smuggling
@@ -84,7 +91,14 @@ export function buildTargetUrl(
   const qIdx = path.indexOf("?");
   const rawPath = qIdx === -1 ? path : path.slice(0, qIdx);
   const rawQuery = qIdx === -1 ? "" : path.slice(qIdx + 1);
-  u.pathname = stripTrailingSlashes(u.pathname) + rawPath;
+  // The url parser folds a dot segment in its percent-encoded spelling too.
+  if (rawPath.split("/").some(isDotSegment)) return { ok: false, error: "Path must not contain '..'." };
+  const basePath = stripTrailingSlashes(u.pathname);
+  u.pathname = basePath + rawPath;
+  // Whatever the parser made of the path, it stays under the endpoint's own.
+  if (u.pathname !== basePath && !u.pathname.startsWith(`${basePath}/`)) {
+    return { ok: false, error: "Path must stay under the endpoint's own." };
+  }
   if (rawQuery) {
     for (const [k, v] of new URLSearchParams(rawQuery)) u.searchParams.append(k, v);
   }
@@ -274,82 +288,48 @@ export async function relayHttp(url: string, opts: RelayHttpOptions): Promise<Up
  * first message, close. Not a proxied socket — the drawer's ws mode is
  * request/response too, so a full duplex tunnel would be machinery nobody
  * uses.
+ *
+ * The endpoint's auth-config credential rides the handshake. A message past
+ * `maxBodyBytes` is not read at all, so it comes back `truncated` with no body.
  */
 export async function relayWs(
   url: string,
   body: unknown,
   opts: { timeoutMs: number; maxBodyBytes: number; authHeaders?: Record<string, string> },
 ): Promise<UpstreamRelayResponse> {
-  if (typeof WebSocket === "undefined") {
-    throw new RelayTransportError("This api runtime has no WebSocket client.", "connect");
-  }
   const authHeaders = opts.authHeaders ?? {};
   const t0 = performance.now();
-  return await new Promise<UpstreamRelayResponse>((resolve, reject) => {
-    let ws: WebSocket;
-    try {
-      // Node's WebSocket is undici's, whose second argument takes `headers`
-      // beyond the standard `protocols` — the only place a handshake can carry
-      // the endpoint's auth-config credential. The cast is the price of an
-      // extension the DOM lib types don't know about; a runtime that ignores
-      // it just sends the handshake bare, exactly as before.
-      ws = new WebSocket(url, { headers: authHeaders } as unknown as string[]);
-    } catch (e) {
-      reject(new RelayTransportError(`Could not open the socket (${describeCause(e)}).`, "connect"));
-      return;
-    }
-    const timer = setTimeout(() => {
-      settled = true;
-      try {
-        ws.close();
-      } catch {
-        /* already gone */
-      }
-      reject(new RelayTransportError(`Upstream did not answer within ${opts.timeoutMs}ms.`, "timeout"));
-    }, opts.timeoutMs);
-    let settled = false;
-    const finish = (fn: () => void) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      try {
-        ws.close();
-      } catch {
-        /* already gone */
-      }
-      fn();
-    };
-    ws.onopen = () => ws.send(JSON.stringify(body ?? {}));
-    ws.onmessage = (ev: MessageEvent) => {
-      const raw = typeof ev.data === "string" ? ev.data : "";
-      const capped = raw.length > opts.maxBodyBytes;
-      finish(() =>
-        resolve({
-          httpStatus: null,
-          latencyMs: Math.round(performance.now() - t0),
-          body: parseBody(
-            redactSecrets(
-              capped ? raw.slice(0, opts.maxBodyBytes) : raw,
-              url,
-              Object.values(authHeaders),
-            ),
-          ),
-          truncated: capped,
-          transport: "ws",
-        }),
-      );
-    };
-    ws.onerror = () => {
-      finish(() =>
-        reject(new RelayTransportError("The upstream refused or dropped the socket.", "connect")),
-      );
-    };
-    ws.onclose = () => {
-      finish(() =>
-        reject(new RelayTransportError("The upstream closed the socket before answering.", "connect")),
-      );
-    };
-  });
+  let reply: WsReply;
+  try {
+    reply = await wsSendOnce(url, JSON.stringify(body ?? {}), {
+      timeoutMs: opts.timeoutMs,
+      maxBytes: opts.maxBodyBytes,
+      headers: authHeaders,
+    });
+  } catch (e) {
+    throw wsTransportError(e, "upstream", opts.timeoutMs);
+  }
+  return {
+    httpStatus: null,
+    latencyMs: Math.round(performance.now() - t0),
+    body: parseBody(redactSecrets(reply.text, url, Object.values(authHeaders))),
+    truncated: reply.tooLarge,
+    transport: "ws",
+  };
+}
+
+/** A failed one-shot socket as the relay's own error: 504 for a deadline, 502
+ *  for anything else. `peer` is who did not answer, for the message. */
+export function wsTransportError(e: unknown, peer: "router" | "upstream", timeoutMs: number): RelayTransportError {
+  const kind = e instanceof WsFailure ? e.kind : "refused";
+  if (kind === "timeout") {
+    return new RelayTransportError(`The ${peer} did not answer within ${timeoutMs}ms.`, "timeout");
+  }
+  if (kind === "closed") {
+    return new RelayTransportError(`The ${peer} closed the socket before answering.`, "connect");
+  }
+  if (kind === "unopenable") return new RelayTransportError("Could not open the socket.", "connect");
+  return new RelayTransportError(`The ${peer} refused or dropped the socket.`, "connect");
 }
 
 /** A cause phrase safe to show — never the url, never a stack. */
