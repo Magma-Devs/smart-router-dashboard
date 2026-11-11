@@ -254,7 +254,54 @@ describe("buildRequest — gRPC", () => {
   });
 });
 
+describe("buildRequest — GraphQL", () => {
+  const SUI_GRAPHQL = "http://localhost:3368";
+  const CHECKPOINT: AddonCommand = {
+    method: "checkpoint",
+    label: "checkpoint",
+    params: "{ checkpoint { sequenceNumber digest } }",
+  };
+
+  it("POSTs the query box as the GraphQL-over-HTTP envelope, on one line", () => {
+    const query = "{\n  checkpoint {\n    sequenceNumber\n  }\n}";
+    const result = buildRequest("graphql", CHECKPOINT, query, SUI_GRAPHQL);
+    expect(result).toEqual({
+      ok: true,
+      request: {
+        transport: "http",
+        httpMethod: "POST",
+        url: SUI_GRAPHQL,
+        body: { query: "{ checkpoint { sequenceNumber } }" },
+        contentType: "application/json",
+      },
+    });
+  });
+
+  it("sends what the box says, not the command it started from", () => {
+    // The router names the api after the root fields in the query, so an
+    // edited query is a different call — and is sent as one.
+    const result = buildRequest("graphql", CHECKPOINT, "{ chainIdentifier }", SUI_GRAPHQL);
+    expect(result.ok && result.request.transport === "http" && result.request.body).toEqual({
+      query: "{ chainIdentifier }",
+    });
+  });
+
+  it("passes a JSON envelope through, variables included", () => {
+    const envelope = { query: "query ($n: UInt53) { checkpoint(sequenceNumber: $n) { digest } }", variables: { n: 0 } };
+    const result = buildRequest("graphql", CHECKPOINT, JSON.stringify(envelope), SUI_GRAPHQL);
+    expect(result.ok && result.request.transport === "http" && result.request.body).toEqual(envelope);
+  });
+
+  it("refuses an empty query", () => {
+    expect(buildRequest("graphql", CHECKPOINT, "", SUI_GRAPHQL).ok).toBe(false);
+  });
+});
+
 describe("paramsKindFor", () => {
+  it("returns 'graphql' for GraphQL", () => {
+    expect(paramsKindFor("graphql")).toBe("graphql");
+  });
+
   it("returns 'path' for REST and 'json' for every other transport", () => {
     expect(paramsKindFor("rest")).toBe("path");
     expect(paramsKindFor("jsonrpc")).toBe("json");

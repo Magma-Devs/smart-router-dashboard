@@ -33,6 +33,10 @@ import {
   qRetriesByMethod,
   qRetryAvgExtraAttempts,
   qUpstreamErrorRate,
+  qUpstreamRequestsTotal,
+  qUpstreamAvailability,
+  qUpstreamFailedCount,
+  qRequestsByUpstream,
   qUpstreamReadVolumeSeriesExpr,
   qUpstreamVolumeSeriesExpr,
   qClientRequestsFromBirth,
@@ -129,8 +133,8 @@ export class MetricsDetailService {
     const grid = this.grid(window, stepSec);
     const range = (expr: string) => this.prom.queryRangeOrNull(expr, grid.start, grid.end, step);
     const reads = await Promise.all([
-      range(qEndpointLatencyByEndpointSeriesExpr(0.95, spec, lookback, rateWindow)),
-      range(qUpstreamRpsByUpstreamSeriesExpr(spec, lookback, rateWindow, step)),
+      range(qEndpointLatencyByEndpointSeriesExpr(0.95, spec, lookback, rateWindow, window)),
+      range(qUpstreamRpsByUpstreamSeriesExpr(spec, lookback, rateWindow, step, window)),
       range(qEndpointTipsSeriesExpr(spec, step)),
     ]);
     const [latency = [], rps = [], tips = []] = reads.map((r) => r ?? []);
@@ -162,16 +166,16 @@ export class MetricsDetailService {
       .flatMap((r) => r.nodes.filter((n) => n.isBackup).map((n) => n.name));
 
     const [availability, p95Ms, errorRate, rps, qosProbe, backupProbe] = await Promise.all([
-      this.series(qAvailabilitySeriesExpr(step, spec), window),
-      this.series(qLatencySeriesExpr(0.95, step, spec), window),
-      this.series(qErrorRateSeriesExpr(step, spec), window),
+      this.series(qAvailabilitySeriesExpr(step, spec, window), window),
+      this.series(qLatencySeriesExpr(0.95, step, spec, window), window),
+      this.series(qErrorRateSeriesExpr(step, spec, window), window),
       // CLIENT-scoped, matching the hero "Requests served" card. The relay-scoped counter (qRpsSeriesExpr) counts health probes
       // and one increment per cross-validation participant, so this chart used
       // to show a permanent non-zero floor on an idle chain (MAG-2737).
-      this.series(qClientRpsSeriesExpr(step, spec), window),
+      this.series(qClientRpsSeriesExpr(step, spec, window), window),
       this.series(qOptimizerScore("composite", spec), window),
       backupNames.length
-        ? this.series(qBackupShareExpr(spec, backupNames, step), window)
+        ? this.series(qBackupShareExpr(spec, backupNames, step, window), window)
         : Promise.resolve(null),
     ]);
 
@@ -220,11 +224,9 @@ export class MetricsDetailService {
       scoreRows,
       blockLagNow,
     ] = await Promise.all([
-      this.prom.scalar(`sum(increase(${ROUTER_METRICS.requestsTotal}${provSel}[${r}]))`),
+      this.prom.scalar(qUpstreamRequestsTotal(ref, window)),
       this.prom.scalar(`sum(rate(${ROUTER_METRICS.requestsTotal}${provSel}[5m]))`),
-      this.prom.scalar(
-        `clamp_max(sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${provSel}[${r}])) / sum(increase(${ROUTER_METRICS.requestsTotal}${provSel}[${r}])), 1)`,
-      ),
+      this.prom.scalar(qUpstreamAvailability(ref, window)),
       this.prom.scalar(qUpstreamErrorRate(ref, window)),
       this.prom.scalar(qEndpointLatencyQuantile(0.5, ref, window)),
       this.prom.scalar(qEndpointLatencyQuantile(0.95, ref, window)),
@@ -245,13 +247,13 @@ export class MetricsDetailService {
     const bars = bucketGrid(window, asOf);
     const errStep = errorBuckets(window).step;
     const [latP50, latP95, latP99, volTotal, volRead, blockLagSeries, failedSeries] = await Promise.all([
-      this.series(qEndpointLatencySeriesExpr(0.5, ref, step), window),
-      this.series(qEndpointLatencySeriesExpr(0.95, ref, step), window),
-      this.series(qEndpointLatencySeriesExpr(0.99, ref, step), window),
-      this.series(qUpstreamVolumeSeriesExpr(ref, step), window),
+      this.series(qEndpointLatencySeriesExpr(0.5, ref, step, window), window),
+      this.series(qEndpointLatencySeriesExpr(0.95, ref, step, window), window),
+      this.series(qEndpointLatencySeriesExpr(0.99, ref, step, window), window),
+      this.series(qUpstreamVolumeSeriesExpr(ref, step, window), window),
       this.series(qUpstreamReadVolumeSeriesExpr(ref, step), window),
       this.series(qEndpointBlockLagSeriesExpr(ref), window),
-      this.barsOf((range) => qUpstreamFailedSeriesExpr(ref, range), errStep, bars),
+      this.barsOf((range) => qUpstreamFailedSeriesExpr(ref, range, window), errStep, bars),
     ]);
 
     const scoreSeries: Partial<Record<ScoreType, TimePoint[]>> = {};
@@ -271,10 +273,7 @@ export class MetricsDetailService {
     ]);
     const nodeSeries = nodeErrs ? await this.barsOf((range) => qUpstreamNodeErrorSeriesExpr(ref, range), errStep, bars) : null;
 
-    const availOver = (w: MetricWindow) =>
-      this.prom.scalar(
-        `clamp_max(sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${provSel}[${rangeFor(w)}])) / sum(increase(${ROUTER_METRICS.requestsTotal}${provSel}[${rangeFor(w)}])), 1)`,
-      );
+    const availOver = (w: MetricWindow) => this.prom.scalar(qUpstreamAvailability(ref, w));
 
     const [
       last1h,
@@ -290,9 +289,7 @@ export class MetricsDetailService {
       availOver("1h"),
       availOver("1d"),
       availOver("7d"),
-      this.prom.scalar(
-        `round(clamp_min(sum(increase(${ROUTER_METRICS.requestsTotal}${provSel}[${r}])) - sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${provSel}[${r}])), 0))`,
-      ),
+      this.prom.scalar(qUpstreamFailedCount(ref, window)),
       nodeErrs
         ? this.prom.scalar(
             `round(sum(increase(${OPTIONAL_METRICS.nodeErrorsTotal}${provSel}[${r}])))`,
@@ -390,7 +387,7 @@ export class MetricsDetailService {
     const [total, trendMatrix, byChainRows, byMethodRows, byPairRows, families] =
       await Promise.all([
         this.prom.scalar(qErrorCount(spec, window)),
-        this.prom.queryRange(qErrorCountSeriesExpr(step, spec), start, end, step),
+        this.prom.queryRange(qErrorCountSeriesExpr(step, spec, window), start, end, step),
         this.prom.query(qErrorsBy("spec", window, spec)),
         this.prom.query(qErrorsBy("method", window, spec)),
         // Hotspots need BOTH labels on one vector.
@@ -402,9 +399,7 @@ export class MetricsDetailService {
         ]),
       ]);
 
-    const requestsByPair = await this.prom.query(
-      `round(sum by (spec, provider_address) (increase(${ROUTER_METRICS.requestsTotal}${selector({ spec })}[${rangeFor(window)}])))`,
-    );
+    const requestsByPair = await this.prom.query(qRequestsByUpstream(window, spec));
 
     // Real error-class breakdown. `transport` = derived relay failures
     // (total − success; node errors count as transport SUCCESS — verified
@@ -541,7 +536,7 @@ export class MetricsDetailService {
         // round(): un-rounded increase() extrapolation can put a bucket ABOVE
         // the window's headline total (e.g. a 77 spike on 60 errors) — whole
         // errors per bucket keep the trend reconcilable with the total.
-        h.trend = await this.series(qUpstreamFailedSeriesExpr({ spec: h.spec, endpointId: h.upstream }, step), window);
+        h.trend = await this.series(qUpstreamFailedSeriesExpr({ spec: h.spec, endpointId: h.upstream }, step, window), window);
       }),
     );
 

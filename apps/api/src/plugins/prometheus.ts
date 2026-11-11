@@ -6,7 +6,7 @@ import { MetricsDetailService } from "../services/metrics-detail.js";
 import { MetricsDashboardService } from "../services/metrics-dashboard.js";
 import { ProvidersService } from "../services/providers.js";
 import { ConfigurationService } from "../services/configuration.js";
-import { ROUTER_METRICS } from "@sr/shared";
+import { RECORDED, RECORDED_CHART_FLOOR, ROUTER_METRICS, recordedReadsPolicy, recordedWindows, setRecordedReads, type RecordedReadsState } from "@sr/shared";
 import { ROUTER_SCOPE_CANDIDATES, config, readMetricsScope } from "../config.js";
 
 /** Services bound to one router scope (or to the whole cluster when unset). */
@@ -17,9 +17,18 @@ export interface ScopedServices {
   providers: ProvidersService;
 }
 
+/** What the last freshness probe saw. */
+interface RecordedReadsProbe {
+  at: string | null;
+  ageSec: number | null;
+  historySec: number | null;
+}
+
 declare module "fastify" {
   interface FastifyInstance {
     prom: PrometheusClient;
+    /** The recorded-reads policy as the api applies it now — for `/api/metrics/reads` and the dashboard's notice. */
+    recordedReads: () => RecordedReadsState;
     metrics: MetricsService;
     metricsDetail: MetricsDetailService;
     metricsDashboard: MetricsDashboardService;
@@ -81,6 +90,71 @@ export const prometheusPlugin = fp(async (app: FastifyInstance) => {
       }
     });
   }
+  // Recorded reads: windows of `recordedFrom` and up read the store's
+  // recorded series (promql/recorded.ts) — but only while those are fresh.
+  // The series exist where the fleet store's ruler evaluates the rules, and
+  // from then on; a store without them, or a ruler that stopped, must not
+  // leave the long windows empty. One cheap read a minute asks how old the
+  // newest recorded sample is; past `recordedStaleMs` (or absent) every
+  // builder reads raw again. Transitions are logged once, not every probe.
+  // Armed by the first metrics request, never at boot — readiness must not
+  // hinge on the store — and that request waits for the one answer, so the
+  // first page a tenant opens already reads the way the policy says.
+  const recorded = config.prometheus.recorded;
+  let probeTimer: NodeJS.Timeout | null = null;
+  let armed = false;
+  let lastProbe: RecordedReadsProbe = { at: null, ageSec: null, historySec: null };
+  const probe = async (): Promise<void> => {
+    const from = recorded.from;
+    if (!from) return;
+    // Two cheap reads: how old the newest recorded sample is, and how far
+    // back the oldest one within the widest window reaches. A store that
+    // cannot answer is a store without fresh series.
+    const [ageSec, historySec] = await Promise.all([
+      prom.scalar(`time() - max(timestamp(${RECORDED.requests}))`).catch(() => null),
+      prom.scalar(`time() - min(min_over_time(timestamp(${RECORDED.requests})[${recorded.historyLookback}:1h]))`).catch(() => null),
+    ]);
+    const available = ageSec !== null && Number.isFinite(ageSec) && ageSec * 1000 <= recorded.staleMs;
+    const history = available && historySec !== null && Number.isFinite(historySec) ? Math.max(0, Math.floor(historySec)) : null;
+    const was = recordedReadsPolicy();
+    setRecordedReads({ from, available, historySeconds: history });
+    lastProbe = { at: new Date().toISOString(), ageSec, historySec: history };
+    if (available && !was.available) {
+      app.log.info({ ageSec, historySec: history, from }, `recorded series are fresh — windows of ${from} and up read them where the history covers the window`);
+    } else if (!available && was.available) {
+      app.log.warn({ ageSec, series: RECORDED.requests }, "recorded series missing or stale — every window reads raw until they are fresh again");
+    }
+  };
+  app.decorate("recordedReads", (): RecordedReadsState => {
+    const pol = recordedReadsPolicy();
+    const reason: RecordedReadsState["reason"] =
+      pol.from === null ? "off" : !armed ? "unprobed" : lastProbe.ageSec === null ? "absent" : !pol.available ? "stale" : "fresh";
+    const windows = recordedWindows();
+    return { from: pol.from, chartFloor: RECORDED_CHART_FLOOR, available: pol.available, reason, ageSec: lastProbe.ageSec, historySec: pol.historySeconds, probedAt: lastProbe.at, windows };
+  });
+  const armRecordedReads = async (): Promise<void> => {
+    if (armed || !recorded.from) return;
+    armed = true;
+    await probe();
+    probeTimer = setInterval(() => void probe(), recorded.probeMs);
+    probeTimer.unref();
+  };
+  if (recorded.from) {
+    setRecordedReads({ from: recorded.from, available: false });
+    app.log.info(
+      { from: recorded.from, staleMs: recorded.staleMs, probeMs: recorded.probeMs },
+      `recorded reads: windows of ${recorded.from} and up read the recorded series while they are fresh`,
+    );
+  } else {
+    setRecordedReads({ from: null, available: false });
+  }
+  app.addHook("preHandler", async (request) => {
+    if (!armed && request.url.startsWith("/api/metrics")) await armRecordedReads();
+  });
+  app.addHook("onClose", async () => {
+    if (probeTimer) clearInterval(probeTimer);
+    setRecordedReads({ from: null, available: false });
+  });
   const routerConfig = new ConfigurationService();
   app.decorate("prom", prom);
   app.decorate("routerConfig", routerConfig);

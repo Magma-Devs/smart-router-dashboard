@@ -95,6 +95,16 @@ router uses its in-process cache.
 - The web is **runtime-configurable** — one published image points at any api host via `DASHBOARD_API_URL`.
 - `AUTH_MODE=enabled` adds a Postgres users store + HS256 JWT gate on `/api/*` — see [Authentication](#authentication).
 
+### Recording rules (optional)
+
+Long windows read the raw router metrics unless the store evaluates the
+twelve recording rules in [docs/RECORDING-RULES.md](docs/RECORDING-RULES.md);
+with them, windows of three hours and up read a few hundred recorded series
+instead of every raw histogram bucket, within a fraction of a percent of the
+same numbers. Without them everything works, only slower on long windows, and
+the Metrics page says so. `GET /api/metrics/reads` reports which case a
+deployment is in.
+
 ## Pages
 
 - **Overview** — KPI strip (requests, RPS, errors, success rate, latency) + chart grid, all live

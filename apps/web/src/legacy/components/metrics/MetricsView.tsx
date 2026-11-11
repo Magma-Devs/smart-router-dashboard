@@ -16,6 +16,7 @@ import { useFilters } from "@/components/gateway/FiltersProvider";
 import { useChainFilter, useChainOptions, withMutedRows } from "@/hooks/use-chain-options";
 import { useRouterFilter } from "@/legacy/hooks/use-router-options";
 import { RouterHeader } from "@/components/gateway/RouterHeader";
+import { RecordedReadsNotice } from "@/components/gateway/RecordedReadsNotice";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { HeroPanel } from "@/legacy/components/metrics/HeroPanel";
 import { CurrentlyUnavailable } from "@/components/metrics/CurrentlyUnavailable";
@@ -69,6 +70,7 @@ export function MetricsView() {
         <RouterHeader chains={routedChains} chainFilter={activeChain ?? "all"} setChainFilter={setChainFilter}
           timeWindow={timeWindow} setTimeWindow={setTimeWindow} />
       </div>
+      <RecordedReadsNotice />
       <div style={{ display: "flex", borderBottom: "1px solid var(--line)", marginBottom: 24 }}>
         {([["metrics", "Overview"], ["upstreams", "Upstreams"], ["errors", "Errors breakdown"], ["traffic", "Traffic"]] as [Tab, string][]).map(([k, l]) => (
           <button key={k} onClick={() => setTab(k)} style={{

@@ -16,7 +16,14 @@ import {
   qClientRpsSeriesExpr,
   qConsistencyCaught,
   qErrorCount,
+  qErrorCountSeriesExpr,
   qErrorsBy,
+  qEndpointRelaysBySpec,
+  qEndpointLatencyQuantileBySpec,
+  qUpstreamRelays,
+  qUpstreamSuccesses,
+  qReadRequestsByMethod,
+  qPerUpstreamRpsExpr,
   qGroupedAvailability,
   qGroupedClientRequests,
   qGroupedHealth,
@@ -356,12 +363,12 @@ export class MetricsService {
       kpi(qLatencyQuantile(0.95, spec, window), qLatencyQuantile(0.95, spec, window, r)),
       kpi(qLatencyQuantile(0.99, spec, window), qLatencyQuantile(0.99, spec, window, r)),
       this.prom.scalar(ROUTER_METRICS.overallHealth),
-      range(qClientRpsSeriesExpr(win.step, spec)),
-      range(`round(clamp_min(sum(increase(${ROUTER_METRICS.requestsTotal}${sel}[${win.step}])) - sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${win.step}])), 0))`),
+      range(qClientRpsSeriesExpr(win.step, spec, window)),
+      range(qErrorCountSeriesExpr(win.step, spec, window)),
       // Latency series per percentile for the p50/p95/p99 chart toggle.
-      range(qLatencySeriesExpr(0.5, win.step, spec)),
-      range(qLatencySeriesExpr(0.95, win.step, spec)),
-      range(qLatencySeriesExpr(0.99, win.step, spec)),
+      range(qLatencySeriesExpr(0.5, win.step, spec, window)),
+      range(qLatencySeriesExpr(0.95, win.step, spec, window)),
+      range(qLatencySeriesExpr(0.99, win.step, spec, window)),
       // Errors = total − success over the window, for BOTH windows (the prior
       // KPI must be prior ERRORS, not prior requests).
       this.prom.scalar(qErrorCount(spec, window)),
@@ -369,13 +376,13 @@ export class MetricsService {
       // Latency histogram distribution (per-bucket counts over the window).
       this.prom.query(qLatencyDistribution(window, spec)),
       // Per-provider throughput stack (real: provider_address label).
-      range(`sum by (provider_address) (rate(${ROUTER_METRICS.requestsTotal}${sel}[${win.step}]))`),
+      range(qPerUpstreamRpsExpr(win.step, spec, window)),
       spec ? Promise.resolve([spec]) : this.listSpecs(),
       readUpstreamHealth(this.prom, this.configSvc, spec, routerId),
       // Per-chain p50, health and throughput trend — grouped, one read each.
       this.prom.query(qPerSpecLatencyQuantile(0.5, window, spec)),
       this.prom.query(qPerSpecHealth(spec)),
-      range(qPerSpecClientRpsSeriesExpr(win.step, spec)),
+      range(qPerSpecClientRpsSeriesExpr(win.step, spec, window)),
       this.activeRoutes(window),
     ]);
 
@@ -489,7 +496,7 @@ export class MetricsService {
   /** Active routes ranked by requests over the window (per backing endpoint). */
   private async activeRoutes(window: MetricWindow): Promise<import("@sr/shared").ActiveRoute[]> {
     const rows = await this.prom.query(
-      `sum by (endpoint_id, spec) (increase(${ENDPOINT_METRICS.totalRelaysServiced}[${rangeFor(window)}]))`,
+      qEndpointRelaysBySpec(window),
     );
     const parsed = rows
       .map((s) => ({
@@ -896,7 +903,7 @@ export class MetricsService {
       pollsFailed,
     ] = await Promise.all([
       this.prom.query(
-        `sum by (endpoint_id, spec) (increase(${ENDPOINT_METRICS.totalRelaysServiced}${sel}[${r}]))`,
+        qEndpointRelaysBySpec(window, spec),
       ),
       // QoS, preferred source. The router samples this for EVERY upstream on a
       // timer, so an idle row — a backup nobody has failed over to — still has
@@ -915,7 +922,7 @@ export class MetricsService {
       // several endpoints, and folding their histograms quotes one chain's
       // latency for another.
       this.prom.query(
-        `histogram_quantile(0.95, sum by (endpoint_id, spec, le) (rate(${ENDPOINT_METRICS.latencyBucket}${sel}[${r}])))`,
+        qEndpointLatencyQuantileBySpec(0.95, window, spec),
       ),
       // Block rate + tip-change count turn the raw block lag below into the
       // seconds-behind figure the roster leads with, and into a stale flag.
@@ -1114,8 +1121,8 @@ export class MetricsService {
     // window, keyed by provider_address (= the endpoint name) + spec on the
     // router request counters.
     const [okByProv, totByProv] = await Promise.all([
-      this.prom.query(`sum by (provider_address, spec) (increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${r}]))`),
-      this.prom.query(`sum by (provider_address, spec) (increase(${ROUTER_METRICS.requestsTotal}${sel}[${r}]))`),
+      this.prom.query(qUpstreamSuccesses(window, spec)),
+      this.prom.query(qUpstreamRelays(window, spec)),
     ]);
     const okMap = new Map(
       okByProv.map((s) => [nodeKey(s.metric.provider_address ?? "", s.metric.spec ?? ""), Number(s.value[1]) || 0]),
@@ -1164,7 +1171,7 @@ export class MetricsService {
     const specs = await this.listSpecs();
 
     const [aggMatrix, totalAll] = await Promise.all([
-      this.prom.queryRange(qClientRpsSeriesExpr(win.step), start, end, win.step),
+      this.prom.queryRange(qClientRpsSeriesExpr(win.step, undefined, window), start, end, win.step),
       this.prom.scalar(qClientRequestsTotal(undefined, window)),
     ]);
     const aggPoints = toPoints(aggMatrix[0]?.values);
@@ -1173,7 +1180,7 @@ export class MetricsService {
       specs.map(async (spec) => {
         const meta = buildChainMetaByIndex(spec);
         const [trendMatrix, requests] = await Promise.all([
-          this.prom.queryRange(qClientRpsSeriesExpr(win.step, spec), start, end, win.step),
+          this.prom.queryRange(qClientRpsSeriesExpr(win.step, spec, window), start, end, win.step),
           this.prom.scalar(qClientRequestsTotal(spec, window)),
         ]);
         const trend = toPoints(trendMatrix[0]?.values);
@@ -1222,7 +1229,7 @@ export class MetricsService {
         this.prom.query(qClientRequestsBy("function", window, spec)),
         this.prom.query(qMethodLatencyQuantile(0.95, window, spec)),
         this.prom.query(
-          `sum by (method) (increase(${ROUTER_METRICS.requestsReadTotal}${sel}[${r}]))`,
+          qReadRequestsByMethod(window, spec),
         ),
         this.prom.query(qRequestsBy("method", window, spec)),
         this.prom.query(qErrorsBy("method", window, spec)),
@@ -1287,7 +1294,7 @@ export class MetricsService {
     const win = WINDOWS[window];
     const end = Math.floor(Date.now() / 1000);
     const start = end - win.rangeSeconds;
-    const expr = qClientRpsSeriesExpr(win.step, spec);
+    const expr = qClientRpsSeriesExpr(win.step, spec, window);
     const matrix = await this.prom.queryRange(expr, start, end, win.step);
     const first = matrix[0];
     return {

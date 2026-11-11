@@ -50,6 +50,86 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   so a backup's failure (a 429, a timeout) was dropped from the Errors and
   Transactions rows.
 
+## [0.38.0]
+
+### Added
+
+- **Metrics:** a store without the recording rules gets the raw reads it had
+  before 0.36.0, window by window, and is told so. The api's probe measures
+  how far back the recorded series reach as well as how old the newest sample
+  is, and a window reads recorded only while that history covers it (twice
+  the window for a read with a prior-window delta): rules added an hour ago no
+  longer undercount a three-day window — it reads the raw query, byte for
+  byte, until the history catches up. `GET /api/metrics/reads` reports the
+  state (`off`, `unprobed`, `absent`, `stale` or `fresh`, the sample age, the
+  history, and which windows read recorded). The Metrics page shows a notice
+  when the store has no rules, when they are behind, or while their history
+  is shorter than a window the page offers, linking to
+  `docs/RECORDING-RULES.md` — the rules file to copy into any Prometheus or
+  Mimir, the math behind each read, and the measured deviation (MAG-4348).
+
+## [0.37.1]
+
+### Fixed
+
+- **Upstreams:** the endpoint sheet no longer cuts off its right side. When an
+  upstream's addresses were long, the status tags, the Edit button, the copy
+  buttons and the Authentication box ran past the sheet's edge and were cut.
+  The cause: the sheet body is a grid, and a grid's automatic column grows to
+  the widest line that can't wrap - here, one upstream's addresses joined on
+  one line. The column is now exactly the sheet's width (`minmax(0, 1fr)` on
+  the shared `.gw-sheet__body` and on the sheet's inner lists). Each address
+  has its own line and wraps when it is too long, and on a narrow window the
+  status tags move under the upstream's name. Fixed in both UIs.
+
+## [0.37.0]
+
+### Added
+
+- **Try it:** GraphQL endpoints get a console. A router serving a chain over
+  the `graphql` interface (Sui, smart-router#480) shows **Try now** on its
+  Upstreams rows, where it showed nothing before. The method catalog carries
+  each root field the spec declares, with an example query: 26 of Sui's 37 run
+  as they stand, and the other 11 show where their argument goes
+  (`<transaction digest>`). Every example was sent to Sui's public GraphQL
+  endpoints on mainnet, testnet and devnet. The query box shows the query laid
+  out one field per line and sends it as `{"query": …}` on one line, so the
+  curl, Python, Go and JavaScript snippets stay readable. A JSON body pasted
+  into the box goes as written, which is how to send `variables`. A response
+  carrying GraphQL `errors` reads as a failure, although the server answers
+  it with HTTP 200. Through the router, pinned to an upstream, and direct to
+  the upstream all work.
+
+## [0.36.0]
+
+### Added
+
+- **Metrics:** windows of 3 hours and up read the fleet store's recorded series
+  (`promql/recorded.ts`: the Mimir ruler's two-minute rates of the request
+  counters, the two latency histograms and the upstream relay counters, summed
+  per chain and router) instead of scanning the raw families — a per-chain p95
+  over seven days reads 645 series instead of 7,530, and the upstream roster's
+  reads over the 10,620-series endpoint histogram become reads over 1,230.
+  Narrower windows stay raw and exact, and chart lines switch only from 12
+  hours up, where a chart point is a two-minute average over the step rather
+  than an instantaneous rate. The api probes the series' freshness on
+  the first metrics request and once a minute after it, and reads raw while
+  they are missing or older than five minutes, so a store without the rules
+  (or a ruler that stopped) is slow again, never wrong. `METRICS_RECORDED_FROM`
+  moves the floor or holds a tenant on raw (`never`); the `?router=` scope
+  reaches the recorded names. The per-method latency quantile, the small
+  counter families (consistency, retries, node and classified errors, cache,
+  cross-validation) and every gauge keep reading raw (MAG-4339).
+
+### Fixed
+
+- **Metrics (0.27 page):** on a window change the Routers table drew four
+  skeleton rows above the previous window's rows, with a ninth skeleton
+  column the table does not have, and the hero cards blanked. Skeletons now
+  appear only with no rows to show; otherwise the previous window's rows and
+  cards stay up, dimmed, with the refreshing dot, until the next ones land
+  (MAG-4339).
+
 ## [0.35.5]
 
 ### Changed

@@ -150,7 +150,7 @@ export function EndpointDetailSheet({ open, ep, onClose, upstreams }: {
                     prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
                   );
                   return (
-                    <div style={{ display: "grid", gap: 5 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 5 }}>
                       <div style={{ display: "flex", gap: 8, marginBottom: 4 }}>
                         <button className="gw-btn" style={{ fontSize: 10, padding: "2px 8px" }}
                           onClick={() => setLocalUpstreamIds(compatible.map((p) => p.id))}>Select all</button>
@@ -182,7 +182,7 @@ export function EndpointDetailSheet({ open, ep, onClose, upstreams }: {
                                 {pv.role === "primary" && <span style={{ fontSize: 10, padding: "1px 5px", borderRadius: 3, background: "rgba(34,197,94,0.1)", color: "var(--ok)" }}>Primary</span>}
                                 {pv.role === "backup" && <span style={{ fontSize: 10, padding: "1px 5px", borderRadius: 3, background: "rgba(96,165,250,0.1)", color: "#60a5fa" }}>Backup</span>}
                               </div>
-                              <div style={{ fontSize: 10, color: "var(--text-4)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 1 }}>{pv.url || "—"}</div>
+                              <div title={pv.url || undefined} style={{ fontSize: 10, color: "var(--text-4)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 1 }}>{pv.url || "—"}</div>
                             </div>
                           </button>
                         );
@@ -191,8 +191,10 @@ export function EndpointDetailSheet({ open, ep, onClose, upstreams }: {
                   );
                 })()
               ) : (
-                /* Read mode — the config's upstream nodes + their urlHost list */
-                <div style={{ display: "grid", gap: 5 }}>
+                /* Read mode — the config's upstream nodes + their urlHost list.
+                   minmax(0, 1fr): an auto column grows to the widest line
+                   that can't wrap and pushes the rows past the sheet's edge. */
+                <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 5 }}>
                   {nodeGroups.length === 0 ? (
                     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 11px", borderRadius: 7,
                       background: "rgba(239,68,68,0.05)", border: "1px solid rgba(239,68,68,0.18)" }}>
@@ -204,16 +206,19 @@ export function EndpointDetailSheet({ open, ep, onClose, upstreams }: {
                       const pv = upstreamByName(n.name);
                       return (
                         <div key={n.name} style={{ padding: "7px 10px", borderRadius: 7, background: "var(--hover)", border: "1px solid var(--line)" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-                            <span style={{ fontSize: 12, fontWeight: 500, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{n.name}</span>
+                          {/* The tags move under the name when both don't fit. */}
+                          <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "4px 9px" }}>
+                            <span title={n.name} style={{ fontSize: 12, fontWeight: 500, flex: "1 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{n.name}</span>
                             {!n.isBackup && <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 4, background: "rgba(34,197,94,0.1)", color: "var(--ok)", border: "1px solid rgba(34,197,94,0.2)", flexShrink: 0 }}>Primary</span>}
                             {n.isBackup && <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 4, background: "rgba(96,165,250,0.1)", color: "#60a5fa", border: "1px solid rgba(96,165,250,0.2)", flexShrink: 0 }}>Backup</span>}
                             <IfaceTag id={ep.iface} />
                             <HealthTag health={pv?.health ?? "unknown"} />
                           </div>
+                          {/* One line per url, and a url too long for the row
+                              wraps rather than being cut. */}
                           {n.hosts.length > 0 && (
-                            <div className="gw-mono" style={{ fontSize: 10, color: "var(--text-4)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 3 }}>
-                              {n.hosts.join(" · ")}
+                            <div className="gw-mono" style={{ fontSize: 10, color: "var(--text-4)", wordBreak: "break-all", marginTop: 3 }}>
+                              {n.hosts.map((h) => <div key={h}>{h}</div>)}
                             </div>
                           )}
                         </div>

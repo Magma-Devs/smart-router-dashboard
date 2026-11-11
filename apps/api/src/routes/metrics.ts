@@ -84,6 +84,16 @@ export async function metricRoutes(app: FastifyInstance) {
     return app.scoped(request.query.router).metrics.dashboardSummary(parseWindow(request.query.window), request.query.spec);
   });
 
+  // How long windows are being read right now — recorded series (the store's
+  // recording rules) or raw — and why. The Metrics page's notice reads it so
+  // an operator whose store has no rules learns what adding them buys.
+  app.get("/api/metrics/reads", {
+    schema: {
+      tags: ["Metrics"],
+      summary: "How the api reads long windows now: the store's recorded series or the raw families, and why",
+    },
+  }, async () => app.recordedReads());
+
   // The topbar's health badge + live RPS, on every page: six reads, no
   // window. Takes the same two router axes as the overview it replaces there.
   app.get<{ Querystring: WindowQuery }>("/api/metrics/pulse", {
