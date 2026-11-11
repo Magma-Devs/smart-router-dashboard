@@ -27,6 +27,7 @@ import { ColumnChart, LineChart, niceScale, type ChartHover, type Layer, type Se
 import { useApi } from "@/hooks/use-api";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 import { fmtComma } from "@/lib/format";
+import { NODE_ERROR_COLOR } from "@/lib/colors";
 import { barSpanWords, dayOf, fmtMs, gridTimes, hhmm, onGrid, PAD_R, PAD_X, timeTicks } from "@/lib/chart-time";
 import { ChartRow, LegendLine, type LegendRow } from "@/components/gateway/ChartLegend";
 import type { ErrorsJump } from "../ErrorsBreakdown";
@@ -154,7 +155,7 @@ export function PMBody({ pm, detail, name, timeWindow, onOpenErrors }: {
   const zeroGaps = (vals: number[] | undefined) => (vals ?? []).map((v) => (Number.isFinite(v) ? v : 0));
   const errStacks: Layer[] = [
     { name: "Failed attempts", values: zeroGaps(errVals[0]), color: "var(--err)" },
-    ...(eot?.node ? [{ name: "Node errors", values: zeroGaps(errVals[1]), color: "#f97316" }] : []),
+    ...(eot?.node ? [{ name: "Node errors", values: zeroGaps(errVals[1]), color: NODE_ERROR_COLOR }] : []),
   ];
   const sumOf = (vals: number[]) => vals.reduce((a, b) => a + b, 0);
   const errTotals = errStacks.map((l) => ({ name: l.name, color: l.color, total: sumOf(l.values) }));

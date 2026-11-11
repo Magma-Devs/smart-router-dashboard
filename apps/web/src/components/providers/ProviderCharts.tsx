@@ -13,6 +13,7 @@ import { ColumnChart, LineChart, niceScale, type Layer } from "@/components/gate
 import { useApi } from "@/hooks/use-api";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 import { fmtComma } from "@/lib/format";
+import { NODE_ERROR_COLOR } from "@/lib/colors";
 import { PMPanel } from "@/components/metrics/upstream/PMPanel";
 import { barSpanWords, dayOf, fmtMs, gridTimes, hhmm, onGrid, PAD_R, PAD_X, timeTicks } from "@/lib/chart-time";
 import { ChartRow, LegendLine, type LegendRow } from "@/components/gateway/ChartLegend";
@@ -20,7 +21,7 @@ import type { ReportTarget } from "./report-target";
 
 const REFRESH_MS = 60_000;
 const ERR = "var(--err)";
-const REPLY = "#f97316";
+const REPLY = NODE_ERROR_COLOR;
 const WARN = "var(--warn)";
 
 const empty = (text: string) => (
@@ -108,12 +109,12 @@ export function ProviderCharts({ providerId, providerName, timeWindow, onOpenRep
 
   /* errors: what it didn't answer usefully, and what it answered with an error */
   const errStacks: Layer[] = [
-    { name: "Failed", values: zero(failed ?? []), color: ERR },
-    ...(d?.errorReplies ? [{ name: "Error replies", values: zero(replies ?? []), color: REPLY }] : []),
+    { name: "Failed attempts", values: zero(failed ?? []), color: ERR },
+    ...(d?.errorReplies ? [{ name: "Node errors", values: zero(replies ?? []), color: REPLY }] : []),
   ];
   const errRows: LegendRow[] = [
-    { key: "f", name: "Failed", color: ERR, mark: "box", value: `${fmtComma(totals.failed)} · ${pct(totals.failed, totals.tries)}` },
-    ...(d?.errorReplies ? [{ key: "r", name: "Error replies", color: REPLY, mark: "box" as const, value: `${fmtComma(totals.replies)} · ${pct(totals.replies, totals.tries)}` }] : []),
+    { key: "f", name: "Failed attempts", color: ERR, mark: "box", value: `${fmtComma(totals.failed)} · ${pct(totals.failed, totals.tries)}` },
+    ...(d?.errorReplies ? [{ key: "r", name: "Node errors", color: REPLY, mark: "box" as const, value: `${fmtComma(totals.replies)} · ${pct(totals.replies, totals.tries)}` }] : []),
   ];
 
   /* rate limits: rate-limited minutes where the router can put a hold-off on its chain, else the hits */
@@ -130,21 +131,21 @@ export function ProviderCharts({ providerId, providerName, timeWindow, onOpenRep
   return (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))", gap: 12, marginBottom: 12 }}>
       <PMPanel title="Errors over time"
-        tip={`**Failed**: requests ${providerName} didn't answer usefully - a timeout, a refused connection, a 429, an HTTP 5xx.\n\n**Error replies**: requests it answered with an error. The router counts these as served.\n\n${perBar}${reportAt ? " Click a bar for a report on that stretch." : ""}`}>
+        tip={`**Failed attempts**: attempts ${providerName} didn't answer usefully - a timeout, a refused connection, a 429, an HTTP 5xx.\n\n**Node errors**: attempts it answered with an error. The router counts these as served.\n\n${perBar}${reportAt ? " Click a bar for a report on that stretch." : ""}`}>
         {totals.failed + totals.replies > 0 ? (
           <ChartRow height={170}
             chart={<ColumnChart stacks={errStacks} id={"pve" + pid} integerY {...shared} onBarClick={reportAt}
               tooltip={(i) => (
                 <>
                   {when(i)}
-                  {tipRow("Failed", ERR, `${fmtComma(failed?.[i] ?? 0)} · ${pct(failed?.[i] ?? 0, tries?.[i] ?? 0)}`)}
-                  {d?.errorReplies && tipRow("Error replies", REPLY, `${fmtComma(replies?.[i] ?? 0)} · ${pct(replies?.[i] ?? 0, tries?.[i] ?? 0)}`)}
-                  {tipRow("Requests", "var(--text-4)", fmtComma(tries?.[i] ?? 0))}
+                  {tipRow("Failed attempts", ERR, `${fmtComma(failed?.[i] ?? 0)} · ${pct(failed?.[i] ?? 0, tries?.[i] ?? 0)}`)}
+                  {d?.errorReplies && tipRow("Node errors", REPLY, `${fmtComma(replies?.[i] ?? 0)} · ${pct(replies?.[i] ?? 0, tries?.[i] ?? 0)}`)}
+                  {tipRow("Attempts", "var(--text-4)", fmtComma(tries?.[i] ?? 0))}
                   {clickHint(i)}
                 </>
               )} />}
             legend={<LegendLine heading="This window" rows={errRows} />} />
-        ) : d && totals.tries > 0 ? empty(`No failed requests and no error replies at ${providerName} in this window.`) : loadingOr(`No requests to ${providerName} in this window.`)}
+        ) : d && totals.tries > 0 ? empty(`No failed attempts and no node errors at ${providerName} in this window.`) : loadingOr(`No requests to ${providerName} in this window.`)}
       </PMPanel>
 
       <PMPanel title="Rate limits" tip={rateTip}>
@@ -173,7 +174,7 @@ export function ProviderCharts({ providerId, providerName, timeWindow, onOpenRep
       </PMPanel>
 
       <PMPanel title="Down minutes"
-        tip={`Minutes, summed over its chains, where **half or more** of its requests failed. **Rate limits don't count** - they are in Rate limits. An error reply is an answer, so it doesn't make a minute down either.\n\n${perBar} Read for windows of a day or less.`}>
+        tip={`Minutes, summed over its chains, where **half or more** of its attempts failed. **Rate limits don't count** - they are in Rate limits. A node error is an answer, so it doesn't make a minute down either.\n\n${perBar} Read for windows of a day or less.`}>
         {d && !d.downMinutes ? empty("Down minutes aren't read for windows longer than a day - pick a day or less.") : totals.down > 0 ? (
           <ChartRow height={170}
             chart={<ColumnChart stacks={[{ name: "Down minutes", values: zero(down ?? []), color: ERR }]} id={"pvd" + pid} integerY {...shared} onBarClick={reportAt}

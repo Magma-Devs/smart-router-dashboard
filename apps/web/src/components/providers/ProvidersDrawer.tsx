@@ -4,13 +4,15 @@
  * Metrics: one row per provider with its requests and error rate, problems
  * first, and a search. "All providers" at the top is the comparison table;
  * a row is that provider's page. One list: a chain's free public node or the
- * customer's own node sits among the companies, ranked by the same rule. */
+ * client's own node sits among the companies, ranked by the same rule. */
 
 import { useState } from "react";
 import { WINDOWS, type MetricWindow, type ProviderSummary, type ProvidersReport } from "@sr/shared";
 import { IconSearch } from "@/components/gateway/icons";
 import { UpstreamLogo } from "@/components/upstreams/UpstreamLogo";
 import { errRateColor } from "@/lib/colors";
+import { HEALTH_COLOR, HEALTH_LABEL } from "@/lib/health";
+import { BLOCKED_REASON, providerHealth } from "./provider-health";
 import { fmtNum } from "@/lib/format";
 
 export function ProvidersDrawer({ report, loading, selectedId, onSelect, timeWindow }: {
@@ -64,7 +66,7 @@ export function ProvidersDrawer({ report, loading, selectedId, onSelect, timeWin
             <span className="name">All providers</span>
             <span className="sub">
               {loading ? "…" : `${all.length} provider${all.length === 1 ? "" : "s"}`}
-              {blocked > 0 && <span style={{ color: "var(--err)" }}> · {blocked} blocked</span>}
+              {blocked > 0 && <span style={{ color: HEALTH_COLOR.unhealthy }}> · {blocked} {HEALTH_LABEL.unhealthy.toLowerCase()}</span>}
             </span>
           </span>
           <ErrRate pct={loading ? null : allPct} />
@@ -92,7 +94,9 @@ function ErrRate({ pct }: { pct: number | null }) {
 }
 
 function Row({ p, active, onPick }: { p: ProviderSummary; active: boolean; onPick: (e: React.MouseEvent) => void }) {
-  const status = p.blockedNow ? "Blocked from routing now" : "Routing";
+  // The router's own state for it; nothing drawn when the router doesn't say.
+  const health = p.blockedNow === null ? null : providerHealth(p.blockedNow);
+  const label = health ? HEALTH_LABEL[health] + (p.blockedNow ? ` - ${BLOCKED_REASON}` : "") : "";
   return (
     <a href={`/providers?provider=${encodeURIComponent(p.id)}`} onClick={onPick} aria-current={active ? "page" : undefined}
       className={`gw-chain-row${active ? " active" : ""}${p.requests === 0 ? " muted" : ""}`}>
@@ -104,9 +108,8 @@ function Row({ p, active, onPick }: { p: ProviderSummary; active: boolean; onPic
         </span>
       </span>
       <ErrRate pct={p.errorRate == null ? null : p.errorRate * 100} />
-      {/* Red only when the router has stopped sending it requests. */}
-      <span className="dot" role="img" aria-label={status} title={status}
-        style={{ background: p.blockedNow ? "var(--err)" : "transparent", visibility: p.blockedNow ? "visible" : "hidden" }} />
+      <span className="dot" role="img" aria-label={label} title={label}
+        style={health ? { background: HEALTH_COLOR[health] } : { visibility: "hidden" }} />
     </a>
   );
 }

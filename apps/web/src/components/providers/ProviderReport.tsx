@@ -1,7 +1,7 @@
 "use client";
 
 /* ProviderReport — the provider report sheet and the export buttons.
- * The report is the text a customer pastes into a complaint to a provider:
+ * The report is the text a client pastes into a complaint to a provider:
  * chain, environment, URL (keys masked), methods, problem, start and end,
  * affected volume, example requests. Fields the router doesn't record say
  * "Not captured" in the text itself, so a pasted report never implies more
@@ -77,7 +77,7 @@ export function ProviderReportSheet({ target, timeWindow, onClose }: {
   const [draft, setDraft] = useState(range);
   // A bar covers every chain: it opens on the one that failed most, and the others are a pick away.
   const [spec, setSpec] = useState(target?.spec ?? "");
-  // The report's times in the reader's own zone, as the customer's outreach template writes them.
+  // The report's times in the reader's own zone, as the client's outreach template writes them.
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const q = target
     ? `provider=${encodeURIComponent(target.providerId)}&spec=${encodeURIComponent(spec)}&from=${range.from}&to=${range.to}&tz=${encodeURIComponent(tz)}${scopeQ}`
@@ -134,7 +134,7 @@ export function ProviderReportSheet({ target, timeWindow, onClose }: {
       {!r && !res.error && <Skel w={320} h={10} />}
       {noFailures && (
         <div style={{ fontSize: 13, color: "var(--text-3)", padding: "16px 0" }}>
-          No failed requests and no error replies to {target?.providerName} on {chainName} in this range.
+          No failed attempts and no node errors at {target?.providerName} on {chainName} in this range.
         </div>
       )}
       {r && !noFailures && (

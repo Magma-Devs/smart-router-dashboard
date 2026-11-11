@@ -15,7 +15,7 @@
  *    traffic moves it, so an idle or disabled upstream would read 100%;
  *  - traffic under label values that can't be a node name is counted once,
  *    below the table, instead of inventing a provider for it;
- *  - "Error replies" are requests the provider answered with an error. The
+ *  - "Node errors" are requests the provider answered with an error. The
  *    router counts those as served, so they are in no error rate: a node that
  *    refuses nine calls in ten would otherwise look healthy here;
  *  - a read the store didn't answer is said, never drawn as an empty table. */
@@ -34,6 +34,8 @@ import {
 import { useApi } from "@/hooks/use-api";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
+import { HealthTag } from "@/components/gateway/HealthTag";
+import { BLOCKED_REASON, providerHealth } from "./provider-health";
 import { Tip } from "@/components/gateway/Tip";
 import { ThCol, useSort } from "@/components/gateway/SortTable";
 import { Refreshing, Skel, SkelRows } from "@/components/gateway/Skel";
@@ -41,25 +43,11 @@ import { UpstreamLogo } from "@/components/upstreams/UpstreamLogo";
 import { errRateColor, tipLagColor, uptimeColorFrac } from "@/lib/colors";
 import { fmtLag, fmtNum } from "@/lib/format";
 import { PMNoVal, PMPanel, PMStat } from "@/components/metrics/upstream/PMPanel";
+import { TT } from "@/lib/tooltips";
+import { Pager } from "@/components/metrics/request-log";
 import { ProviderCharts } from "./ProviderCharts";
 import type { ReportTarget } from "./report-target";
 
-const NOT_EMITTED = "This router build doesn't emit the metric behind this number yet.";
-const TIP_TIMEOUTS =
-  "**Timeouts and refused or reset connections** as a share of the tries sent to this provider. The router counts these together today - a separate timeout figure needs an error-type label on the router's counters.";
-const TIP_UPTIME =
-  "Of every minute this provider served one of your chains, the share that **wasn't down**. A minute is down when half or more of its requests failed, **rate limits not counted** - they have their own column. An error reply is an answer, so it doesn't make a minute down either. Read for windows of a day or less.";
-const TIP_LIMITED =
-  "Minutes where half or more of its requests got **\"too many requests\"**. They don't count as down: a rate limit is often your plan's limit, not the provider failing. Read for windows of a day or less.";
-const LIMITED_UNKNOWN =
-  "Not read for windows longer than a day, or when the router's rate-limit counts don't say which chain they were on.";
-const TIP_OTHERS =
-  "The error rate of the **other providers on this chain**, together, over the same window. If they are fine and this one isn't, the problem is this provider, not the chain.";
-const UPTIME_NOT_READ = "Uptime isn't read for windows longer than a day - it needs every minute of the window. Pick a day or less.";
-const TIP_RATE =
-  "Times the provider answered **\"too many requests\"** and the router held it off. A provider that limits your whole account counts every chain here together.";
-const TIP_REPLIES =
-  "Requests this provider **answered with an error**, for example \"method not supported\" or \"execution reverted\". The router counts these as served, so they are **not** in the error rate. Some are the caller's own mistake.";
 /** The peak averages 5 minutes, or longer on a window too long to read every 5 minutes of - the api says which. */
 const tipPeak = (sec: number | undefined) => {
   const min = Math.round((sec ?? 300) / 60);
@@ -77,7 +65,7 @@ const fmtRps = (n: number | null) =>
   n == null ? "—" : n >= 1000 ? (n / 1000).toFixed(1) + "k" : n >= 10 ? Math.round(n).toString() : n.toFixed(1);
 const pctCell = (r: number | null, emitted = true) =>
   !emitted ? (
-    <span style={{ fontSize: 12, color: "var(--text-4)" }} title={NOT_EMITTED}>—</span>
+    <span style={{ fontSize: 12, color: "var(--text-4)" }} title={TT.providerNotEmitted}>—</span>
   ) : r == null ? (
     <span style={{ fontSize: 12, color: "var(--text-4)" }}>—</span>
   ) : (
@@ -87,7 +75,7 @@ const pctCell = (r: number | null, emitted = true) =>
   );
 const numCell = (n: number | null, emitted = true, color = "var(--text)") =>
   !emitted ? (
-    <span style={{ fontSize: 12, color: "var(--text-4)" }} title={NOT_EMITTED}>—</span>
+    <span style={{ fontSize: 12, color: "var(--text-4)" }} title={TT.providerNotEmitted}>—</span>
   ) : n == null ? (
     <span style={{ fontSize: 12, color: "var(--text-4)" }}>—</span>
   ) : (
@@ -103,7 +91,7 @@ const msCell = (ms: number | null, read = true, why = LATENCY_NOT_READ) =>
   );
 const minutesCell = (n: number | null) =>
   n == null ? (
-    <span style={{ fontSize: 12, color: "var(--text-4)" }} title={LIMITED_UNKNOWN}>—</span>
+    <span style={{ fontSize: 12, color: "var(--text-4)" }} title={TT.providerLimitedUnknown}>—</span>
   ) : (
     <span className="gw-mono gw-tnum" style={{ fontSize: 12, color: n > 0 ? "var(--warn)" : "var(--text-4)", whiteSpace: "nowrap" }}>{fmtNum(n)} min</span>
   );
@@ -117,26 +105,16 @@ const othersCell = (o: ProviderChainStats["others"]) =>
   );
 const uptimeCell = (u: number | null, read = true, down: number | null = null) =>
   u == null ? (
-    <span style={{ fontSize: 12, color: "var(--text-4)" }} title={read ? undefined : UPTIME_NOT_READ}>—</span>
+    <span style={{ fontSize: 12, color: "var(--text-4)" }} title={read ? undefined : TT.providerUptimeNotRead}>—</span>
   ) : (
     <span className="gw-mono gw-tnum" style={{ fontSize: 12, color: uptimeColorFrac(u) }}
       title={down != null ? `${fmtNum(down)} down minute${down === 1 ? "" : "s"}` : undefined}>{(u * 100).toFixed(2)}%</span>
   );
 
-function Badge({ children, tone }: { children: React.ReactNode; tone: "err" | "primary" | "backup" | "muted" }) {
-  const c =
-    tone === "err"
-      ? { color: "var(--err)", bg: "rgba(239,68,68,0.1)" }
-      : tone === "primary"
-        ? { color: "#60a5fa", bg: "rgba(96,165,250,0.1)" }
-        : tone === "backup"
-          ? { color: "#fb923c", bg: "rgba(251,146,60,0.1)" }
-          : { color: "var(--text-3)", bg: "var(--hover)" };
-  return (
-    <span style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", padding: "1px 6px", borderRadius: 4, color: c.color, background: c.bg, whiteSpace: "nowrap" }}>
-      {children}
-    </span>
-  );
+/** A small label on a row: how many accounts, a primary or a backup. */
+function Badge({ children, tone }: { children: React.ReactNode; tone: "primary" | "backup" | "muted" }) {
+  const cls = tone === "primary" ? "gw-tag gw-tag--info" : tone === "backup" ? "gw-tag gw-tag--warn" : "gw-tag";
+  return <span className={cls} style={{ fontSize: 10, padding: "1px 6px", whiteSpace: "nowrap" }}>{children}</span>;
 }
 
 /* ── Roster ─────────────────────────────────────────────────────────────── */
@@ -191,7 +169,7 @@ function ProvidersRoster({ report, rows, activeId, onSelect, timeWindow, loading
     <div className="gw-card" style={{ padding: 0, overflow: "hidden", marginBottom: 18 }}>
       <div style={{ padding: "11px 14px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 6 }}>
         <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-2)" }}>All providers</span>
-        <Tip text="Every company behind your upstreams, across all your chains. Click a row to see its chains and methods below." />
+        <Tip text={TT.providerList} />
         <div style={{ flex: 1 }} />
         <span style={{ fontSize: 11, color: "var(--text-3)", display: "inline-flex", alignItems: "center", gap: 7 }}>
           {loading ? <Skel w={168} h={9} /> : <>{rows.length} provider{rows.length === 1 ? "" : "s"} · over {timeWindow}</>}
@@ -209,13 +187,13 @@ function ProvidersRoster({ report, rows, activeId, onSelect, timeWindow, loading
               <ThCol align="right" sortKey="chains" sort={sort} onSort={onSort}>Chains</ThCol>
               <ThCol align="right" sortKey="requests" sort={sort} onSort={onSort}>Requests</ThCol>
               <ThCol align="right" sortKey="err" sort={sort} onSort={onSort}>{two("Error", "rate")}</ThCol>
-              <ThCol align="right" tip={TIP_REPLIES} sortKey="replies" sort={sort} onSort={onSort}>{two("Error", "replies")}</ThCol>
-              <ThCol align="right" tip={TIP_RATE} sortKey="rate" sort={sort} onSort={onSort}>{two("Rate-limit", "hits")}</ThCol>
+              <ThCol align="right" tip={TT.providerNodeErrors} sortKey="replies" sort={sort} onSort={onSort}>{two("Node", "errors")}</ThCol>
+              <ThCol align="right" tip={TT.providerRateHits} sortKey="rate" sort={sort} onSort={onSort}>{two("Rate-limit", "hits")}</ThCol>
               <ThCol align="right" sortKey="p95" sort={sort} onSort={onSort}>p95</ThCol>
-              <ThCol align="right" tip={TIP_UPTIME} sortKey="uptime" sort={sort} onSort={onSort}>Uptime</ThCol>
-              <ThCol align="right" tip={TIP_LIMITED} sortKey="limited" sort={sort} onSort={onSort}>{two("Rate-limited", "time")}</ThCol>
+              <ThCol align="right" tip={TT.providerUptime} sortKey="uptime" sort={sort} onSort={onSort}>Uptime</ThCol>
+              <ThCol align="right" tip={TT.providerLimited} sortKey="limited" sort={sort} onSort={onSort}>{two("Rate-limited", "time")}</ThCol>
               <ThCol align="right" tip={tipPeak(report?.peakWindowSec)} sortKey="peak" sort={sort} onSort={onSort}>{two("Peak", "req/s")}</ThCol>
-              <ThCol align="right" tip={TIP_TIMEOUTS} sortKey="timeouts" sort={sort} onSort={onSort}>Timeouts</ThCol>
+              <ThCol align="right" tip={TT.providerTimeouts} sortKey="timeouts" sort={sort} onSort={onSort}>Timeouts</ThCol>
             </tr>
           </thead>
           <tbody>
@@ -233,7 +211,7 @@ function ProvidersRoster({ report, rows, activeId, onSelect, timeWindow, loading
                           <Badge tone="muted">{p.accounts.length} accounts</Badge>
                         </span>
                       )}
-                      {p.blockedNow && <Badge tone="err">Blocked</Badge>}
+                      {p.blockedNow && <HealthTag health="unhealthy" reason={BLOCKED_REASON} />}
                     </div>
                   </td>
                   <td style={{ textAlign: "right" }}>
@@ -319,7 +297,7 @@ function ChainsTable({ detail, chainFilter, renderAction, onOpenUpstream }: {
   const cols = renderAction ? 13 : 12;
 
   return (
-    <PMPanel title="Chains" tip="Every chain this provider serves for you. **Share** is its part of that chain's tries." full>
+    <PMPanel title="Chains" tip={TT.providerChains} full>
       <div style={{ overflowX: "auto", margin: "-12px -14px" }}>
         <table className="gw-table gw-table--tight">
           <thead>
@@ -328,14 +306,14 @@ function ChainsTable({ detail, chainFilter, renderAction, onOpenUpstream }: {
               <ThCol align="right" sortKey="requests" sort={sort} onSort={onSort}>Requests</ThCol>
               <ThCol align="right" sortKey="share" sort={sort} onSort={onSort}>Share</ThCol>
               <ThCol align="right" sortKey="err" sort={sort} onSort={onSort}>{two("Error", "rate")}</ThCol>
-              <ThCol align="right" tip={TIP_OTHERS} sortKey="others" sort={sort} onSort={onSort}>{two("Others on", "this chain")}</ThCol>
-              <ThCol align="right" tip={TIP_REPLIES} sortKey="replies" sort={sort} onSort={onSort}>{two("Error", "replies")}</ThCol>
-              <ThCol align="right" tip={TIP_RATE} sortKey="rate" sort={sort} onSort={onSort}>{two("Rate-limit", "hits")}</ThCol>
+              <ThCol align="right" tip={TT.providerOthers} sortKey="others" sort={sort} onSort={onSort}>{two("Others on", "this chain")}</ThCol>
+              <ThCol align="right" tip={TT.providerNodeErrors} sortKey="replies" sort={sort} onSort={onSort}>{two("Node", "errors")}</ThCol>
+              <ThCol align="right" tip={TT.providerRateHits} sortKey="rate" sort={sort} onSort={onSort}>{two("Rate-limit", "hits")}</ThCol>
               <ThCol align="right" sortKey="p95" sort={sort} onSort={onSort}>p95</ThCol>
-              <ThCol align="right" tip="How far this provider's newest block is behind the chain's best, in seconds." sortKey="lag" sort={sort} onSort={onSort}>Behind</ThCol>
-              <ThCol align="right" tip={TIP_UPTIME} sortKey="uptime" sort={sort} onSort={onSort}>Uptime</ThCol>
-              <ThCol align="right" tip={TIP_LIMITED} sortKey="limited" sort={sort} onSort={onSort}>{two("Rate-limited", "time")}</ThCol>
-              <ThCol align="right" tip={TIP_TIMEOUTS} sortKey="timeouts" sort={sort} onSort={onSort}>Timeouts</ThCol>
+              <ThCol align="right" tip={TT.providerBehind} sortKey="lag" sort={sort} onSort={onSort}>Behind</ThCol>
+              <ThCol align="right" tip={TT.providerUptime} sortKey="uptime" sort={sort} onSort={onSort}>Uptime</ThCol>
+              <ThCol align="right" tip={TT.providerLimited} sortKey="limited" sort={sort} onSort={onSort}>{two("Rate-limited", "time")}</ThCol>
+              <ThCol align="right" tip={TT.providerTimeouts} sortKey="timeouts" sort={sort} onSort={onSort}>Timeouts</ThCol>
               {renderAction && <th style={STICKY_HEAD} />}
             </tr>
           </thead>
@@ -355,7 +333,7 @@ function ChainsTable({ detail, chainFilter, renderAction, onOpenUpstream }: {
                     )}
                     {c.account && <span className="gw-mono" style={{ fontSize: 10, color: "var(--text-4)", whiteSpace: "nowrap" }}>{c.node}</span>}
                     {c.role && <Badge tone={c.role}>{c.role === "primary" ? "Primary" : "Backup"}</Badge>}
-                    {c.blockedNow && <span title="The router has stopped sending this provider requests on this chain for now."><Badge tone="err">Blocked</Badge></span>}
+                    {c.blockedNow && <HealthTag health="unhealthy" reason={BLOCKED_REASON} />}
                   </div>
                 </td>
                 <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12, color: c.requests > 0 ? "var(--text)" : "var(--text-4)" }}>{fmtNum(c.requests)}</span></td>
@@ -432,7 +410,7 @@ function MethodsTable({ detail, chainFilter }: { detail: ProviderDetailReport; c
       : "This router build's latency histogram has no method label, so latency per method isn't available.";
 
   return (
-    <PMPanel title="Methods" tip="Every method sent to this provider, worst first. **Failed** counts requests this provider didn't answer - the router may still have answered the caller from another provider. **Error replies** counts the ones it answered with an error." full>
+    <PMPanel title="Methods" tip={TT.providerMethods} full>
       <div style={{ overflowX: "auto", margin: "-12px -14px" }}>
         <table className="gw-table gw-table--tight">
           <thead>
@@ -440,9 +418,9 @@ function MethodsTable({ detail, chainFilter }: { detail: ProviderDetailReport; c
               <ThCol sortKey="method" sort={sort} onSort={onSort}>Method</ThCol>
               <ThCol sortKey="chain" sort={sort} onSort={onSort}>Chain</ThCol>
               <ThCol align="right" sortKey="requests" sort={sort} onSort={onSort}>Requests</ThCol>
-              <ThCol align="right" sortKey="failed" sort={sort} onSort={onSort}>Failed</ThCol>
+              <ThCol align="right" sortKey="failed" sort={sort} onSort={onSort}>{two("Failed", "attempts")}</ThCol>
               <ThCol align="right" sortKey="err" sort={sort} onSort={onSort}>{two("Error", "rate")}</ThCol>
-              <ThCol align="right" tip={TIP_REPLIES} sortKey="replies" sort={sort} onSort={onSort}>{two("Error", "replies")}</ThCol>
+              <ThCol align="right" tip={TT.providerNodeErrors} sortKey="replies" sort={sort} onSort={onSort}>{two("Node", "errors")}</ThCol>
               <ThCol align="right" tip={latTip} sortKey="p50" sort={sort} onSort={onSort}>p50</ThCol>
               <ThCol align="right" tip={latTip} sortKey="p95" sort={sort} onSort={onSort}>p95</ThCol>
               <ThCol align="right" tip={latTip} sortKey="p99" sort={sort} onSort={onSort}>p99</ThCol>
@@ -473,14 +451,10 @@ function MethodsTable({ detail, chainFilter }: { detail: ProviderDetailReport; c
           </tbody>
         </table>
       </div>
-      {pageCount > 1 && (
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, padding: "9px 0 0" }}>
-          <span style={{ fontSize: 11, color: "var(--text-4)" }}>{cur * PAGE + 1}-{Math.min(rows.length, cur * PAGE + PAGE)} of {rows.length}</span>
-          <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={cur === 0} className="gw-btn gw-btn--ghost" style={{ padding: "3px 9px", fontSize: 12, opacity: cur === 0 ? 0.4 : 1 }}>Prev</button>
-          <span style={{ fontSize: 11, color: "var(--text-3)", fontVariantNumeric: "tabular-nums" }}>{cur + 1} / {pageCount}</span>
-          <button onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))} disabled={cur >= pageCount - 1} className="gw-btn gw-btn--ghost" style={{ padding: "3px 9px", fontSize: 12, opacity: cur >= pageCount - 1 ? 0.4 : 1 }}>Next</button>
-        </div>
-      )}
+      {/* Edge to edge, as the table above runs. */}
+      <div style={{ margin: "12px -14px -12px" }}>
+        <Pager page={cur} pageCount={pageCount} total={rows.length} perPage={PAGE} noun="methods" onPage={setPage} />
+      </div>
     </PMPanel>
   );
 }
@@ -559,7 +533,9 @@ export function ProvidersTab({ timeWindow, chainFilter, selectedId, onSelect, ro
             <UpstreamLogo id={sel.id} size={20} />
             <span style={{ fontSize: 16, fontWeight: 700 }}>{sel.name}</span>
             <span style={{ fontSize: 12, color: "var(--text-3)" }}>· {sel.chains.length} chain{sel.chains.length === 1 ? "" : "s"}{sel.accounts.length > 1 ? ` · ${sel.accounts.length} accounts` : ""}</span>
-            {sel.blockedNow && <Badge tone="err">Blocked now</Badge>}
+            {sel.blockedNow !== null && (
+              <HealthTag health={providerHealth(sel.blockedNow)} reason={sel.blockedNow ? BLOCKED_REASON : undefined} />
+            )}
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginBottom: 12 }}>
@@ -573,14 +549,14 @@ export function ProvidersTab({ timeWindow, chainFilter, selectedId, onSelect, ro
                 </>
               ) : <PMNoVal />}
             </PMStat>
-            <PMStat label="Error rate" tip="Tries to this provider that **failed**, before the router retried or failed over.">
+            <PMStat label="Error rate" tip={TT.providerErrorRate}>
               {sel.errorRate != null ? (
                 <>
                   <div className="gw-mono gw-tnum" style={{ fontSize: 26, fontWeight: 700, lineHeight: 1, color: errRateColor(sel.errorRate * 100, "var(--ok)") }}>{(sel.errorRate * 100).toFixed(2)}%</div>
                   <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 8 }}>
                     {fam?.nodeErrors && sel.nodeErrorRate != null
                       ? <>and {(sel.nodeErrorRate * 100).toFixed(2)}% answered with an error</>
-                      : <>error replies not counted by this router</>}
+                      : <>node errors not counted by this router</>}
                   </div>
                 </>
               ) : <PMNoVal />}
@@ -595,9 +571,9 @@ export function ProvidersTab({ timeWindow, chainFilter, selectedId, onSelect, ro
                 <div style={{ fontSize: 12, color: "var(--text-4)", paddingTop: 4, lineHeight: 1.5 }}>Not read for windows longer than a day</div>
               ) : <PMNoVal />}
             </PMStat>
-            <PMStat label="Rate-limit hits" tip={TIP_RATE}>
+            <PMStat label="Rate-limit hits" tip={TT.providerRateHits}>
               {!fam?.rateLimit ? (
-                <div style={{ fontSize: 13, color: "var(--text-4)", paddingTop: 4 }} title={NOT_EMITTED}>Not emitted</div>
+                <div style={{ fontSize: 13, color: "var(--text-4)", paddingTop: 4 }} title={TT.providerNotEmitted}>Not emitted</div>
               ) : (
                 <>
                   <div className="gw-mono gw-tnum" style={{ fontSize: 26, fontWeight: 700, lineHeight: 1, color: (sel.rateLimitHits ?? 0) > 0 ? "var(--warn)" : "var(--text)" }}>{fmtNum(sel.rateLimitHits)}</div>
@@ -609,7 +585,7 @@ export function ProvidersTab({ timeWindow, chainFilter, selectedId, onSelect, ro
                 </>
               )}
             </PMStat>
-            <PMStat label="Uptime" tip={TIP_UPTIME}>
+            <PMStat label="Uptime" tip={TT.providerUptime}>
               {sel.uptime != null ? (
                 <>
                   <div className="gw-mono gw-tnum" style={{ fontSize: 26, fontWeight: 700, lineHeight: 1, color: uptimeColorFrac(sel.uptime) }}>{(sel.uptime * 100).toFixed(2)}%</div>
