@@ -18,15 +18,18 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   already known, "May already be on chain." and the error's own next step,
   the words the opened row shows), **Outcome
   unknown** ("May have been sent. Look up the hash before signing a new
-  one.") and **Not sent** ("Nothing reached a provider. Sending again is
-  safe."). The chart, the filter and the opened row use the same words.
+  one.") and **Not sent** ("Nothing reached a provider, so it didn't go
+  through." It no longer says sending again is safe: a transaction the
+  router refused, on a rate limit say, is refused again). The chart, the filter and the opened row use the same words.
 - **A transaction the router gave up on after sending it is Outcome
   unknown, on both tabs.** It was "Router error"; a provider may still have
   passed it on. Only a transaction sent to no provider is Not sent (a router
   error on the Errors tab).
 - **Transactions tab: the cards are Transactions, Sent, Refused and Outcome
-  unknown**, each with its share of all. The success rate is gone: it
-  counted the client's own refused transactions as failures.
+  unknown**, each with its share of all. The success rate is gone, from the
+  screen and from `GET /api/transactions`: it counted the client's own
+  refused transactions as failures. At zero, Outcome unknown says "none in
+  these transactions" rather than "may have been sent".
 - **Errors and Transactions tabs: an opened request reads as steps.** Under
   the status, **What happened**: the request from the client (its method and
   size); each send, "Sent to tatum and alchemy at the same time" or "Then
@@ -38,6 +41,13 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 - **Each error said once per row.** A row's Result is the kind of result and,
   under it, the error the client got. The "Returned to client:" line and
   "returned by …" are gone.
+- **Errors and Transactions tabs: a row says it opens, and what opens
+  belongs to it.** Each row has a chevron that turns when it is open; the
+  open row and its details share one background and an orange edge on the
+  left, with no line between them. The Errors list's "Took" column is
+  **Response time**, as on the Transactions list and in each provider line.
+- **The next step has its own box** in an opened request, apart from the
+  facts under it (retries, notes, the hash).
 - **One word for the provider.** "Node error" is now **Provider error**, the
   upstream filters read "All providers", and the Upstreams tab's errors chart
   says "Provider errors".
