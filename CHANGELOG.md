@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.58.1]
+
 ### Fixed
 
 - **The upstream relay keeps a request's path under the endpoint's own.** A
