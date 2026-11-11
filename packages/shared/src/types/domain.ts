@@ -1049,7 +1049,7 @@ export interface ProviderSummary {
   chains: { spec: string; role: "primary" | "backup" | null }[];
   /** Tries sent to the provider in the window (relay-scoped, cache excluded). */
   requests: number;
-  /** Highest 5-minute request rate in the window, all its nodes together. Null when unread. */
+  /** Highest average request rate over any `peakWindowSec` in the window, all its nodes together. Null when unread. */
   peakRps: number | null;
   /** Failed tries ÷ tries. Null with no tries. */
   errorRate: number | null;
@@ -1073,6 +1073,10 @@ export interface ProvidersReport {
   /** Traffic under label values that can't be a node name (URL or header fragments). */
   unattributed: { requests: number; labels: string[] } | null;
   families: ProviderFamilies;
+  /** What `peakRps` averages over, seconds: 300, or longer on a window too long to read every 5 minutes of. */
+  peakWindowSec: number;
+  /** False on a window longer than a day: latency isn't read there (too heavy a read for a shared store), so every `p95Ms` is null. */
+  latencyRead: boolean;
 }
 
 export interface ProviderChainStats {
@@ -1116,6 +1120,8 @@ export interface ProviderDetailReport {
   methods: ProviderMethodStats[];
   /** False when the per-endpoint latency histogram has no method label on this build. */
   methodLatency: boolean;
+  /** False on a window longer than a day: latency isn't read there, so every p50/p95/p99 is null. */
+  latencyRead: boolean;
   families: ProviderFamilies;
 }
 

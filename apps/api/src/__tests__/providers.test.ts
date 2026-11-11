@@ -1,16 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { ProvidersService, histogramQuantile } from "../services/providers.js";
+import { ProvidersService, bucketsRange, countsRange, histogramQuantile, peakWindowSec } from "../services/providers.js";
 import { MetricsService } from "../services/metrics.js";
-import type { PrometheusClient, PromVectorSample } from "../services/prometheus-client.js";
+import { StoreReadError, type PrometheusClient, type PromVectorSample } from "../services/prometheus-client.js";
 
 type Row = { metric: Record<string, string>; value: [number, string] };
 const v = (metric: Record<string, string>, value: number): Row => ({ metric, value: [1, String(value)] });
 
 /**
  * Fake Prometheus answering by query shape. `present` lists the optional
- * families whose presence probe answers 1.
+ * families whose presence probe answers 1; `down` picks the reads the store
+ * doesn't answer.
  */
-function fakeProm(present: string[]): { prom: PrometheusClient; queries: string[] } {
+function fakeProm(present: string[], down?: (q: string) => boolean): { prom: PrometheusClient; queries: string[] } {
   const queries: string[] = [];
   const answer = (q: string): Row[] => {
     if (q.startsWith("count({__name__=")) {
@@ -69,17 +70,24 @@ function fakeProm(present: string[]): { prom: PrometheusClient; queries: string[
       queries.push(q);
       return answer(q) as PromVectorSample[];
     },
-    async scalar(q: string) {
+    async queryOrNull(q: string) {
       queries.push(q);
-      const r = answer(q)[0];
-      return r ? Number(r.value[1]) : null;
+      return down?.(q) ? null : (answer(q) as PromVectorSample[]);
     },
-    async queryRange(q: string) {
+    async queryRangeOrNull(q: string) {
       queries.push(q);
+      if (down?.(q)) return null;
       return [
         { metric: { provider_address: "blockdaemon" }, values: [[1, "10"], [2, "30"]] },
         { metric: { provider_address: "blockdaemon-2" }, values: [[1, "5"], [2, "5"]] },
       ];
+    },
+    // The upstream roster (block lag) reads through the client's forgiving calls.
+    async scalar() {
+      return null;
+    },
+    async queryRange() {
+      return [];
     },
   } as unknown as PrometheusClient;
   return { prom, queries };
@@ -103,6 +111,53 @@ describe("histogramQuantile", () => {
   });
 });
 
+// A week of raw samples for every series is more than a shared store answers
+// in time, so a long window samples the series instead.
+describe("long windows are read lightly", () => {
+  it("counters: every scrape up to a day, then a sample every few minutes", () => {
+    expect(countsRange(1800)).toBe("1800s");
+    expect(countsRange(86_400)).toBe("86400s");
+    expect(countsRange(7 * 86_400)).toBe("604800s:900s");
+    expect(countsRange(30 * 86_400)).toBe("2592000s:3840s");
+  });
+  it("histogram buckets - thousands of series - are sampled sooner and wider", () => {
+    expect(bucketsRange(10_800)).toBe("10800s");
+    expect(bucketsRange(86_400)).toBe("86400s:900s");
+    expect(bucketsRange(7 * 86_400)).toBe("604800s:6300s");
+  });
+  it("the peak rate averages 5 minutes until the window's step is longer, so no stretch goes unread", () => {
+    expect(peakWindowSec("1d")).toBe(300);
+    expect(peakWindowSec("30d")).toBe(1296);
+  });
+  it("the list's queries carry them", async () => {
+    const { prom, queries } = fakeProm(ALL);
+    const report = await new ProvidersService(prom, null, new MetricsService(prom)).list("7d");
+    expect(queries).toContain("sum by (provider_address, spec) (increase(smartrouter_requests_total[604800s:900s]))");
+    expect(queries).toContain("sum by (provider_address) (rate(smartrouter_requests_total[303s]))");
+    expect(report.peakWindowSec).toBe(303);
+  });
+  // One series per upstream × chain × method × bucket: over a week this read
+  // ran a shared store out of time. It is not sent; the p95s say they weren't read.
+  it("latency is not read past a day - null and said so, never the heavy read", async () => {
+    const week = fakeProm(ALL);
+    const svc = new ProvidersService(week.prom, null, new MetricsService(week.prom));
+    const report = await svc.list("7d");
+    const detail = await svc.detail("tatum", "7d");
+    // The only histogram read left is the roster's, over five minutes, for block lag.
+    const histogramReads = week.queries.filter((q) => q.includes("latency_milliseconds_bucket"));
+    expect(histogramReads.every((q) => q.includes("[300s]"))).toBe(true);
+    expect(week.queries.some((q) => q.includes("604800s") && q.includes("_bucket"))).toBe(false);
+    expect(report.latencyRead).toBe(false);
+    expect(report.providers.every((p) => p.p95Ms === null)).toBe(true);
+    expect(detail.latencyRead).toBe(false);
+
+    const day = fakeProm(ALL);
+    const dayReport = await new ProvidersService(day.prom, null, new MetricsService(day.prom)).list("1d");
+    expect(day.queries.some((q) => q.includes("rpc_endpoint_end_to_end_latency_milliseconds_bucket[86400s:900s]"))).toBe(true);
+    expect(dayReport.latencyRead).toBe(true);
+  });
+});
+
 describe("ProvidersService.list", () => {
   it("groups node names by company and keeps cache and junk labels out", async () => {
     const { prom } = fakeProm(ALL);
@@ -111,7 +166,7 @@ describe("ProvidersService.list", () => {
     expect(ids).toEqual(["blockdaemon", "tatum"]);
     const bd = report.providers.find((p) => p.id === "blockdaemon")!;
     expect(bd.requests).toBe(400);
-    expect(bd.accounts).toEqual(["2"]);
+    expect(bd.accounts).toEqual(["1", "2"]);
     expect(bd.nodes).toEqual(["blockdaemon", "blockdaemon-2"]);
     expect(bd.errorRate).toBeCloseTo(60 / 400);
     expect(bd.rateLimitHits).toBe(42);
@@ -143,6 +198,42 @@ describe("ProvidersService.list", () => {
       endpointErrored: false,
     });
     expect(queries.some((q) => q.includes("smartrouter_rate_limit_holdoffs_total{event"))).toBe(false);
+  });
+
+  // The shared client turns a refused call into "no series". Here that would
+  // read as a provider with every try failed, so the read fails instead.
+  it("a read the store doesn't answer fails the response - never a 100% error rate or 'not emitted'", async () => {
+    const okCounts = (q: string) => q.includes("smartrouter_requests_success_total");
+    const { prom } = fakeProm(ALL, okCounts);
+    await expect(new ProvidersService(prom, null, new MetricsService(prom), []).list("1d")).rejects.toBeInstanceOf(StoreReadError);
+
+    const probe = (q: string) => q.startsWith("count({__name__=") && q.includes("rate_limit_holdoffs");
+    const probed = fakeProm(ALL, probe);
+    await expect(new ProvidersService(probed.prom, null, new MetricsService(probed.prom), []).list("1d")).rejects.toBeInstanceOf(StoreReadError);
+  });
+
+  it("at most four reads are out at once", async () => {
+    let out = 0;
+    let most = 0;
+    const { prom } = fakeProm(ALL);
+    const slow = <A extends unknown[], R>(fn: (...a: A) => Promise<R>) => async (...a: A): Promise<R> => {
+      most = Math.max(most, ++out);
+      await new Promise((r) => setTimeout(r, 2));
+      out -= 1;
+      return fn(...a);
+    };
+    const p = prom as unknown as { queryOrNull: (q: string) => Promise<unknown>; queryRangeOrNull: (q: string) => Promise<unknown> };
+    p.queryOrNull = slow(p.queryOrNull);
+    p.queryRangeOrNull = slow(p.queryRangeOrNull);
+    await new ProvidersService(prom, null, new MetricsService(prom)).list("1d");
+    expect(most).toBe(4);
+  });
+
+  it("tries a refused read again before giving up", async () => {
+    let refusals = 2;
+    const { prom } = fakeProm(ALL, (q) => q.includes("smartrouter_requests_success_total") && refusals-- > 0);
+    const report = await new ProvidersService(prom, null, new MetricsService(prom), [1, 1]).list("1d");
+    expect(report.providers.find((p) => p.id === "tatum")?.errorRate).toBeCloseTo(10 / 1500);
   });
 });
 

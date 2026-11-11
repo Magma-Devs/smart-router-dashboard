@@ -6,6 +6,12 @@
  * `providerOf` — company logic never goes into PromQL. Optional families are
  * probed first; a family the router doesn't emit comes back as `null` and a
  * false flag in `families`, never as zero.
+ *
+ * Every read here has to answer. The shared client turns a refused call into
+ * an empty result, which on this page would read as "no traffic", "0 hits",
+ * "not emitted" or - when only the success counts are missing - a 100% error
+ * rate. So a read the store doesn't answer is tried again and then fails the
+ * whole response (`StoreReadError`), and the web keeps what it last showed.
  */
 import {
   ENDPOINT_METRICS,
@@ -15,7 +21,6 @@ import {
   looksLikeNodeName,
   providerOf,
   qPresence,
-  rangeFor,
   type MetricWindow,
   type ProviderChainStats,
   type ProviderDetailReport,
@@ -24,8 +29,9 @@ import {
   type ProviderMethodStats,
   type ProviderSummary,
   type ProvidersReport,
+  type UpstreamMetrics,
 } from "@sr/shared";
-import type { PrometheusClient, PromVectorSample } from "./prometheus-client.js";
+import { StoreReadError, type PrometheusClient, type PromMatrixSample, type PromVectorSample } from "./prometheus-client.js";
 import type { ConfigurationService } from "./configuration.js";
 import type { MetricsService } from "./metrics.js";
 
@@ -39,6 +45,51 @@ const num = (s: PromVectorSample): number => {
 };
 const ratio = (part: number | null, whole: number): number | null =>
   part === null || whole <= 0 ? null : Math.max(0, Math.min(1, part / whole));
+
+/** Waits before trying a refused read again: a busy store's queue clears in moments. */
+const RETRY_WAITS_MS = [300, 900];
+/** A read that took this long to fail ran out of time; asking again would only do the same. */
+const SLOW_FAILURE_MS = 3000;
+/** Reads in flight at once. A shared store queues each tenant's queries and refuses the ones past its limit. */
+const MAX_IN_FLIGHT = 4;
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * The `[range]` of a read over `sec` seconds. A long one samples the series
+ * (`[604800s:900s]`, a value every 15 minutes) instead of loading every
+ * scrape: a week of raw samples for every series is more than a shared store
+ * answers in time. `increase` still sees counter resets between two samples;
+ * what a router restart loses is the traffic between the sample before it and
+ * the restart, and the two ends of the range can each fall one sample short.
+ */
+function sampledRange(sec: number, rawMaxSec: number, samples: number): string {
+  const whole = Math.max(60, Math.round(sec));
+  if (whole <= rawMaxSec) return `${whole}s`;
+  return `${whole}s:${Math.max(60, Math.round(whole / samples / 60) * 60)}s`;
+}
+/** Counters and gauges (hundreds of series): every scrape up to a day, then ~670 samples. */
+export const countsRange = (sec: number): string => sampledRange(sec, 86_400, 672);
+/** Histogram buckets (thousands of series): every scrape up to three hours, then ~100 samples. */
+export const bucketsRange = (sec: number): string => sampledRange(sec, 10_800, 96);
+
+/**
+ * The longest window latency is read for. The endpoint histogram is one
+ * series per upstream × chain × method × bucket - thousands on a real
+ * deployment - and its read over a week, even sampled, ran a shared store out
+ * of time and into refusing every tenant's queries. Past this the p95s are
+ * null and `latencyRead` is false: a gap that says why, not a read that can
+ * take the store down.
+ */
+export const LATENCY_MAX_SEC = 86_400;
+export const latencyReadFor = (window: MetricWindow): boolean => WINDOWS[window].rangeSeconds <= LATENCY_MAX_SEC;
+
+/** Block lag is a "now" figure whatever the page's window, so the roster behind it is read over a short one. */
+const LAG_WINDOW: MetricWindow = "5m";
+
+/** The highest request rate is the highest average over this long: 5 minutes, or the read's step when that is longer. */
+export function peakWindowSec(window: MetricWindow): number {
+  return Math.max(300, Math.ceil(WINDOWS[window].rangeSeconds / 2000));
+}
 
 /** A regex alternation of node names for `=~` matchers (names are validated, but dots still need escaping). */
 function nameAlternation(names: string[]): string {
@@ -77,16 +128,65 @@ interface NodeCounts {
   protocolErrors: number | null;
 }
 
+interface Loaded {
+  fam: ProviderFamilies;
+  cfg: ReturnType<ProvidersService["configIndex"]>;
+  counts: Map<string, NodeCounts & { node: string; spec: string }>;
+  unattributed: { requests: number; labels: string[] } | null;
+  lat: { groups: Map<string, Map<number, number>>; sawMethod: boolean };
+  health: Map<string, number>;
+  holdoffs: PromVectorSample[] | null;
+  blocked: Map<string, boolean> | null;
+}
+
 export class ProvidersService {
   constructor(
     private readonly prom: PrometheusClient,
     private readonly configSvc: ConfigurationService | null,
     private readonly metrics: MetricsService,
+    private readonly retryWaitsMs: number[] = RETRY_WAITS_MS,
   ) {}
 
+  private inFlight = 0;
+  private readonly queued: (() => void)[] = [];
+
+  /** Runs `ask` with at most MAX_IN_FLIGHT reads out at once. */
+  private async gated<T>(ask: () => Promise<T>): Promise<T> {
+    if (this.inFlight >= MAX_IN_FLIGHT) await new Promise<void>((go) => this.queued.push(go));
+    else this.inFlight += 1;
+    try {
+      return await ask();
+    } finally {
+      const next = this.queued.shift();
+      if (next) next();
+      else this.inFlight -= 1;
+    }
+  }
+
+  private async answered<T>(ask: () => Promise<T | null>): Promise<T> {
+    for (const wait of [0, ...this.retryWaitsMs]) {
+      if (wait) await sleep(wait);
+      const started = Date.now();
+      const rows = await this.gated(ask);
+      if (rows !== null) return rows;
+      // A refusal comes back at once; a read that ran out of time is not asked again.
+      if (Date.now() - started > SLOW_FAILURE_MS) break;
+    }
+    throw new StoreReadError();
+  }
+
+  /** An instant read that has to answer - see the note at the top of the file. */
+  private read(expr: string): Promise<PromVectorSample[]> {
+    return this.answered(() => this.prom.queryOrNull(expr));
+  }
+
+  private readRange(expr: string, start: number, end: number, step: string): Promise<PromMatrixSample[]> {
+    return this.answered(() => this.prom.queryRangeOrNull(expr, start, end, step));
+  }
+
   private async present(metricName: string): Promise<boolean> {
-    const v = await this.prom.scalar(qPresence(metricName));
-    return v !== null && v > 0;
+    const v = Number((await this.read(qPresence(metricName)))[0]?.value[1]);
+    return Number.isFinite(v) && v > 0;
   }
 
   private async families(): Promise<ProviderFamilies> {
@@ -150,16 +250,16 @@ export class ProvidersService {
     counts: Map<string, NodeCounts & { node: string; spec: string }>;
     unattributed: { requests: number; labels: string[] } | null;
   }> {
-    const r = rangeFor(window);
+    const r = countsRange(WINDOWS[window].rangeSeconds);
     const by = "sum by (provider_address, spec)";
     const [tot, ok, nodeErr, protoErr] = await Promise.all([
-      this.prom.query(`${by} (increase(${ROUTER_METRICS.requestsTotal}[${r}]))`),
-      this.prom.query(`${by} (increase(${ROUTER_METRICS.requestsSuccessTotal}[${r}]))`),
+      this.read(`${by} (increase(${ROUTER_METRICS.requestsTotal}[${r}]))`),
+      this.read(`${by} (increase(${ROUTER_METRICS.requestsSuccessTotal}[${r}]))`),
       fam.nodeErrors
-        ? this.prom.query(`${by} (increase(${OPTIONAL_METRICS.nodeErrorsTotal}[${r}]))`)
+        ? this.read(`${by} (increase(${OPTIONAL_METRICS.nodeErrorsTotal}[${r}]))`)
         : Promise.resolve(null),
       fam.protocolErrors
-        ? this.prom.query(`${by} (increase(${OPTIONAL_METRICS.protocolErrorsTotal}[${r}]))`)
+        ? this.read(`${by} (increase(${OPTIONAL_METRICS.protocolErrorsTotal}[${r}]))`)
         : Promise.resolve(null),
     ]);
 
@@ -210,10 +310,11 @@ export class ProvidersService {
     withMethod: boolean,
     names?: string[],
   ): Promise<{ groups: Map<string, Map<number, number>>; sawMethod: boolean }> {
+    if (!latencyReadFor(window)) return { groups: new Map(), sawMethod: false };
     const sel = names?.length ? `{endpoint_id=~"${nameAlternation(names)}"}` : "";
     const by = withMethod ? "endpoint_id, spec, function, le" : "endpoint_id, spec, le";
-    const rows = await this.prom.query(
-      `sum by (${by}) (increase(${ENDPOINT_METRICS.latencyBucket}${sel}[${rangeFor(window)}]))`,
+    const rows = await this.read(
+      `sum by (${by}) (increase(${ENDPOINT_METRICS.latencyBucket}${sel}[${bucketsRange(WINDOWS[window].rangeSeconds)}]))`,
     );
     const groups = new Map<string, Map<number, number>>();
     let sawMethod = false;
@@ -238,8 +339,8 @@ export class ProvidersService {
 
   /** Mean of the health gauge over the window, per (node × chain). */
   private async health(window: MetricWindow): Promise<Map<string, number>> {
-    const rows = await this.prom.query(
-      `avg by (endpoint_id, spec) (avg_over_time(${ENDPOINT_METRICS.overallHealth}[${rangeFor(window)}]))`,
+    const rows = await this.read(
+      `avg by (endpoint_id, spec) (avg_over_time(${ENDPOINT_METRICS.overallHealth}[${countsRange(WINDOWS[window].rangeSeconds)}]))`,
     );
     return new Map(rows.map((s) => [key(s.metric.endpoint_id ?? "", s.metric.spec ?? ""), num(s)]));
   }
@@ -247,26 +348,30 @@ export class ProvidersService {
   /** Rate-limit hold-offs. The family has no spec label; a `chain` target label maps by upper-case. */
   private async holdoffs(window: MetricWindow, fam: ProviderFamilies): Promise<PromVectorSample[] | null> {
     if (!fam.rateLimit) return null;
-    return this.prom.query(
-      `sum by (provider, spec, chain) (increase(${OPTIONAL_METRICS.rateLimitHoldoffsTotal}{event="recorded"}[${rangeFor(window)}]))`,
+    return this.read(
+      `sum by (provider, spec, chain) (increase(${OPTIONAL_METRICS.rateLimitHoldoffsTotal}{event="recorded"}[${countsRange(WINDOWS[window].rangeSeconds)}]))`,
     );
   }
 
   private async blocked(fam: ProviderFamilies): Promise<Map<string, boolean> | null> {
     if (!fam.blocked) return null;
-    const rows = await this.prom.query(
+    const rows = await this.read(
       `max by (provider_address, spec) (${OPTIONAL_METRICS.csmProviderBlocked})`,
     );
     return new Map(rows.map((s) => [key(s.metric.provider_address ?? "", s.metric.spec ?? ""), num(s) > 0]));
   }
 
-  /** Highest 5-minute request rate per node over the window, as a time series to sum per company. */
+  /**
+   * The request rate per node over the window, as a time series to sum per
+   * company. Each point averages `peakWindowSec`: 5 minutes, or the step when
+   * a long window's step is longer - so no stretch of the window goes unread.
+   */
   private async rateSeries(window: MetricWindow): Promise<Map<string, Map<number, number>>> {
     const range = WINDOWS[window].rangeSeconds;
     const end = Math.floor(Date.now() / 1000);
     const step = Math.max(60, Math.ceil(range / 2000));
-    const matrix = await this.prom.queryRange(
-      `sum by (provider_address) (rate(${ROUTER_METRICS.requestsTotal}[5m]))`,
+    const matrix = await this.readRange(
+      `sum by (provider_address) (rate(${ROUTER_METRICS.requestsTotal}[${peakWindowSec(window)}s]))`,
       end - range,
       end,
       `${step}s`,
@@ -287,7 +392,7 @@ export class ProvidersService {
   /** The node names (label values) a company runs on one chain, from live series. */
   async nodesOn(providerId: string, spec: string): Promise<string[]> {
     const cfg = this.configIndex();
-    const rows = await this.prom.query(
+    const rows = await this.read(
       `count by (provider_address) (${ROUTER_METRICS.requestsTotal}{spec="${spec.replace(/[^A-Za-z0-9_-]/g, "")}"})`,
     );
     return rows
@@ -297,40 +402,59 @@ export class ProvidersService {
   }
 
   /**
-   * Counts for the provider report over an exact range: tries and failed tries
-   * per method, and rate-limit hold-offs. Evaluated AT the range's end (a
-   * one-point range query), so the window is the report's, not "now".
+   * Counts for the provider report over an exact range: per method, tries,
+   * tries that failed and tries the node answered with an error; and
+   * rate-limit hold-offs. Evaluated AT the range's end (a one-point range
+   * query), so the window is the report's, not "now".
    */
   async rangeCounts(
     names: string[],
     spec: string,
     endSec: number,
     rangeSec: number,
-  ): Promise<{ tries: number; failed: number; methods: { method: string; tries: number; failed: number }[]; rateLimitHits: number | null }> {
+  ): Promise<{
+    tries: number;
+    failed: number;
+    errorReplies: number | null;
+    methods: { method: string; tries: number; failed: number; errorReplies: number | null }[];
+    rateLimitHits: number | null;
+  }> {
     const alt = nameAlternation(names);
     const sel = `{provider_address=~"${alt}",spec="${spec.replace(/[^A-Za-z0-9_-]/g, "")}"}`;
-    const r = `${Math.max(60, Math.round(rangeSec))}s`;
+    const r = countsRange(rangeSec);
     const at = async (expr: string): Promise<PromVectorSample[]> => {
-      const m = await this.prom.queryRange(expr, endSec, endSec, "60s");
+      const m = await this.readRange(expr, endSec, endSec, "60s");
       return m.map((x) => ({ metric: x.metric, value: (x.values.at(-1) ?? [endSec, "0"]) as [number, string] }));
     };
-    const rateLimit = await this.present(OPTIONAL_METRICS.rateLimitHoldoffsTotal);
-    const [tot, ok, hold] = await Promise.all([
+    const [rateLimit, nodeErrors] = await Promise.all([
+      this.present(OPTIONAL_METRICS.rateLimitHoldoffsTotal),
+      this.present(OPTIONAL_METRICS.nodeErrorsTotal),
+    ]);
+    const [tot, ok, replies, hold] = await Promise.all([
       at(`sum by (method) (increase(${ROUTER_METRICS.requestsTotal}${sel}[${r}]))`),
       at(`sum by (method) (increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${r}]))`),
+      nodeErrors
+        ? at(`sum by (method) (increase(${OPTIONAL_METRICS.nodeErrorsTotal}${sel}[${r}]))`)
+        : Promise.resolve(null),
       rateLimit
         ? at(`sum by (provider, chain) (increase(${OPTIONAL_METRICS.rateLimitHoldoffsTotal}{provider=~"${alt}",event="recorded"}[${r}]))`)
         : Promise.resolve(null),
     ]);
     const okBy = new Map(ok.map((s) => [s.metric.method ?? "", Math.round(num(s))]));
+    const repliesBy = replies ? new Map(replies.map((s) => [s.metric.method ?? "", Math.round(num(s))])) : null;
     const methods = tot
       .map((s) => {
         const method = s.metric.method ?? "";
         const tries = Math.round(num(s));
-        return { method, tries, failed: Math.max(0, tries - (okBy.get(method) ?? 0)) };
+        return {
+          method,
+          tries,
+          failed: Math.max(0, tries - (okBy.get(method) ?? 0)),
+          errorReplies: repliesBy ? Math.min(tries, repliesBy.get(method) ?? 0) : null,
+        };
       })
       .filter((m) => m.method && m.tries > 0)
-      .sort((a, b) => b.failed - a.failed || b.tries - a.tries);
+      .sort((a, b) => b.failed + (b.errorReplies ?? 0) - (a.failed + (a.errorReplies ?? 0)) || b.tries - a.tries);
     // Hold-offs: the chain's own when a chain label exists, else the account's (it is one limit).
     let rateLimitHits: number | null = null;
     if (hold) {
@@ -341,24 +465,28 @@ export class ProvidersService {
     return {
       tries: methods.reduce((a, m) => a + m.tries, 0),
       failed: methods.reduce((a, m) => a + m.failed, 0),
+      errorReplies: repliesBy ? methods.reduce((a, m) => a + (m.errorReplies ?? 0), 0) : null,
       methods,
       rateLimitHits,
     };
   }
 
-  /** GET /api/metrics/providers */
-  async list(window: MetricWindow): Promise<ProvidersReport> {
+  /** The reads the list, the detail and the export share - one set per response. */
+  private async load(window: MetricWindow): Promise<Loaded> {
     const fam = await this.families();
-    const cfg = this.configIndex();
-    const [{ counts, unattributed }, lat, health, holdoffs, blocked, rates] = await Promise.all([
+    const [{ counts, unattributed }, lat, health, holdoffs, blocked] = await Promise.all([
       this.nodeCounts(window, fam),
       this.buckets(window, false),
       this.health(window),
       this.holdoffs(window, fam),
       this.blocked(fam),
-      this.rateSeries(window),
     ]);
+    return { fam, cfg: this.configIndex(), counts, unattributed, lat, health, holdoffs, blocked };
+  }
 
+  /** One row per company, blocked first, then by error rate. */
+  private summaries(l: Loaded, rates: Map<string, Map<number, number>>): ProviderSummary[] {
+    const { fam, cfg, counts, lat, health, holdoffs, blocked } = l;
     interface Acc {
       summary: ProviderSummary;
       ok: number;
@@ -460,60 +588,24 @@ export class ProvidersService {
       const peak = peakSeries.get(s.id);
       s.peakRps = peak && peak.size ? Math.max(...peak.values()) : null;
       s.nodes = [...acc.nodes].sort();
-      s.accounts = [...acc.accounts].sort();
+      // "blockdaemon" beside "blockdaemon-2" is the first account, not no account.
+      const plain = s.nodes.some((n) => cfg.identity(n).account === null);
+      s.accounts = acc.accounts.size ? [...(plain ? ["1"] : []), ...acc.accounts].sort() : [];
       s.chains.sort((a, b) => a.spec.localeCompare(b.spec));
       return s;
     });
 
-    providers.sort(
+    return providers.sort(
       (a, b) =>
         Number(b.blockedNow === true) - Number(a.blockedNow === true) ||
         (b.errorRate ?? -1) - (a.errorRate ?? -1) ||
         b.requests - a.requests,
     );
-
-    return { window, providers, unattributed, families: fam };
   }
 
-  /** GET /api/metrics/provider-detail */
-  async detail(
-    providerId: string,
-    window: MetricWindow,
-    opts: { list?: ProvidersReport; methods?: boolean } = {},
-  ): Promise<ProviderDetailReport> {
-    const fam = await this.families();
-    const cfg = this.configIndex();
-    const list = opts.list ?? (await this.list(window));
-    const withMethods = opts.methods ?? true;
-    const provider = list.providers.find((p) => p.id === providerId) ?? null;
-    if (!provider || provider.nodes.length === 0) {
-      return { window, provider, chains: [], methods: [], methodLatency: false, families: fam };
-    }
-    const names = provider.nodes;
-    const alt = nameAlternation(names);
-    const r = rangeFor(window);
-    const byM = "sum by (provider_address, spec, method)";
-    const [{ counts }, lat, health, holdoffs, blocked, upstreams, mTot, mOk, mNodeErr, mLat] = await Promise.all([
-      this.nodeCounts(window, fam),
-      this.buckets(window, false, names),
-      this.health(window),
-      this.holdoffs(window, fam),
-      this.blocked(fam),
-      this.metrics.upstreams(undefined, window),
-      withMethods
-        ? this.prom.query(`${byM} (increase(${ROUTER_METRICS.requestsTotal}{provider_address=~"${alt}"}[${r}]))`)
-        : Promise.resolve([] as PromVectorSample[]),
-      withMethods
-        ? this.prom.query(`${byM} (increase(${ROUTER_METRICS.requestsSuccessTotal}{provider_address=~"${alt}"}[${r}]))`)
-        : Promise.resolve([] as PromVectorSample[]),
-      fam.nodeErrors && withMethods
-        ? this.prom.query(`${byM} (increase(${OPTIONAL_METRICS.nodeErrorsTotal}{provider_address=~"${alt}"}[${r}]))`)
-        : Promise.resolve(null),
-      withMethods
-        ? this.buckets(window, true, names)
-        : Promise.resolve({ groups: new Map<string, Map<number, number>>(), sawMethod: false }),
-    ]);
-
+  /** One row per (node × chain), every provider's - the detail keeps one company's, the export all. */
+  private chainRows(l: Loaded, upstreams: UpstreamMetrics[]): ProviderChainStats[] {
+    const { fam, cfg, counts, lat, health, holdoffs, blocked } = l;
     // Chain totals for the share column: every provider's tries on the chain.
     const chainTotals = new Map<string, number>();
     for (const c of counts.values()) chainTotals.set(c.spec, (chainTotals.get(c.spec) ?? 0) + c.tries);
@@ -524,21 +616,20 @@ export class ProvidersService {
     const holdChainKnown = new Set<string>();
     for (const s of holdoffs ?? []) {
       const node = s.metric.provider ?? "";
-      if (!names.includes(node)) continue;
       const spec = s.metric.spec ?? (s.metric.chain ? s.metric.chain.toUpperCase() : "");
-      if (!spec) continue;
+      if (!node || !spec) continue;
       holdChainKnown.add(node);
       holdByKey.set(key(node, spec), (holdByKey.get(key(node, spec)) ?? 0) + Math.round(num(s)));
     }
+    const hits = (node: string, spec: string): number | null =>
+      fam.rateLimit && holdChainKnown.has(node) ? (holdByKey.get(key(node, spec)) ?? 0) : null;
 
-    const chains: ProviderChainStats[] = [];
-    const seen = new Set<string>();
+    const rows: ProviderChainStats[] = [];
     for (const c of counts.values()) {
-      if (!names.includes(c.node)) continue;
-      seen.add(key(c.node, c.spec));
-      const up = upstreamByKey.get(key(c.node, c.spec));
+      const k = key(c.node, c.spec);
+      const up = upstreamByKey.get(k);
       const failed = Math.max(0, c.tries - c.ok);
-      chains.push({
+      rows.push({
         spec: c.spec,
         node: c.node,
         account: cfg.identity(c.node).account,
@@ -548,24 +639,20 @@ export class ProvidersService {
         errorRate: ratio(failed, c.tries),
         protocolErrorRate: ratio(c.protocolErrors, c.tries),
         nodeErrorRate: ratio(c.nodeErrors, c.tries),
-        p95Ms: histogramQuantile(0.95, lat.groups.get(key(c.node, c.spec)) ?? new Map()),
+        p95Ms: histogramQuantile(0.95, lat.groups.get(k) ?? new Map()),
         blockLag: up?.blockLag ?? null,
         behindSec: up?.behindSec ?? null,
-        rateLimitHits: !fam.rateLimit
-          ? null
-          : holdChainKnown.has(c.node)
-            ? (holdByKey.get(key(c.node, c.spec)) ?? 0)
-            : null,
-        healthUptime: health.get(key(c.node, c.spec)) ?? null,
-        blockedNow: blocked ? (blocked.get(key(c.node, c.spec)) ?? false) : null,
+        rateLimitHits: hits(c.node, c.spec),
+        healthUptime: health.get(k) ?? null,
+        blockedNow: blocked ? (blocked.get(k) ?? false) : null,
       });
     }
     // Configured but idle on a chain: show it with zero tries, never drop it.
     for (const k of health.keys()) {
       const [node, spec] = k.split("\u0000") as [string, string];
-      if (!names.includes(node) || seen.has(k)) continue;
+      if (!looksLikeNodeName(node) || counts.has(k)) continue;
       const up = upstreamByKey.get(k);
-      chains.push({
+      rows.push({
         spec,
         node,
         account: cfg.identity(node).account,
@@ -578,12 +665,66 @@ export class ProvidersService {
         p95Ms: null,
         blockLag: up?.blockLag ?? null,
         behindSec: up?.behindSec ?? null,
-        rateLimitHits: fam.rateLimit && holdChainKnown.has(node) ? (holdByKey.get(k) ?? 0) : null,
+        rateLimitHits: hits(node, spec),
         healthUptime: health.get(k) ?? null,
         blockedNow: blocked ? (blocked.get(k) ?? false) : null,
       });
     }
-    chains.sort((a, b) => (b.errorRate ?? -1) - (a.errorRate ?? -1) || b.requests - a.requests);
+    return rows.sort((a, b) => (b.errorRate ?? -1) - (a.errorRate ?? -1) || b.requests - a.requests);
+  }
+
+  /** GET /api/metrics/providers */
+  async list(window: MetricWindow): Promise<ProvidersReport> {
+    const [l, rates] = await Promise.all([this.load(window), this.rateSeries(window)]);
+    return {
+      window,
+      providers: this.summaries(l, rates),
+      unattributed: l.unattributed,
+      families: l.fam,
+      peakWindowSec: peakWindowSec(window),
+      latencyRead: latencyReadFor(window),
+    };
+  }
+
+  /** Every provider with its chain rows, from one set of reads - GET /api/providers/export.csv. */
+  async withChains(window: MetricWindow): Promise<{ provider: ProviderSummary; chains: ProviderChainStats[] }[]> {
+    const [l, rates, upstreams] = await Promise.all([
+      this.load(window),
+      this.rateSeries(window),
+      this.metrics.upstreams(undefined, LAG_WINDOW),
+    ]);
+    const rows = this.chainRows(l, upstreams);
+    return this.summaries(l, rates).map((provider) => ({
+      provider,
+      chains: rows.filter((c) => provider.nodes.includes(c.node)),
+    }));
+  }
+
+  /** GET /api/metrics/provider-detail */
+  async detail(providerId: string, window: MetricWindow): Promise<ProviderDetailReport> {
+    const [l, rates, upstreams] = await Promise.all([
+      this.load(window),
+      this.rateSeries(window),
+      this.metrics.upstreams(undefined, LAG_WINDOW),
+    ]);
+    const fam = l.fam;
+    const provider = this.summaries(l, rates).find((p) => p.id === providerId) ?? null;
+    if (!provider || provider.nodes.length === 0) {
+      return { window, provider, chains: [], methods: [], methodLatency: false, latencyRead: latencyReadFor(window), families: fam };
+    }
+    const names = provider.nodes;
+    const alt = nameAlternation(names);
+    const r = countsRange(WINDOWS[window].rangeSeconds);
+    const byM = "sum by (provider_address, spec, method)";
+    const [mTot, mOk, mNodeErr, mLat] = await Promise.all([
+      this.read(`${byM} (increase(${ROUTER_METRICS.requestsTotal}{provider_address=~"${alt}"}[${r}]))`),
+      this.read(`${byM} (increase(${ROUTER_METRICS.requestsSuccessTotal}{provider_address=~"${alt}"}[${r}]))`),
+      fam.nodeErrors
+        ? this.read(`${byM} (increase(${OPTIONAL_METRICS.nodeErrorsTotal}{provider_address=~"${alt}"}[${r}]))`)
+        : Promise.resolve(null),
+      this.buckets(window, true, names),
+    ]);
+    const chains = this.chainRows(l, upstreams).filter((c) => names.includes(c.node));
 
     const mKey = (s: PromVectorSample): string =>
       `${key(s.metric.provider_address ?? "", s.metric.spec ?? "")}\u0000${s.metric.method ?? ""}`;
@@ -614,6 +755,6 @@ export class ProvidersService {
     }
     methods.sort((a, b) => b.failed - a.failed || b.requests - a.requests);
 
-    return { window, provider, chains, methods, methodLatency: mLat.sawMethod, families: fam };
+    return { window, provider, chains, methods, methodLatency: mLat.sawMethod, latencyRead: latencyReadFor(window), families: fam };
   }
 }

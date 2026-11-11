@@ -89,16 +89,14 @@ export async function providerRoutes(app: FastifyInstance) {
     },
   }, async (request, reply) => {
     const window = toMetricWindow(request.query.window);
-    const svc = app.scoped(request.query.router).providers;
-    const list = await svc.list(window);
+    const providers = await app.scoped(request.query.router).providers.withChains(window);
     const end = Date.now();
     const start = end - WINDOWS[window].rangeSeconds * 1000;
     const rows: (string | null)[][] = [];
     const n = (v: number | null) => (v == null ? "" : String(v));
     const p = (v: number | null) => (v == null ? "" : (v * 100).toFixed(2));
-    for (const provider of list.providers) {
-      const detail = await svc.detail(provider.id, window, { list, methods: false });
-      for (const c of detail.chains) {
+    for (const { provider, chains } of providers) {
+      for (const c of chains) {
         rows.push([
           provider.name,
           c.account ?? "",
@@ -108,6 +106,7 @@ export async function providerRoutes(app: FastifyInstance) {
           n(c.requests),
           c.errorRate == null ? "" : String(Math.round(c.requests * c.errorRate)),
           p(c.errorRate),
+          p(c.nodeErrorRate),
           p(c.protocolErrorRate),
           c.p95Ms == null ? "" : String(Math.round(c.p95Ms)),
           n(c.rateLimitHits),
@@ -122,7 +121,7 @@ export async function providerRoutes(app: FastifyInstance) {
       .header("Content-Disposition", `attachment; filename="providers-${window}.csv"`)
       .send(
         toCsv(
-          ["provider", "account", "chain", "spec", "role", "requests", "failed_requests", "error_pct", "timeout_and_connection_error_pct", "p95_ms", "rate_limit_hits", "health_check_uptime_pct", "window_start", "window_end"],
+          ["provider", "account", "chain", "spec", "role", "requests", "failed_requests", "error_pct", "error_reply_pct", "timeout_and_connection_error_pct", "p95_ms", "rate_limit_hits", "health_check_uptime_pct", "window_start", "window_end"],
           rows,
         ),
       );

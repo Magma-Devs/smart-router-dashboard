@@ -1,6 +1,7 @@
 import fp from "fastify-plugin";
 import type { FastifyError, FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { ApiError } from "@sr/shared";
+import { StoreReadError } from "../services/prometheus-client.js";
 
 export function sendApiError(reply: FastifyReply, statusCode: number, message: string): ApiError {
   const error =
@@ -19,6 +20,12 @@ export function sendApiError(reply: FastifyReply, statusCode: number, message: s
 export const errorHandlerPlugin = fp(async (app: FastifyInstance) => {
   app.setErrorHandler((error: FastifyError, request: FastifyRequest, reply: FastifyReply) => {
     const statusCode = error.statusCode ?? 500;
+    // A read the metrics store didn't answer: the caller can try again, so say so.
+    if (error instanceof StoreReadError) {
+      request.log.warn(error.message);
+      sendApiError(reply, 503, error.message);
+      return;
+    }
     if (statusCode >= 500) request.log.error(error);
     else request.log.warn(error.message);
 

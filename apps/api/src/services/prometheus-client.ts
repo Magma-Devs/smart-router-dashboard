@@ -76,6 +76,20 @@ export interface PromClientOptions {
  *  turn every panel refresh into forty lines. */
 const WARN_INTERVAL_MS = 60_000;
 
+/**
+ * The store didn't answer a read whose numbers can't be left out. Most reads
+ * degrade to an empty panel; a caller that would otherwise show a wrong
+ * number (an error rate built on missing success counts) throws this instead,
+ * and the error handler answers 503.
+ */
+export class StoreReadError extends Error {
+  readonly statusCode = 503;
+  constructor() {
+    super("The metrics store didn't answer. Try again in a moment.");
+    this.name = "StoreReadError";
+  }
+}
+
 export class PrometheusClient {
   private readonly headers: Record<string, string>;
   private readonly baseScope: MetricScope | null;
@@ -166,6 +180,14 @@ export class PrometheusClient {
       query: this.scoped(expr),
     });
     return r.status === "success" && r.data ? r.data.result : [];
+  }
+
+  /** Instant query → vector; null when the store didn't answer, so "no series" and "no answer" stay apart. */
+  async queryOrNull(expr: string): Promise<PromVectorSample[] | null> {
+    const r = await this.get<PromVectorSample[]>("api/v1/query", {
+      query: this.scoped(expr),
+    });
+    return r.status === "success" && r.data ? r.data.result : null;
   }
 
   /** Range query → matrix. */
