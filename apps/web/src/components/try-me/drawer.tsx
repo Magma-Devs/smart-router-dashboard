@@ -9,8 +9,15 @@ import {
   type CSSProperties,
 } from "react";
 import { createPortal } from "react-dom";
-import { buildChainMetaByIndex, type HealthState, type UpstreamRelayResponse } from "@sr/shared";
-import { apiPost } from "@/lib/api-client";
+import {
+  buildChainMetaByIndex,
+  type HealthState,
+  type RouterRelayResponse,
+  type RouterWsProbeResponse,
+  type UpstreamRelayResponse,
+} from "@sr/shared";
+import { ApiError, apiPost } from "@/lib/api-client";
+import { useAuthMode } from "@/components/gateway/auth-mode";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { CopyButton } from "@/components/gateway/CopyButton";
 import { HealthTag } from "@/components/gateway/HealthTag";
@@ -26,6 +33,7 @@ import {
   relayPayloadFor,
   type DirectTarget,
 } from "./direct-request";
+import { routerPathOf, routerRelayPayload, routerReplyErrored } from "./router-relay";
 import {
   defaultCommand,
   headCommands,
@@ -102,6 +110,9 @@ interface TryMeDrawerProps {
   /** Lava spec label (`ETH1`, `SOLANA`, …) — display metadata is resolved
    *  via `buildChainMetaByIndex`. */
   spec: string;
+  /** The config router this endpoint belongs to. With accounts on, the router
+   *  leg is sent by the api, which addresses the router by this id. */
+  routerId: string;
   /** Network name from the router topology (`mainnet`, `testnet`, …). */
   network: string;
   /** Transport the console drives. `wsUrl` adds its WebSocket twin. */
@@ -517,6 +528,7 @@ async function readRelay(url: string, init: RequestInit, t0: number): Promise<Ou
 
 export function TryMeDrawer({
   spec,
+  routerId,
   network,
   iface: openedIface,
   cfg,
@@ -531,6 +543,13 @@ export function TryMeDrawer({
   onClose,
 }: TryMeDrawerProps) {
   const chain = buildChainMetaByIndex(spec);
+  /** Who sends the router leg. With accounts on, the api does, from inside
+   *  the deployment: a deployment can admit only listed source addresses at
+   *  its public hostnames, and this browser need not be one of them. With
+   *  accounts off the api's relay routes don't exist (anyone could use them
+   *  to get past that list), so the browser sends it, as it always has. */
+  const viaApi = useAuthMode();
+  const sentFrom = viaApi ? "from the dashboard's server" : "from this browser";
   const baseIface = httpVariantOf(openedIface);
   const wsIface = wsVariantOf(openedIface);
   /** Both transports are the same endpoint, so the toggle needs a ws address
@@ -629,8 +648,8 @@ export function TryMeDrawer({
   const [truncated, setTruncated] = useState(false);
   /** Send with `lava-force-cache-refresh`, so the router bypasses its relay
    *  cache and asks an upstream even when a cached answer exists. Router HTTP
-   *  only — the directive rides a header, which a browser WebSocket handshake
-   *  can't carry, and the direct leg has no router cache to skip. */
+   *  only — the router reads no directives on a WebSocket, and the direct leg
+   *  has no router cache to skip. */
   const [skipCache, setSkipCache] = useState(false);
   /** Side-by-side outcome of "Compare both", or null when not run. */
   const [comparison, setComparison] = useState<{ router: Outcome; upstream: Outcome } | null>(null);
@@ -722,17 +741,35 @@ export function TryMeDrawer({
   };
 
   /* Live reachability of the WebSocket transport — measured by opening one
-     from THIS browser, not read off a metrics series. A chain's Prometheus
-     health says nothing about whether the ws upgrade is served (the router
-     answers HTTP on the same port either way), and it is the browser's own
-     handshake that has to succeed for Send to work here. */
+     from wherever Send will send from, not read off a metrics series. A
+     chain's Prometheus health says nothing about whether the ws upgrade is
+     served (the router answers HTTP on the same port either way). With
+     accounts on that is the api, which opens the socket inside the
+     deployment; otherwise it is this browser's own handshake. */
   useEffect(() => {
     if (!onWs) {
       setWsProbe(null);
       return;
     }
-    let settled = false;
     setWsProbe("checking");
+    if (viaApi) {
+      let cancelled = false;
+      apiPost<RouterWsProbeResponse>("/api/routers/ws-probe", {
+        routerId,
+        iface: baseIface,
+        path: routerPathOf(endpointUrl),
+      })
+        .then((r) => {
+          if (!cancelled) setWsProbe(r.online ? "online" : "offline");
+        })
+        .catch(() => {
+          if (!cancelled) setWsProbe("offline");
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
+    let settled = false;
     let socket: WebSocket;
     try {
       socket = new WebSocket(endpointUrl);
@@ -766,7 +803,7 @@ export function TryMeDrawer({
         /* already closing */
       }
     };
-  }, [onWs, endpointUrl, probeNonce]);
+  }, [onWs, endpointUrl, probeNonce, viaApi, routerId, baseIface]);
 
   const switchTransport = (next: Transport) => {
     if (next === transport) return;
@@ -887,6 +924,41 @@ export function TryMeDrawer({
    *  its cache can answer, and its retries/hedging can change who served. */
   const fireViaRouter = useCallback(async (): Promise<Outcome> => {
     const t0 = performance.now();
+    if (viaApi) {
+      if (!resolved) throw new Error("Nothing to send.");
+      const built = routerRelayPayload({ routerId, iface: baseIface, resolved, selectUpstream, skipCache });
+      if (!built.ok) throw new Error(built.error);
+      if (built.payload.transport === "ws") setWsPhase("connecting");
+      try {
+        const res = await apiPost<RouterRelayResponse>("/api/routers/relay", built.payload);
+        return {
+          errored: routerReplyErrored(res),
+          httpStatus: res.httpStatus,
+          latencyMs: res.latencyMs,
+          body: res.body,
+          servedBy: res.servedBy,
+          retries: res.retries,
+          cvStatus: res.cvStatus,
+          cvAgreeing: res.cvAgreeing,
+          cvDisagreeing: res.cvDisagreeing,
+          truncated: res.truncated,
+        };
+      } catch (e) {
+        // A router that never answered is a result, as it is on the browser
+        // leg: "Compare both" still fires the upstream after it. Anything else
+        // (the router unreachable, the relay refusing) goes to the error surface.
+        if (!(e instanceof ApiError) || e.statusCode !== 504) throw e;
+        return {
+          ...NO_ROUTER_META,
+          errored: true,
+          httpStatus: null,
+          latencyMs: Math.round(performance.now() - t0),
+          body: { error: { message: e.message } },
+        };
+      } finally {
+        setWsPhase(null);
+      }
+    }
     if (resolved?.transport === "ws") {
       setWsPhase("connecting");
       const { json, errored, latencyMs } = await sendWebSocket(resolved.url, resolved.body, {
@@ -935,7 +1007,7 @@ export function TryMeDrawer({
     } finally {
       clearTimeout(timer);
     }
-  }, [resolved, selectUpstream, skipCache]);
+  }, [resolved, selectUpstream, skipCache, viaApi, routerId, baseIface]);
 
   /** Straight at the upstream, via the api — no router in the path at all.
    *  The browser can't do this itself: it holds only a masked `scheme://host`,
@@ -1133,9 +1205,10 @@ export function TryMeDrawer({
                 : ""}
             </div>
           </div>
-          {/* On WebSocket the status is the browser's own handshake against
-              this exact URL — the chain's Prometheus health can't tell you
-              whether the upgrade is served. Click to re-check. */}
+          {/* On WebSocket the status is a handshake against this exact
+              listener, opened from wherever Send sends from (the api with
+              accounts on, else this browser) — the chain's Prometheus health
+              can't tell you whether the upgrade is served. Click to re-check. */}
           {onWs ? (
             <button
               type="button"
@@ -1149,9 +1222,9 @@ export function TryMeDrawer({
               }
               title={
                 wsProbe === "online"
-                  ? `WebSocket handshake to ${endpointUrl} succeeded from this browser — click to re-check`
+                  ? `WebSocket handshake to ${endpointUrl} succeeded ${sentFrom} — click to re-check`
                   : wsProbe === "offline"
-                    ? `WebSocket handshake to ${endpointUrl} failed from this browser — click to re-check`
+                    ? `WebSocket handshake to ${endpointUrl} failed ${sentFrom} — click to re-check`
                     : `Opening a WebSocket to ${endpointUrl}…`
               }
               style={{ fontSize: 10, cursor: "pointer", flexShrink: 0 }}
@@ -1252,7 +1325,22 @@ export function TryMeDrawer({
                 url masked
               </span>
             ) : (
-              <CopyButton text={endpointUrl} />
+              <>
+                {/* The address is what a client dials; with accounts on, this
+                    Send doesn't dial it from here. Saying so keeps a working
+                    Try-me from reading as proof that the viewer's own
+                    address gets through. */}
+                {viaApi && (
+                  <span
+                    className="gw-tag"
+                    style={{ fontSize: 10, color: "var(--text-3)", whiteSpace: "nowrap" }}
+                    title="Send goes from the dashboard's server to the router inside the deployment, so it works wherever you are. Your own client calls the address shown here — where the deployment admits only listed source addresses, it must be on the list."
+                  >
+                    sent from server
+                  </span>
+                )}
+                <CopyButton text={endpointUrl} />
+              </>
             )}
           </div>
         </div>
@@ -1625,12 +1713,12 @@ export function TryMeDrawer({
                     )}
                   </button>
                 )}
-                {/* Router HTTP sends only — the directive is a request header,
-                    which a browser WebSocket handshake can't carry, and the
-                    direct leg has no router cache to skip. Kept visible in
-                    direct mode because "Compare both" still fires a router
-                    leg, which honours it; gone when there is no router leg at
-                    all (a backup the router refuses to pin). */}
+                {/* Router HTTP sends only — the router reads no directives on
+                    a WebSocket, and the direct leg has no router cache to
+                    skip. Kept visible in direct mode because "Compare both"
+                    still fires a router leg, which honours it; gone when there
+                    is no router leg at all (a backup the router refuses to
+                    pin). */}
                 {!onWs && pinRefusal === null && (
                   <label
                     title="Send with the lava-force-cache-refresh header — the router bypasses its relay cache and asks an upstream even when a cached answer exists (no more 'Cached' in Served by). Applies to sends through the router."
@@ -1684,8 +1772,12 @@ export function TryMeDrawer({
                     style={{ fontSize: 11 }}
                     title={
                       resultVia === "upstream"
-                        ? "Measured at the dashboard api, around its call to the upstream — a different pair of hops than the router number."
-                        : "Measured in the browser, around the call to the router."
+                        ? viaApi
+                          ? "Measured at the dashboard's server, around its call to the upstream."
+                          : "Measured at the dashboard api, around its call to the upstream — a different pair of hops than the router number."
+                        : viaApi
+                          ? "Measured at the dashboard's server, around its call to the router inside the deployment."
+                          : "Measured in the browser, around the call to the router."
                     }
                   >
                     {httpStatus !== null ? `${httpStatus} · ` : ""}
@@ -1708,7 +1800,7 @@ export function TryMeDrawer({
                 {truncated && (
                   <span
                     className="gw-tag"
-                    title="The upstream's response was larger than the relay's size cap and was cut off."
+                    title={`The ${resultVia === "router" ? "router's" : "upstream's"} response was larger than the relay's size cap and was cut off.`}
                     style={{ fontSize: 11, color: "var(--warn)", background: "rgba(251,191,36,0.10)", borderColor: "rgba(251,191,36,0.25)" }}
                   >
                     truncated
@@ -1761,8 +1853,9 @@ export function TryMeDrawer({
                 )}
                 {/* Cross-validation outcome. The router CORS-exposes only the
                     agreeing/disagreeing provider lists (plus Lava-Retries) —
-                    NOT Lava-Cross-Validation-Status — so the badge keys on
-                    those; a browser can never read the status header. */}
+                    NOT Lava-Cross-Validation-Status — so a browser send never
+                    has the status, and the badge keys on the lists, which
+                    every send has. A send by the api reads the status too. */}
                 {(cvStatus || cvAgreeing || cvDisagreeing) && (() => {
                   const disagreed = !!(cvDisagreeing && cvDisagreeing.trim());
                   const ok = !disagreed && cvStatus !== "failed";
@@ -1849,7 +1942,9 @@ export function TryMeDrawer({
                     <strong style={{ color: "var(--text)" }}>
                       {delta === 0 ? "the same time" : `${Math.abs(delta)} ms ${delta > 0 ? "longer" : "less"}`}
                     </strong>
-                    , but the two are measured from different places — the browser for the router, the api for the upstream — so read the gap as a hint, not a benchmark.
+                    {viaApi
+                      ? ", both measured from the dashboard's server, so the gap is mostly the router's own hop — still a hint from two single calls, not a benchmark."
+                      : ", but the two are measured from different places — the browser for the router, the api for the upstream — so read the gap as a hint, not a benchmark."}
                   </div>
                 </div>
                 {/* The two bodies, side by side. "Do these agree?" is the

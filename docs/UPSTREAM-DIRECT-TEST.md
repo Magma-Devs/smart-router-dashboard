@@ -4,7 +4,7 @@ The Upstreams page's **Try now** drawer can send the same request two ways:
 
 | Mode | Path | What it measures |
 |---|---|---|
-| **Via router** (default) | browser → router → upstream | What a real client gets. The router's cache can answer it, its retries and hedging can change who served it, and it reports all of that back in `Lava-*` headers. |
+| **Via router** (default) | browser → router → upstream; with accounts on, browser → dashboard api → router → upstream ([`ROUTER-RELAY.md`](ROUTER-RELAY.md)) | What a real client gets. The router's cache can answer it, its retries and hedging can change who served it, and it reports all of that back in `Lava-*` headers. |
 | **Direct to upstream** | browser → dashboard api → upstream | What the upstream does on its own. No cache, no retries, no hedging, no `Lava-*` headers — just the vendor's answer. |
 
 **Compare both** — offered in direct mode, where there is a second leg to
