@@ -1,0 +1,15 @@
+# Layer on the dashboard compose file; all paths resolve from its repo root.
+services:
+  router:
+    image: mag4226-router:local
+    pull_policy: never
+    build:
+      context: ${ROUTER_DIR:-../smart-router}
+      dockerfile: docker/Dockerfile
+  upstream-switch:
+    image: node:24-bookworm-slim
+    command: ["node", "/fixture/proxy.mjs"]
+    volumes:
+      - ./docs/validation/MAG-4226/proxy.mjs:/fixture/proxy.mjs:ro
+    ports:
+      - "127.0.0.1:18545:8545"

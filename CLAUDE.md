@@ -186,8 +186,8 @@ apps/api/                 @sr/api — Fastify 5 (:8000)
     config.ts           single source of truth for env defaults
 apps/web/                 @sr/web — Next.js 16 App Router (:3000)
   src/
-    app/(app)/          overview · dashboard · upstreams · metrics ·
-                        team · account (Shell layout)
+    app/(app)/          overview · upstreams · metrics · team · account
+                        (Shell layout)
     app/standalone/     chrome-less Metrics page (sharing/embedding)
     app/api/config/     runtime-config route (DASHBOARD_API_URL → browser)
     components/
@@ -197,8 +197,7 @@ apps/web/                 @sr/web — Next.js 16 App Router (:3000)
                         RouterFilterSelect · HealthTag · charts · SortTable ·
                         SideSheet · icons
       overview/         OverviewView (KPI strip + 2×2 chart grid)
-      dashboard/        DashHeader · OverviewTab · MetricsTab · TroubleDetail · …
-      metrics/          MetricsView (5 tabs) · HeroPanel · RouterOverview ·
+      metrics/          MetricsView (4 tabs) · HeroPanel · RouterOverview ·
                         ChainDetail · ErrorsBreakdown (the Errors tab: count
                         cards + ErrorRequests, the request list) ·
                         TransactionLog · request-log (the two log tables'
@@ -423,10 +422,14 @@ such a chain lists its routers under it there (`?chain=ETH1&router=eth-prod`).
 `smartrouter_*` carries `spec` (the chain) and no router identity, so two
 routers on one chain sum into a single set of numbers. What *does* separate
 them is the collector: each router is its own scrape target, so Prometheus
-attaches a per-target label — `service` under the Prometheus Operator, whose
-value is the router's Service name (`<router-id-lowered>-router`).
-`ROUTER_SCOPE_LABEL` names that label
-(default `service`; use `job` for a scrape config that names jobs per router).
+attaches a per-target label — `router` from the fleet's collector and the
+chart's ServiceMonitor (6.20.0+), copied from the pod label
+`app.smart-router-id`; `service` under a bare Prometheus Operator, whose value
+is the router's Service name (`<router-id-lowered>-router`).
+`ROUTER_SCOPE_LABEL` names that label. Unset (the default), the api resolves
+it on first use: the first of `router`, `service` the store reports values
+for, remembered once found, asked again on every use until then, never at
+boot. Set `job` for a scrape config that names jobs per router.
 
 - **`GET /api/metrics/routers`** → `{ label, routers[] }` — the distinct
   values actually present. Empty means the collector attaches no such label
@@ -498,7 +501,7 @@ deployment to one label value:
   `count(smartrouter_overall_health)` through the scoped client, a gauge
   every running router exports whether or not it has traffic — that warns
   when it counts zero. Advisory only: a zone still provisioning is also zero.
-- `METRICS_SCOPE_LABEL` equal to `ROUTER_SCOPE_LABEL` is refused at boot:
+- `METRICS_SCOPE_LABEL` equal to `ROUTER_SCOPE_LABEL` (or, with that unset, to either label it could resolve to) is refused at boot:
   the router scope would put a second matcher on the same label — redundant
   for the same value, an empty result for any other.
 
@@ -518,9 +521,16 @@ state can't be worded or sourced two ways:
   filter's only entry point — one selection, both router axes (see "Two router
   axes"), chain-narrowed list, `routerId` on `FiltersProvider` (`sr:routerId`).
 - **`lib/health.ts`** owns the words and colours for `HealthState`
-  (`operational | unhealthy | unknown`) — **Operational / Unhealthy / —** — and
+  (`operational | unhealthy | unknown`) — **Operational / Unhealthy / Unknown** — and
   `<HealthTag>` / `<HealthDot>` are how they reach the screen. `unknown` means
-  "no metrics in this window", never "down", so it renders neutral. Nothing
+  "no current health evidence", so it renders as a warning with a reason.
+  Configured endpoints remain in the roster without metrics. Current health
+  uses live checks and block-poll windows sized to three expected blocks
+  (5 / 15 / 30 / 60 minutes, 30-minute fallback for an unmeasurable rate).
+  A reset healthy gauge alone cannot establish recovery without a recent
+  successful block event; an expired/empty window is a warning with a reason.
+  Request-history filters do not change current health. Overview carries unhealthy/unknown counts, and
+  headers show a loading state until the selected scope answers. Nothing
   invents its own health vocabulary: four surfaces used to (the roster said
   "healthy / degraded", the deep-dive "Live · up", the drawer the raw wire
   word), and one upstream read three different ways depending on the panel.
@@ -639,7 +649,7 @@ can't: it would end in the future, which Mimir refuses past 10 minutes).
 Every `window=` query param accepts those keys **plus the `24h` alias (= `1d`)**;
 anything else falls back to the default `30m`. The page-level `<select>` shows
 the design's 12 options (`WINDOW_OPTIONS` — everything except `1h`, which the
-Dashboard page's chip row uses internally).
+api accepts and no page offers).
 
 ## API endpoints
 
@@ -675,9 +685,10 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 | `GET /api/metrics/routers` | — | `{ label, routers: string[] }` — router deployments the metrics can be scoped to (distinct values of `ROUTER_SCOPE_LABEL`). `[]` when the collector can't tell routers apart. See "Router scope" |
 | `GET /api/metrics/specs` | `router?` | `{ specs: string[] }` — distinct chains present on the requests counter |
 | `GET /api/metrics/dashboard-summary` | `window` | `HeroSummary` - the hero cards as `Kpi` `{value, prior}` pairs (`requestsServed`, `successRate`, `effectiveReadP95Ms` - returned, not shown: that card is "Failed requests", from `GET /api/error-requests/count` - `staleCaught`, `retriesRecovered` (counted with `increaseFromBirth`, as the Errors tab's cards are), `cacheOffloadPct`) + `providerCount` / `chainCount` / `health` + **`emitted: {retries, cache}`** |
+| `GET /api/metrics/pulse` | `spec?`, `router?`, `routerId?` | `DeploymentPulse` — the topbar's `health`, `upstreamHealthCounts` and current `throughputRps` (5m client rate) in six reads, no window. What the topbar used to read the whole overview for (MAG-4296) |
 | `GET /api/metrics/overview` | `window`, `spec?` | `OverviewData` — KPI pairs (requests, RPS, errors, success rate, p50/p95/p99), `errorRate`, `health`, throughput/errors series, `latencySeries` (p50/p95/p99 toggle), **`latencyDistribution`** (histogram buckets), **`perProviderSeries`**, **`errorLayers`** (single `unclassified` layer until labelled counters exist), `perChainLatency`, `activeRoutes`, `perChainSeries`; `computeUnits`/`rpsCap` always null |
-| `GET /api/metrics/dashboard` | `window`, `spec?` | `DashboardData` — the Dashboard page (both tabs) in one round-trip: `kpis` (successRate, p95Ms, errors, rps, errorsHandled=null), `series` (throughput, errors, errorRate, successRate, latency p50/95/99, perChain, perChainSuccessRate, perChainLatency, providerMix, perProviderLatencyP95), `chains` (multiselect options — the series filter is client-side; `spec` accepted for symmetry). Unbacked families (`scu`, `regions`, `failoverRatio`, `internalAvailability`, `cacheHitRate`, `errorClasses`, `errorsHandledBreakdown`, `contribution`, `providerAvailability`, `scorecard`) are `null`, `trouble` is `[]` |
-| `GET /api/metrics/routers-rollup` | `window` | `{ routers: RouterMetrics[] }` — **the Routers table: one row per CONFIG router**, not per chain. `ChainMetrics` plus `routerId`, `upstreamCount` (from the values file, so always the router's own) and `attribution`: `own` when the collector reports a target label for it (the chain-level numbers were re-read through that label) or when it is alone on its chain, `shared` otherwise — in which case `sharedWith` names the siblings reading the same series, and the rows deliberately carry identical figures. Falls back to one row per chain when no values file is mounted |
+| `GET /api/metrics/dashboard` | `window`, `spec?` | `DashboardData` — **no web consumer** (the Dashboard page that read it is removed); kept as a documented read surface: `kpis` (successRate, p95Ms, errors, rps, errorsHandled=null), `series` (throughput, errors, errorRate, successRate, latency p50/95/99, perChain, perChainSuccessRate, perChainLatency, providerMix, perProviderLatencyP95), `chains` (multiselect options — the series filter is client-side; `spec` accepted for symmetry). Unbacked families (`scu`, `regions`, `failoverRatio`, `internalAvailability`, `cacheHitRate`, `errorClasses`, `errorsHandledBreakdown`, `contribution`, `providerAvailability`, `scorecard`) are `null`, `trouble` is `[]` |
+| `GET /api/metrics/routers-rollup` | `window` | `{ routers: RouterMetrics[] }` — **the Routers table: one row per CONFIG router**, not per chain. `ChainMetrics` plus `routerId`, `upstreamCount` (from the values file, so always the router's own) and `attribution`: `own` when the collector reports a target label for it (its chain-level numbers come from the read grouped by that label) or when it is alone on its chain, `shared` otherwise — in which case `sharedWith` names the siblings reading the same series, and the rows deliberately carry identical figures. Falls back to one row per chain when no values file is mounted |
 | `GET /api/metrics/chains` | `window` | `{ chains: ChainMetrics[] }` — per-chain rollup (requests, availability, errorRate, p95, composite QoS, health, latestBlock, providerCount) for the Routers table |
 | `GET /api/metrics/upstreams` | `window`, `spec?`, **`routerId?`** | `{ upstreams: UpstreamMetrics[] }` — roster with requests, uptime, p95, **errorRate**, selection scores, health, latestBlock, **blockLag**, **`behindSec`** (that lag ÷ the chain's block rate — the comparable form) + **`stale`** (tip frozen 15m while the chain produced blocks), **role** (`primary`/`backup` from helm `is_backup`; null for SR_CONFIG), **apiInterface**, inFlight, **`routerIds`** (the config routers declaring the upstream — several when they share a node name), plus the two signals that need NO traffic: **`scoreSource`** (`optimizer` = the sampler's live score, refreshed for every upstream on a timer; `endpoint` = the routing path's, frozen at the last selection, so possibly old on an idle row; `null` = no score) and **`polls`** (`{ok, failed}` latest-block polls the chain tracker made — `null` when the family is absent, `{0,0}` when the poll gate suppressed them, which is "we did not ask", never "it answered fine"). `routerId` keeps only one router's rows; it filters against the values file and does NOT narrow the PromQL (that's `router` — see "Two router axes") |
 | `GET /api/metrics/block-heights` | `spec?`, `router?`, **`routerId?`** | `BlockHeights` — `{ routerLabel, chains: ChainTips[] }`. Per chain: `blocksPerSec` (from `deriv` on the endpoint gauge), `bestBlock` (highest upstream tip — the reference), `routers[]` (`smartrouter_latest_block` per scope value × api interface, each with `behindBlocks` / `behindSec` / **`refreshSec`**) and `upstreams[]` (`rpc_endpoint_latest_block` per endpoint × interface, with `stale`). **Instant only** — gauges, so no `window`. Lags are given in seconds as well as blocks because a block count isn't comparable across chains. ⚠ The router gauge advances on accepted tip observations, not every poll, so it trails by ~one `refreshSec` however healthy the router is; judge it against that cadence, never a wall-clock threshold |
@@ -724,9 +735,10 @@ API (`apps/api/src/config.ts` is the source of truth):
 | `API_HOST` | `0.0.0.0` | |
 | `PROMETHEUS_URL` | `http://localhost:9090` | compose sets `http://prometheus:9090`. A path prefix (Mimir's `/prometheus`) and a query string are both kept on every call |
 | `PROMETHEUS_TIMEOUT_MS` | `10000` | per-query abort |
+| `PROMETHEUS_CACHE_TTL_MS` | `10000` | how long a successful answer is reused for an identical read (same path, params, scope and credential) — under the 15 s panel poll, so two tabs or two panels asking the same instant read in an interval cost the store one query (range reads stamp their window with the current second and share only when they coincide; the store is per process, each replica keeps its own). `0` keeps every read live. Identical reads in flight at the same moment share one request whatever the value. A refused refresh (429, timeout, error) is answered from the last good read for up to 60 s and retried next time; failures themselves and the readiness probe are never kept |
 | `PROMETHEUS_USERNAME` / `PROMETHEUS_PASSWORD` | unset | Basic auth on every Prometheus call — for a per-tenant read proxy or Mimir behind an auth gateway. Both or neither: one half alone sends no header |
 | `PROMETHEUS_ORG_ID` | unset | Sent as `X-Scope-OrgID`, for a multi-tenant store that takes the org from the client. The fleet's read proxy pins the org from the credential and ignores this |
-| `ROUTER_SCOPE_LABEL` | `service` | Target label carrying the router identity for `?router=` (Prometheus Operator's `service`; `job` for a per-router scrape config). Parsed at import — a change needs a restart |
+| `ROUTER_SCOPE_LABEL` | unset | Target label carrying the router identity for `?router=`. Unset: resolved on first use — `router` (the fleet's collector and the chart's ServiceMonitor from 6.20.0 stamp it from the pod label `app.smart-router-id`), else `service` (the Prometheus Operator's automatic label, the router's Service name); never probed at boot, remembered once found. Set `job` for a scrape config that names jobs per router. Parsed at import — a change needs a restart |
 | `METRICS_SCOPE_LABEL` / `METRICS_SCOPE_VALUE` | unset | Deployment scope: a `label="value"` matcher EVERY metrics query carries (`cache_*`, router discovery and the `/query` passthrough included), for one dashboard per zone / tenant against a shared store. Both or neither — half a pair, a value that cannot sit in a matcher, or a label equal to `ROUTER_SCOPE_LABEL` refuses the boot. A scope that selects no router series warns at boot. Unset = the whole store, as before. See "The deployment scope" |
 | `CORS_ORIGINS` | all | comma list or JSON array |
 | `RATE_LIMIT_MAX` | `300` | per IP per minute |

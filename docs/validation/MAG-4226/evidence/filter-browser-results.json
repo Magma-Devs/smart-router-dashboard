@@ -1,0 +1,20 @@
+[
+  {
+    "port": 3004,
+    "requests": [
+      "http://localhost:18080/api/metrics/overview?window=1h",
+      "http://localhost:18080/api/metrics/overview?window=1h&routerId=eth-staging"
+    ],
+    "filter": "eth-staging",
+    "count": 1
+  },
+  {
+    "port": 3005,
+    "requests": [
+      "http://localhost:18080/api/metrics/overview?window=1h",
+      "http://localhost:18080/api/metrics/overview?window=1h&routerId=eth-staging"
+    ],
+    "filter": "eth-staging",
+    "count": 1
+  }
+]

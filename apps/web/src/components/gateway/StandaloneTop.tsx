@@ -1,5 +1,6 @@
 "use client";
 
+import { DeploymentHealth } from "./DeploymentHealth";
 import { ThemeToggle } from "./Shell";
 
 /* Ported from the design prototype (app.jsx StandaloneTop): a stripped
@@ -19,7 +20,7 @@ export function StandaloneTop() {
         </div>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <span className="pill"><span className="dot-ok" /> All systems normal</span>
+        <DeploymentHealth />
         <ThemeToggle />
       </div>
     </header>

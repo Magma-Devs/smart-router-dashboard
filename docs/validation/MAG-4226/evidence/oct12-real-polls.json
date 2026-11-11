@@ -1,0 +1,119 @@
+{
+  "at": "2026-10-12T11:39:01.003Z",
+  "results": [
+    {
+      "query": "rpc_endpoint_overall_health",
+      "data": {
+        "status": "success",
+        "data": {
+          "resultType": "vector",
+          "result": [
+            {
+              "metric": {
+                "__name__": "rpc_endpoint_overall_health",
+                "apiInterface": "jsonrpc",
+                "endpoint_id": "eth-publicnode",
+                "instance": "host.docker.internal:7779",
+                "job": "smart-router",
+                "spec": "ETH1"
+              },
+              "value": [1791805141.104, "1"]
+            },
+            {
+              "metric": {
+                "__name__": "rpc_endpoint_overall_health",
+                "apiInterface": "jsonrpc",
+                "endpoint_id": "fixture-switchable",
+                "instance": "host.docker.internal:7779",
+                "job": "smart-router",
+                "spec": "ETH1"
+              },
+              "value": [1791805141.104, "0"]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "query": "sum by(endpoint_id,spec,apiInterface,instance) (increase(rpc_endpoint_fetch_latest_success[5m]))",
+      "data": {
+        "status": "success",
+        "data": {
+          "resultType": "vector",
+          "result": [
+            {
+              "metric": {
+                "apiInterface": "jsonrpc",
+                "endpoint_id": "eth-publicnode",
+                "instance": "host.docker.internal:7779",
+                "spec": "ETH1"
+              },
+              "value": [1791805141.111, "12.636589244156454"]
+            },
+            {
+              "metric": {
+                "apiInterface": "jsonrpc",
+                "endpoint_id": "fixture-switchable",
+                "instance": "host.docker.internal:7779",
+                "spec": "ETH1"
+              },
+              "value": [1791805141.111, "3.1591473110391135"]
+            }
+          ]
+        },
+        "infos": [
+          "PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"rpc_endpoint_fetch_latest_success\" (1:58)"
+        ]
+      }
+    },
+    {
+      "query": "sum by(endpoint_id,spec,apiInterface,instance) (increase(rpc_endpoint_fetch_latest_fails[5m]))",
+      "data": {
+        "status": "success",
+        "data": {
+          "resultType": "vector",
+          "result": [
+            {
+              "metric": {
+                "apiInterface": "jsonrpc",
+                "endpoint_id": "fixture-switchable",
+                "instance": "host.docker.internal:7779",
+                "spec": "ETH1"
+              },
+              "value": [1791805141.113, "5.2652455183985225"]
+            },
+            {
+              "metric": {
+                "apiInterface": "jsonrpc",
+                "endpoint_id": "eth-publicnode",
+                "instance": "host.docker.internal:7779",
+                "spec": "ETH1"
+              },
+              "value": [1791805141.113, "1.0530491036797045"]
+            }
+          ]
+        },
+        "infos": [
+          "PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: \"rpc_endpoint_fetch_latest_fails\" (1:58)"
+        ]
+      }
+    },
+    {
+      "query": "max by(spec) (deriv(rpc_endpoint_latest_block[1h]))",
+      "data": {
+        "status": "success",
+        "data": {
+          "resultType": "vector",
+          "result": [
+            {
+              "metric": {
+                "spec": "ETH1"
+              },
+              "value": [1791805141.115, "0.08775324738896703"]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

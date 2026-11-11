@@ -45,6 +45,15 @@ function envList(name: string): string[] | true {
   return trimmed.split(",").map((o) => o.trim()).filter(Boolean);
 }
 
+/**
+ * The labels a collector stamps the router identity on, in the order they
+ * are tried when `ROUTER_SCOPE_LABEL` is unset: `router` is what the fleet's
+ * collector and the chart's ServiceMonitor (6.20.0+) copy from the pod label
+ * `app.smart-router-id`; `service` is the Prometheus Operator's automatic
+ * label, the router's Service name (`<id>-router`).
+ */
+export const ROUTER_SCOPE_CANDIDATES = ["router", "service"] as const;
+
 export const config = {
   env: env("NODE_ENV") ?? "production",
   isDev: env("NODE_ENV") === "development",
@@ -76,14 +85,28 @@ export const config = {
     url: env("PROMETHEUS_URL") ?? "http://localhost:9090",
     timeoutMs: envInt("PROMETHEUS_TIMEOUT_MS", 10000),
     /**
+     * How long a successful answer is reused for an identical read (same
+     * path, params, scope and credential). The panels poll every 15 s, so
+     * 10 s means two tabs or two panels asking the same instant read in an
+     * interval cost the store one query; range reads stamp their window with
+     * the current second, so they share only when they coincide. Per
+     * process — each replica keeps its own. 0 keeps every read live;
+     * identical reads in flight at the same moment share one request either
+     * way, and a refused refresh is answered from the last good read for up
+     * to 60 s (see `PrometheusClient`).
+     */
+    cacheTtlMs: envInt("PROMETHEUS_CACHE_TTL_MS", 10000),
+    /**
      * Target label that identifies ONE router deployment, used by the
      * `?router=` scope (see `promql/scope.ts`). The router labels its series
      * with the chain, not with itself, so telling two routers on one chain
-     * apart relies on a per-target label the collector attaches. `service` is
-     * the Prometheus Operator's (the value being the router's Service name);
-     * point it at `job` for a scrape config that names jobs per router.
+     * apart relies on a per-target label the collector attaches. Empty (the
+     * default) means "find out": the first of `ROUTER_SCOPE_CANDIDATES` the
+     * store reports values for, probed when a request first needs it and
+     * remembered once found (`plugins/prometheus.ts`). Set it to `job` for a
+     * scrape config that names jobs per router.
      */
-    routerScopeLabel: env("ROUTER_SCOPE_LABEL") ?? "service",
+    routerScopeLabel: env("ROUTER_SCOPE_LABEL") ?? "",
     /**
      * Deployment scope — see `readMetricsScope()`. Read at plugin registration
      * (live env, not this snapshot) so a bad pair fails the boot with a

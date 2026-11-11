@@ -17,6 +17,8 @@ import { useApi } from "@/hooks/use-api";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 import { fmtNum } from "@/lib/format";
 import { uptimeColor } from "@/lib/colors";
+import { upstreamMetricColor } from "@/lib/upstream-presentation";
+import { UpstreamHealthNotice } from "@/components/metrics/upstream/UpstreamHealthNotice";
 import { HEALTH_UNKNOWN_HINT, healthColor, healthLabel } from "@/lib/health";
 import { qosHint, qosIsStale, qosValue } from "@/legacy/lib/upstream-signals";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
@@ -45,16 +47,20 @@ export function UpstreamMetricsTab({ timeWindow, chainFilter }: {
   // another upstream, and the api refuses a name alone.
   const detailRes = useApi<UpstreamDetail>(
     pm ? `/api/metrics/upstream-detail?endpointId=${encodeURIComponent(pm.endpointId)}&spec=${encodeURIComponent(pm.spec)}&window=${timeWindow}${scopeQ}` : null,
+    15000, { keepPreviousData: false },
   );
-  const detail = detailRes.data;
+  const detail = detailRes.data?.endpointId === pm?.endpointId && detailRes.data?.spec === pm?.spec
+    ? detailRes.data : undefined;
 
   const fmtRps = (n: number) => (n >= 1000 ? (n / 1000).toFixed(1) + "k" : Math.round(n).toString());
   const chainName = pm ? buildChainMetaByIndex(pm.spec).name : "";
-  const hasData = !!pm && pm.requests > 0;
+  const hasData = !!pm && (pm.requests > 0 || pm.uptime !== null);
+  const hasDiagnostics = hasData || (detail?.requests ?? 0) > 0
+    || (!!detail?.errorSplit && Object.values(detail.errorSplit).some((n) => n > 0));
   const availPct = pm?.uptime != null ? pm.uptime * 100 : null;
   const errPct = pm?.errorRate != null ? pm.errorRate * 100 : null;
   const p95 = detail?.p95Ms ?? pm?.p95Ms ?? null;
-  const availCol = uptimeColor;
+  const availCol = (pct: number | null) => upstreamMetricColor(pm?.health ?? "unknown", uptimeColor(pct));
   /** The design's fixed 1h/24h/7d context boxes; "24h" is the wire alias of "1d". */
   const winMatches = (k: string) => timeWindow === k || (k === "24h" && timeWindow === "1d");
 
@@ -71,6 +77,8 @@ export function UpstreamMetricsTab({ timeWindow, chainFilter }: {
             <span style={{ fontSize: 14, fontWeight: 700 }}>{activeName}</span>
             <span style={{ fontSize: 12, color: "var(--text-3)" }}>· {chainName} · detailed metrics</span>
           </div>
+
+          <UpstreamHealthNotice health={pm.health} reason={pm.healthReason} />
 
           {/* ════ ROW 1 — AT A GLANCE ════ */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginBottom: 12 }}>
@@ -97,7 +105,7 @@ export function UpstreamMetricsTab({ timeWindow, chainFilter }: {
                 return (
                   <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 4 }} title={qosHint(pm)}>
                     QoS{" "}
-                    <span className="gw-mono gw-tnum" style={{ fontWeight: 700, color: q > 97 ? "var(--ok)" : q > 90 ? "var(--warn)" : "var(--err)", opacity: qosIsStale(pm) ? 0.55 : 1 }}>
+                    <span className="gw-mono gw-tnum" style={{ fontWeight: 700, color: upstreamMetricColor(pm.health, q > 97 ? "var(--ok)" : q > 90 ? "var(--warn)" : "var(--err)"), opacity: qosIsStale(pm) ? 0.55 : 1 }}>
                       {Math.round(q)}
                     </span>
                   </div>
@@ -105,11 +113,11 @@ export function UpstreamMetricsTab({ timeWindow, chainFilter }: {
               })()}
             </PMStat>
 
-            <PMStat label="Availability" tip={"**Requests this upstream answered** as a share of all requests routed to it — i.e. **success rate**, not wall-clock uptime or an SLA figure.\n\nIt is measured from real traffic, so it is empty until the router routes something here. The router's own block polls are reported separately below.\n\nThe large figure follows the window above; 1h / 24h / 7d are shown for context."}>
+            <PMStat label="Request success rate" tip={"**Requests this upstream answered** as a share of all requests routed to it — i.e. **success rate**, not wall-clock uptime or an SLA figure.\n\nIt is measured from real traffic, so it is empty until the router routes something here. The router's own block polls are reported separately below.\n\nThe large figure follows the window above; 1h / 24h / 7d are shown for context."}>
               {hasData && availPct != null ? (
                 <>
                   <div className="gw-mono gw-tnum" style={{ fontSize: 26, fontWeight: 700, lineHeight: 1, color: availCol(availPct) }}>{availPct.toFixed(2)}%</div>
-                  <div style={{ fontSize: 11, color: "var(--text-3)", margin: "7px 0 9px" }}>success rate · {timeWindow}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-3)", margin: "7px 0 9px" }}>Historical · last {timeWindow}</div>
                   <div style={{ display: "flex", gap: 6 }}>
                     {/* Fixed sub-windows from the API (availabilityWindows) —
                         real values regardless of the page window. */}
@@ -138,7 +146,7 @@ export function UpstreamMetricsTab({ timeWindow, chainFilter }: {
               {hasData ? (
                 <>
                   <div className="gw-mono gw-tnum" style={{ fontSize: 26, fontWeight: 700, lineHeight: 1 }}>{fmtRps(pm.requests / WINDOWS[timeWindow].rangeSeconds)}<span style={{ fontSize: 13, color: "var(--text-3)", fontWeight: 500 }}> req/s</span></div>
-                  <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 8 }}>{fmtNum(pm.requests)} req / {timeWindow}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 8 }}>{fmtNum(pm.requests)} req / {timeWindow} · window average</div>
                 </>
               ) : <PMNoVal />}
             </PMStat>
@@ -148,7 +156,7 @@ export function UpstreamMetricsTab({ timeWindow, chainFilter }: {
                 <>
                   <div className="gw-mono gw-tnum" style={{ fontSize: 26, fontWeight: 700, lineHeight: 1 }}>{detail?.p50Ms != null ? Math.round(detail.p50Ms) : "—"}<span style={{ fontSize: 13, color: "var(--text-3)", fontWeight: 500 }}> ms</span></div>
                   <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 8, display: "flex", gap: 12 }}>
-                    <span>median</span>
+                    <span>median · {timeWindow}</span>
                     <span>p95 <span className="gw-mono gw-tnum" style={{ color: "var(--text-2)", fontWeight: 600 }}>{p95 != null ? Math.round(p95) + "ms" : "—"}</span></span>
                     <span>p99 <span className="gw-mono gw-tnum" style={{ color: "var(--text-2)", fontWeight: 600 }}>{detail?.p99Ms != null ? Math.round(detail.p99Ms) + "ms" : "—"}</span></span>
                   </div>
@@ -159,14 +167,14 @@ export function UpstreamMetricsTab({ timeWindow, chainFilter }: {
             <PMStat label="Error rate" tip="Share of requests to this upstream that **failed before** Smart Router retried or failed over.">
               {hasData ? (
                 <>
-                  <div className="gw-mono gw-tnum" style={{ fontSize: 26, fontWeight: 700, lineHeight: 1, color: errPct == null ? "var(--text-4)" : errPct < 0.5 ? "var(--ok)" : errPct < 1.5 ? "var(--warn)" : "var(--err)" }}>{errPct != null ? errPct.toFixed(2) + "%" : "—"}</div>
-                  <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 8 }}>of all requests · {timeWindow}</div>
+                  <div className="gw-mono gw-tnum" style={{ fontSize: 26, fontWeight: 700, lineHeight: 1, color: upstreamMetricColor(pm.health, errPct == null ? "var(--text-4)" : errPct < 0.5 ? "var(--ok)" : errPct < 1.5 ? "var(--warn)" : "var(--err)") }}>{errPct != null ? errPct.toFixed(2) + "%" : "—"}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 8 }}>Historical · last {timeWindow}</div>
                 </>
               ) : <PMNoVal />}
             </PMStat>
           </div>
 
-          {hasData ? <PMBody pm={pm} detail={detail} name={activeName} timeWindow={timeWindow} /> : <PMEmpty pm={pm} name={activeName} chainName={chainName} timeWindow={timeWindow} />}
+          {hasDiagnostics ? <PMBody pm={pm} detail={detail} name={activeName} timeWindow={timeWindow} /> : <PMEmpty pm={pm} name={activeName} chainName={chainName} timeWindow={timeWindow} />}
         </>
       )}
     </div>

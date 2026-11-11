@@ -98,11 +98,11 @@ function mockPrometheus(): void {
     } else if (query.includes("changes(smartrouter_latest_block")) {
       // 3 refreshes over the 15m window ⇒ a 300s cadence.
       result = [
-        { metric: { spec: "ETH1", apiInterface: "jsonrpc", service: "eth-router" }, value: [1, "3"] },
+        { metric: { spec: "ETH1", apiInterface: "jsonrpc", router: "eth-router" }, value: [1, "3"] },
       ];
     } else if (query.includes("smartrouter_latest_block")) {
       result = [
-        { metric: { spec: "ETH1", apiInterface: "jsonrpc", service: "eth-router" }, value: [1, "90"] },
+        { metric: { spec: "ETH1", apiInterface: "jsonrpc", router: "eth-router" }, value: [1, "90"] },
       ];
     } else if (query.includes("rpc_endpoint_latest_block")) {
       result = [{ metric: { spec: "ETH1", endpoint_id: "eth-lava" }, value: [1, "100"] }];
@@ -221,6 +221,17 @@ describe("api routes", () => {
     expect(body.classTotals.write).toBeNull();
     expect(body.classTotals.batch).toBeNull();
     expect(body.classTotals.emitted).toEqual({ write: false, batch: false });
+  });
+
+  it("GET /api/metrics/pulse → the topbar's three fields", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/metrics/pulse" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(["operational", "unhealthy", "unknown"]).toContain(body.health);
+    expect(typeof body.upstreamHealthCounts.unhealthy).toBe("number");
+    expect(typeof body.upstreamHealthCounts.unknown).toBe("number");
+    expect(body.throughputRps === null || typeof body.throughputRps === "number").toBe(true);
+    expect(typeof body.lastUpdated).toBe("string");
   });
 
   it("GET /api/metrics/overview → KPIs + series + gated CU/cap + prior errors", async () => {
@@ -434,7 +445,9 @@ describe("api routes", () => {
     const res = await app.inject({ method: "GET", url: "/api/metrics/block-heights" });
     expect(res.statusCode).toBe(200);
     const body = res.json();
-    expect(body.routerLabel).toBe("service");
+    // Unset ROUTER_SCOPE_LABEL resolves to `router` first (MAG-4303); the canned
+    // store reports no router values, so that first candidate is what is named.
+    expect(body.routerLabel).toBe("router");
 
     const eth = body.chains.find((c: { spec: string }) => c.spec === "ETH1");
     expect(eth.bestBlock).toBe(100);

@@ -98,7 +98,6 @@ router uses its in-process cache.
 ## Pages
 
 - **Overview** — KPI strip (requests, RPS, errors, success rate, latency) + chart grid, all live
-- **Dashboard** — ops surface, 1h/3h/24h/7d/custom windows, client-side chain multiselect
 - **Upstreams** - the mounted config joined with live per-endpoint stats, carved three ways: **by chain** (who serves it - the default), by router (the endpoints each router publishes), or by upstream (what it serves)
 - **Metrics** - four tabs: Overview, Upstreams, Errors, Transactions. The Transactions tab and the Errors tab's request list read the router's logs from Loki (`LOKI_URL`; the `logs` profile runs one)
 - **Live test** — POST straight to the router's listen ports from the browser; full per-chain method catalog with archive/debug/trace tiers

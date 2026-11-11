@@ -43,6 +43,172 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   so a backup's failure (a 429, a timeout) was dropped from the Errors and
   Transactions rows.
 
+## [0.35.5]
+
+### Changed
+
+- **Tests:** every database-backed test loads its pglite from a snapshot of
+  the migrated data dir, built once and cached under `node_modules/.cache`,
+  instead of running `initdb` and every migration itself. A fresh instance
+  costs about 0.3s rather than 1.4s, which takes the api suite from about
+  5.5 minutes to under 3 on the CI runner (MAG-4318).
+- **CI:** the Quality Gate runs vitest with one worker per CPU
+  (`VITEST_MAX_WORKERS=$(nproc)`) instead of vitest's default of one fewer,
+  which left a quarter of the 4-vCPU runner idle through the test step
+  (MAG-4318).
+- **Tests:** the api suite hashes fixture passwords at bcrypt cost 4 through
+  a test-only `setPasswordCostForTests()`; production stays at cost 12, and
+  the setup test that asserts the stored cost keeps asserting 12
+  (MAG-4318).
+- **Tests:** database-backed tests in one file share a pglite instance that
+  is truncated between tests (sequences restart), instead of opening one
+  per test; a test that watches its SQL still gets a private instance. With
+  the three changes above, the api suite runs in about a minute on the CI
+  runner, down from about 5.5 (MAG-4318).
+
+## [0.35.4]
+
+### Fixed
+
+- **Metrics:** the HeroPanel summary (`/api/metrics/dashboard-summary`) issues
+  its eighteen Prometheus reads in one round instead of four — the optional
+  families' presence probes no longer gate their reads, and the retries and
+  cache pairs no longer wait their turn — so a call costs its slowest read
+  rather than the sum of four. The output contract is unchanged: an absent
+  family still reads null and `emitted:false` (MAG-4322).
+
+## [0.35.3]
+
+### Fixed
+
+- **Try it:** the method catalog follows lava-specs again — it was one method
+  behind within minutes of #250: NEAR's `next_light_client_block` no longer
+  carries the "needs an argument" mark, because lava-specs (64dcd8b0,
+  2026-10-14) moved its block parsing from a canonical block argument to the
+  default parser with block-hash paths. Nothing was added or removed, and the
+  explorer and runnable roll-calls are unchanged. 292 chains, 249 with an
+  explorer, 202 primaries linking a height (MAG-4329).
+## [0.35.2]
+
+### Fixed
+
+- **Try it:** the method catalog is back in sync with lava-specs, which the
+  drift check had been failing on. SEI's REST and gRPC surfaces gain their
+  archive collection — a historical block on each, marked as needing an
+  archive node — after the archive rules were extended to them upstream
+  (MAG-4282). TON's v3 REST gains `/account`, `/wallet` and
+  `/balanceChanges`, and `/decode` is offered as a POST, as the spec now
+  declares it (MAG-4180). Nothing was removed and no runnable default was
+  lost; the chain map and explorer catalog did not move. 292 chains, 202 of
+  249 primaries linking a height (MAG-4324).
+
+## [0.35.1]
+
+### Fixed
+
+- **CI:** the main build tags each release it publishes (`v<VERSION>`, once
+  both images are pushed), so "Validate version was bumped" has a tag to
+  compare against — with none in the repository it passed every merge. The
+  registry check behind it now lowercases the image path (the org name's
+  capitals made `docker manifest inspect` fail on the reference, which the
+  step read as "proceed") and fails on anything but "no such manifest"
+  (MAG-4314).
+
+## [0.35.0]
+
+### Fixed
+
+- **Metrics:** the overview reads its per-chain latency, health and throughput
+  as one grouped series each, joined on the chain label, instead of three reads
+  per chain plus a second copy of the trend, and issues every read in one round.
+  A 40-chain deployment goes from about 200 Prometheus reads per call to about
+  30, so the per-chain panels stop timing out into empty rows (MAG-4294).
+- **Metrics:** the Routers table and `/api/metrics/chains` read their
+  chain-level figures as seven grouped series — one row per chain, plus one
+  row per (chain, scrape target) for the routers the collector tells apart —
+  instead of eight reads per router. A 44-router deployment goes from about
+  350 Prometheus reads per call to at most 15, so rows stop timing out into
+  "unknown" and zeros (MAG-4295).
+
+### Changed
+
+- **Topbar:** the health badge and live RPS poll a dedicated
+  `GET /api/metrics/pulse` — router health, upstream health counts and the
+  current client RPS in six Prometheus reads — instead of the full overview
+  payload every 30 s on every page (MAG-4296).
+- **API:** identical Prometheus reads in flight at the same moment share one
+  request, and a successful answer is reused for `PROMETHEUS_CACHE_TTL_MS`
+  (default 10 s, under the 15 s panel poll; `0` keeps every read live).
+  Failures and the readiness probe are never kept (MAG-4297).
+- **Per-router scoping finds its label.** `ROUTER_SCOPE_LABEL` is unset by
+  default; the api resolves it on first use to the first of `router`, `service`
+  the store reports router values for, and remembers it. The fleet's collector
+  stamps `router`, so the Routers table attributes a chain served by several
+  routers per router instead of marking every such row `shared`, the router
+  filter appears, and `?router=` scoping works — without per-deployment config.
+  A bare Prometheus Operator install keeps working on `service`. An explicit
+  `ROUTER_SCOPE_LABEL` still wins; the boot refusal for a `METRICS_SCOPE_LABEL`
+  that collides now covers both candidates (MAG-4303).
+
+## [0.34.2]
+
+### Added
+
+- Optional **Advanced → Grafana** sidebar link, configured per deployment by
+  `DASHBOARD_GRAFANA_DASHBOARD_URL` at runtime (MAG-4241). Empty, whitespace-only and invalid
+  URLs hide the section. Valid HTTP(S) URLs open unchanged in a new tab, including
+  their time range and Grafana variables. The existing logs URL is independent.
+
+## [0.34.1]
+
+### Fixed
+
+- **Metrics:** Uptime column replaced by Status (Operational / Unhealthy /
+  Unknown) from the router's live health check and recent block polls;
+  request success rate kept as history. Configured upstreams remain visible
+  when health data is missing, with a warning and reason. The header reports
+  unhealthy and unknown upstream counts without a separate roster request.
+  Health windows follow the chain block rate, including slow chains; a reset
+  health gauge without recent success evidence cannot falsely show recovery.
+
+## [0.34.0]
+
+### Removed
+
+- **The unused `/dashboard` page.** It was not in the sidebar and nothing
+  linked to it, so it was reachable only by typing the URL. The page and the
+  components only it used are gone, and `/dashboard` now answers 404. The api
+  endpoint behind it stays (`/api/metrics/dashboard`), with no web consumer.
+
+## [0.33.1]
+
+### Fixed
+
+- **Seven Dependabot alerts** (MAG-4271). Both packages are transitive.
+  `pnpm.overrides` in the root `package.json` now sets a floor for each one,
+  capped at its current major:
+  - `fast-jwt` 6.2.4 → 6.3.4, used by `@fastify/jwt` to verify the api's
+    Bearer tokens. It fixes six advisories: GHSA-ww5h-9m49-7xx4 (critical: an
+    incomplete patch of CVE-2026-34950 re-enables RSA→HS256 algorithm
+    confusion), GHSA-g3jj-5cmm-3hxx (a raw public JWK is treated as an HMAC
+    secret), GHSA-8wpc-h4q6-8fxv (an empty or null key accepts unsigned
+    tokens), GHSA-5hjw-83fp-phq9 (claim validators are skipped when the
+    payload is a JSON array), GHSA-687g-22h4-j4w4 (`clockTolerance: Infinity`
+    skips `exp` and `nbf`) and GHSA-x937-hj6v-793p (the verifier cache accepts
+    expired tokens that have no `iat`).
+  - `fast-copy` 4.0.3 → 4.1.2, used by `pino-pretty` for the api's dev-mode
+    logs. It fixes GHSA-jggr-w7fw-pc2j, where copying deeply nested values
+    exhausts the stack.
+
+## [0.33.0]
+
+### Added
+
+- Chain catalog: Katana and Bokuto, Qtum mainnet and testnet, with chain icons
+  and verified block explorer links. Updated Sui interface metadata and the
+  TON method catalog to match lava-specs. 292 chains, 249 with an explorer,
+  and 202 primary explorers linking a block height.
+
 ## [0.32.2]
 
 ### Fixed

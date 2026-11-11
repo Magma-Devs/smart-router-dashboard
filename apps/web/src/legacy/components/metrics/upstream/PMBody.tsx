@@ -14,6 +14,7 @@
 import { useState } from "react";
 import type { MetricWindow, UpstreamDetail, UpstreamMetrics, TimePoint } from "@sr/shared";
 import { LineChart, StackedAreaChart, type Layer, type Series } from "@/legacy/components/gateway/charts";
+import { upstreamMetricColor } from "@/lib/upstream-presentation";
 import { fmtComma } from "@/lib/format";
 import { nums } from "@/legacy/components/metrics/bits";
 import { PMPanel } from "@/components/metrics/upstream/PMPanel";
@@ -75,7 +76,7 @@ export function PMBody({ pm, detail, name, timeWindow }: {
   };
   const scoreLegend: { lbl: string; val: number | null; color: string; raw: string | null; hero?: boolean }[] = [
     { lbl: "Composite QoS", val: sc("composite"), color: "#a78bfa", raw: null, hero: true },
-    { lbl: "Availability", val: sc("availability"), color: "#22c55e", raw: sc("availability") != null ? sc("availability") + "% up" : null },
+    { lbl: "Availability score", val: sc("availability"), color: "#22c55e", raw: sc("availability") != null ? "optimizer score" : null },
     { lbl: "Latency", val: sc("latency"), color: "#3b82f6", raw: pm.p95Ms != null ? Math.round(pm.p95Ms) + "ms p95" : null },
     { lbl: "Freshness", val: sc("sync"), color: "#38bdf8", raw: detail?.blockLag != null ? detail.blockLag + " blk lag" : null },
   ];
@@ -122,7 +123,7 @@ export function PMBody({ pm, detail, name, timeWindow }: {
         <PMPanel title="Errors · node vs transport" tip={"**Node errors** — the upstream answered with an error: a JSON-RPC error object (invalid params, method not found, …), or on gRPC any non-OK status, including UNAVAILABLE. These count as transport SUCCESS on the availability figures.\n\n**Transport / routing** — every other failed attempt: a 5xx or 429 from the upstream, and a gRPC failure that carried no status. On a router that does not report protocol errors yet, the failures below count here too.\n\n**Protocol errors** — the attempt went out and got no usable answer: the connection was refused, reset or dropped, the body was cut off or not valid JSON, or the attempt timed out or hung. gRPC endpoints never count these."}>
           <div style={{ display: "flex", flexDirection: "column", gap: 16, padding: "2px 0 4px" }}>
             <div>
-              <div className="gw-mono gw-tnum" style={{ fontSize: 30, fontWeight: 700, lineHeight: 1, color: totalErr == null ? "var(--text-4)" : totalErr === 0 ? "var(--ok)" : "var(--text)" }}>{totalErr != null ? fmtComma(totalErr) : "—"}</div>
+              <div className="gw-mono gw-tnum" style={{ fontSize: 30, fontWeight: 700, lineHeight: 1, color: upstreamMetricColor(pm.health, totalErr == null ? "var(--text-4)" : totalErr === 0 ? "var(--ok)" : "var(--text)") }}>{totalErr != null ? fmtComma(totalErr) : "—"}</div>
               <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 6 }}>total errors · {timeWindow}</div>
             </div>
             <div style={{ height: 8, borderRadius: 999, overflow: "hidden", display: "flex", background: "var(--bg-2)" }}>
@@ -171,16 +172,16 @@ export function PMBody({ pm, detail, name, timeWindow }: {
         </PMPanel>
 
         <PMPanel title="Disagreement rate" tip={"How often this upstream's responses **conflict with the consensus** of other upstreams on the same cross-validated request (provider agreements vs disagreements)."}
-          right={<span className="gw-mono gw-tnum" style={{ fontSize: 18, fontWeight: 700, color: disagreePct == null ? "var(--text-4)" : disagreePct > 0 ? "var(--warn)" : "var(--ok)" }}>{disagreePct != null ? disagreePct.toFixed(2) + "%" : "—"}</span>}>
+          right={<span className="gw-mono gw-tnum" style={{ fontSize: 18, fontWeight: 700, color: upstreamMetricColor(pm.health, disagreePct == null ? "var(--text-4)" : disagreePct > 0 ? "var(--warn)" : "var(--ok)") }}>{disagreePct != null ? disagreePct.toFixed(2) + "%" : "—"}</span>}>
           {cvStats && (cvStats.agreements > 0 || cvStats.disagreements > 0) ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 14, padding: "8px 0" }}>
               <div style={{ height: 8, borderRadius: 999, overflow: "hidden", display: "flex", background: "var(--bg-2)" }}>
-                <div style={{ width: `${(cvStats.agreements / (cvStats.agreements + cvStats.disagreements)) * 100}%`, background: "var(--ok)" }} />
+                <div style={{ width: `${(cvStats.agreements / (cvStats.agreements + cvStats.disagreements)) * 100}%`, background: upstreamMetricColor(pm.health, "var(--ok)") }} />
                 <div style={{ width: `${(cvStats.disagreements / (cvStats.agreements + cvStats.disagreements)) * 100}%`, background: "var(--warn)" }} />
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: 2, background: "var(--ok)", flexShrink: 0 }} />
+                  <span style={{ width: 8, height: 8, borderRadius: 2, background: upstreamMetricColor(pm.health, "var(--ok)"), flexShrink: 0 }} />
                   <span style={{ fontSize: 12.5, color: "var(--text-2)", flex: 1 }}>Agreed with consensus</span>
                   <span className="gw-mono gw-tnum" style={{ fontSize: 13, fontWeight: 600 }}>{fmtComma(cvStats.agreements)}</span>
                 </div>

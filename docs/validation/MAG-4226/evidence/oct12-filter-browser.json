@@ -1,0 +1,24 @@
+[
+  {
+    "port": 3006,
+    "requests": [
+      "http://localhost:18086/api/metrics/overview?window=1h",
+      "http://localhost:18086/api/metrics/overview?window=1h&routerId=BTC"
+    ],
+    "filter": "BTC",
+    "count": 1,
+    "loading": true,
+    "errors": []
+  },
+  {
+    "port": 3007,
+    "requests": [
+      "http://localhost:18086/api/metrics/overview?window=1h",
+      "http://localhost:18086/api/metrics/overview?window=1h&routerId=BTC"
+    ],
+    "filter": "BTC",
+    "count": 1,
+    "loading": true,
+    "errors": []
+  }
+]

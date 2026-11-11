@@ -24,6 +24,16 @@ import {
   qRpsSeriesExpr,
   qLatencySeriesExpr,
   qPerSpecLatencySeriesExpr,
+  qPerSpecLatencyQuantile,
+  qPerSpecHealth,
+  qPerSpecClientRpsSeriesExpr,
+  qGroupedClientRequests,
+  qGroupedAvailability,
+  qGroupedLatencyQuantile,
+  qGroupedQos,
+  qGroupedHealth,
+  qGroupedLatestBlock,
+  qGroupedUpstreams,
   qPerUpstreamRpsExpr,
   qPerSpecRpsExpr,
   qBackupShareExpr,
@@ -710,5 +720,65 @@ describe("how a chart samples a window", () => {
     expect(partialSec).toBe(0);
     expect(grid.end).toBe(lastFull);
     expect((grid.end - grid.start) / grid.stepSec + 1).toBe(36);
+  });
+});
+
+describe("grouped per-chain reads (MAG-4294)", () => {
+  it("qPerSpecLatencyQuantile keeps the chain on every bucket", () => {
+    expect(qPerSpecLatencyQuantile(0.5, "1h")).toBe(
+      "histogram_quantile(0.5, sum by (spec, le) (rate(smartrouter_end_to_end_latency_milliseconds_bucket[3600s])))",
+    );
+    expect(qPerSpecLatencyQuantile(0.95, "1h", "ETH1")).toBe(
+      'histogram_quantile(0.95, sum by (spec, le) (rate(smartrouter_end_to_end_latency_milliseconds_bucket{spec="ETH1"}[3600s])))',
+    );
+  });
+
+  it("qPerSpecHealth reads the spec-labelled endpoint gauge, one row per chain", () => {
+    expect(qPerSpecHealth()).toBe("max by (spec) (rpc_endpoint_overall_health)");
+    expect(qPerSpecHealth("ETH1")).toBe('max by (spec) (rpc_endpoint_overall_health{spec="ETH1"})');
+  });
+
+  it("qPerSpecClientRpsSeriesExpr is the client-scoped rate, one matrix row per chain", () => {
+    expect(qPerSpecClientRpsSeriesExpr("30s")).toBe(
+      "sum by (spec) (rate(smartrouter_end_to_end_latency_milliseconds_count[30s]))",
+    );
+    expect(qPerSpecClientRpsSeriesExpr("30s", "ETH1")).toBe(
+      'sum by (spec) (rate(smartrouter_end_to_end_latency_milliseconds_count{spec="ETH1"}[30s]))',
+    );
+  });
+});
+
+describe("grouped chain-level reads (MAG-4295)", () => {
+  const perTarget = ["spec", "service"] as const;
+
+  it("reads the seven chain-level figures per chain", () => {
+    expect(qGroupedClientRequests(["spec"], "30m")).toBe(
+      "sum by (spec) (increase(smartrouter_end_to_end_latency_milliseconds_count[1800s]))",
+    );
+    expect(qGroupedAvailability(["spec"], "30m")).toBe(
+      "clamp_max(sum by (spec) (increase(smartrouter_requests_success_total[1800s])) / sum by (spec) (increase(smartrouter_requests_total[1800s])), 1)",
+    );
+    expect(qGroupedLatencyQuantile(0.95, ["spec"], "30m")).toBe(
+      "histogram_quantile(0.95, sum by (spec, le) (rate(smartrouter_end_to_end_latency_milliseconds_bucket[1800s])))",
+    );
+    expect(qGroupedQos(["spec"])).toBe('avg by (spec) (rpc_endpoint_selection_score{score_type="composite"})');
+    expect(qGroupedHealth(["spec"])).toBe("max by (spec) (rpc_endpoint_overall_health)");
+    expect(qGroupedLatestBlock(["spec"])).toBe("max by (spec) (smartrouter_latest_block)");
+    expect(qGroupedUpstreams(["spec"])).toBe("count by (spec, endpoint_id) (rpc_endpoint_overall_health)");
+  });
+
+  it("keeps the scrape-target label beside the chain for per-router rows", () => {
+    expect(qGroupedClientRequests(perTarget, "30m")).toBe(
+      "sum by (spec, service) (increase(smartrouter_end_to_end_latency_milliseconds_count[1800s]))",
+    );
+    expect(qGroupedLatencyQuantile(0.95, perTarget, "30m")).toBe(
+      "histogram_quantile(0.95, sum by (spec, service, le) (rate(smartrouter_end_to_end_latency_milliseconds_bucket[1800s])))",
+    );
+    expect(qGroupedUpstreams(perTarget)).toBe("count by (spec, service, endpoint_id) (rpc_endpoint_overall_health)");
+  });
+
+  it("the per-spec readers are the grouped ones by spec", () => {
+    expect(qPerSpecLatencyQuantile(0.5, "1h", "ETH1")).toBe(qGroupedLatencyQuantile(0.5, ["spec"], "1h", "ETH1"));
+    expect(qPerSpecHealth("ETH1")).toBe(qGroupedHealth(["spec"], "ETH1"));
   });
 });

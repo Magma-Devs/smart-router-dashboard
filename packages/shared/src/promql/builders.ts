@@ -363,6 +363,79 @@ export function qPerSpecLatencySeriesExpr(quantile: number, step: string): strin
   return `histogram_quantile(${quantile}, sum by (spec, le) (rate(${ROUTER_METRICS.latencyBucket}[${step}])))`;
 }
 
+/* ── Grouped chain-level reads (one query for every group, joined on labels) ── */
+
+/**
+ * The labels a grouped read keeps: `["spec"]` for one row per chain, or
+ * `["spec", <target label>]` for one row per (chain, scrape target) when the
+ * Routers table attributes rows to routers. Read with `query()` and join on
+ * the labels — `scalar()` would keep whichever row comes first. The target
+ * label passes `isValidScopeLabel` before it reaches a query.
+ */
+export type GroupBy = readonly string[];
+
+const by = (g: GroupBy): string => g.join(", ");
+
+/** Client requests (histogram _count) over the window, per group. */
+export function qGroupedClientRequests(g: GroupBy, window: MetricWindow = DEFAULT_WINDOW): string {
+  return `sum by (${by(g)}) (increase(${ROUTER_METRICS.latencyCount}[${rangeFor(window)}]))`;
+}
+
+/** success/total over the window, per group — both sides carry the group's labels, so they match one-to-one. */
+export function qGroupedAvailability(g: GroupBy, window: MetricWindow = DEFAULT_WINDOW): string {
+  const r = rangeFor(window);
+  return `clamp_max(sum by (${by(g)}) (increase(${ROUTER_METRICS.requestsSuccessTotal}[${r}])) / sum by (${by(g)}) (increase(${ROUTER_METRICS.requestsTotal}[${r}])), 1)`;
+}
+
+/** A latency quantile over the window, per group. `spec` narrows the read to one chain. */
+export function qGroupedLatencyQuantile(
+  quantile: number,
+  g: GroupBy,
+  window: MetricWindow = DEFAULT_WINDOW,
+  spec?: string,
+): string {
+  return `histogram_quantile(${quantile}, sum by (${by(g)}, le) (rate(${ROUTER_METRICS.latencyBucket}${selector({ spec })}[${rangeFor(window)}])))`;
+}
+
+/** Mean composite selection score, per group. */
+export function qGroupedQos(g: GroupBy): string {
+  return `avg by (${by(g)}) (${ENDPOINT_METRICS.selectionScore}${selector({ score_type: "composite" })})`;
+}
+
+/** Health from the spec-labelled ENDPOINT gauge (1/0), per group. */
+export function qGroupedHealth(g: GroupBy, spec?: string): string {
+  return `max by (${by(g)}) (${ENDPOINT_METRICS.overallHealth}${selector({ spec })})`;
+}
+
+/** The router's latest block, per group. */
+export function qGroupedLatestBlock(g: GroupBy): string {
+  return `max by (${by(g)}) (${ROUTER_METRICS.latestBlock})`;
+}
+
+/** One row per (group, endpoint_id) on the endpoint health gauge — a group's upstream count is its row count. */
+export function qGroupedUpstreams(g: GroupBy): string {
+  return `count by (${by(g)}, endpoint_id) (${ENDPOINT_METRICS.overallHealth})`;
+}
+
+/** A quantile per chain over the window — `qGroupedLatencyQuantile` by spec. */
+export function qPerSpecLatencyQuantile(
+  quantile: number,
+  window: MetricWindow = DEFAULT_WINDOW,
+  spec?: string,
+): string {
+  return qGroupedLatencyQuantile(quantile, ["spec"], window, spec);
+}
+
+/** Health per chain from the spec-labelled ENDPOINT gauge — `qGroupedHealth` by spec. */
+export function qPerSpecHealth(spec?: string): string {
+  return qGroupedHealth(["spec"], spec);
+}
+
+/** Client RPS series per chain (histogram _count) — one matrix row per spec. */
+export function qPerSpecClientRpsSeriesExpr(step: string, spec?: string): string {
+  return `sum by (spec) (rate(${ROUTER_METRICS.latencyCount}${selector({ spec })}[${step}]))`;
+}
+
 /** Per-upstream RPS series (stacked upstream-mix charts). */
 export function qPerUpstreamRpsExpr(step: string, spec?: string): string {
   return `sum by (provider_address) (rate(${ROUTER_METRICS.requestsTotal}${selector({ spec })}[${step}]))`;

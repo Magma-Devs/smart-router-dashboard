@@ -6,7 +6,7 @@ import type { ChartGrid } from "../types/domain.js";
  * (the Prometheus scrape interval — finer steps just repeat samples).
  *
  * Keys mirror the design's page-level window <select> (12 options) plus
- * "1h", which the Dashboard page's chip row uses internally.
+ * "1h", which the api accepts and no page offers.
  */
 export const WINDOWS = {
   "5m": { label: "5 minutes", rangeSeconds: 300, step: "15s" },

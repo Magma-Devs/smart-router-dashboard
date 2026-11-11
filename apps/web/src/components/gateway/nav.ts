@@ -1,5 +1,6 @@
 import type { ComponentType } from "react";
-import { IconChart, IconLedger, IconServer, IconSettings, IconUsers } from "./icons";
+import { IconChart, IconLedger, IconReport, IconServer, IconSettings, IconUsers } from "./icons";
+import { normalizeGrafanaDashboardUrl } from "@/lib/grafana-dashboard-url";
 
 export interface NavItem {
   href: string;
@@ -10,6 +11,8 @@ export interface NavItem {
    *  registered, which presents as a broken page rather than an absent
    *  feature. Set it on anything the account system owns. */
   requiresAuth?: boolean;
+  /** Opens the configured URL in a new tab, outside the dashboard's router. */
+  external?: boolean;
 }
 
 export interface NavSection {
@@ -22,10 +25,10 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     label: "Smart Router",
     items: [
-      // Overview + Dashboard are hidden from nav (Metrics is the default
-      // surface); their routes still resolve if linked directly. Endpoints is
-      // gone: the Upstreams page's "By router" grouping is that surface, on
-      // the same config the other two groupings read.
+      // Overview is hidden from nav (Metrics is the default surface); its
+      // route still resolves if linked directly. Endpoints is gone: the
+      // Upstreams page's "By router" grouping is that surface, on the same
+      // config the other two groupings read.
       { href: "/metrics", label: "Metrics", icon: IconChart },
       { href: "/upstreams", label: "Upstreams", icon: IconServer },
     ],
@@ -52,9 +55,17 @@ export const NAV_SECTIONS: NavSection[] = [
  *
  * Exported and pure so the rule is testable without rendering the shell.
  */
-export function visibleNavSections(authEnabled: boolean): NavSection[] {
-  return NAV_SECTIONS.map((section) => ({
+export function visibleNavSections(authEnabled: boolean, grafanaDashboardUrl?: string | null): NavSection[] {
+  const sections = NAV_SECTIONS.map((section) => ({
     ...section,
     items: section.items.filter((item) => authEnabled || !item.requiresAuth),
   })).filter((section) => section.items.length > 0);
+  const url = normalizeGrafanaDashboardUrl(grafanaDashboardUrl);
+  if (url) {
+    sections.push({
+      label: "Advanced",
+      items: [{ href: url, label: "Grafana", icon: IconReport, external: true }],
+    });
+  }
+  return sections;
 }

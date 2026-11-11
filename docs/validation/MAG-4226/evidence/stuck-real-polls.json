@@ -1,0 +1,42 @@
+{
+  "rpc_endpoint_fetch_latest_success": [
+    {
+      "metric": {
+        "apiInterface": "jsonrpc",
+        "endpoint_id": "fixture-switchable",
+        "instance": "host.docker.internal:7779",
+        "spec": "ETH1"
+      },
+      "value": [1791733119.812, "0"]
+    },
+    {
+      "metric": {
+        "apiInterface": "jsonrpc",
+        "endpoint_id": "eth-publicnode",
+        "instance": "host.docker.internal:7779",
+        "spec": "ETH1"
+      },
+      "value": [1791733119.812, "17.839650041091843"]
+    }
+  ],
+  "rpc_endpoint_fetch_latest_fails": [
+    {
+      "metric": {
+        "apiInterface": "jsonrpc",
+        "endpoint_id": "fixture-switchable",
+        "instance": "host.docker.internal:7779",
+        "spec": "ETH1"
+      },
+      "value": [1791733119.816, "4.1976285475452135"]
+    },
+    {
+      "metric": {
+        "apiInterface": "jsonrpc",
+        "endpoint_id": "eth-publicnode",
+        "instance": "host.docker.internal:7779",
+        "spec": "ETH1"
+      },
+      "value": [1791733119.816, "0"]
+    }
+  ]
+}

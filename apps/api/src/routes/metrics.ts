@@ -1,7 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { DEFAULT_WINDOW, WINDOWS, toMetricWindow, type MetricWindow } from "@sr/shared";
 import { sendApiError } from "../plugins/error-handler.js";
-import { config } from "../config.js";
 
 interface WindowQuery {
   window?: string;
@@ -35,7 +34,7 @@ const windowQuerySchema = {
     routerId: {
       type: "string" as const,
       description:
-        "Restrict to the upstreams ONE config router declares — an id from GET /api/config/routers. A different axis from `router`: this filters rows against the mounted values file, it does not narrow the PromQL. Read by /api/metrics/upstreams (optional)",
+        "Restrict to the upstreams ONE config router declares — an id from GET /api/config/routers. A different axis from `router`: this filters rows against the mounted values file, it does not narrow the PromQL. Read by /api/metrics/upstreams and overview health counts (optional)",
     },
   },
 };
@@ -64,10 +63,10 @@ export async function metricRoutes(app: FastifyInstance) {
   // to offer the filter rather than offering one that does nothing.
   app.get("/api/metrics/routers", {
     schema: { tags: ["Metrics"], summary: "Router deployments the metrics can be scoped to" },
-  }, async () => ({
-    label: config.prometheus.routerScopeLabel,
-    routers: await app.metrics.listRouterScopes(config.prometheus.routerScopeLabel),
-  }));
+  }, async () => {
+    const label = await app.routerScopeLabel();
+    return { label, routers: await app.metrics.listRouterScopes(label) };
+  });
 
   // List of chains (spec labels) currently emitting metrics.
   app.get<{ Querystring: WindowQuery }>("/api/metrics/specs", {
@@ -85,9 +84,28 @@ export async function metricRoutes(app: FastifyInstance) {
     return app.scoped(request.query.router).metrics.dashboardSummary(parseWindow(request.query.window), request.query.spec);
   });
 
+  // The topbar's health badge + live RPS, on every page: six reads, no
+  // window. Takes the same two router axes as the overview it replaces there.
+  app.get<{ Querystring: WindowQuery }>("/api/metrics/pulse", {
+    schema: {
+      tags: ["Metrics"],
+      summary: "Topbar pulse: router health, upstream health counts, current RPS",
+      querystring: {
+        type: "object" as const,
+        properties: {
+          spec: windowQuerySchema.properties.spec,
+          router: windowQuerySchema.properties.router,
+          routerId: windowQuerySchema.properties.routerId,
+        },
+      },
+    },
+  }, async (request) => {
+    return app.scoped(request.query.router).metrics.pulse(request.query.spec, request.query.routerId);
+  });
+
   // Rich Overview/Dashboard payload (KPIs + deltas + series + per-chain).
   app.get<{ Querystring: WindowQuery }>("/api/metrics/overview", tag("Rich Overview/Dashboard payload (KPIs, deltas, series, per-chain)"), async (request) => {
-    return app.scoped(request.query.router).metrics.overview(parseWindow(request.query.window), request.query.spec);
+    return app.scoped(request.query.router).metrics.overview(parseWindow(request.query.window), request.query.spec, request.query.routerId);
   });
 
   // Dashboard page payload (Overview + Metrics tabs). The chains multiselect
@@ -102,7 +120,7 @@ export async function metricRoutes(app: FastifyInstance) {
     return {
       routers: await app
         .scoped(request.query.router)
-        .metrics.routers(parseWindow(request.query.window), config.prometheus.routerScopeLabel),
+        .metrics.routers(parseWindow(request.query.window), await app.routerScopeLabel()),
     };
   });
 
@@ -164,7 +182,7 @@ export async function metricRoutes(app: FastifyInstance) {
     return app
       .scoped(request.query.router)
       .metrics.blockTips(
-        config.prometheus.routerScopeLabel,
+        await app.routerScopeLabel(),
         request.query.spec,
         request.query.routerId,
       );
@@ -317,7 +335,7 @@ export async function metricRoutes(app: FastifyInstance) {
     // `router` scopes the passthrough too — the caller asked for one router's
     // numbers, and the injection understands arbitrary PromQL.
     const prom = request.query.router
-      ? app.prom.withScope({ label: config.prometheus.routerScopeLabel, value: request.query.router })
+      ? app.prom.withScope({ label: await app.routerScopeLabel(), value: request.query.router })
       : app.prom;
     return { result: await prom.query(expr) };
   });

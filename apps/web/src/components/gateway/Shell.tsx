@@ -4,14 +4,14 @@ import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { useEffect, useState, useSyncExternalStore, type ComponentType } from "react";
 import { signOut } from "next-auth/react";
-import { buildChainMetaByIndex, type OverviewData } from "@sr/shared";
+import { buildChainMetaByIndex } from "@sr/shared";
 import { NAV_SECTIONS, visibleNavSections } from "./nav";
 import { useAuthMode } from "./auth-mode";
 import { useNewUi } from "./new-ui";
 import { CHAIN_DRAWER_PATH, ChainDrawer, ChainDrawerProvider, useChainDrawer } from "./ChainDrawer";
 import { IconMoon, IconSun, type IconProps } from "./icons";
-import { useApi } from "@/hooks/use-api";
 import { useFilters } from "@/components/gateway/FiltersProvider";
+import { DeploymentHealthBadge, useDeploymentPulse } from "./DeploymentHealth";
 import { fmtNum } from "@/lib/format";
 import { getAuthVersion, subscribeAuth } from "@/lib/auth-store";
 import { useMe } from "@/hooks/use-me";
@@ -42,9 +42,9 @@ export function ThemeToggle() {
   );
 }
 
-function Sidebar() {
+function Sidebar({ grafanaDashboardUrl }: { grafanaDashboardUrl?: string | null }) {
   const pathname = usePathname();
-  const sections = visibleNavSections(useAuthMode());
+  const sections = visibleNavSections(useAuthMode(), grafanaDashboardUrl);
   const drawerOpen = useChainDrawer().visible;
   const { setChain, setRouterId, setRouter } = useFilters();
   // Home or Metrics while on Metrics: back to every chain, as the drawer's
@@ -86,6 +86,21 @@ function Sidebar() {
             {section.label && <div className="gw-side__section-label">{section.label}</div>}
             {section.items.map((item) => {
               const Icon: ComponentType<IconProps> = item.icon;
+              if (item.external) {
+                return (
+                  <a
+                    key={item.href}
+                    href={item.href}
+                    className="gw-nav-item"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={`${item.label} (opens in a new tab)`}
+                  >
+                    <Icon size={16} className="ic" strokeWidth={1.75} />
+                    <span>{item.label}</span>
+                  </a>
+                );
+              }
               const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
               return (
                 <Link
@@ -195,10 +210,8 @@ function Topbar({ here, sub }: { here: string; sub: string | null }) {
   // Live throughput + health for the top-bar stats (real data; CU/mo is a
   // Lava-consumer concept the router doesn't emit, so it's omitted here).
   // Scoped like every other panel, so the pills describe the selected router.
-  const { scopeQ } = useFilters();
-  const { data } = useApi<OverviewData>(`/api/metrics/overview?window=1h${scopeQ}`, 30000);
-  const rps = data?.throughputRps.value;
-  const ok = data?.health === "operational";
+  const { data, isLoading, error } = useDeploymentPulse();
+  const rps = data?.throughputRps;
   return (
     <header className="gw-top">
       <div className="gw-top__crumbs">
@@ -227,10 +240,7 @@ function Topbar({ here, sub }: { here: string; sub: string | null }) {
         <span className="pill gw-mono" title="Live throughput">
           {fmtNum(rps)} RPS
         </span>
-        <span className="pill">
-          <span className={ok ? "dot-ok" : "dot-warn"} />
-          {ok ? "All systems normal" : data ? "Degraded" : "…"}
-        </span>
+        <DeploymentHealthBadge health={data?.health} counts={data?.upstreamHealthCounts} loading={!data && isLoading && !error} error={Boolean(error)} />
         {/* Router scope — global, so it sits next to the theme toggle rather
             than in any one page's header. Hides itself when the metrics can't
             be split per router. */}
@@ -246,7 +256,10 @@ function Topbar({ here, sub }: { here: string; sub: string | null }) {
   );
 }
 
-export function Shell({ children }: { children: React.ReactNode }) {
+export function Shell({ children, grafanaDashboardUrl }: {
+  children: React.ReactNode;
+  grafanaDashboardUrl?: string | null;
+}) {
   const pathname = usePathname();
   const { chain } = useFilters();
   const newUi = useNewUi();
@@ -267,7 +280,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
     <TwoFactorGate>
       <ChainDrawerProvider>
         <div className="gw-app">
-          <Sidebar />
+          <Sidebar grafanaDashboardUrl={grafanaDashboardUrl} />
           <ChainDrawerSlot />
           <div className="gw-main">
             <Topbar here={here} sub={sub} />
