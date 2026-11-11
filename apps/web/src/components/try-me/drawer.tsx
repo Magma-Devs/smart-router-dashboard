@@ -12,12 +12,13 @@ import { createPortal } from "react-dom";
 import {
   buildChainMetaByIndex,
   type HealthState,
+  type RouterConfigResponse,
   type RouterRelayResponse,
   type RouterWsProbeResponse,
   type UpstreamRelayResponse,
 } from "@sr/shared";
 import { ApiError, apiPost } from "@/lib/api-client";
-import { useAuthMode } from "@/components/gateway/auth-mode";
+import { useApi } from "@/hooks/use-api";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { CopyButton } from "@/components/gateway/CopyButton";
 import { HealthTag } from "@/components/gateway/HealthTag";
@@ -33,7 +34,12 @@ import {
   relayPayloadFor,
   type DirectTarget,
 } from "./direct-request";
-import { routerPathOf, routerRelayPayload, routerReplyErrored } from "./router-relay";
+import {
+  routerFailureIsResult,
+  routerPathOf,
+  routerRelayPayload,
+  routerReplyErrored,
+} from "./router-relay";
 import {
   defaultCommand,
   headCommands,
@@ -70,8 +76,9 @@ type Status = "idle" | "loading" | "ok" | "error";
 type WsPhase = "connecting" | "open" | null;
 /** Which of the endpoint's two transports the console is driving. */
 type Transport = "http" | "ws";
-/** Live reachability of the WebSocket transport, measured by opening one. */
-type WsProbe = "checking" | "online" | "offline";
+/** Live reachability of the WebSocket transport, measured by opening one.
+ *  `unknown`: the api could not be asked, which says nothing of the listener. */
+type WsProbe = "checking" | "online" | "offline" | "unknown";
 
 /** Give up on a handshake that hasn't opened by then — a router that accepts
  *  the TCP connection but never upgrades would otherwise hang the tag. */
@@ -110,8 +117,8 @@ interface TryMeDrawerProps {
   /** Lava spec label (`ETH1`, `SOLANA`, …) — display metadata is resolved
    *  via `buildChainMetaByIndex`. */
   spec: string;
-  /** The config router this endpoint belongs to. With accounts on, the router
-   *  leg is sent by the api, which addresses the router by this id. */
+  /** The config router this endpoint belongs to. When the api sends the
+   *  router leg, it addresses the router by this id. */
   routerId: string;
   /** Network name from the router topology (`mainnet`, `testnet`, …). */
   network: string;
@@ -543,12 +550,13 @@ export function TryMeDrawer({
   onClose,
 }: TryMeDrawerProps) {
   const chain = buildChainMetaByIndex(spec);
-  /** Who sends the router leg. With accounts on, the api does, from inside
-   *  the deployment: a deployment can admit only listed source addresses at
-   *  its public hostnames, and this browser need not be one of them. With
-   *  accounts off the api's relay routes don't exist (anyone could use them
-   *  to get past that list), so the browser sends it. */
-  const viaApi = useAuthMode();
+  /** Who sends the router leg. The api does, from inside the deployment: a
+   *  deployment can admit only listed source addresses at its public
+   *  hostnames, and this browser need not be one of them. The api says so
+   *  beside the topology these rows came from; where it runs with
+   *  ROUTER_RELAY_ENABLED=false, or has no such route, the browser sends. */
+  const relayConfig = useApi<RouterConfigResponse>("/api/config/routers", 60000);
+  const viaApi = relayConfig.data?.routerRelay === true;
   const sentFrom = viaApi ? "from the dashboard's server" : "from this browser";
   const baseIface = httpVariantOf(openedIface);
   const wsIface = wsVariantOf(openedIface);
@@ -585,6 +593,9 @@ export function TryMeDrawer({
      Everything below reads these — never the props. */
   const iface = onWs ? wsIface : baseIface;
   const endpointUrl = onWs ? wsUrl : httpUrl;
+  /** What the ws probe dials: this address from the browser; from the api,
+   *  the router's own listener behind it. */
+  const probeTarget = viaApi ? "this endpoint's listener on the router" : endpointUrl;
   const flat = useMemo(() => {
     const all = listMethods(cfg);
     // Subscription methods ride a WebSocket — over plain HTTP they can only
@@ -743,9 +754,9 @@ export function TryMeDrawer({
   /* Live reachability of the WebSocket transport — measured by opening one
      from wherever Send will send from, not read off a metrics series. A
      chain's Prometheus health says nothing about whether the ws upgrade is
-     served (the router answers HTTP on the same port either way). With
-     accounts on that is the api, which opens the socket inside the
-     deployment; otherwise it is this browser's own handshake. */
+     served (the router answers HTTP on the same port either way). That is
+     the api, which opens the socket inside the deployment, or this
+     browser's own handshake where the api's relay is off. */
   useEffect(() => {
     if (!onWs) {
       setWsProbe(null);
@@ -763,7 +774,9 @@ export function TryMeDrawer({
           if (!cancelled) setWsProbe(r.online ? "online" : "offline");
         })
         .catch(() => {
-          if (!cancelled) setWsProbe("offline");
+          // The probe call failed (a limit, an outage): no verdict on the
+          // listener either way.
+          if (!cancelled) setWsProbe("unknown");
         });
       return () => {
         cancelled = true;
@@ -944,10 +957,11 @@ export function TryMeDrawer({
           truncated: res.truncated,
         };
       } catch (e) {
-        // A router that never answered is a result, as it is on the browser
-        // leg: "Compare both" still fires the upstream after it. Anything else
-        // (the router unreachable, the relay refusing) goes to the error surface.
-        if (!(e instanceof ApiError) || e.statusCode !== 504) throw e;
+        // A router that never answered, or a socket it refused, is a result,
+        // as it is on the browser leg: "Compare both" still fires the upstream
+        // after it. Anything else goes to the error surface.
+        const sentOn = built.payload.transport ?? "http";
+        if (!(e instanceof ApiError) || !routerFailureIsResult(e.statusCode, sentOn)) throw e;
         return {
           ...NO_ROUTER_META,
           errored: true,
@@ -1206,9 +1220,9 @@ export function TryMeDrawer({
             </div>
           </div>
           {/* On WebSocket the status is a handshake against this exact
-              listener, opened from wherever Send sends from (the api with
-              accounts on, else this browser) — the chain's Prometheus health
-              can't tell you whether the upgrade is served. Click to re-check. */}
+              listener, opened from wherever Send sends from (the api, or this
+              browser) — the chain's Prometheus health can't tell you whether
+              the upgrade is served. Click to re-check. */}
           {onWs ? (
             <button
               type="button"
@@ -1222,10 +1236,12 @@ export function TryMeDrawer({
               }
               title={
                 wsProbe === "online"
-                  ? `WebSocket handshake to ${endpointUrl} succeeded ${sentFrom} — click to re-check`
+                  ? `WebSocket handshake to ${probeTarget} succeeded ${sentFrom} — click to re-check`
                   : wsProbe === "offline"
-                    ? `WebSocket handshake to ${endpointUrl} failed ${sentFrom} — click to re-check`
-                    : `Opening a WebSocket to ${endpointUrl}…`
+                    ? `WebSocket handshake to ${probeTarget} failed ${sentFrom} — click to re-check`
+                    : wsProbe === "unknown"
+                      ? "The dashboard's server could not be asked whether this listener serves WebSocket — click to re-check"
+                      : `Opening a WebSocket to ${probeTarget}…`
               }
               style={{ fontSize: 10, cursor: "pointer", flexShrink: 0 }}
             >
@@ -1326,8 +1342,8 @@ export function TryMeDrawer({
               </span>
             ) : (
               <>
-                {/* The address is what a client dials; with accounts on, this
-                    Send doesn't dial it from here. Saying so keeps a working
+                {/* The address is what a client dials; a Send through the
+                    api doesn't dial it from here. Saying so keeps a working
                     Try-me from reading as proof that the viewer's own
                     address gets through. */}
                 {viaApi && (

@@ -3,12 +3,15 @@ import { createServer, type Server, type Socket } from "node:net";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  buildRouterUrl,
   directiveHeaders,
   probeRouterWs,
   relayRouterHttp,
   relayRouterWs,
+  RelaySlots,
   retriesOf,
 } from "../services/router-relay.js";
+import { sendDeadlineMs } from "../routes/routers.js";
 import { RelayTransportError } from "../services/upstream-relay.js";
 
 afterEach(() => {
@@ -16,6 +19,82 @@ afterEach(() => {
 });
 
 const OPTS = { httpMethod: "POST" as const, headers: {}, timeoutMs: 1000, maxBodyBytes: 1024 };
+
+describe("buildRouterUrl", () => {
+  const ORIGIN = "http://eth1-router:3000";
+
+  it("dials the root when the caller names no path", () => {
+    expect(buildRouterUrl(ORIGIN)).toEqual({ ok: true, url: "http://eth1-router:3000/" });
+    expect(buildRouterUrl(ORIGIN, "")).toEqual({ ok: true, url: "http://eth1-router:3000/" });
+    expect(buildRouterUrl("ws://eth1-router:3000", "/ws")).toEqual({ ok: true, url: "ws://eth1-router:3000/ws" });
+  });
+
+  it("keeps the query byte for byte, dots and encoded bytes included", () => {
+    for (const path of [
+      "/txs?events=tx.height=5",
+      "/txs?q=a%20b",
+      "/txs?flag",
+      "/txs?bin=%FF%FE",
+      "/txs?a=1&&b=2&",
+      "/txs?q=a/b,c:d",
+      "/blocks?range=1..5",
+      "/v1/a..b/c",
+    ]) {
+      expect(buildRouterUrl(ORIGIN, path), path).toEqual({ ok: true, url: ORIGIN + path });
+    }
+  });
+
+  it("refuses what is not a path on this listener", () => {
+    for (const path of ["no-slash", "//evil.example/x", "/a/../b", "/a/./b", "/a/%2e%2e/b", "/..", "/a\\b", "/a b", "/a\tb"]) {
+      const out = buildRouterUrl(ORIGIN, path);
+      expect(out, path).toMatchObject({ ok: false, status: 400 });
+    }
+  });
+
+  it("never lets the path move the request off the router", () => {
+    for (const path of ["/@evil.example/x", "/x@evil.example", "/:80/x", "/?@evil.example", "/#@evil.example"]) {
+      const out = buildRouterUrl(ORIGIN, path);
+      expect(out.ok && new URL(out.url).host, path).toBe("eth1-router:3000");
+    }
+  });
+
+  it("is our fault, not the caller's, when the configured address is no url", () => {
+    expect(buildRouterUrl("http://::1:3360", "/")).toMatchObject({ ok: false, status: 502 });
+  });
+});
+
+describe("RelaySlots", () => {
+  it("holds a caller to its own limit and everyone to the total", () => {
+    const slots = new RelaySlots(3, 2);
+    const a1 = slots.take("a");
+    const a2 = slots.take("a");
+    expect(typeof a1).toBe("function");
+    expect(typeof a2).toBe("function");
+    expect(slots.take("a")).toBe("caller");
+    const b1 = slots.take("b");
+    expect(typeof b1).toBe("function");
+    expect(slots.take("c")).toBe("all");
+    (a1 as () => void)();
+    expect(typeof slots.take("c")).toBe("function");
+  });
+
+  it("gives a slot back once, however often it is released", () => {
+    const slots = new RelaySlots(1, 1);
+    const release = slots.take("a") as () => void;
+    release();
+    release();
+    expect(typeof slots.take("a")).toBe("function");
+    expect(slots.take("b")).toBe("all");
+  });
+});
+
+describe("sendDeadlineMs", () => {
+  it("gives an HTTP send the configured deadline and a WebSocket send no more than 15 s", () => {
+    expect(sendDeadlineMs("http", 30000)).toBe(30000);
+    expect(sendDeadlineMs("ws", 30000)).toBe(15000);
+    expect(sendDeadlineMs("ws", 5000)).toBe(5000);
+  });
+});
 
 describe("directiveHeaders", () => {
   it("turns the drawer's two directives into the headers the router reads", () => {

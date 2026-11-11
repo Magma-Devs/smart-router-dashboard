@@ -20,7 +20,7 @@ interface TryNowButtonProps {
   /** Lava spec label (`ETH1`, `SOLANA`, …). */
   spec: string;
   /** The config router this endpoint belongs to — how the api addresses the
-   *  router when it sends the router leg (accounts on). */
+   *  router when it sends the router leg. */
   routerId: string;
   /** Network name from the topology (`mainnet`, `testnet`, …). */
   network: string;

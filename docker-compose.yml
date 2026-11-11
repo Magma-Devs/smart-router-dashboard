@@ -240,10 +240,12 @@ services:
       - METRICS_SCOPE_VALUE=${METRICS_SCOPE_VALUE:-}
       - CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
       - HELM_VALUES_DIR=/app/helm-values
-      # With accounts on, Try-me's router leg is sent by the api, which reaches
-      # an SR_CONFIG mount's routers here: the `router` service. A router
-      # running on the host instead takes host.docker.internal.
+      # Try-me's router leg is sent by the api, which reaches an SR_CONFIG
+      # mount's routers here: the `router` service. A router running on the
+      # host instead takes host.docker.internal. ROUTER_RELAY_ENABLED=false
+      # sends it from the browser.
       - ROUTER_RELAY_HOST=${ROUTER_RELAY_HOST:-router}
+      - ROUTER_RELAY_ENABLED=${ROUTER_RELAY_ENABLED:-true}
       # Auth + database (docs/AUTH.md). EVERY value here is empty by default,
       # and that is the whole point: with AUTH_MODE=disabled the api registers
       # no database plugin, so it opens NO connection and applies NO migrations

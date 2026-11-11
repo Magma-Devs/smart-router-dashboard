@@ -11,7 +11,7 @@
  * from being one: the target is never taken from the caller. The caller names
  * a router and an interface, the api resolves them against the mounted values
  * file (`ConfigurationService.resolveRouterOrigin`), and the path it adds
- * passes `buildTargetUrl`'s checks. Of the caller's own request, only the two
+ * passes `buildRouterUrl`'s checks. Of the caller's own request, only the two
  * router directives the drawer sets cross over.
  *
  * Nothing is redacted on the way back. These are the bytes the router hands
@@ -20,6 +20,91 @@
 
 import type { RouterRelayResponse } from "@sr/shared";
 import { RelayTransportError, describeCause, parseBody, readCapped } from "./upstream-relay.js";
+
+/** `status` tells the caller's mistake (400) from an address the mounted
+ *  config gives us that cannot be dialled (502). */
+export type RouterUrlResult = { ok: true; url: string } | { ok: false; status: 400 | 502; error: string };
+
+function refused(error: string): RouterUrlResult {
+  return { ok: false, status: 400, error };
+}
+
+/** `.` or `..`, spelled out or percent-encoded: the url parser folds both. */
+function isDotSegment(segment: string): boolean {
+  const plain = segment.replace(/%2e/gi, ".");
+  return plain === "." || plain === "..";
+}
+
+/**
+ * A router's origin plus the caller's path, as the url to dial.
+ *
+ * The path and query go on as written, so a REST query reaches the router
+ * byte for byte as a browser sends it; `buildTargetUrl` re-encodes one while
+ * merging it into an upstream's own. The checks keep it a path on this
+ * listener: a leading single slash, no dot segments or backslashes before the
+ * query, no spaces or control characters anywhere.
+ */
+export function buildRouterUrl(origin: string, path?: string): RouterUrlResult {
+  const suffix = path === undefined || path === "" ? "/" : path;
+  if (!suffix.startsWith("/")) return refused("Path must start with '/'.");
+  if (suffix.startsWith("//")) return refused("Path must not start with '//'.");
+  for (const ch of suffix) {
+    const code = ch.codePointAt(0) ?? 0;
+    if (code <= 0x20 || code === 0x7f) return refused("Path must not contain spaces or control characters.");
+  }
+  const queryAt = suffix.indexOf("?");
+  const pathPart = queryAt === -1 ? suffix : suffix.slice(0, queryAt);
+  if (pathPart.includes("\\")) return refused("Path must not contain backslashes.");
+  if (pathPart.split("/").some(isDotSegment)) return refused("Path must not contain '.' or '..' segments.");
+
+  let base: URL;
+  let url: URL;
+  try {
+    base = new URL(origin);
+    url = new URL(origin + suffix);
+  } catch {
+    return { ok: false, status: 502, error: "The router's address in the mounted config is not a valid url." };
+  }
+  // Nothing above lets the path reach the authority; this says so again.
+  if (url.host !== base.host || url.protocol !== base.protocol) return refused("Path must stay on the router.");
+  return { ok: true, url: url.href };
+}
+
+/**
+ * How many relays may be in flight at once, per caller and in all.
+ *
+ * A relay holds its reply several times over while it is read, parsed and
+ * sent on, and a WebSocket message arrives whole before any cap can cut it.
+ * The per-minute limit does not bound that: sixty slow calls can all be open
+ * together.
+ */
+export class RelaySlots {
+  private total = 0;
+  private readonly byCaller = new Map<string, number>();
+
+  constructor(
+    private readonly maxTotal: number,
+    private readonly maxPerCaller: number,
+  ) {}
+
+  /** A release function, or which limit refused. */
+  take(caller: string): (() => void) | "caller" | "all" {
+    const held = this.byCaller.get(caller) ?? 0;
+    if (held >= this.maxPerCaller) return "caller";
+    if (this.total >= this.maxTotal) return "all";
+    this.total += 1;
+    this.byCaller.set(caller, held + 1);
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.total -= 1;
+      const left = (this.byCaller.get(caller) ?? 1) - 1;
+      if (left <= 0) this.byCaller.delete(caller);
+      else this.byCaller.set(caller, left);
+    };
+  }
+}
 
 /** The router directives the drawer can set. */
 export interface RouterDirectives {

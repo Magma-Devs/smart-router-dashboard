@@ -2,34 +2,52 @@
  * `POST /api/routers/relay` and `POST /api/routers/ws-probe` — the Try-me
  * drawer's "via router" leg, sent by the api.
  *
- * Registered only when AUTH_MODE=enabled, so the global gate already refuses
- * anyone without a live session; `requireAuth` below says so again in the
- * handler, where a reader looks. Any signed-in role may use them: Try-me is
- * open to every viewer of the dashboard.
+ * On in both auth modes, off with `ROUTER_RELAY_ENABLED=false`. Who may call
+ * them is who may call the rest of `/api/*`: a signed-in user of any role with
+ * accounts on, anyone who can reach the api with accounts off.
  *
- * The posture this sets, on purpose: a tenant that admits only a list of
- * source addresses at its edge still lets every signed-in dashboard user send
- * requests through its routers, from anywhere. Without sign-in the dashboard
- * api answers anonymously, and these routes would be a way round the list for
- * anyone on the internet — which is why they do not exist in that mode.
+ * The posture this sets, on purpose: a deployment that admits only a list of
+ * source addresses at its public hostnames still lets every caller of this
+ * api send requests through its routers, from anywhere. Where that is not
+ * acceptable and there are no accounts, the switch turns the routes off and
+ * the drawer sends from the browser.
  *
  * See `services/router-relay.ts` for what is sent and what comes back.
  */
 
-import type { FastifyInstance, FastifyRequest } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { RouterRelayRequest, RouterWsProbeRequest } from "@sr/shared";
 import { config } from "../config.js";
 import { requireAuth } from "../plugins/auth.js";
-import { buildTargetUrl, RelayTransportError } from "../services/upstream-relay.js";
+import { RelayTransportError } from "../services/upstream-relay.js";
 import {
+  buildRouterUrl,
   directiveHeaders,
   probeRouterWs,
   relayRouterHttp,
   relayRouterWs,
+  RelaySlots,
 } from "../services/router-relay.js";
+
+export interface RouterRelayRoutesOptions {
+  authMode: "enabled" | "disabled";
+}
 
 /** How long the probe waits for the upgrade — the drawer's own figure. */
 const WS_PROBE_TIMEOUT_MS = 6000;
+
+/** The drawer's ceiling on a WebSocket send from the browser. */
+const WS_SEND_TIMEOUT_MS = 15000;
+
+/** One caller's relays in flight: a drawer sends one at a time, so two is a
+ *  second tab. */
+const IN_FLIGHT_PER_CALLER = 2;
+
+/** The deadline for one send: the configured one, and no longer on a
+ *  WebSocket than the drawer waits for one from the browser. */
+export function sendDeadlineMs(transport: "http" | "ws", configuredMs: number): number {
+  return transport === "ws" ? Math.min(configuredMs, WS_SEND_TIMEOUT_MS) : configuredMs;
+}
 
 /** What a header value can carry: one byte per character, none of them a
  *  control. The HTTP client refuses anything else, and that would come back
@@ -63,26 +81,39 @@ const probeBodySchema = {
   },
 } as const;
 
-/** One person's budget, wherever they sign in from — an office behind one
- *  address is several people. Falls back to the address for a request the
- *  gate let through without a session, which none of these should be. */
-function perUser(request: FastifyRequest): string {
+/** Whose budget a request spends: the signed-in user's, wherever they sign in
+ *  from (an office behind one address is several people); the address with
+ *  accounts off, where there is nobody to name. */
+function callerOf(request: FastifyRequest): string {
   return request.authUser?.id ?? request.ip;
 }
 
 const NO_LISTENER = "No such router listener in the mounted config.";
+const DISABLED = "The router relay is off on this deployment (ROUTER_RELAY_ENABLED=false).";
 
 /** gRPC listeners speak HTTP/2 only; neither leg here can dial one. */
 function isGrpc(iface: string): boolean {
   return iface.toLowerCase().startsWith("grpc");
 }
 
-export async function routerRelayRoutes(app: FastifyInstance) {
+export async function routerRelayRoutes(app: FastifyInstance, opts: RouterRelayRoutesOptions) {
   const rateLimit = {
     max: config.routerRelay.rateLimitMax,
     timeWindow: "1 minute",
-    keyGenerator: perUser,
+    keyGenerator: callerOf,
   };
+  const slots = new RelaySlots(config.routerRelay.maxInFlight, IN_FLIGHT_PER_CALLER);
+
+  /** False once the reply is sent: the relay is off, or accounts are on and
+   *  nobody is signed in. The global gate already refuses the second case;
+   *  this says so again in the handler, where a reader looks. */
+  function admitted(request: FastifyRequest, reply: FastifyReply): boolean {
+    if (!config.routerRelay.enabled) {
+      void reply.status(404).send({ message: DISABLED });
+      return false;
+    }
+    return opts.authMode !== "enabled" || requireAuth(request, reply) !== null;
+  }
 
   app.post<{ Body: RouterRelayRequest }>(
     "/api/routers/relay",
@@ -95,7 +126,7 @@ export async function routerRelayRoutes(app: FastifyInstance) {
       config: { rateLimit },
     },
     async (request, reply) => {
-      if (!requireAuth(request, reply)) return reply;
+      if (!admitted(request, reply)) return reply;
 
       const { routerId, iface, path, body } = request.body;
       const transport = request.body.transport ?? "http";
@@ -106,11 +137,21 @@ export async function routerRelayRoutes(app: FastifyInstance) {
 
       const origin = app.routerConfig.resolveRouterOrigin(routerId, iface, transport);
       if (origin === null) return reply.status(404).send({ message: NO_LISTENER });
-      const target = buildTargetUrl(origin, path);
-      if (!target.ok) return reply.status(400).send({ message: target.error });
+      const target = buildRouterUrl(origin, path);
+      if (!target.ok) return reply.status(target.status).send({ message: target.error });
+
+      const release = slots.take(callerOf(request));
+      if (release === "caller") {
+        return reply
+          .status(429)
+          .send({ message: `${IN_FLIGHT_PER_CALLER} requests of yours are still on their way through the relay.` });
+      }
+      if (release === "all") {
+        return reply.status(503).send({ message: "The relay is busy. Try again in a moment." });
+      }
 
       const limits = {
-        timeoutMs: config.routerRelay.timeoutMs,
+        timeoutMs: sendDeadlineMs(transport, config.routerRelay.timeoutMs),
         maxBodyBytes: config.routerRelay.maxBodyBytes,
       };
       try {
@@ -133,6 +174,8 @@ export async function routerRelayRoutes(app: FastifyInstance) {
         }
         request.log.error({ err: e, routerId, iface }, "router relay failed");
         return reply.status(502).send({ message: "The relay could not complete the request." });
+      } finally {
+        release();
       }
     },
   );
@@ -148,14 +191,14 @@ export async function routerRelayRoutes(app: FastifyInstance) {
       config: { rateLimit },
     },
     async (request, reply) => {
-      if (!requireAuth(request, reply)) return reply;
+      if (!admitted(request, reply)) return reply;
 
       const { routerId, iface, path } = request.body;
       if (isGrpc(iface)) return reply.status(400).send({ message: "gRPC listeners serve no WebSocket." });
       const origin = app.routerConfig.resolveRouterOrigin(routerId, iface, "ws");
       if (origin === null) return reply.status(404).send({ message: NO_LISTENER });
-      const target = buildTargetUrl(origin, path);
-      if (!target.ok) return reply.status(400).send({ message: target.error });
+      const target = buildRouterUrl(origin, path);
+      if (!target.ok) return reply.status(target.status).send({ message: target.error });
 
       return reply.send({ online: await probeRouterWs(target.url, WS_PROBE_TIMEOUT_MS) });
     },

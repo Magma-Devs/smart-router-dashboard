@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { routerPathOf, routerRelayPayload, routerReplyErrored } from "../router-relay";
+import {
+  routerFailureIsResult,
+  routerPathOf,
+  routerRelayPayload,
+  routerReplyErrored,
+} from "../router-relay";
 import type { ResolvedGrpc, ResolvedHttp, ResolvedWs } from "../build-request";
 
 const POST: ResolvedHttp = {
@@ -100,6 +105,25 @@ describe("routerRelayPayload", () => {
     expect(routerRelayPayload({ routerId: "COSMOSHUB", iface: "grpc", resolved: grpc, skipCache: false }).ok).toBe(
       false,
     );
+  });
+});
+
+describe("routerFailureIsResult", () => {
+  it("shows a router that never answered as a result, on either transport", () => {
+    expect(routerFailureIsResult(504, "http")).toBe(true);
+    expect(routerFailureIsResult(504, "ws")).toBe(true);
+  });
+
+  it("shows a refused or dropped socket as a result, as a browser socket that fails to open is", () => {
+    expect(routerFailureIsResult(502, "ws")).toBe(true);
+  });
+
+  it("raises an HTTP send that cannot reach the router, and anything the relay refuses", () => {
+    expect(routerFailureIsResult(502, "http")).toBe(false);
+    for (const status of [400, 401, 404, 429, 500]) {
+      expect(routerFailureIsResult(status, "ws"), String(status)).toBe(false);
+      expect(routerFailureIsResult(status, "http"), String(status)).toBe(false);
+    }
   });
 });
 

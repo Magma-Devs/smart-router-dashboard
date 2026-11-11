@@ -1052,6 +1052,15 @@ export interface UpstreamRelayResponse {
 
 /* ── Router relay (Try-me "via router", sent by the api) ────────────────── */
 
+/** `GET /api/config/routers`. */
+export interface RouterConfigResponse {
+  routers: RouterTopology[];
+  /** Whether this api sends the Try-me drawer's router leg
+   *  (`POST /api/routers/relay`). False, or absent from an api that has no
+   *  such route: the browser sends it. */
+  routerRelay?: boolean;
+}
+
 /**
  * One request the api sends THROUGH a router on the Try-me drawer's behalf.
  *

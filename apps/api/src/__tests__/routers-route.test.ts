@@ -4,8 +4,9 @@
  *
  * The values dir is pointed at a temp mount BEFORE the app (and its config
  * snapshot) is imported, so these run against a values file we control. The
- * routes exist only with accounts on, so the main block boots the api with
- * AUTH_MODE=enabled against an in-process Postgres and signs a user in.
+ * main block boots the api with AUTH_MODE=enabled against an in-process
+ * Postgres and signs a user in; the blocks after it run with accounts off,
+ * and with the relay switched off.
  */
 
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -69,6 +70,21 @@ function stubRouter(response: () => Response) {
     return response();
   });
   return calls;
+}
+
+/** A router that takes the request and answers only when told to. */
+function stubHeldRouter() {
+  const waiting: (() => void)[] = [];
+  vi.stubGlobal(
+    "fetch",
+    () => new Promise<Response>((resolve) => waiting.push(() => resolve(new Response("{}")))),
+  );
+  return {
+    held: () => waiting.length,
+    answerAll: () => {
+      for (const answer of waiting.splice(0)) answer();
+    },
+  };
 }
 
 describe("router relay · AUTH_MODE=enabled", () => {
@@ -224,11 +240,47 @@ describe("router relay · AUTH_MODE=enabled", () => {
 
   it("refuses a path that could leave the router's listener", async () => {
     const calls = stubRouter(() => new Response("{}"));
-    for (const path of ["//evil.example/x", "/a/../b", "no-slash"]) {
+    for (const path of ["//evil.example/x", "/a/../b", "/a/%2e%2E/b", "/a\\b", "/a b", "no-slash"]) {
       const res = await post("/api/routers/relay", { routerId: "ETH1", iface: "jsonrpc", path });
       expect(res.statusCode, path).toBe(400);
     }
     expect(calls).toEqual([]);
+  });
+
+  it("puts a REST query on the wire as written, as a browser does", async () => {
+    const calls = stubRouter(() => new Response("{}"));
+    const path = "/cosmos/tx/v1beta1/txs?events=tx.height=5&q=a%20b&bin=%FF%FE&flag&range=1..5&x=a/b,c:d";
+    const res = await post("/api/routers/relay", { routerId: "Cosmos", iface: "rest", httpMethod: "GET", path });
+    expect(res.statusCode).toBe(200);
+    expect(calls[0]!.url).toBe(`http://cosmos-router:3000${path}`);
+  });
+
+  it("lets one caller hold two relays in flight, and no third", async () => {
+    const router = stubHeldRouter();
+    const send = { routerId: "ETH1", iface: "jsonrpc", body: { id: 1 } };
+    const first = Promise.resolve(post("/api/routers/relay", send));
+    const second = Promise.resolve(post("/api/routers/relay", send));
+    await vi.waitFor(() => expect(router.held()).toBe(2));
+
+    const third = await post("/api/routers/relay", send);
+    expect(third.statusCode).toBe(429);
+    expect(third.json().message).toContain("still on their way");
+    expect(router.held()).toBe(2);
+
+    router.answerAll();
+    expect((await first).statusCode).toBe(200);
+    expect((await second).statusCode).toBe(200);
+    // Both slots are back.
+    stubRouter(() => new Response("{}"));
+    expect((await post("/api/routers/relay", send)).statusCode).toBe(200);
+  });
+
+  it("gives a slot back when the router cannot be reached", async () => {
+    const send = { routerId: "ETH1", iface: "jsonrpc", body: { id: 1 } };
+    vi.stubGlobal("fetch", async () => {
+      throw Object.assign(new TypeError("fetch failed"), { cause: { code: "ECONNREFUSED" } });
+    });
+    for (let i = 0; i < 3; i++) expect((await post("/api/routers/relay", send)).statusCode).toBe(502);
   });
 
   it("refuses a pin that would not survive as a header value", async () => {
@@ -302,12 +354,97 @@ describe("router relay · AUTH_MODE=disabled", () => {
     await app.close();
   });
 
-  it("does not exist, so nobody can reach a gated tenant's routers through an anonymous api", async () => {
+  const send = { routerId: "ETH1", iface: "jsonrpc", body: { id: 1 } };
+
+  it("sends for anyone who reaches the api, as every other route there answers", async () => {
+    const calls = stubRouter(() => new Response(JSON.stringify({ result: "0x10" })));
+    const res = await app.inject({ method: "POST", url: "/api/routers/relay", payload: send });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ httpStatus: 200, body: { result: "0x10" } });
+    expect(calls.map((c) => c.url)).toEqual(["http://eth1-router:3000/"]);
+  });
+
+  it("tells the drawer that the api sends the router leg", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/config/routers" });
+    expect(res.json().routerRelay).toBe(true);
+    expect(res.json().routers).toHaveLength(2);
+  });
+
+  it("budgets a caller with no account by address", async () => {
+    stubRouter(() => new Response("{}"));
+    const from = (remoteAddress: string) =>
+      app.inject({ method: "POST", url: "/api/routers/relay", payload: send, remoteAddress });
+    for (let i = 0; i < config.routerRelay.rateLimitMax; i++) {
+      expect((await from("198.51.100.7")).statusCode, `send ${i + 1}`).toBe(200);
+    }
+    expect((await from("198.51.100.7")).statusCode).toBe(429);
+    expect((await from("198.51.100.8")).statusCode).toBe(200);
+  });
+});
+
+describe("router relay · ROUTER_RELAY_ENABLED=false", () => {
+  let app: FastifyInstance;
+
+  beforeAll(async () => {
+    vi.resetModules();
+    process.env.ROUTER_RELAY_ENABLED = "false";
+    const { buildApp } = await import("../app.js");
+    app = await buildApp();
+    await app.ready();
+  });
+
+  afterAll(async () => {
+    await app.close();
+    delete process.env.ROUTER_RELAY_ENABLED;
+    vi.resetModules();
+  });
+
+  it("404s both routes, so nobody reaches the routers through the api", async () => {
     const calls = stubRouter(() => new Response("{}"));
     for (const url of ["/api/routers/relay", "/api/routers/ws-probe"]) {
       const res = await app.inject({ method: "POST", url, payload: { routerId: "ETH1", iface: "jsonrpc" } });
       expect(res.statusCode, url).toBe(404);
+      expect(res.json().message, url).toContain("ROUTER_RELAY_ENABLED=false");
     }
     expect(calls).toEqual([]);
+  });
+
+  it("tells the drawer to send the router leg from the browser", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/config/routers" });
+    expect(res.json().routerRelay).toBe(false);
+  });
+});
+
+describe("router relay · ROUTER_RELAY_MAX_IN_FLIGHT", () => {
+  let app: FastifyInstance;
+
+  beforeAll(async () => {
+    vi.resetModules();
+    process.env.ROUTER_RELAY_MAX_IN_FLIGHT = "1";
+    const { buildApp } = await import("../app.js");
+    app = await buildApp();
+    await app.ready();
+  });
+
+  afterAll(async () => {
+    await app.close();
+    delete process.env.ROUTER_RELAY_MAX_IN_FLIGHT;
+    vi.resetModules();
+  });
+
+  it("answers 503 to a second caller while the one slot is held", async () => {
+    const router = stubHeldRouter();
+    const from = (remoteAddress: string) =>
+      app.inject({
+        method: "POST",
+        url: "/api/routers/relay",
+        payload: { routerId: "ETH1", iface: "jsonrpc", body: { id: 1 } },
+        remoteAddress,
+      });
+    const first = Promise.resolve(from("198.51.100.20"));
+    await vi.waitFor(() => expect(router.held()).toBe(1));
+    expect((await from("198.51.100.21")).statusCode).toBe(503);
+    router.answerAll();
+    expect((await first).statusCode).toBe(200);
   });
 });

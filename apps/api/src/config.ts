@@ -257,18 +257,25 @@ export const config = {
    * deployment, so it works on a tenant whose public hostnames admit only a
    * list of source addresses.
    *
-   * There is no on/off switch: the routes exist exactly when AUTH_MODE=enabled
-   * and refuse anyone not signed in. With accounts off they are not registered
-   * and the drawer sends from the browser.
+   * On in both auth modes. With accounts off the api answers anyone who can
+   * reach it, so the relay lets them send through the routers whatever the
+   * address list says. `ROUTER_RELAY_ENABLED=false` 404s both routes, and the
+   * drawer sends from the browser.
    */
   routerRelay: {
-    /** Matches the drawer's own ceiling on a browser send. */
+    enabled: (env("ROUTER_RELAY_ENABLED") ?? "true").toLowerCase() !== "false",
+    /** An HTTP send's deadline: the drawer's own ceiling on a browser send.
+     *  A WebSocket send stops at 15 s, the drawer's ceiling for that. */
     timeoutMs: envInt("ROUTER_RELAY_TIMEOUT_MS", 30000),
     /** Router responses past this come back `truncated: true`. Larger than the
      *  upstream relay's cap: a full block or a trace is an ordinary answer. */
     maxBodyBytes: envInt("ROUTER_RELAY_MAX_BODY_BYTES", 4194304),
-    /** Per signed-in user per minute, counted apart for each of the two routes. */
+    /** Per caller per minute, counted apart for each of the two routes. The
+     *  caller is the signed-in user, or the address with accounts off. */
     rateLimitMax: envInt("ROUTER_RELAY_RATE_LIMIT_MAX", 60),
+    /** Relays in flight at once across all callers; one caller holds two at
+     *  most. Each can hold a reply of `maxBodyBytes` several times over. */
+    maxInFlight: envInt("ROUTER_RELAY_MAX_IN_FLIGHT", 8),
     /**
      * Where the routers of an SR_CONFIG mount listen. A helm-values mount
      * needs nothing here: each router is dialled at its own Service,

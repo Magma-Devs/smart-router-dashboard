@@ -4,7 +4,7 @@
  *
  * Why: a deployment can admit only a list of source addresses at its public
  * hostnames, and a browser anywhere else is refused before the router sees
- * the request. With accounts on, the api sends it instead, from inside the
+ * the request. So the api sends it instead, from inside the
  * deployment. The router is addressed by identity (router id + the interface
  * whose listener serves it), and the api works out where that listener is;
  * all the browser contributes is the path. Everything here is pure — the
@@ -69,6 +69,17 @@ export function routerRelayPayload(args: {
       ...(skipCache ? { forceCacheRefresh: true } : {}),
     },
   };
+}
+
+/**
+ * Whether a failed relay call is a result to show, not an error to raise: the
+ * router never answering (504), and on a WebSocket the router refusing or
+ * dropping the socket (502). A browser send reports both as results, and
+ * "Compare both" still fires the upstream leg after one. An HTTP send that
+ * cannot reach the router raises, as it does from the browser.
+ */
+export function routerFailureIsResult(statusCode: number, transport: "http" | "ws"): boolean {
+  return statusCode === 504 || (statusCode === 502 && transport === "ws");
 }
 
 /**

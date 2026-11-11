@@ -1001,6 +1001,34 @@ routers:
     expect(svc.resolveRouterOrigin("ETH1", "jsonrpc", "http")).toBe("http://router:3360");
   });
 
+  it("brackets a bare IPv6 host so it can carry the port", () => {
+    const dir = mkdtempSync(join(tmpdir(), "srdash-values-"));
+    dirs.push(dir);
+    mkdirSync(join(dir, "core"), { recursive: true });
+    writeFileSync(join(dir, "core", "values.yml"), SR_CONFIG_ETH);
+    expect(new ConfigurationService(dir, "::1").resolveRouterOrigin("ETH1", "jsonrpc", "http")).toBe(
+      "http://[::1]:3360",
+    );
+    expect(new ConfigurationService(dir, "[::1]").resolveRouterOrigin("ETH1", "jsonrpc", "ws")).toBe(
+      "ws://[::1]:3360",
+    );
+  });
+
+  it("dials the listener an SR_CONFIG file gives no api-interface, where the dashboard sends jsonrpc", () => {
+    const svc = serviceFor(`
+endpoints:
+  - listen-address: "0.0.0.0:3360"
+    chain-id: "ETH1"
+direct-rpc:
+  - name: "eth-publicnode"
+    chain-id: "ETH1"
+    api-interface: "jsonrpc"
+    node-urls:
+      - url: "https://ethereum-rpc.publicnode.com"
+`);
+    expect(svc.resolveRouterOrigin("ETH1", "jsonrpc", "http")).toBe("http://localhost:3360");
+  });
+
   it("defaults an SR_CONFIG router to localhost", () => {
     expect(serviceFor(SR_CONFIG_ETH).resolveRouterOrigin("ETH1", "jsonrpc", "ws")).toBe("ws://localhost:3360");
   });

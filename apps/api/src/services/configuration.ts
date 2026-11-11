@@ -588,15 +588,21 @@ export class ConfigurationService {
    * The interface matches exactly first, then ignoring case: the chart keys
    * the port by the interface as written, and a caller holding `JSONRPC` for a
    * `jsonrpc` listener means the same one. Own keys only: `iface` is the
-   * caller's, and `ports.constructor` is a function, not a port.
+   * caller's, and `ports.constructor` is a function, not a port. Last, the
+   * listener an SR_CONFIG file gives no api-interface (keyed `""`), which is
+   * where the dashboard sends an interface with no listener of its own.
    */
   resolveRouterOrigin(routerId: string, iface: string, transport: "http" | "ws"): string | null {
     const address = this.normalize().addresses.get(routerId);
     if (!address) return null;
-    const port = Object.hasOwn(address.ports, iface)
-      ? address.ports[iface]
-      : Object.entries(address.ports).find(([name]) => name.toLowerCase() === iface.toLowerCase())?.[1];
+    const { ports } = address;
+    const port = Object.hasOwn(ports, iface)
+      ? ports[iface]
+      : (Object.entries(ports).find(([name]) => name.toLowerCase() === iface.toLowerCase())?.[1] ??
+        (Object.hasOwn(ports, "") ? ports[""] : undefined));
     if (port === undefined) return null;
-    return `${transport === "ws" ? "ws" : "http"}://${address.host}:${port}`;
+    // A bare IPv6 address needs brackets to carry a port.
+    const host = address.host.includes(":") && !address.host.startsWith("[") ? `[${address.host}]` : address.host;
+    return `${transport === "ws" ? "ws" : "http"}://${host}:${port}`;
   }
 }

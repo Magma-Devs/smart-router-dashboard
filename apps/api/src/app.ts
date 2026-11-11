@@ -96,11 +96,6 @@ export async function buildApp(): Promise<FastifyInstance> {
     // is disabled.
     await app.register(auditRoutes);
     await app.register(auditTokenRoutes);
-    // Inside the gate on purpose too: the router relay sends requests through
-    // the tenant's routers from inside the deployment, past any address list
-    // at its edge. Only a signed-in user may do that, so with accounts off the
-    // routes do not exist and the drawer sends from the browser.
-    await app.register(routerRelayRoutes);
 
     // Once the database is up, mint + log the first-run token if this install
     // still needs one. Not awaited: `dbReady` retries forever by design, and
@@ -127,6 +122,10 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(metricRoutes);
   await app.register(configRoutes);
   await app.register(upstreamRoutes);
+  // Both modes, behind ROUTER_RELAY_ENABLED: with accounts on, the global gate
+  // above requires a session; with them off, anyone who reaches the api may
+  // send through the routers, past any address list at their edge.
+  await app.register(routerRelayRoutes, { authMode: authMode === "enabled" ? "enabled" : "disabled" });
   await app.register(transactionRoutes);
   await app.register(errorRequestRoutes);
   // Both modes, behind its own switch: with accounts on, the global gate above

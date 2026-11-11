@@ -72,9 +72,9 @@ paths/ports via Makefile/compose vars (`ROUTER_DIR`, `SR_CONFIG_HOST`,
 └──────┬───────┘        └──────────┬──────────┘        scrapes :7779
        │ GET /api/config           │ reads               ┌─────┴──────┐
        │ (runtime api url)         └─ values file ──────▶│ smart-router│
-       └─ browser POSTs to router :3360 (Live test)      │ (profile)  │
-          (accounts on: POST /api/routers/relay ────────▶│            │
-           — the api sends it from inside)                └─────┬──────┘
+       └─ POST /api/routers/relay (Live test) ──────────▶│ (profile)  │
+          — the api sends it from inside; the browser     │            │
+          POSTs to :3360 with ROUTER_RELAY_ENABLED=false  └─────┬──────┘
                         POST /api/upstreams/relay               │
        api ─────────────────────────────────────────────▶ upstream RPC
        (Try-me "Direct to upstream" — router left out)     (vendor endpoint)
@@ -87,11 +87,12 @@ node urls are masked to scheme+host before they leave the api, because that is
 where API keys live — so the api dials the upstream and hands back only the
 answer. See [`docs/UPSTREAM-DIRECT-TEST.md`](docs/UPSTREAM-DIRECT-TEST.md).
 
-With accounts on (`AUTH_MODE=enabled`), the drawer's **Via router** leg goes
-through the api too: `POST /api/routers/relay` sends it to the router's
-listener inside the deployment, so a tenant that admits only listed source
-addresses at its public hostnames still works from any browser. With accounts
-off those routes don't exist and the browser sends it. See
+The drawer's **Via router** leg goes through the api too:
+`POST /api/routers/relay` sends it to the router's listener inside the
+deployment, so a tenant that admits only listed source addresses at its public
+hostnames still works from any browser. It is on in both auth modes, so with
+accounts off anyone who can reach the api can send through the routers;
+`ROUTER_RELAY_ENABLED=false` turns the routes off and the browser sends it. See
 [`docs/ROUTER-RELAY.md`](docs/ROUTER-RELAY.md).
 
 Loki (`LOKI_URL`, optional) feeds the **Transactions** tab, the
@@ -941,8 +942,8 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 | `GET /api/transactions/over-time` | `window`, `spec?`, `routerId?` | `TransactionsOverTime` - the Transactions tab's chart: `grid` (the bars' end times, `bucketGrid`), `counts` (one count per bar for each result in the window: accepted/rejected/failed/unknown, and `failed-on-chain` where the send reply says the chain ran it and it failed), `asOf`, `source` (`recorded`: the store's `smartrouter_transactions:count1m`, the newest minutes from the logs; `logs`: counted from the router's logs, on a store without the fleet's ruler - no `smartrouter_final_requests:count1m` in the window; with the ruler, no series is no transactions), `partialFrom` (unix s from which the newest bars may be short: the logs didn't answer for the minutes the store doesn't hold yet). `available:false` + `reason` (`unconfigured` / `unreachable` - also when the store doesn't answer whether it has the ruler - / `shared-chain`: a router whose lines can't be told from another router's on its chain). Kept 30 s per window, chain and router, one read in flight per key |
 | `GET /api/transactions/:guid` | `window` **or** `from` + `to` | `TransactionLookup` - one transaction by its request ID, its hash or the caller's request id, the same row the Transactions tab shows, read as `GET /api/requests/:guid` reads it (a v1.6.1 ID in its own minutes first); `matches` when several requests carry the value (a resent transaction keeps its hash), `row` the newest. `found` with `row: null` = the ID is a request that isn't a transaction (the Errors tab's look-up shows it). 400 on a value that isn't plain characters (`LOOKUP_ID`) |
 | `POST /api/upstreams/relay` | body: `{routerId, node, endpointIndex, transport?, httpMethod?, path?, body?}` | Fires ONE request straight at a configured upstream, router excluded — `{httpStatus, latencyMs, body, truncated, transport}`. The target is resolved from the values file, never taken from the caller; the resolved url is never returned and is scrubbed out of the upstream's own body. Upstream 4xx/5xx come back **200** with their status inside; 502/504 mean our hop failed. Off with `UPSTREAM_RELAY_ENABLED=false`. See [`docs/UPSTREAM-DIRECT-TEST.md`](docs/UPSTREAM-DIRECT-TEST.md) |
-| `POST /api/routers/relay` | body: `{routerId, iface, transport?, httpMethod?, path?, body?, selectProvider?, forceCacheRefresh?}` | **`AUTH_MODE=enabled` only**, any signed-in role. Sends ONE request through a router from inside the deployment — `{httpStatus, latencyMs, body, truncated, transport, servedBy, retries, cvStatus, cvAgreeing, cvDisagreeing}`. The address is resolved from the values file (helm: the `<id>-router` Service on the chart's `300<N>` port; SR_CONFIG: `ROUTER_RELAY_HOST` + listen port), never taken from the caller; only `lava-select-provider` / `lava-force-cache-refresh` are forwarded (HTTP only). Router 4xx/5xx come back **200** with the status inside; 502/504 mean our hop failed. See [`docs/ROUTER-RELAY.md`](docs/ROUTER-RELAY.md) |
-| `POST /api/routers/ws-probe` | body: `{routerId, iface, path?}` | **`AUTH_MODE=enabled` only**. `{online}` — whether the router listener's WebSocket upgrade opened from the api within 6 s. The drawer's `ws · online` tag when the api sends the router leg |
+| `POST /api/routers/relay` | body: `{routerId, iface, transport?, httpMethod?, path?, body?, selectProvider?, forceCacheRefresh?}` | Sends ONE request through a router from inside the deployment — `{httpStatus, latencyMs, body, truncated, transport, servedBy, retries, cvStatus, cvAgreeing, cvDisagreeing}`. Both auth modes: any signed-in role with accounts on, anyone who reaches the api with them off. The address is resolved from the values file (helm: the `<id>-router` Service on the chart's `300<N>` port; SR_CONFIG: `ROUTER_RELAY_HOST` + listen port), never taken from the caller; the path and query go on as written; only `lava-select-provider` / `lava-force-cache-refresh` are forwarded (HTTP only). Router 4xx/5xx come back **200** with the status inside; 502/504 mean our hop failed; 429 past the per-minute limit or with two relays already in flight, 503 with `ROUTER_RELAY_MAX_IN_FLIGHT` in flight. 404 with `ROUTER_RELAY_ENABLED=false`. See [`docs/ROUTER-RELAY.md`](docs/ROUTER-RELAY.md) |
+| `POST /api/routers/ws-probe` | body: `{routerId, iface, path?}` | `{online}` — whether the router listener's WebSocket upgrade opened from the api within 6 s. The drawer's `ws · online` tag. Same callers and the same switch as the relay |
 | `POST /api/incidents` | body: `{id, severity, title, description?, chain?, routerId?, reporter?}` | A member reports an incident to our on-call system → `{id, severity, sentAt}`, **only after IRM answered 2xx** (IRM queues; routing and the call follow). `severity` ∈ critical/high/medium/low; `id` is a UUID the form mints, reused on retry. `AUTH_MODE=disabled`: `reporter {name, email, phone?}` required, recorded as typed; `enabled`: the signed-in user, any role, `reporter` ignored, audited as `incident.reported`. A `chain` / `routerId` the values file doesn't declare is 400. 404 while `INCIDENTS_ENABLED` is off, 503 without a usable webhook, 429 past either limit, 502 when IRM refused or didn't answer. See [`docs/INCIDENTS.md`](docs/INCIDENTS.md) |
 | `POST /auth/2fa/verify` | body: `{challenge, code}` | Second sign-in step. `/auth/sign-in` returns a challenge and **no session** for an enrolled account; only this opens one. Wrong code, dead challenge and unknown challenge all answer the same 401 |
 | `POST /auth/oauth/:provider` | body: `{token}` | Google/GitHub sign-in. An account without an authenticator gets `{ user, sessionId }`; an enrolled one gets `{ twoFactorRequired, challenge, expiresAt, email }` and **no session** — the web parks the challenge in the `sr_2fa` handoff cookie for the code screen, and the session opens at `/auth/2fa/verify` as `<provider>+totp` |
@@ -1040,10 +1041,12 @@ API (`apps/api/src/config.ts` is the source of truth):
 | `UPSTREAM_RELAY_TIMEOUT_MS` | `10000` | deadline on the api→upstream call |
 | `UPSTREAM_RELAY_MAX_BODY_BYTES` | `262144` | upstream responses past this come back `truncated: true` |
 | `UPSTREAM_RELAY_RATE_LIMIT_MAX` | `20` | per IP per minute, tighter than `RATE_LIMIT_MAX` |
+| `ROUTER_RELAY_ENABLED` | `true` | the api sends Try-me's router leg (`POST /api/routers/relay`, `POST /api/routers/ws-probe`), in both auth modes. Exactly `false` 404s both routes and the drawer sends from the browser. With `AUTH_MODE=disabled` anyone who can reach the api can send through the routers, past an address list at their edge — turn it off where that is not acceptable |
 | `ROUTER_RELAY_HOST` | `localhost` | where an SR_CONFIG mount's routers listen, for `POST /api/routers/relay` (`router` in the compose stacks). Unused for a helm mount, which dials each router's `<id>-router` Service |
-| `ROUTER_RELAY_TIMEOUT_MS` | `30000` | deadline on the api→router call, body included |
+| `ROUTER_RELAY_TIMEOUT_MS` | `30000` | deadline on the api→router call, body included; a WebSocket send stops at 15 s |
 | `ROUTER_RELAY_MAX_BODY_BYTES` | `4194304` | router answers past this come back `truncated: true` |
-| `ROUTER_RELAY_RATE_LIMIT_MAX` | `60` | per signed-in user per minute; the relay and the ws probe each count their own |
+| `ROUTER_RELAY_RATE_LIMIT_MAX` | `60` | per caller per minute (the signed-in user, or the address with accounts off); the relay and the ws probe each count their own |
+| `ROUTER_RELAY_MAX_IN_FLIGHT` | `8` | relays in flight across all callers; one caller holds two at most |
 | `INCIDENTS_ENABLED` | off | exactly `true` turns on `POST /api/incidents`; anything else 404s it. With `AUTH_MODE=disabled` anyone who can reach the api may send a report, Critical included — opt-in per deployment. See [`docs/INCIDENTS.md`](docs/INCIDENTS.md) |
 | `INCIDENT_WEBHOOK_URL` | unset | the deployment's inbound webhook in our on-call system (Grafana IRM `formatted_webhook`). The URL is the credential — deliver it from a Secret, never a plain chart value. https only (http for a loopback mock). On with no usable URL logs an error at boot and every report answers 503; the boot is NOT refused |
 | `INCIDENT_WEBHOOK_TIMEOUT_MS` | `10000` | deadline on the api→IRM call |
