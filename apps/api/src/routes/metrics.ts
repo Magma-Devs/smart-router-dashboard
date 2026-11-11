@@ -111,6 +111,31 @@ export async function metricRoutes(app: FastifyInstance) {
     return { chains: await app.scoped(request.query.router).metrics.chains(parseWindow(request.query.window)) };
   });
 
+  // Providers tab: upstreams grouped by the company that runs them.
+  app.get<{ Querystring: WindowQuery }>("/api/metrics/providers", tag("Providers grouped by company (requests, errors, p95, rate-limit hits, health-check uptime)", false), async (request) => {
+    return app.scoped(request.query.router).providers.list(parseWindow(request.query.window));
+  });
+
+  app.get<{ Querystring: WindowQuery & { provider?: string } }>("/api/metrics/provider-detail", {
+    schema: {
+      tags: ["Metrics"],
+      summary: "One provider company: per-chain and per-method rows",
+      querystring: {
+        type: "object" as const,
+        required: ["provider"],
+        properties: {
+          provider: { type: "string" as const, description: "Provider company id from /api/metrics/providers" },
+          window: windowQuerySchema.properties.window,
+          router: windowQuerySchema.properties.router,
+        },
+      },
+    },
+  }, async (request) => {
+    return app
+      .scoped(request.query.router)
+      .providers.detail(String(request.query.provider), parseWindow(request.query.window));
+  });
+
   // Upstream roster (optionally scoped to one spec and/or one config router).
   app.get<{ Querystring: WindowQuery }>("/api/metrics/upstreams", tag("Upstream roster + selection scores"), async (request) => {
     const { spec, routerId } = request.query;

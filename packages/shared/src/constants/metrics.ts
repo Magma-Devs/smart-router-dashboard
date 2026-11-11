@@ -131,4 +131,14 @@ export const OPTIONAL_METRICS = {
   wsConnectionsActive: "smartrouter_ws_connections_active",
   wsSubscriptionsTotal: "smartrouter_ws_subscriptions_total",
   wsSubscriptionErrorsTotal: "smartrouter_ws_subscription_errors_total",
+  // {endpoint_id, spec, apiInterface, function} — relays an upstream answered
+  // with a failure. The per-method failure count per provider.
+  endpointErroredTotal: "rpc_endpoint_total_errored",
+  // {provider, event ∈ recorded|cleared|escalated} — ⚠ `provider`, NOT
+  // `provider_address`, and NO spec label: the router holds a provider off
+  // after it answers "too many requests". `event="recorded"` is one hold-off.
+  rateLimitHoldoffsTotal: "smartrouter_rate_limit_holdoffs_total",
+  // {spec, apiInterface, provider_address} gauge — 1 while the router has
+  // blocked that provider from routing.
+  csmProviderBlocked: "smartrouter_csm_provider_blocked",
 } as const;

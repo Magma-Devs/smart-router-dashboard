@@ -808,6 +808,8 @@ export interface RouterNode {
   name: string;
   isBackup: boolean;
   endpoints: RouterNodeEndpoint[];
+  /** SR_CONFIG `group-label`: the company running the node, when declared. */
+  groupLabel?: string;
 }
 
 /**
@@ -1016,4 +1018,132 @@ export interface DashboardData {
   /** Empty until labelled error counters exist (design's ✓ empty state). */
   trouble: DashboardTroubleRow[];
   lastUpdated: string | null;
+}
+
+/* ─────────────────────────────────────────────
+   Providers tab — upstreams grouped by the company that runs them
+───────────────────────────────────────────── */
+
+/** Which optional families this deployment emits; false ⇒ the field is null. */
+export interface ProviderFamilies {
+  /** smartrouter_node_errors_total — JSON-RPC error replies per provider. */
+  nodeErrors: boolean;
+  /** smartrouter_protocol_errors_total — timeouts, refused and reset connections. */
+  protocolErrors: boolean;
+  /** smartrouter_rate_limit_holdoffs_total — "too many requests" hold-offs. */
+  rateLimit: boolean;
+  /** smartrouter_csm_provider_blocked — blocked-from-routing gauge. */
+  blocked: boolean;
+  /** rpc_endpoint_total_errored — failed relays per provider and method. */
+  endpointErrored: boolean;
+}
+
+export interface ProviderSummary {
+  /** Company id (see `providerOf`). */
+  id: string;
+  name: string;
+  /** Account suffixes seen, e.g. ["2"] for blockdaemon-2; empty for one plain account. */
+  accounts: string[];
+  /** The node names (metric label values) rolled into this provider. */
+  nodes: string[];
+  chains: { spec: string; role: "primary" | "backup" | null }[];
+  /** Tries sent to the provider in the window (relay-scoped, cache excluded). */
+  requests: number;
+  /** Highest 5-minute request rate in the window, all its nodes together. Null when unread. */
+  peakRps: number | null;
+  /** Failed tries ÷ tries. Null with no tries. */
+  errorRate: number | null;
+  /** Timeouts + refused/reset connections ÷ tries. Null when the family isn't emitted. */
+  protocolErrorRate: number | null;
+  /** JSON-RPC error replies ÷ tries. Null when the family isn't emitted. */
+  nodeErrorRate: number | null;
+  /** p95 answer time across its nodes, ms. */
+  p95Ms: number | null;
+  /** Rate-limit hold-offs recorded in the window. Null when the family isn't emitted. */
+  rateLimitHits: number | null;
+  /** Mean of the router's health gauge over the window, 0..1 — health-check uptime, not SLA uptime. */
+  healthUptime: number | null;
+  /** Any of its nodes blocked from routing right now. Null when the family isn't emitted. */
+  blockedNow: boolean | null;
+}
+
+export interface ProvidersReport {
+  window: string;
+  providers: ProviderSummary[];
+  /** Traffic under label values that can't be a node name (URL or header fragments). */
+  unattributed: { requests: number; labels: string[] } | null;
+  families: ProviderFamilies;
+}
+
+export interface ProviderChainStats {
+  spec: string;
+  /** The node name serving this chain — the Upstreams tab's endpoint id. */
+  node: string;
+  account: string | null;
+  role: "primary" | "backup" | null;
+  requests: number;
+  /** This provider's share of the chain's tries, 0..1. */
+  share: number | null;
+  errorRate: number | null;
+  protocolErrorRate: number | null;
+  nodeErrorRate: number | null;
+  p95Ms: number | null;
+  blockLag: number | null;
+  behindSec: number | null;
+  /** Null when the family isn't emitted or the series carries no chain label. */
+  rateLimitHits: number | null;
+  healthUptime: number | null;
+  blockedNow: boolean | null;
+}
+
+export interface ProviderMethodStats {
+  spec: string;
+  node: string;
+  method: string;
+  requests: number;
+  failed: number;
+  errorRate: number | null;
+  nodeErrors: number | null;
+  p50Ms: number | null;
+  p95Ms: number | null;
+  p99Ms: number | null;
+}
+
+export interface ProviderDetailReport {
+  window: string;
+  provider: ProviderSummary | null;
+  chains: ProviderChainStats[];
+  methods: ProviderMethodStats[];
+  /** False when the per-endpoint latency histogram has no method label on this build. */
+  methodLatency: boolean;
+  families: ProviderFamilies;
+}
+
+/** GET /api/providers/report — a complaint to one provider about one chain, ready to paste. */
+export interface ProviderReport {
+  provider: { id: string; name: string };
+  spec: string;
+  chainName: string;
+  environment: "Mainnet" | "Testnet";
+  /** The range the report covers, unix ms. */
+  range: { startMs: number; endMs: number };
+  /** Node URLs, scheme + host, keys masked. Empty when the mounted config doesn't declare them. */
+  urls: string[];
+  tries: number;
+  failedTries: number;
+  /** Null when the hold-off family isn't emitted. */
+  rateLimitHits: number | null;
+  methods: { method: string; tries: number; failed: number }[];
+  /** First and last failed try at this provider in the range, from the logs; null when the logs can't say. */
+  firstFailureMs: number | null;
+  lastFailureMs: number | null;
+  /** The logs held more failures than were read: the first failure may be earlier. */
+  moreFailures: boolean;
+  /** The router's most common error code on the failed tries read. */
+  topCode: string | null;
+  examples: { time: number; method: string; code: string | null; message: string | null; guid: string }[];
+  logs: "ok" | "unconfigured" | "unreachable";
+  problem: string;
+  /** Plain text, one field per line — what the customer pastes. */
+  text: string;
 }
