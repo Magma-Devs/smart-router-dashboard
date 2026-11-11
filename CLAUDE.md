@@ -1043,7 +1043,7 @@ API (`apps/api/src/config.ts` is the source of truth):
 | `ROUTER_RELAY_HOST` | `localhost` | where an SR_CONFIG mount's routers listen, for `POST /api/routers/relay` (`router` in the compose stacks). Unused for a helm mount, which dials each router's `<id>-router` Service |
 | `ROUTER_RELAY_TIMEOUT_MS` | `30000` | deadline on the api→router call, body included |
 | `ROUTER_RELAY_MAX_BODY_BYTES` | `4194304` | router answers past this come back `truncated: true` |
-| `ROUTER_RELAY_RATE_LIMIT_MAX` | `60` | per signed-in user per minute, shared by the relay and the ws probe |
+| `ROUTER_RELAY_RATE_LIMIT_MAX` | `60` | per signed-in user per minute; the relay and the ws probe each count their own |
 | `INCIDENTS_ENABLED` | off | exactly `true` turns on `POST /api/incidents`; anything else 404s it. With `AUTH_MODE=disabled` anyone who can reach the api may send a report, Critical included — opt-in per deployment. See [`docs/INCIDENTS.md`](docs/INCIDENTS.md) |
 | `INCIDENT_WEBHOOK_URL` | unset | the deployment's inbound webhook in our on-call system (Grafana IRM `formatted_webhook`). The URL is the credential — deliver it from a Secret, never a plain chart value. https only (http for a loopback mock). On with no usable URL logs an error at boot and every report answers 503; the boot is NOT refused |
 | `INCIDENT_WEBHOOK_TIMEOUT_MS` | `10000` | deadline on the api→IRM call |

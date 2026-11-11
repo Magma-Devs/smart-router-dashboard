@@ -259,7 +259,7 @@ export const config = {
    *
    * There is no on/off switch: the routes exist exactly when AUTH_MODE=enabled
    * and refuse anyone not signed in. With accounts off they are not registered
-   * and the drawer sends from the browser, as it always has.
+   * and the drawer sends from the browser.
    */
   routerRelay: {
     /** Matches the drawer's own ceiling on a browser send. */
@@ -267,7 +267,7 @@ export const config = {
     /** Router responses past this come back `truncated: true`. Larger than the
      *  upstream relay's cap: a full block or a trace is an ordinary answer. */
     maxBodyBytes: envInt("ROUTER_RELAY_MAX_BODY_BYTES", 4194304),
-    /** Per signed-in user per minute. */
+    /** Per signed-in user per minute, counted apart for each of the two routes. */
     rateLimitMax: envInt("ROUTER_RELAY_RATE_LIMIT_MAX", 60),
     /**
      * Where the routers of an SR_CONFIG mount listen. A helm-values mount

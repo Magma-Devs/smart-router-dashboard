@@ -587,14 +587,15 @@ export class ConfigurationService {
    *
    * The interface matches exactly first, then ignoring case: the chart keys
    * the port by the interface as written, and a caller holding `JSONRPC` for a
-   * `jsonrpc` listener means the same one.
+   * `jsonrpc` listener means the same one. Own keys only: `iface` is the
+   * caller's, and `ports.constructor` is a function, not a port.
    */
   resolveRouterOrigin(routerId: string, iface: string, transport: "http" | "ws"): string | null {
     const address = this.normalize().addresses.get(routerId);
     if (!address) return null;
-    const port =
-      address.ports[iface] ??
-      Object.entries(address.ports).find(([name]) => name.toLowerCase() === iface.toLowerCase())?.[1];
+    const port = Object.hasOwn(address.ports, iface)
+      ? address.ports[iface]
+      : Object.entries(address.ports).find(([name]) => name.toLowerCase() === iface.toLowerCase())?.[1];
     if (port === undefined) return null;
     return `${transport === "ws" ? "ws" : "http"}://${address.host}:${port}`;
   }

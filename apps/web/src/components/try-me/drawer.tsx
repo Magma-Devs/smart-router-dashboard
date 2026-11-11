@@ -547,7 +547,7 @@ export function TryMeDrawer({
    *  the deployment: a deployment can admit only listed source addresses at
    *  its public hostnames, and this browser need not be one of them. With
    *  accounts off the api's relay routes don't exist (anyone could use them
-   *  to get past that list), so the browser sends it, as it always has. */
+   *  to get past that list), so the browser sends it. */
   const viaApi = useAuthMode();
   const sentFrom = viaApi ? "from the dashboard's server" : "from this browser";
   const baseIface = httpVariantOf(openedIface);

@@ -15,8 +15,7 @@
  * router directives the drawer sets cross over.
  *
  * Nothing is redacted on the way back. These are the bytes the router hands
- * any caller of its public hostname, and the browser read them directly
- * before this route existed.
+ * any caller of its public hostname, a browser send included.
  */
 
 import type { RouterRelayResponse } from "@sr/shared";
@@ -36,8 +35,8 @@ export function directiveHeaders(d: RouterDirectives): Record<string, string> {
   return headers;
 }
 
-/** `Lava-Retries` read the way the drawer has always read it: absent or blank
- *  is unknown, and a value that is not a number counts as no retries. */
+/** `Lava-Retries` read the way the drawer's browser send reads it: absent or
+ *  blank is unknown, and a value that is not a number counts as no retries. */
 export function retriesOf(header: string | null): number | null {
   if (header === null || header === "") return null;
   return Number(header) || 0;
@@ -133,7 +132,7 @@ export async function relayRouterHttp(url: string, opts: RouterHttpOptions): Pro
 /**
  * Single-shot WebSocket to a router: connect, send one JSON-RPC envelope,
  * resolve on the first message, close — the drawer's ws mode is
- * request/response, as it was from the browser.
+ * request/response, as it is from the browser.
  *
  * No directives: the router reads none on a WebSocket, so there is nothing to
  * put on the handshake.

@@ -39,7 +39,7 @@ describe("retriesOf", () => {
     expect(retriesOf("")).toBeNull();
   });
 
-  it("counts a value that is not a number as no retries, as the drawer always has", () => {
+  it("counts a value that is not a number as no retries, as the drawer's browser send does", () => {
     expect(retriesOf("many")).toBe(0);
   });
 });

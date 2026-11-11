@@ -985,6 +985,13 @@ routers:
     expect(svc.resolveRouterOrigin("ETH1", "rest", "http")).toBeNull();
   });
 
+  it("names nothing for an interface that is only a key every object inherits", () => {
+    const svc = serviceFor(HELM_TWO_ROUTERS);
+    for (const iface of ["constructor", "toString", "__proto__", "hasOwnProperty"]) {
+      expect(svc.resolveRouterOrigin("ETH1", iface, "http"), iface).toBeNull();
+    }
+  });
+
   it("dials an SR_CONFIG router at the configured host and its listen port", () => {
     const dir = mkdtempSync(join(tmpdir(), "srdash-values-"));
     dirs.push(dir);

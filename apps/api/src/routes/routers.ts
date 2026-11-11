@@ -31,9 +31,10 @@ import {
 /** How long the probe waits for the upgrade — the drawer's own figure. */
 const WS_PROBE_TIMEOUT_MS = 6000;
 
-/** No control characters: a header value carrying one is refused by the HTTP
- *  client, and would come back as a failure of our hop instead of a 400. */
-const HEADER_SAFE = "^[^\\u0000-\\u001f\\u007f]+$";
+/** What a header value can carry: one byte per character, none of them a
+ *  control. The HTTP client refuses anything else, and that would come back
+ *  as a failure of our hop instead of a 400. */
+const HEADER_SAFE = "^[\\u0020-\\u007e\\u0080-\\u00ff]+$";
 
 const relayBodySchema = {
   type: "object",

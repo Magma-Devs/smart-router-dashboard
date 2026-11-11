@@ -48,6 +48,7 @@ const TOTP_KEY = "Ozw3vJk9pQ0sT6xN2mB8fH4dR1yL5aC7eU3gI9oK0jM=";
 // swapped in by hand.
 const DEAD_DB = "postgres://sr:x@192.0.2.1:5432/na";
 
+const { config } = await import("../config.js");
 const { SESSION_JWT_AUDIENCE, SESSION_JWT_ISSUER } = await import("../plugins/auth.js");
 const { createSession } = await import("../services/sessions.js");
 
@@ -93,24 +94,29 @@ describe("router relay · AUTH_MODE=enabled", () => {
     app.db = t.db;
     await app.ready();
 
-    // The lowest role: any signed-in user may send through the router.
+    token = await signIn("viewer@example.com");
+  });
+
+  /** A session token for a new user of the lowest role: any signed-in user
+   *  may send through the router. */
+  async function signIn(email: string): Promise<string> {
     const [user] = await t.db
       .insert(users)
-      .values({ email: "viewer@example.com", name: "Viewer", role: "read_only", ...enrolledTwoFactor() })
+      .values({ email, name: "Viewer", role: "read_only", ...enrolledTwoFactor() })
       .returning();
     const session = await createSession(t.db, {
       userId: user!.id,
       authMethod: "password",
       client: { ip: "203.0.113.9", userAgent: "test" },
     });
-    token = await new SignJWT({ sub: user!.id, email: user!.email, role: "read_only", sid: session.id })
+    return new SignJWT({ sub: user!.id, email: user!.email, role: "read_only", sid: session.id })
       .setProtectedHeader({ alg: "HS256", typ: "JWT" })
       .setIssuer(SESSION_JWT_ISSUER)
       .setAudience(SESSION_JWT_AUDIENCE)
       .setIssuedAt()
       .setExpirationTime("1h")
       .sign(new TextEncoder().encode(SECRET));
-  });
+  }
 
   afterAll(async () => {
     await app.close();
@@ -121,9 +127,10 @@ describe("router relay · AUTH_MODE=enabled", () => {
     }
   });
 
-  function post(url: string, payload: Record<string, unknown>, signedIn = true) {
+  /** `as`: `true` is the viewer, `false` nobody, a string another user's token. */
+  function post(url: string, payload: Record<string, unknown>, as: boolean | string = true) {
     const opts: InjectOptions = { method: "POST", url, payload };
-    if (signedIn) opts.headers = { authorization: `Bearer ${token}` };
+    if (as !== false) opts.headers = { authorization: `Bearer ${as === true ? token : as}` };
     return app.inject(opts);
   }
 
@@ -196,6 +203,19 @@ describe("router relay · AUTH_MODE=enabled", () => {
     expect(calls).toEqual([]);
   });
 
+  it("404s an interface named after a key every object inherits", async () => {
+    // `ports.constructor` is a function, not a port: the lookup must read the
+    // values file's own interfaces only.
+    const calls = stubRouter(() => new Response("{}"));
+    for (const iface of ["constructor", "toString", "__proto__"]) {
+      const res = await post("/api/routers/relay", { routerId: "ETH1", iface });
+      expect(res.statusCode, iface).toBe(404);
+      const probe = await post("/api/routers/ws-probe", { routerId: "ETH1", iface, path: "/ws" });
+      expect(probe.statusCode, iface).toBe(404);
+    }
+    expect(calls).toEqual([]);
+  });
+
   it("refuses a gRPC listener, which neither transport can speak", async () => {
     const res = await post("/api/routers/relay", { routerId: "Cosmos", iface: "grpc" });
     expect(res.statusCode).toBe(400);
@@ -212,12 +232,21 @@ describe("router relay · AUTH_MODE=enabled", () => {
   });
 
   it("refuses a pin that would not survive as a header value", async () => {
-    const res = await post("/api/routers/relay", {
-      routerId: "ETH1",
-      iface: "jsonrpc",
-      selectProvider: "eth-publicnode\r\nx-injected: 1",
-    });
-    expect(res.statusCode).toBe(400);
+    // A line break would inject a header; a character past U+00FF is one the
+    // HTTP client cannot encode, and would read as the router being down.
+    const calls = stubRouter(() => new Response("{}"));
+    for (const selectProvider of ["eth-publicnode\r\nx-injected: 1", "eth\tpublicnode", "eth-节点", "eth-😀"]) {
+      const res = await post("/api/routers/relay", { routerId: "ETH1", iface: "jsonrpc", selectProvider });
+      expect(res.statusCode, selectProvider).toBe(400);
+    }
+    expect(calls).toEqual([]);
+  });
+
+  it("sends a pin in the bytes a header can carry", async () => {
+    const calls = stubRouter(() => new Response("{}"));
+    const res = await post("/api/routers/relay", { routerId: "ETH1", iface: "jsonrpc", selectProvider: "café eth-1" });
+    expect(res.statusCode).toBe(200);
+    expect(calls[0]!.init.headers).toMatchObject({ "lava-select-provider": "café eth-1" });
   });
 
   it("is a 502 when the router cannot be reached", async () => {
@@ -240,6 +269,22 @@ describe("router relay · AUTH_MODE=enabled", () => {
     const res = await post("/api/routers/ws-probe", { routerId: "ETH1", iface: "jsonrpc", path: "/ws" });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ online: false });
+  });
+
+  it("budgets each signed-in user on their own, and each route on its own", async () => {
+    stubRouter(() => new Response("{}"));
+    const other = await signIn("second@example.com");
+    const send = { routerId: "ETH1", iface: "jsonrpc", body: { id: 1 } };
+    for (let i = 0; i < config.routerRelay.rateLimitMax; i++) {
+      expect((await post("/api/routers/relay", send, other)).statusCode, `send ${i + 1}`).toBe(200);
+    }
+    expect((await post("/api/routers/relay", send, other)).statusCode).toBe(429);
+    // Every inject comes from 127.0.0.1, so a budget kept per address would
+    // have spent the viewer's too.
+    expect((await post("/api/routers/relay", send)).statusCode).toBe(200);
+    // The probe counts apart from the relay: this is its own 404, not a 429.
+    const probe = await post("/api/routers/ws-probe", { routerId: "SOLANA", iface: "jsonrpc" }, other);
+    expect(probe.statusCode).toBe(404);
   });
 });
 

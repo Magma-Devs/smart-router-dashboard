@@ -61,7 +61,7 @@ The api works the address out of the mounted values file
 | Values file | Address |
 |---|---|
 | helm `routers:` | the router's Service, `<id lowercased>-router`, in the api's own namespace. The port follows the chart's rule: interfaces numbered by first appearance across the router's nodes, the Nth on `300<N>` (`helmServicePorts`). |
-| SR_CONFIG | `ROUTER_RELAY_HOST` (default `localhost`; `router` in the compose stacks) and the interface's listen port. |
+| SR_CONFIG | `ROUTER_RELAY_HOST` and the interface's listen port. The default is `localhost`; the compose stacks set `router`, their router service, and take `host.docker.internal` for a router run on the host. |
 
 A WebSocket uses the same listener with the `ws://` scheme. A gRPC listener is
 refused: neither transport speaks it.
@@ -82,11 +82,12 @@ refused: neither transport speaks it.
 | Status | Meaning |
 |---|---|
 | `200` | The router answered. Its own status is `httpStatus`; a router `503` is a result to show, not a relay failure. |
-| `400` | A gRPC listener, or a path that fails `buildTargetUrl`'s checks (`//host`, `..`, spaces or control characters). |
+| `400` | A gRPC listener, a path that fails `buildTargetUrl`'s checks (`//host`, `..`, spaces or control characters), or a `selectProvider` a header cannot carry (a control character, or one past U+00FF). |
 | `401` | Not signed in. |
 | `404` | The values file names no such router, or no listener for that interface. |
+| `429` | This user is past `ROUTER_RELAY_RATE_LIMIT_MAX` on this route for the minute. |
 | `502` | The router could not be reached, or its answer broke off. |
-| `504` | The router did not answer, or did not finish its answer, within `ROUTER_RELAY_TIMEOUT_MS`. The drawer shows this as a timed-out result, as it did for the browser leg. |
+| `504` | The router did not answer, or did not finish its answer, within `ROUTER_RELAY_TIMEOUT_MS`. The drawer shows this as a timed-out result, like a browser send that times out. |
 
 `POST /api/routers/ws-probe` takes `{ routerId, iface, path }` and answers
 `{ online }`: whether the upgrade opened within 6 seconds.
@@ -98,7 +99,7 @@ refused: neither transport speaks it.
   dial it from the browser: a working Try-me is no proof that the viewer's own
   address is on the list.
 - Latency is measured at the api, around its call to the router. In **Compare
-  both** both legs are now measured from the same place.
+  both** both legs are measured from the same place.
 - The code snippets still print the public address.
 
 ## Settings
@@ -108,4 +109,4 @@ refused: neither transport speaks it.
 | `ROUTER_RELAY_HOST` | `localhost` | where an SR_CONFIG mount's routers listen; unused for a helm mount |
 | `ROUTER_RELAY_TIMEOUT_MS` | `30000` | deadline on the api→router call, body included |
 | `ROUTER_RELAY_MAX_BODY_BYTES` | `4194304` | router answers past this come back `truncated: true` |
-| `ROUTER_RELAY_RATE_LIMIT_MAX` | `60` | per signed-in user per minute, shared by both routes |
+| `ROUTER_RELAY_RATE_LIMIT_MAX` | `60` | per signed-in user per minute; the relay and the ws probe each count their own |
