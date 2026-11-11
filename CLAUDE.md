@@ -1012,8 +1012,8 @@ poll, shares them. `/api/metrics/query` (the caller's own PromQL) and
 
 | Answer | Routes (`/api/metrics/…`) | 5m–1h | 3h–12h | 1d–3d | 7d–30d |
 |---|---|---|---|---|---|
-| Figures over the window | `rps` · `traffic` · `methods` · `chain-series` · `upstream-timeline` · `upstream-peers` · `cross-validation` | 15 s | 60 s | 5 min | 15 min |
-| Figures about now too (health, latest block, in-flight, a current rate), and the Errors tab | `dashboard-summary` · `overview` · `dashboard` · `routers-rollup` · `chains` · `upstreams` · `upstream-detail` · `websocket` · `errors` · `retries` | 15 s | 60 s | 60 s | 60 s |
+| Figures over the window | `rps` · `traffic` · `methods` · `chain-series` · `upstream-timeline` · `upstream-peers` · `provider-series` · `cross-validation` | 15 s | 60 s | 5 min | 15 min |
+| Figures about now too (health, latest block, in-flight, a current rate), and the Errors tab | `dashboard-summary` · `overview` · `dashboard` · `routers-rollup` · `chains` · `upstreams` · `upstream-detail` · `providers` · `provider-detail` · `websocket` · `errors` · `retries` | 15 s | 60 s | 60 s | 60 s |
 | No window | `routers` · `specs` · `block-heights` · `unavailable` | 15 s | | | |
 | The topbar's pulse, polled every 30 s | `pulse` | 30 s | | | |
 
