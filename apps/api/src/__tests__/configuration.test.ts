@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   ConfigurationService,
+  helmServicePorts,
   maskNodeUrl,
   normalizeHelmNodeName,
   portFromListenAddress,
@@ -905,5 +906,95 @@ direct-rpc:
     // gets is about gRPC, not a phantom "no such endpoint".
     expect(svc.resolveEndpointUrl({ routerId: "COSMOSHUB", node: "cosmos-grpc", endpointIndex: 0 }))
       .toBe("grpcs://cosmos-grpc.publicnode.com:443");
+  });
+});
+
+/* ── Router relay addressing (mirrors the chart's router Service) ────────── */
+
+describe("helmServicePorts (mirrors smart-router-helm-chart routers_service.yaml)", () => {
+  it("numbers interfaces by first appearance across every node's endpoints", () => {
+    expect(
+      helmServicePorts({
+        nodes: [
+          { endpoints: [{ interface: "rest" }, { interface: "tendermintrpc" }] },
+          { endpoints: [{ interface: "rest" }, { interface: "grpc" }, { interface: "tendermintrpc" }] },
+        ],
+      }),
+    ).toEqual({ rest: 3000, tendermintrpc: 3001, grpc: 3002 });
+  });
+
+  it("concatenates the index onto 300, as the template does — the eleventh is 30010", () => {
+    const endpoints = Array.from({ length: 11 }, (_, i) => ({ interface: `if${i}` }));
+    const ports = helmServicePorts({ nodes: [{ endpoints }] });
+    expect(ports["if9"]).toBe(3009);
+    expect(ports["if10"]).toBe(30010);
+  });
+
+  it("counts an endpoint with no url, which the chart renders and the topology skips", () => {
+    expect(
+      helmServicePorts({
+        nodes: [{ endpoints: [{ interface: "rest" }, { url: "https://x.example", interface: "jsonrpc" }] }],
+      }),
+    ).toEqual({ rest: 3000, jsonrpc: 3001 });
+  });
+});
+
+describe("ConfigurationService.resolveRouterOrigin", () => {
+  const HELM_TWO_ROUTERS = `
+routers:
+  - id: ETH1
+    network: eth
+    nodes:
+      - name: eth-publicnode
+        endpoints:
+          - url: https://ethereum-rpc.publicnode.com
+            interface: jsonrpc
+          - url: wss://ethereum-rpc.publicnode.com
+            interface: jsonrpc
+  - id: Cosmos
+    network: cosmoshub
+    nodes:
+      - name: cosmos-vendor
+        endpoints:
+          - url: https://rest.vendor.example
+            interface: rest
+          - url: https://rpc.vendor.example
+            interface: tendermintrpc
+`;
+
+  it("dials a helm router at its own Service, named after the lowercased id", () => {
+    const svc = serviceFor(HELM_TWO_ROUTERS);
+    expect(svc.resolveRouterOrigin("ETH1", "jsonrpc", "http")).toBe("http://eth1-router:3000");
+    expect(svc.resolveRouterOrigin("Cosmos", "tendermintrpc", "http")).toBe("http://cosmos-router:3001");
+  });
+
+  it("dials a WebSocket on the same listener", () => {
+    const svc = serviceFor(HELM_TWO_ROUTERS);
+    expect(svc.resolveRouterOrigin("ETH1", "jsonrpc", "ws")).toBe("ws://eth1-router:3000");
+  });
+
+  it("matches the interface ignoring case when no exact one is declared", () => {
+    expect(serviceFor(HELM_TWO_ROUTERS).resolveRouterOrigin("Cosmos", "REST", "http")).toBe(
+      "http://cosmos-router:3000",
+    );
+  });
+
+  it("names nothing for a router or an interface the values file does not declare", () => {
+    const svc = serviceFor(HELM_TWO_ROUTERS);
+    expect(svc.resolveRouterOrigin("SOLANA", "jsonrpc", "http")).toBeNull();
+    expect(svc.resolveRouterOrigin("ETH1", "rest", "http")).toBeNull();
+  });
+
+  it("dials an SR_CONFIG router at the configured host and its listen port", () => {
+    const dir = mkdtempSync(join(tmpdir(), "srdash-values-"));
+    dirs.push(dir);
+    mkdirSync(join(dir, "core"), { recursive: true });
+    writeFileSync(join(dir, "core", "values.yml"), SR_CONFIG_ETH);
+    const svc = new ConfigurationService(dir, "router");
+    expect(svc.resolveRouterOrigin("ETH1", "jsonrpc", "http")).toBe("http://router:3360");
+  });
+
+  it("defaults an SR_CONFIG router to localhost", () => {
+    expect(serviceFor(SR_CONFIG_ETH).resolveRouterOrigin("ETH1", "jsonrpc", "ws")).toBe("ws://localhost:3360");
   });
 });

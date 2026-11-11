@@ -14,6 +14,7 @@ import { versionRoutes } from "./routes/version.js";
 import { metricRoutes } from "./routes/metrics.js";
 import { configRoutes } from "./routes/config.js";
 import { upstreamRoutes } from "./routes/upstreams.js";
+import { routerRelayRoutes } from "./routes/routers.js";
 import { transactionRoutes } from "./routes/transactions.js";
 import { errorRequestRoutes } from "./routes/error-requests.js";
 import { incidentRoutes } from "./routes/incidents.js";
@@ -95,6 +96,11 @@ export async function buildApp(): Promise<FastifyInstance> {
     // is disabled.
     await app.register(auditRoutes);
     await app.register(auditTokenRoutes);
+    // Inside the gate on purpose too: the router relay sends requests through
+    // the tenant's routers from inside the deployment, past any address list
+    // at its edge. Only a signed-in user may do that, so with accounts off the
+    // routes do not exist and the drawer sends from the browser.
+    await app.register(routerRelayRoutes);
 
     // Once the database is up, mint + log the first-run token if this install
     // still needs one. Not awaited: `dbReady` retries forever by design, and
