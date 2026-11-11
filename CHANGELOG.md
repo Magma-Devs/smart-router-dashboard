@@ -5,6 +5,31 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.58.0]
+
+### Added
+
+- **Try-me's "via router" leg goes through the api when accounts are on.** A
+  deployment can admit only a list of source addresses at its public
+  hostnames, and a browser anywhere else is refused before the router sees the
+  request, so Send, the WebSocket `online` check and **Compare both** failed
+  for anyone off the list. With `AUTH_MODE=enabled` the drawer now calls
+  `POST /api/routers/relay`, and the api sends the request to the router's
+  listener inside the deployment: on a helm mount the router's Service
+  (`<id>-router`, on the chart's `300<N>` port), on an SR_CONFIG mount
+  `ROUTER_RELAY_HOST` and the listen port. The caller names a router and an
+  interface, never a url; only `lava-select-provider` and
+  `lava-force-cache-refresh` are forwarded; the router's `Lava-*` telemetry
+  comes back in the JSON. `POST /api/routers/ws-probe` answers the WebSocket
+  check from the same place. Both routes exist only with accounts on and take
+  any signed-in role: with accounts off the api answers anonymously, and the
+  routes would be a way round the list for anyone, so there the browser keeps
+  sending as before. The address bar keeps the public url and gains a
+  `sent from server` tag, so a working Try-me is no proof that the viewer's
+  own address gets through. Settings: `ROUTER_RELAY_HOST`,
+  `ROUTER_RELAY_TIMEOUT_MS`, `ROUTER_RELAY_MAX_BODY_BYTES`,
+  `ROUTER_RELAY_RATE_LIMIT_MAX`. See `docs/ROUTER-RELAY.md`.
+
 ## [0.57.0]
 
 ### Added
