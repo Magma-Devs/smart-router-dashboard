@@ -268,7 +268,13 @@ out of time is not asked again - only a quick refusal is.
 minute is down for a provider on a chain when half or more of its tries
 there failed - **rate limits left out**. A "too many requests" is often the
 plan's limit, not the provider failing, so it counts in `rateLimitedMinutes`
-instead: minutes where half or more of the tries were rate-limited.
+instead: minutes where half or more of the tries were rate-limited. **The
+router's own calls are left out too** (`ROUTER_OWN_METHODS`, every count in
+the rule carries `method!~"grpc[.]reflection[.].*"`): the router's gRPC
+reflection lookups go through the relay counters, and it refuses them itself
+before any provider sees them - about 125,000 a day on two Cosmos chains of
+one production deployment, none answered. A down minute is one the provider
+could be held to.
 
 ```promql
 sum by (provider_address, spec) (sum_over_time((clamp_min(F - L, 0) / clamp_min(T - L, 0) >= bool 0.5)[<range>:1m]))   # down

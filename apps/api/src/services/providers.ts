@@ -118,6 +118,21 @@ export const uptimeReadFor = (window: MetricWindow): boolean => WINDOWS[window].
  * leaves every minute's rate-limited tries at zero.
  */
 const HOLDS_ON_CHAIN = `{event="recorded",chain!=""}`;
+/**
+ * Calls the router makes for itself, not for a client: gRPC server
+ * reflection, which it then refuses to send as a unary call (MAG-4224). They
+ * fail at the router before reaching the provider - on one production
+ * deployment about 125,000 a day on two Cosmos chains, none answered - so the
+ * down rule leaves them out: a down minute is one the provider could be held
+ * to.
+ */
+// `[.]`, not `\.`: a backslash inside a PromQL string is an escape of its own.
+export const ROUTER_OWN_METHODS = "grpc[.]reflection[.].*";
+/** `sel` (empty, or a `{…}` selector) with the router's own calls left out. */
+const withoutRouterOwn = (sel: string): string => {
+  const own = `method!~"${ROUTER_OWN_METHODS}"`;
+  return sel ? `${sel.slice(0, -1)},${own}}` : `{${own}}`;
+};
 /** A minute is down (or rate-limited) when at least this share of the tries in it failed (or got "too many requests"). */
 const DOWN_SHARE = 0.5;
 
@@ -136,12 +151,14 @@ const DOWN_SHARE = 0.5;
  * the scrape target's `chain` label. The request counter carries that label
  * too, so the two meet on (node, chain) and the hold-offs take the request
  * counter's `spec`. A node that never succeeded has no success series: zero
- * successes, not no data.
+ * successes, not no data. The router's own calls (`ROUTER_OWN_METHODS`) are
+ * no try at the provider and are left out of every count here.
  */
 export function minuteRules(nodeSel: string, holdSel: string | null): { tries: string; down: string; limited: string | null } {
   const by = "sum by (provider_address, spec)";
-  const tries = `${by} (increase(${ROUTER_METRICS.requestsTotal}${nodeSel}[1m]))`;
-  const ok = `${by} (increase(${ROUTER_METRICS.requestsSuccessTotal}${nodeSel}[1m]))`;
+  const sel = withoutRouterOwn(nodeSel);
+  const tries = `${by} (increase(${ROUTER_METRICS.requestsTotal}${sel}[1m]))`;
+  const ok = `${by} (increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[1m]))`;
   const failed = `(${tries} - (${ok} or ${tries} * 0))`;
   if (holdSel === null) return { tries, down: `${failed} / ${tries} >= bool ${DOWN_SHARE}`, limited: null };
   const present = `group by (provider_address, spec, chain) (${ROUTER_METRICS.requestsTotal}${nodeSel})`;

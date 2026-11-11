@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { RECORDED, setRecordedReads } from "@sr/shared";
-import { ProvidersService, bucketsRange, countsRange, histogramQuantile, peakWindowSec } from "../services/providers.js";
+import { ProvidersService, bucketsRange, countsRange, histogramQuantile, minuteRules, peakWindowSec } from "../services/providers.js";
 import { MetricsService } from "../services/metrics.js";
 import { StoreReadError, type PrometheusClient, type PromVectorSample } from "../services/prometheus-client.js";
 
@@ -335,7 +335,7 @@ describe("ProvidersService.list", () => {
     const down = queries.find((q) => q.includes("(sum_over_time("))!;
     expect(down).toContain(">= bool 0.5)[86400s:1m]");
     // A node that never succeeded has no success series: it reads as zero successes.
-    expect(down).toContain("or sum by (provider_address, spec) (increase(smartrouter_requests_total[1m])) * 0");
+    expect(down).toContain('or sum by (provider_address, spec) (increase(smartrouter_requests_total{method!~"grpc[.]reflection[.].*"}[1m])) * 0');
     const detail = await new ProvidersService(prom, null, new MetricsService(prom)).detail("tatum", "1d");
     expect(detail.chains.find((c) => c.spec === "ETH1")).toMatchObject({ downMinutes: 30, trafficMinutes: 1440 });
   });
@@ -359,6 +359,22 @@ describe("ProvidersService.list", () => {
     expect(report.providers.find((p) => p.id === "tatum")?.rateLimitedMinutes).toBe(0);
     const detail = await svc.detail("blockdaemon", "1d");
     expect(detail.chains.find((c) => c.spec === "NEAR")?.rateLimitedMinutes).toBe(12);
+  });
+
+  // The router's own gRPC reflection calls never reach the provider (it
+  // refuses to send them), so they can't make a minute down - on the whole
+  // deployment and on one provider's graphs alike.
+  it("the router's own calls are left out of the down rule", async () => {
+    const all = minuteRules("", '{event="recorded",chain!=""}');
+    expect(all.tries).toContain('smartrouter_requests_total{method!~"grpc[.]reflection[.].*"}[1m]');
+    expect(all.down).toContain('smartrouter_requests_success_total{method!~"grpc[.]reflection[.].*"}[1m]');
+    const one = minuteRules('{provider_address=~"tatum"}', null);
+    expect(one.down).toContain('smartrouter_requests_total{provider_address=~"tatum",method!~"grpc[.]reflection[.].*"}[1m]');
+
+    const { prom, queries } = fakeProm(ALL);
+    await new ProvidersService(prom, null, new MetricsService(prom)).list("1d");
+    const down = queries.find((q) => q.includes("(sum_over_time(") && q.includes("clamp_min"))!;
+    expect(down).toContain('method!~"grpc[.]reflection[.].*"');
   });
 
   it("rate limits that can't be put on a chain count as failures, as before - and rate-limited minutes say unknown", async () => {

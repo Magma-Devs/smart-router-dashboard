@@ -65,6 +65,12 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   p95 from them, as the Metrics page does since 0.36.0. A week now has a p95
   per provider, and reads faster than a day did. Latency per method has no
   recorded series and stays a day at most; its tip says so.
+- **Down minutes leave out the router's own calls.** The router sends itself
+  gRPC reflection lookups through the same counters as client requests, then
+  refuses them before any provider sees them - about 125,000 a day on two
+  Cosmos chains of one production deployment, all failed. They no longer
+  count toward a provider's down minutes or uptime: a down minute is one the
+  provider could be held to.
 - **Providers page reads in one round.** The checks for which optional
   counters the router emits go out with the reads instead of before them,
   and a provider's page starts its per-method reads beside the rest.
