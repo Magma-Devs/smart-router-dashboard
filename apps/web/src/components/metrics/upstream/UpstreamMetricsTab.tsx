@@ -11,7 +11,7 @@
  *    currently-selected window; the other boxes render "—" (no refetch fan-out);
  *  - the mock's "last probe 12s ago" has no backing metric and is dropped. */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { buildChainMetaByIndex, WINDOWS, type MetricWindow, type UpstreamDetail } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { useFilters } from "@/components/gateway/FiltersProvider";
@@ -25,9 +25,11 @@ import { PMEmpty } from "./PMEmpty";
 import { PMBody } from "./PMBody";
 import type { ErrorsJump } from "../ErrorsBreakdown";
 
-export function UpstreamMetricsTab({ timeWindow, chainFilter, onOpenErrors }: {
+export function UpstreamMetricsTab({ timeWindow, chainFilter, onOpenErrors, openOn }: {
   timeWindow: MetricWindow;
   chainFilter: string | null;
+  /** The upstream to open on - a provider's chain row sent the reader here. */
+  openOn?: { endpointId: string; spec: string } | null;
   /** Where a click on an errors bar goes - the Errors tab, on its requests. */
   onOpenErrors?: (jump: ErrorsJump) => void;
 }) {
@@ -35,9 +37,16 @@ export function UpstreamMetricsTab({ timeWindow, chainFilter, onOpenErrors }: {
   const rosterRes = usePMRosterData(timeWindow, chainFilter);
   const entries = rosterRes.data?.upstreams ?? [];
 
-  const [selKey, setSelKey] = useState<string | null>(null);
-  // jump the deep-dive to the first upstream on the filtered chain / router
-  useEffect(() => { setSelKey(null); }, [chainFilter, routerId]);
+  const [selKey, setSelKey] = useState<string | null>(openOn ? upstreamKey(openOn) : null);
+  // jump the deep-dive to the first upstream on the filtered chain / router -
+  // on a change of either, not on arrival, which may name the upstream to open
+  const scope = `${chainFilter ?? ""}|${routerId ?? ""}`;
+  const shownScope = useRef(scope);
+  useEffect(() => {
+    if (shownScope.current === scope) return;
+    shownScope.current = scope;
+    setSelKey(null);
+  }, [scope]);
 
   const visible = entries;
   const pm = visible.find((e) => upstreamKey(e) === selKey) ?? visible[0] ?? null;

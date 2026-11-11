@@ -79,7 +79,7 @@ export function ProviderReportSheet({ target, timeWindow, onClose }: {
   const res = useApi<ProviderReport>(q ? `/api/providers/report?${q}` : null, 0);
   const r = res.data;
   const chainName = target ? buildChainMetaByIndex(target.spec).name : "";
-  const noFailures = r && r.failedTries === 0;
+  const noFailures = r && r.failedTries === 0 && !r.errorReplies;
 
   return (
     <SideSheet open={!!target} onClose={onClose} wide
@@ -120,7 +120,7 @@ export function ProviderReportSheet({ target, timeWindow, onClose }: {
       {!r && !res.error && <Skel w={320} h={10} />}
       {noFailures && (
         <div style={{ fontSize: 13, color: "var(--text-3)", padding: "16px 0" }}>
-          No failed requests to {target?.providerName} on {chainName} in this range.
+          No failed requests and no error replies to {target?.providerName} on {chainName} in this range.
         </div>
       )}
       {r && !noFailures && (
@@ -140,11 +140,15 @@ export function ProviderReportSheet({ target, timeWindow, onClose }: {
 }
 
 /** The Providers tab with its export and per-chain report wired in. */
-export function ProvidersWithReports({ timeWindow, chainFilter }: { timeWindow: MetricWindow; chainFilter: string | null }) {
+export function ProvidersWithReports({ timeWindow, chainFilter, onOpenUpstream }: {
+  timeWindow: MetricWindow;
+  chainFilter: string | null;
+  onOpenUpstream?: (ref: { endpointId: string; spec: string }) => void;
+}) {
   const [target, setTarget] = useState<{ providerId: string; providerName: string; spec: string } | null>(null);
   return (
     <>
-      <ProvidersTab timeWindow={timeWindow} chainFilter={chainFilter}
+      <ProvidersTab timeWindow={timeWindow} chainFilter={chainFilter} onOpenUpstream={onOpenUpstream}
         rosterActions={<ExportButton timeWindow={timeWindow} />}
         renderChainAction={(p, c) =>
           c.requests > 0 ? <ReportButton onClick={() => setTarget({ providerId: p.id, providerName: p.name, spec: c.spec })} /> : null

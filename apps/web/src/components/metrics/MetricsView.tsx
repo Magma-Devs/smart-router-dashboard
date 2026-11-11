@@ -53,6 +53,14 @@ export function MetricsView() {
     setErrorsFocus(jump);
     setTab("errors");
   };
+  /* A chain row clicked on the Providers tab: the Upstreams tab opens on that
+     chain and that upstream. Picking a tab yourself clears it, as above. */
+  const [upstreamFocus, setUpstreamFocus] = useState<{ endpointId: string; spec: string } | null>(null);
+  const openUpstream = (ref: { endpointId: string; spec: string }) => {
+    setChainFilter(ref.spec);
+    setUpstreamFocus(ref);
+    setTab("upstreams");
+  };
 
   /* Config ∪ traffic (see useChainOptions). A configured chain that has served
      nothing is offered but dimmed: every panel here would be empty for it, and
@@ -63,7 +71,7 @@ export function MetricsView() {
   // before. A tab from the URL is the whole window, as a tab picked by hand is.
   const { routers: configRouters, loaded: routersLoaded } = useRouterOptions();
   useScopeInUrl({ chain, router: routerId }, { selectChain, selectRouter }, routersLoaded ? configRouters : null,
-    { tab, setTab: (t) => { setTab(t); setErrorsFocus(null); }, tabs: TABS });
+    { tab, setTab: (t) => { setTab(t); setErrorsFocus(null); setUpstreamFocus(null); }, tabs: TABS });
   const { chains: chainRows } = useChainOptions();
   const routedChains = withMutedRows(chainRows, (c) => (c.hasTraffic ? false : "no traffic yet"));
   const chainObj = activeChain
@@ -100,7 +108,7 @@ export function MetricsView() {
           wrap each label onto two lines. */}
       <div style={{ display: "flex", borderBottom: "1px solid var(--line)", marginBottom: 24, overflowX: "auto", overflowY: "hidden" }}>
         {([["metrics", "Overview"], ["providers", "Providers"], ["upstreams", "Upstreams"], ["errors", "Errors"], ["transactions", "Transactions"]] as [Tab, string][]).map(([k, l]) => (
-          <button key={k} onClick={() => { setTab(k); setErrorsFocus(null); }} style={{
+          <button key={k} onClick={() => { setTab(k); setErrorsFocus(null); setUpstreamFocus(null); }} style={{
             whiteSpace: "nowrap", flexShrink: 0,
             padding: "8px 20px", border: "none", background: "transparent",
             fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "inherit",
@@ -146,11 +154,11 @@ export function MetricsView() {
         <>
           <HeroPanel tw={timeWindow} spec={activeChain} />
           <CurrentlyUnavailable />
-          <RouterOverview chainFilter={activeChain} timeWindow={timeWindow} onChainClick={(ch) => { setChainFilter(ch); setTab("upstreams"); }} />
+          <RouterOverview chainFilter={activeChain} timeWindow={timeWindow} onChainClick={(ch) => { setChainFilter(ch); setUpstreamFocus(null); setTab("upstreams"); }} />
         </>
       )}
-      {tab === "providers" && <ProvidersWithReports timeWindow={timeWindow} chainFilter={activeChain} />}
-      {tab === "upstreams" && <UpstreamMetricsTab timeWindow={timeWindow} chainFilter={activeChain} onOpenErrors={openErrors} />}
+      {tab === "providers" && <ProvidersWithReports timeWindow={timeWindow} chainFilter={activeChain} onOpenUpstream={openUpstream} />}
+      {tab === "upstreams" && <UpstreamMetricsTab timeWindow={timeWindow} chainFilter={activeChain} onOpenErrors={openErrors} openOn={upstreamFocus} />}
       {tab === "errors" && <ErrorsBreakdown key={errorsFocus ? `${errorsFocus.upstream}|${errorsFocus.from}` : "window"} chainFilter={activeChain} win={timeWindow} focus={errorsFocus} />}
       {tab === "transactions" && <TransactionLog chainFilter={activeChain} win={timeWindow} />}
     </div>

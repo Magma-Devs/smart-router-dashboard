@@ -247,6 +247,10 @@ table.gw-table th { text-align: left; padding: 9px 14px; font-size: 10px; font-w
 table.gw-table td { padding: 11px 14px; vertical-align: middle; border-bottom: 1px solid var(--line); font-size: 13px; }
 table.gw-table tr:last-child td { border-bottom: none; }
 table.gw-table tbody tr:hover td { background: var(--hover); }
+/* Ten-column tables (the Providers tab): closer columns, so the ones a reader decides on fit a laptop screen. */
+table.gw-table--tight th, table.gw-table--tight td { padding-left: 9px; padding-right: 9px; }
+table.gw-table--tight th:first-child, table.gw-table--tight td:first-child { padding-left: 14px; }
+table.gw-table--tight th:last-child, table.gw-table--tight td:last-child { padding-right: 14px; }
 
 /* ── Masked secret ── */
 .gw-secret { font-family: var(--font-mono); font-size: 12px; color: var(--text-3); letter-spacing: 0.05em; }
