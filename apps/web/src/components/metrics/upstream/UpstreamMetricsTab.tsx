@@ -122,7 +122,7 @@ export function UpstreamMetricsTab({ timeWindow, chainFilter, selected = null, l
               <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 8 }}>{chainName}</div>
             </PMStat>
 
-            <PMStat label="Request success rate" tip={"**Requests this upstream answered** as a share of all requests routed to it - i.e. **success rate**, not wall-clock uptime or an SLA figure.\n\nIt is measured from real traffic, so it is empty until the router routes something here. The router's own block polls are reported separately below.\n\nThe large figure follows the window above; 1h / 24h / 7d are shown for context."}>
+            <PMStat label="Request success rate" tip={"**Requests this upstream answered without an error** as a share of all requests routed to it - i.e. **success rate**, not wall-clock uptime or an SLA figure. A request that got no answer counts against it, and so does an answer that carried a node error (a JSON-RPC error, a REST error status), which the router counts as delivered.\n\nIt is measured from real traffic, so it is empty until the router routes something here. The router's own block polls are reported separately below.\n\nThe large figure follows the window above; 1h / 24h / 7d are shown for context."}>
               {hasData && availPct != null ? (
                 <>
                   <div className="gw-mono gw-tnum" style={{ fontSize: 26, fontWeight: 700, lineHeight: 1, color: availCol(availPct) }}>{availPct.toFixed(2)}%</div>
@@ -151,11 +151,16 @@ export function UpstreamMetricsTab({ timeWindow, chainFilter, selected = null, l
               ) : <PMNoVal />}
             </PMStat>
 
-            <PMStat label="Throughput">
+            <PMStat label="Throughput" tip={"**Requests this upstream answered**, an answer that carried a node error included: how much the router sends it, not how much of it was useful.\n\n**Answered with a result** counts clients' reads it answered without a node error - no write, no health check of the router's own. A backup that only gets the retries of calls another upstream failed, and fails them too, shows its whole volume here and 0 results. It is shown once the router reports it."}>
               {hasData ? (
                 <>
                   <div className="gw-mono gw-tnum" style={{ fontSize: 26, fontWeight: 700, lineHeight: 1 }}>{fmtRps(pm.requests / WINDOWS[timeWindow].rangeSeconds)}<span style={{ fontSize: 13, color: "var(--text-3)", fontWeight: 500 }}> req/s</span></div>
                   <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 8 }}>{fmtNum(pm.requests)} req / {timeWindow} · window average</div>
+                  {pm.results !== null && (
+                    <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 4 }}>
+                      <span className="gw-mono gw-tnum" style={{ color: pm.results > 0 ? "var(--text-2)" : "var(--text-4)", fontWeight: 600 }}>{fmtNum(pm.results)}</span> reads answered with a result
+                    </div>
+                  )}
                 </>
               ) : <PMNoVal />}
             </PMStat>

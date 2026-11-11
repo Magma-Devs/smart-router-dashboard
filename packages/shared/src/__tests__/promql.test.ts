@@ -46,6 +46,9 @@ import {
   qUpstreamVolumeSeriesExpr,
   qUpstreamReadVolumeSeriesExpr,
   qUpstreamErrorRate,
+  qUpstreamAvailability,
+  qUpstreamNodeErrors,
+  qUpstreamResults,
   qBlockLagByEndpoint,
   qBestTipBySpec,
   qBlockRateBySpec,
@@ -428,6 +431,26 @@ describe("per-upstream builders", () => {
     const q = qUpstreamErrorRate(ref, "1d");
     expect(q.startsWith("1 - (")).toBe(true);
     expect(q).toContain('{spec="ETH1",provider_address="eth-lava"}');
+  });
+  // MAG-5194: the router counts an answer that carried a node error as a success,
+  // so an upstream answering every relay with one read 0% errors. Its node
+  // errors come off the successes; a router with none has no series, and
+  // `or vector(0)` keeps the rate rather than dropping it.
+  it("an upstream's success rate takes its node errors off the router's successes", () => {
+    const sel = '{spec="ETH1",provider_address="eth-lava"}';
+    const avail = qUpstreamAvailability(ref, "1d");
+    expect(avail).toBe(
+      `clamp((sum(increase(smartrouter_requests_success_total${sel}[86400s])) - (sum(increase(smartrouter_node_errors_total${sel}[86400s])) or vector(0))) / sum(increase(smartrouter_requests_total${sel}[86400s])), 0, 1)`,
+    );
+    expect(qUpstreamErrorRate(ref, "1d")).toBe(`1 - (${avail})`);
+  });
+  it("the roster reads node errors and reads answered with a result per upstream and chain", () => {
+    expect(qUpstreamNodeErrors("1d", "ETH1")).toBe(
+      'sum by (provider_address, spec) (increase(smartrouter_node_errors_total{spec="ETH1"}[86400s]))',
+    );
+    expect(qUpstreamResults("1d", "ETH1")).toBe(
+      'round(sum by (provider_address, spec) (increase(smartrouter_node_results_total{spec="ETH1"}[86400s])))',
+    );
   });
   it("never selects an upstream by name alone — a name spans every chain it serves", () => {
     const queries = [

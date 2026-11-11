@@ -64,10 +64,29 @@ export interface RouterMetrics extends ChainMetrics {
 export interface UpstreamMetrics {
   endpointId: string;
   spec: string;
+  /**
+   * Relays the upstream answered over the window (`rpc_endpoint_total_relays_serviced`):
+   * volume, an answer that carried a node error included, a relay that got no
+   * answer left out.
+   */
   requests: number;
+  /**
+   * Relays answered without an error as a share of all relays sent to it: a relay
+   * that got no answer and an answer carrying a node error both count against it.
+   * `errorRate` is `1 − uptime`. `null` with no relays in the window.
+   */
   uptime: number | null;
   p95Ms: number | null;
   errorRate: number | null;
+  /**
+   * Clients' reads the upstream answered with a result over the window
+   * (`smartrouter_node_results_total`): no node error, no write, not the
+   * router's own health check. `null` when the router does not report the
+   * family (older than smart-router PR #692); `0` when it does and this
+   * upstream answered none, which is the number a backup that only returns
+   * errors shows.
+   */
+  results: number | null;
   /** score_type → score (0..1); empty when none emitted. */
   scores: Partial<Record<ScoreType, number>>;
   /**

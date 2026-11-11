@@ -20,7 +20,9 @@ import {
   qErrorsBy,
   qEndpointRelaysBySpec,
   qEndpointLatencyQuantileBySpec,
+  qUpstreamNodeErrors,
   qUpstreamRelays,
+  qUpstreamResults,
   qUpstreamSuccesses,
   qReadRequestsByMethod,
   qPerUpstreamRpsExpr,
@@ -979,6 +981,7 @@ export class MetricsService {
           uptime: null,
           p95Ms: null,
           errorRate: null,
+          results: null,
           scores: {},
           scoreSource: null,
           polls: null,
@@ -1117,16 +1120,25 @@ export class MetricsService {
       row.stale = isStale(changesById.get(nodeKey(row.endpointId, row.spec)), bps);
     }
 
-    // Uptime + error rate per (endpoint × chain) = success/total over the
-    // window, keyed by provider_address (= the endpoint name) + spec on the
-    // router request counters.
-    const [okByProv, totByProv] = await Promise.all([
+    // Uptime + error rate per (endpoint × chain) over the window, keyed by
+    // provider_address (= the endpoint name) + spec on the router request
+    // counters. The router's success counter is a transport verdict: an answer
+    // that carried a node error is in it, so an upstream answering every relay
+    // with an error read 0% errors (MAG-5194). The node errors come off the
+    // successes; a router with none yet has no series, which reads as zero.
+    // The results read goes out in the same round; the presence probe decides
+    // afterwards whether its answer is kept.
+    const [okByProv, totByProv, nodeErrByProv, resultsByProv, resultsPresent] = await Promise.all([
       this.prom.query(qUpstreamSuccesses(window, spec)),
       this.prom.query(qUpstreamRelays(window, spec)),
+      this.prom.query(qUpstreamNodeErrors(window, spec)),
+      this.prom.query(qUpstreamResults(window, spec)),
+      this.familyPresent(OPTIONAL_METRICS.nodeResultsTotal),
     ]);
-    const okMap = new Map(
-      okByProv.map((s) => [nodeKey(s.metric.provider_address ?? "", s.metric.spec ?? ""), Number(s.value[1]) || 0]),
-    );
+    const byProvKey = (rows: PromVectorSample[]) =>
+      new Map(rows.map((s) => [nodeKey(s.metric.provider_address ?? "", s.metric.spec ?? ""), Number(s.value[1]) || 0]));
+    const okMap = byProvKey(okByProv);
+    const nodeErrMap = byProvKey(nodeErrByProv);
     for (const s of totByProv) {
       const id = s.metric.provider_address;
       if (!id) continue;
@@ -1134,8 +1146,23 @@ export class MetricsService {
       const tot = Number(s.value[1]) || 0;
       const row = byId.get(key);
       if (row && tot > 0) {
-        row.uptime = (okMap.get(key) ?? 0) / tot;
-        row.errorRate = Math.max(0, 1 - row.uptime);
+        // Clamped: each counter's increase() extrapolates on its own.
+        const answered = (okMap.get(key) ?? 0) - (nodeErrMap.get(key) ?? 0);
+        row.uptime = Math.min(1, Math.max(0, answered / tot));
+        row.errorRate = 1 - row.uptime;
+      }
+    }
+
+    // Clients' reads answered with a result, from a router that reports them
+    // (smart-router PR #692). Where it does, every row starts at 0: an upstream
+    // that answered only errors has no series, and that 0 is the figure. Where it
+    // does not, the rows stay null, since no series there is not zero.
+    if (resultsPresent) {
+      for (const row of byId.values()) row.results = 0;
+      for (const s of resultsByProv) {
+        const id = s.metric.provider_address;
+        if (!id) continue;
+        ensure(id, s.metric.spec ?? "").results = Math.round(Number(s.value[1]) || 0);
       }
     }
 
