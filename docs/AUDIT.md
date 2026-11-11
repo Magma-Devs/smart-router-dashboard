@@ -23,9 +23,19 @@ Two tables, written by one writer (`packages/db/src/audit.ts`):
 
 Both tables are **append-only, enforced in the database**: a trigger refuses
 `UPDATE` and `DELETE` for every principal, admins included. There is no way to
-alter or remove a row through the product. (Operators with database access have
-a retention escape hatch — `set local audit.purge = 'on'` inside a transaction
-— which exists for data-retention law and for nothing else.)
+alter or remove a row through the product. The trigger has a retention escape
+hatch — `set local audit.purge = 'on'` inside a transaction — which exists for
+data-retention law and for nothing else.
+
+The trigger is not what keeps the api out. Any role may set the hatch, and the
+tables' owner may drop the trigger; what stops the api is its database role.
+With `DATABASE_RUNTIME_URL` the api serves every request as a role that holds
+only `SELECT` and `INSERT` on these two tables and owns nothing, so neither the
+hatch nor the trigger is reachable from the request path
+([`DATABASE-ROLES.md`](DATABASE-ROLES.md)). Retention and erasure are then an
+Owner's job, by hand, with the owner's credential:
+[`AUDIT-ERASURE.md`](AUDIT-ERASURE.md). Each run writes an `audit.erased` row
+in the same transaction, so the log records its own trimming.
 
 The event vocabulary is a closed catalog
 (`packages/shared/src/constants/audit-events.ts`), and it is **published**:
@@ -148,3 +158,5 @@ credential that can also edit routing fails their vendor review.
 | Token principal  | `apps/api/src/plugins/auth.ts` (`auditTokenMayReach`)    |
 | Viewer           | `apps/web/src/components/audit/`                         |
 | Migrations       | `0004_audit.sql`, `0008_audit_xact.sql`, `0009_audit_tokens.sql` |
+| Runtime role     | `packages/db/src/runtime-role.ts` (`AUDIT_TABLES`, `grantRuntimeRole`) |
+| Erasure          | `docs/AUDIT-ERASURE.md` — the Owner's runbook, `audit.erased` |

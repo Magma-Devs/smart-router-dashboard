@@ -32,6 +32,13 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   ignores `DATABASE_RUNTIME_URL` and serves as it did. The host `recover`
   commands connect with `DATABASE_RUNTIME_URL` when it is set. Both compose
   files pass it through, empty: their bundled Postgres keeps one role.
+- **Removing audit rows is a runbook: `docs/AUDIT-ERASURE.md`.** It covers
+  retention (delete the events older than a cutoff in the groups that age out)
+  and erasure (redact one person's details and keep the events). An Owner runs
+  it by hand with the owner's credential. Each run writes an `audit.erased`
+  row in the same transaction as what it removes, naming the request and the
+  count. `audit.erased` is a new event in the published catalog, group
+  `recovery`; the api never writes it.
 
 ## [0.58.2]
 

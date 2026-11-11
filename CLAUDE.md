@@ -784,8 +784,19 @@ the log; the accounts, 2FA and config-approval tasks only emit into it.
 - **Append-only in the database, not just the product.** A
   `BEFORE UPDATE OR DELETE` trigger on **both** tables raises. The one
   legitimate writer is retention, which opens the gate with
-  `SET LOCAL audit.purge = 'on'` inside its own transaction. This is a product
-  boundary, not tamper-evidence — hash chaining is deliberately out of scope.
+  `SET LOCAL audit.purge = 'on'` inside its own transaction. Any role may set
+  that, and the tables' owner may drop the trigger, so the trigger guards
+  against bugs and **privileges guard against the api**: with
+  `DATABASE_RUNTIME_URL` the api serves as a runtime role that holds only
+  `SELECT` and `INSERT` on the two audit tables and owns nothing, granted by
+  the owner after every migration run (`grantRuntimeRole`,
+  `packages/db/src/runtime-role.ts`; the api refuses to serve with a runtime
+  role that could still alter the log). Retention and erasure are then the
+  owner's, by hand: `docs/AUDIT-ERASURE.md`, which records each run as an
+  `audit.erased` row in the same transaction. With one credential the api
+  owns the tables and the trigger is all there is. Not tamper-evidence either
+  way — hash chaining is deliberately out of scope. See
+  `docs/DATABASE-ROLES.md`.
 
 ## Time windows
 

@@ -57,7 +57,7 @@ export type AuditGroup = (typeof AUDIT_GROUPS)[number];
 export const AUDIT_GROUP_FALLBACK = "unclassified";
 
 /** Which ticket emits an event. Provenance for the docs; drives no behaviour. */
-export type AuditOrigin = "MAG-2729" | "MAG-2730" | "MAG-2731" | "MAG-2770" | "MAG-4403";
+export type AuditOrigin = "MAG-2729" | "MAG-2730" | "MAG-2731" | "MAG-2770" | "MAG-4403" | "MAG-4444";
 
 export interface AuditEventSpec {
   readonly group: AuditGroup;
@@ -266,6 +266,17 @@ export const AUDIT_EVENTS = {
     carriesChanges: false,
     carriesAccessContext: false,
     origin: "MAG-2730",
+  },
+  // Written by hand, by the erasure runbook (docs/AUDIT-ERASURE.md), in the
+  // same transaction as the rows it removes or redacts — never by the api,
+  // whose database role cannot remove or alter an audit row at all.
+  "audit.erased": {
+    group: "recovery",
+    description:
+      "Audit rows were deleted for retention, or one person's details in them were redacted for an erasure request, by an operator holding the database owner's credential — outside the dashboard, which cannot do either. The note names the request and how many rows; it is written in the same transaction as the change, so neither exists without the other.",
+    carriesChanges: false,
+    carriesAccessContext: false,
+    origin: "MAG-4444",
   },
 
   // ── Incidents ─────────────────────────────────────────────────────────────

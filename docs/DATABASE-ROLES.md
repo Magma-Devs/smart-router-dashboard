@@ -116,3 +116,8 @@ for what it holds: during a rollout a node briefly runs two backends.
 it is set: everything a recovery does — update an account, end its sessions,
 issue a reset link, append its `host.recovery` row — the runtime role may do,
 and nothing it does needs to alter the log.
+
+## Removing audit rows
+
+Retention and erasure are the owner's, by hand:
+[`AUDIT-ERASURE.md`](AUDIT-ERASURE.md).
