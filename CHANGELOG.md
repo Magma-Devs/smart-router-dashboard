@@ -52,6 +52,18 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   upstream filters read "All providers", and the Upstreams tab's errors chart
   says "Provider errors".
 
+## [0.58.1]
+
+### Fixed
+
+- **The upstream relay keeps a request's path under the endpoint's own.** A
+  path's dot segments are refused in their percent-encoded spelling too.
+- **Relay WebSockets are bounded before they are read, and never left open.**
+  A message past the relay's size cap is refused from its frame header and
+  comes back `truncated: true` with no body, where it was read whole first. A
+  socket the peer does not close within 2 s of the relay's close is dropped.
+  Both relays and the `ws` probe use the `ws` client for this.
+
 ## [0.58.0]
 
 ### Added
