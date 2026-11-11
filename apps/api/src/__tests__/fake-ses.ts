@@ -16,6 +16,10 @@ export interface FakeSes {
   url: string;
   /** Every message handed over, in order, as the JSON body SES received. */
   sent: SesMessage[];
+  /** Each request's SigV4 credential scope, in order —
+   *  `<access key id>/<date>/<region>/<service>/aws4_request` — or "" for a
+   *  request that came unsigned. Says which key signed the send. */
+  credentials: string[];
   mode: "accept" | "refuse" | "hold";
   /** Answer every held request as `accept`, and accept from now on — a send
    *  still on its way when this is called is not left hanging. */
@@ -53,6 +57,7 @@ export async function startFakeSes(): Promise<FakeSes> {
   const fake: FakeSes = {
     url: "",
     sent: [],
+    credentials: [],
     mode: "accept",
     release() {
       fake.mode = "accept";
@@ -73,6 +78,8 @@ export async function startFakeSes(): Promise<FakeSes> {
         res.writeHead(404).end();
         return;
       }
+      const auth = req.headers.authorization ?? "";
+      fake.credentials.push(/Credential=([^,\s]+)/.exec(auth)?.[1] ?? "");
       const body = JSON.parse(raw) as SendEmailBody;
       const simple = body.Content?.Simple;
       fake.sent.push({

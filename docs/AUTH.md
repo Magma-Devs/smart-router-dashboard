@@ -359,7 +359,7 @@ message instead.
 | Setting | Effect |
 |---|---|
 | `AWS_REGION` | **The switch.** Unset ⇒ nothing is sent and the caller is told. A `warn` line names the recipient and subject; the body, which carries a live link, is logged only under `NODE_ENV=development` |
-| `AWS_ACCESS_KEY_ID` / `SECRET` | Optional. Absent ⇒ resolved from the environment (IRSA, instance role), so production stores no static keys |
+| `AWS_ACCESS_KEY_ID` / `SECRET` | Optional. Both set ⇒ the send is signed with this pair; the fleet's managed deployments get one per tenant, scoped to sending as the no-reply address through that tenant's configuration set. Absent ⇒ resolved from the environment (IRSA, instance role) |
 | `EMAIL_FROM` | Sender; an unmonitored no-reply |
 | `EMAIL_REPLY_TO` | A monitored inbox, so a reply to a reset reaches somebody |
 | `EMAIL_CONFIGURATION_SET` | Keeps each environment's bounce reputation separate on a shared SES identity |

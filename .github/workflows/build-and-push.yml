@@ -251,9 +251,6 @@ jobs:
           - name: backend
             port: 8000
             path: /health
-            # A cgo binary cross-compiled in the build: the build checks it is
-            # an arm64 file, and only running it proves it loads on this libc.
-            helper: /usr/local/bin/aws_signing_helper
 
     steps:
       - name: Log in to GitHub Container Registry
@@ -296,14 +293,6 @@ jobs:
           echo "::error::$IMAGE did not answer ${{ matrix.path }} within 60 s"
           docker logs smoke
           exit 1
-
-      - name: Run the bundled credential helper
-        if: matrix.helper != ''
-        env:
-          DIGEST: ${{ needs.build-and-push.outputs[format('digest_{0}', matrix.name)] }}
-        run: |
-          IMAGE="${{ env.REGISTRY }}/${GITHUB_REPOSITORY,,}/${{ matrix.name }}@${DIGEST}"
-          docker run --rm --entrypoint "${{ matrix.helper }}" "$IMAGE" version
 
   # Tags each image's digest once both arm64 smokes passed: `<version>` on
   # main (latest and major.minor come in tag-release), `<version>-<branch>` and

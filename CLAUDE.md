@@ -1067,7 +1067,7 @@ Auth (only read when `AUTH_MODE=enabled`; the metrics path never touches the DB)
 | `PUBLIC_WEB_ORIGIN` | (unset) | browser-facing origin of the web app, used to build invitation and password-reset links. Routes that need it fail loudly when it is unset rather than guessing a host — `POST /api/team/invites` 500s. Both compose files default it to the web's `AUTH_URL` |
 | `CUSTOMER_NAME` | `Smart Router` | Who the deployment belongs to, as it appears in the invitation subject ("You've been added to **{customer}** on Smart Router") |
 | `AWS_REGION` | (unset) | **Enables email.** Unset ⇒ nothing is sent; a `warn` line names the recipient, and only under `NODE_ENV=development` carries the body (it holds a live link). On-prem that is correct. On managed it means the admin carries invitation links, and self-serve reset answers 404 rather than issue a link nobody receives |
-| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | (unset) | Optional. Absent ⇒ the SDK resolves credentials from the environment (IRSA / instance role), so production stores no static keys |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | (unset) | Optional. Both set ⇒ the SES client signs with this pair: the fleet's managed deployments get one per tenant from a Secret (the chart's `mail.accessKeySecret`), scoped to sending as the no-reply address through that tenant's configuration set. Absent ⇒ the SDK resolves credentials from the environment (IRSA / instance role). `ses-credentials.test.ts` pins that the pair alone signs the send |
 | `EMAIL_FROM` | `Smart Router <noreply@smart-router.local>` | Sender. An unmonitored no-reply |
 | `EMAIL_REPLY_TO` | (unset) | Monitored inbox, so a reply to a reset email reaches somebody |
 | `EMAIL_CONFIGURATION_SET` | (unset) | SES configuration set. Keeps each environment's bounce/complaint reputation separate on a shared identity |
@@ -1118,20 +1118,6 @@ Compose / Makefile knobs:
 - The router profile boots with `--cors-headers "*"` (the browser Live-test
   panel preflights cross-origin POSTs) and `--skip-websocket-verification`
   (http-only upstreams boot cleanly).
-- **The api image carries `aws_signing_helper`** (the IAM Roles Anywhere
-  credential helper) at `/usr/local/bin`, built from source in the
-  `signing-helper` stage of `apps/api/Dockerfile` with cgo on: its PKCS#11
-  package needs cgo, and AWS's release binaries are glibc-linked, which
-  Alpine's musl cannot load. The stage runs on `$BUILDPLATFORM` like the
-  builder and cross-compiles the arm64 binary (`tonistiigi/xx`), so the
-  runtime stage stays free of `RUN`. The build checks each binary is for its
-  target and runs `version` on the native one; `smoke-arm64` runs it in the
-  arm64 image before any tag is published. A managed deployment
-  sends mail through SES as a certificate rather than an access key: an AWS
-  config file whose profile sets `credential_process` to the helper is all
-  the SES client needs, since `services/email.ts` builds it with no explicit
-  credentials and the SDK's default chain finds the profile
-  (`aws-credential-process.test.ts`).
 - **GHCR publishing**: the `build-and-push` job in
   `.github/workflows/build-and-push.yml` publishes the api as
   `ghcr.io/magma-devs/smart-router-dashboard/backend` and the web as

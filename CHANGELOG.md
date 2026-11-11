@@ -52,24 +52,6 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   its database never replaces the one serving. With auth off the body carries
   no `database` key, as before. Give the probe a timeout of 5 s or more.
   `health-ready.test.ts` pins every state.
-- **The api image ships `aws_signing_helper`** — the IAM Roles Anywhere
-  credential helper, 1.8.6, at `/usr/local/bin`. A managed deployment can then
-  send mail through SES with a certificate instead of an access key: an AWS
-  config file whose profile sets `credential_process` to the helper, and the
-  SES client — built with no explicit credentials (`services/email.ts`) —
-  resolves one-hour credentials through the SDK's default chain.
-  `aws-credential-process.test.ts` pins the chain: a profile's
-  `credential_process` alone is enough for `SESv2Client` to resolve
-  credentials, with no key in the environment. The helper is built from
-  source against musl with cgo on, because its PKCS#11 package does not
-  compile with cgo off and AWS's release binaries are linked against glibc,
-  which the image's musl cannot load. Its stage runs on the runner's own
-  architecture and cross-compiles the arm64 binary (`tonistiigi/xx`, clang
-  and the target's musl sysroot), so the build still needs no emulation and
-  the runtime stage stays free of `RUN`. The build checks each binary is for
-  its target and runs `aws_signing_helper version` on the native one;
-  `smoke-arm64` runs it in the arm64 image before any tag is published, so
-  an image whose helper cannot run is never published.
 
 ### Fixed
 
