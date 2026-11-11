@@ -200,6 +200,7 @@ function EndpointRow({
       {tryUrl !== null && (
         <TryNowButton
           spec={row.spec}
+          routerId={row.routerId}
           network={row.network}
           iface={row.iface}
           url={tryUrl}

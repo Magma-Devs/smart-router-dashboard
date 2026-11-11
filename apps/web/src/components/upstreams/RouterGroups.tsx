@@ -204,6 +204,7 @@ export function RouterGroups({
                         {url !== null && (
                           <TryNowButton
                             spec={ep.spec}
+                            routerId={ep.routerId}
                             network={ep.network}
                             iface={ep.iface}
                             url={url}

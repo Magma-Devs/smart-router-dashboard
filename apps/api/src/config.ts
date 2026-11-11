@@ -252,6 +252,41 @@ export const config = {
   },
 
   /**
+   * Router relay (`POST /api/routers/relay`, `POST /api/routers/ws-probe`) —
+   * the api sends the Try-me drawer's "via router" request from inside the
+   * deployment, so it works on a tenant whose public hostnames admit only a
+   * list of source addresses.
+   *
+   * On in both auth modes. With accounts off the api answers anyone who can
+   * reach it, so the relay lets them send through the routers whatever the
+   * address list says. `ROUTER_RELAY_ENABLED=false` 404s both routes, and the
+   * drawer sends from the browser.
+   */
+  routerRelay: {
+    enabled: (env("ROUTER_RELAY_ENABLED") ?? "true").toLowerCase() !== "false",
+    /** An HTTP send's deadline: the drawer's own ceiling on a browser send.
+     *  A WebSocket send stops at 15 s, the drawer's ceiling for that. */
+    timeoutMs: envInt("ROUTER_RELAY_TIMEOUT_MS", 30000),
+    /** Router responses past this come back `truncated: true`. Larger than the
+     *  upstream relay's cap: a full block or a trace is an ordinary answer. */
+    maxBodyBytes: envInt("ROUTER_RELAY_MAX_BODY_BYTES", 4194304),
+    /** Per caller per minute, counted apart for each of the two routes. The
+     *  caller is the signed-in user, or the address with accounts off. */
+    rateLimitMax: envInt("ROUTER_RELAY_RATE_LIMIT_MAX", 60),
+    /** Relays in flight at once across all callers; one caller holds two at
+     *  most. Each can hold a reply of `maxBodyBytes` several times over. */
+    maxInFlight: envInt("ROUTER_RELAY_MAX_IN_FLIGHT", 8),
+    /**
+     * Where the routers of an SR_CONFIG mount listen. A helm-values mount
+     * needs nothing here: each router is dialled at its own Service,
+     * `<id>-router`, in the api's namespace. An SR_CONFIG file names listen
+     * ports but no host, and its router runs beside the dashboard — on the
+     * host for `pnpm dev`, as the `router` service in compose.
+     */
+    srConfigHost: env("ROUTER_RELAY_HOST") || "localhost",
+  },
+
+  /**
    * Which shape of deployment this is. It forks every credential-delivery path,
    * because on-prem has no mail server and never will:
    *

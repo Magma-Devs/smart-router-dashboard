@@ -4,7 +4,7 @@ The Upstreams page's **Try now** drawer can send the same request two ways:
 
 | Mode | Path | What it measures |
 |---|---|---|
-| **Via router** (default) | browser → router → upstream | What a real client gets. The router's cache can answer it, its retries and hedging can change who served it, and it reports all of that back in `Lava-*` headers. |
+| **Via router** (default) | browser → dashboard api → router → upstream ([`ROUTER-RELAY.md`](ROUTER-RELAY.md)); browser → router → upstream with `ROUTER_RELAY_ENABLED=false` | What a real client gets. The router's cache can answer it, its retries and hedging can change who served it, and it reports all of that back in `Lava-*` headers. |
 | **Direct to upstream** | browser → dashboard api → upstream | What the upstream does on its own. No cache, no retries, no hedging, no `Lava-*` headers — just the vendor's answer. |
 
 **Compare both** — offered in direct mode, where there is a second leg to
@@ -242,10 +242,11 @@ Other knobs: `UPSTREAM_RELAY_TIMEOUT_MS`, `UPSTREAM_RELAY_MAX_BODY_BYTES`,
 
 ## Reading the comparison honestly
 
-- **The two latencies come from different places.** The router number is measured
-  in the browser, around a call to the router; the direct number is measured in
-  the api, around its call to the upstream. The gap is a hint, not a benchmark —
-  it includes neither the same client nor the same network path.
+- **The two latencies are two single calls.** Both are measured in the api,
+  around its call to the router and its call to the upstream, so the gap is
+  mostly the router's own hop: a hint, not a benchmark. With
+  `ROUTER_RELAY_ENABLED=false` the router number is measured in the browser
+  instead, and the two do not share a client or a network path.
 - **Differing bodies are usually fine.** Anything that tracks the head (block
   number, latest block, gas price) legitimately moves between two calls made a
   moment apart. A difference on a *fixed-height* read is the one worth chasing.
