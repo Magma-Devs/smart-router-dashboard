@@ -22,7 +22,7 @@ export const API_URL = process.env.E2E_API_URL ?? "http://localhost:8000";
 export const MANAGED_STACK = !process.env.E2E_WEB_URL && !process.env.E2E_API_URL;
 
 /** Shared with the api and the web: the HS256 key the session token is signed
- *  with. Dev value; it is the same one `docker-compose.dev.yml` defaults to. */
+ *  with. Dev value; the same one `make accounts` passes. */
 export const AUTH_SECRET = process.env.E2E_AUTH_SECRET ?? "dev-secret-change-me-please-32chars!";
 
 /** What `/auth/setup` demands on a fresh install. */
@@ -32,13 +32,14 @@ export const SETUP_TOKEN = process.env.E2E_SETUP_TOKEN ?? "installer-printed-thi
 export const INTERNAL_AUTH_SECRET = process.env.E2E_INTERNAL_AUTH_SECRET ?? "dev-internal-secret";
 
 /** 32 bytes, base64 — the key two-factor secrets are sealed with. Same dev
- *  value as the compose default, so a suite run and a `make accounts` stack can
- *  share a database without orphaning each other's enrolments. */
+ *  value `make accounts` passes, so a suite run and that stack can share a
+ *  database without orphaning each other's enrolments. */
 export const TOTP_ENCRYPTION_KEY =
   process.env.E2E_TOTP_ENCRYPTION_KEY ?? "ZGV2LW9ubHkta2V5LW5vdC1mb3ItcHJvZHVjdGlvbiE=";
 
 /** The accounts database. Defaults to the port `docker-compose.dev.yml`
- *  publishes, so `make accounts` is enough to run the suite locally. */
+ *  publishes for its `auth` profile's postgres. Must be on localhost: the
+ *  suite truncates it (see `support/db.ts`). */
 export const DATABASE_URL =
   process.env.E2E_DATABASE_URL ?? "postgres://sr:dev@localhost:5434/sr_dashboard";
 

@@ -1,6 +1,6 @@
 # Browser tests
 
-Playwright, against a running api and web. Five surfaces from MAG-2730 — the
+Playwright, against a running api and web. Four surfaces from MAG-2730 — the
 ones where the thing under test is what a person sees:
 
 | Spec | What only a browser can show |
@@ -26,11 +26,14 @@ pnpm e2e
 The suite starts the api and the web itself. Point it at a stack you already
 have (`make accounts`) with `E2E_WEB_URL` and `E2E_API_URL` — set both, and it
 starts nothing. Then `E2E_AUTH_SECRET`, `E2E_SETUP_TOKEN` and `E2E_DATABASE_URL`
-have to match that stack; the defaults already match the compose ones.
+have to match that stack; the defaults already match what `make accounts`
+passes.
 
-**It truncates the accounts tables on the first test.** Every spec starts from a
-deployment with nobody in it, because first-run setup is where the grace period
-comes from. Do not point it at anything you want to keep.
+**It truncates every table in the database on the first test.** Every spec
+starts from a deployment with nobody in it, because first-run setup is where the
+grace period comes from. It refuses a database that is not on localhost, and it
+refuses to start when something already listens on :3000 or :8000 — stop that
+stack, or point the suite at it with the two variables above.
 
 ## Things that cost an afternoon
 
