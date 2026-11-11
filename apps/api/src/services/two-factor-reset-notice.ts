@@ -6,13 +6,15 @@ import { sendTwoFactorResetEmail } from "./email-templates.js";
 /**
  * Telling somebody their second factor was reset — MAG-2869.
  *
- * The admin route (`POST /api/team/members/:id/2fa/reset`) calls this once the
- * reset has committed. Never from inside the reset's transaction — a send that
- * failed must not take the reset with it, and a reset that rolled back must
- * not have been announced.
+ * Both ways of resetting one call this once the reset has committed: the admin
+ * route (`POST /api/team/members/:id/2fa/reset`) and the host recovery command
+ * (`recover reset-2fa`). Never from inside the reset's transaction — a send
+ * that failed must not take the reset with it, and a reset that rolled back
+ * must not have been announced.
  *
  * **Managed only.** On-prem sends no email at all, and nothing is attempted or
- * recorded here; the `2fa.reset` row naming both people is the record there. On managed with no transport configured nothing is
+ * recorded here; the `2fa.reset` (or `host.recovery`) row naming both sides is
+ * the record there. On managed with no transport configured nothing is
  * attempted either, and the row says so.
  *
  * The outcome is a `2fa.reset_notice` row of its own rather than a note on
@@ -88,3 +90,11 @@ export function resetByLabel(user: { name: string | null; email: string }): stri
   return `${name} (${user.email})`;
 }
 
+/**
+ * The host recovery command, as the email names it. Only a managed deployment
+ * sends the notice, and there the host is ours — the same fact the
+ * `host.recovery` row's actor records. Not the operator's name: that is
+ * whatever the shell reported or `--by` said, and the audit row is where it is
+ * kept, as exactly that.
+ */
+export const HOST_RECOVERY_RESET_BY = "Magma Devs, from the server the dashboard runs on";

@@ -12,6 +12,7 @@ import { hashPassword } from "../services/password.js";
 import { resetEmailClientForTests } from "../services/email.js";
 import { renderTwoFactorResetEmail } from "../services/email-templates.js";
 import { resetByLabel } from "../services/two-factor-reset-notice.js";
+import { runRecovery } from "../recover.js";
 import { fakeSesEnv, startFakeSes, type FakeSes } from "./fake-ses.js";
 
 /**
@@ -395,5 +396,109 @@ describe("an admin's reset, on-prem", () => {
     const [row] = await rows("2fa.reset");
     expect(row?.actorName).toBe("Victoria Admin");
     expect(row?.targetName).toBe("dana@example.com");
+  });
+});
+
+describe("a reset from the host (recover reset-2fa)", () => {
+  async function enrolled(): Promise<User> {
+    return seed({ email: "dana@example.com", name: "Dana Okonkwo", ...enrolledTwoFactor() });
+  }
+  const quiet = () => {};
+
+  it("emails the member on managed, naming Magma rather than the operator", async () => {
+    const member = await enrolled();
+    withTransport();
+
+    const out = await runRecovery(
+      t.db,
+      { command: "reset-2fa", email: member.email, by: "victoria" },
+      { mode: "managed", log: quiet },
+    );
+
+    expect(out.message).toContain("They were emailed that it was reset.");
+    expect(ses.sent).toHaveLength(1);
+    const mail = ses.sent[0]!;
+    expect(mail.to).toEqual(["dana@example.com"]);
+    expect(mail.text).toContain("Reset by: Magma Devs, from the server the dashboard runs on\n");
+    // `--by` is whatever the operator typed; the email does not repeat it.
+    expect(mail.text).not.toContain("victoria");
+
+    const [notice] = await rows("2fa.reset_notice");
+    expect(notice?.note).toBe("emailed");
+    expect(notice?.actorKind).toBe("host");
+    expect(notice?.actorName).toBe("Magma Devs (victoria)");
+    expect(notice?.targetId).toBe(member.id);
+  });
+
+  it("still resets, and tells the operator to tell them, when SES refuses", async () => {
+    const member = await enrolled();
+    withTransport();
+    ses.mode = "refuse";
+
+    const out = await runRecovery(
+      t.db,
+      { command: "reset-2fa", email: member.email, by: "victoria" },
+      { mode: "managed", log: quiet },
+    );
+
+    expect(out.message).toContain("could not be sent. Tell them yourself.");
+    expect((await memberRow(member.id)).totpSecret).toBeNull();
+    expect(await rows("host.recovery")).toHaveLength(1);
+    expect((await rows("2fa.reset_notice"))[0]?.note).toBe("email failed, not delivered");
+  });
+
+  it("says nobody was emailed when the shell has no transport", async () => {
+    const member = await enrolled();
+    const lines: Array<{ msg: string; ctx?: Record<string, unknown> }> = [];
+
+    const out = await runRecovery(
+      t.db,
+      { command: "reset-2fa", email: member.email, by: "victoria" },
+      { mode: "managed", log: (msg, ctx) => lines.push({ msg, ctx }) },
+    );
+
+    expect(out.message).toContain("They were not emailed");
+    expect(ses.sent).toHaveLength(0);
+    expect((await rows("2fa.reset_notice"))[0]?.note).toBe("not sent, no mail transport");
+    // Nothing is handed to the transport, whose own "not sent" line would log
+    // the body here and claim a live link in production. One line, saying
+    // what happened.
+    expect(lines).toEqual([
+      {
+        msg: "two-factor reset notice not sent — AWS_REGION is unset",
+        ctx: { to: "dana@example.com" },
+      },
+    ]);
+  });
+
+  it("sends nothing on-prem, and its message is the reset alone", async () => {
+    const member = await enrolled();
+    withTransport();
+
+    const out = await runRecovery(
+      t.db,
+      { command: "reset-2fa", email: member.email, by: "victoria" },
+      { mode: "onprem", log: quiet },
+    );
+
+    expect(out.message).toBe(
+      "Cleared the authenticator for dana@example.com. They sign in with their password and set up a new one.",
+    );
+    expect(ses.sent).toHaveLength(0);
+    expect(await rows("2fa.reset_notice")).toHaveLength(0);
+  });
+
+  it("emails nobody for the other commands", async () => {
+    const member = await enrolled();
+    withTransport();
+
+    await runRecovery(
+      t.db,
+      { command: "promote-admin", email: member.email, by: "victoria" },
+      { mode: "managed", log: quiet },
+    );
+
+    expect(ses.sent).toHaveLength(0);
+    expect(await rows("2fa.reset_notice")).toHaveLength(0);
   });
 });
