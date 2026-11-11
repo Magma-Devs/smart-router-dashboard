@@ -14,6 +14,7 @@ import { versionRoutes } from "./routes/version.js";
 import { metricRoutes } from "./routes/metrics.js";
 import { configRoutes } from "./routes/config.js";
 import { upstreamRoutes } from "./routes/upstreams.js";
+import { routerRelayRoutes } from "./routes/routers.js";
 import { transactionRoutes } from "./routes/transactions.js";
 import { errorRequestRoutes } from "./routes/error-requests.js";
 import { incidentRoutes } from "./routes/incidents.js";
@@ -122,6 +123,10 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(metricRoutes);
   await app.register(configRoutes);
   await app.register(upstreamRoutes);
+  // Both modes, behind ROUTER_RELAY_ENABLED: with accounts on, the global gate
+  // above requires a session; with them off, anyone who reaches the api may
+  // send through the routers, past any address list at their edge.
+  await app.register(routerRelayRoutes, { authMode: authMode === "enabled" ? "enabled" : "disabled" });
   await app.register(transactionRoutes);
   await app.register(errorRequestRoutes);
   await app.register(providerRoutes);

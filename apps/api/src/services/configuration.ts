@@ -301,8 +301,52 @@ function readEndpointAuth(
   };
 }
 
+/**
+ * Where the router relay dials one router: a host, and the port each of its
+ * api-interfaces listens on. Api-private like `EndpointDial` — nothing here
+ * reaches the topology the api serves.
+ */
+export interface RouterAddress {
+  /** A helm mount's Service name (`eth1-router`), or the SR_CONFIG host. */
+  host: string;
+  /** api-interface → port. */
+  ports: Record<string, number>;
+}
+
+/**
+ * The ports a helm-deployed router's Service publishes, per api-interface.
+ *
+ * Mirrors smart-router-helm-chart `templates/routers_service.yaml` (and the
+ * container ports in `routers_deployment.yaml`, which use the same rule): every
+ * endpoint of every node, in order, adds its `interface` the first time it
+ * appears, and the Nth interface listens on `300<N>`. The number is
+ * concatenated, not added, so the eleventh interface is 30010, not 3010.
+ *
+ * It walks the raw values the way the chart does rather than reusing the
+ * topology's interface list: the topology skips an endpoint with no url and
+ * the chart does not, and a skipped interface would shift every port after it.
+ */
+export function helmServicePorts(router: Record<string, unknown>): Record<string, number> {
+  const order: string[] = [];
+  for (const node of asArray(router["nodes"])) {
+    for (const ep of asArray(node["endpoints"])) {
+      const iface = asString(ep["interface"]);
+      if (!order.includes(iface)) order.push(iface);
+    }
+  }
+  const ports: Record<string, number> = {};
+  order.forEach((iface, index) => {
+    if (iface) ports[iface] = Number(`300${index}`);
+  });
+  return ports;
+}
+
 /** Helm `routers:` shape → RouterTopology[] (pathBased resolved like the chart). */
-function normalizeHelm(raw: Record<string, unknown>, dials: EndpointIndex): RouterTopology[] {
+function normalizeHelm(
+  raw: Record<string, unknown>,
+  dials: EndpointIndex,
+  addresses: Map<string, RouterAddress>,
+): RouterTopology[] {
   const env = readRouterEnv(raw);
   const misc = (raw["miscellaneous"] ?? {}) as Record<string, unknown>;
   const gateway = (misc["gateway"] ?? {}) as Record<string, unknown>;
@@ -341,6 +385,13 @@ function normalizeHelm(raw: Record<string, unknown>, dials: EndpointIndex): Rout
 
     const interfaces = dedupe(nodes.flatMap((n) => n.endpoints.map((e) => e.interface)));
 
+    // The chart names the Service after the raw id, lowercased. A router with
+    // no id gets no Service name the chart could render, so it gets no address.
+    const rawId = asString(router["id"]);
+    if (rawId) {
+      addresses.set(routerId, { host: `${rawId.toLowerCase()}-router`, ports: helmServicePorts(router) });
+    }
+
     return {
       id: routerId,
       spec: network.toUpperCase(),
@@ -359,7 +410,12 @@ function normalizeHelm(raw: Record<string, unknown>, dials: EndpointIndex): Rout
 }
 
 /** SR_CONFIG shape → RouterTopology[] (grouped by chain, per-interface ports). */
-function normalizeSrConfig(raw: Record<string, unknown>, dials: EndpointIndex): RouterTopology[] {
+function normalizeSrConfig(
+  raw: Record<string, unknown>,
+  dials: EndpointIndex,
+  addresses: Map<string, RouterAddress>,
+  srConfigHost: string,
+): RouterTopology[] {
   // An SR_CONFIG file carries no `miscellaneous.routers.env`: the router's own
   // process environment supplies its `${VAR}`s, and the dashboard is a
   // different process. Placeholders therefore stay unresolved, and the relay
@@ -411,6 +467,7 @@ function normalizeSrConfig(raw: Record<string, unknown>, dials: EndpointIndex): 
           nodes: [],
         };
         byChain.set(chainId, router);
+        addresses.set(chainId, { host: srConfigHost, ports });
       }
 
       const name = asString(provider["name"]) || chainId;
@@ -448,7 +505,11 @@ function dedupe(values: string[]): string[] {
 }
 
 export class ConfigurationService {
-  constructor(private readonly valuesDir: string = config.config.valuesDir) {}
+  constructor(
+    private readonly valuesDir: string = config.config.valuesDir,
+    /** Where an SR_CONFIG mount's routers listen — `ROUTER_RELAY_HOST`. */
+    private readonly srConfigHost: string = config.routerRelay.srConfigHost,
+  ) {}
 
   private readRaw(): unknown {
     const path = join(this.valuesDir, "core", "values.yml");
@@ -465,16 +526,29 @@ export class ConfigurationService {
    * re-read per call (it is a live mount — the operator can edit it under a
    * running api), so both views are always the same generation of the file.
    */
-  private normalize(): { routers: RouterTopology[]; endpoints: EndpointIndex } {
+  private normalize(): {
+    routers: RouterTopology[];
+    endpoints: EndpointIndex;
+    addresses: Map<string, RouterAddress>;
+  } {
     const raw = this.readRaw();
     const endpoints = new EndpointIndex();
+    const addresses = new Map<string, RouterAddress>();
     switch (detectFormat(raw)) {
       case "helm":
-        return { routers: normalizeHelm(raw as Record<string, unknown>, endpoints), endpoints };
+        return {
+          routers: normalizeHelm(raw as Record<string, unknown>, endpoints, addresses),
+          endpoints,
+          addresses,
+        };
       case "sr-config":
-        return { routers: normalizeSrConfig(raw as Record<string, unknown>, endpoints), endpoints };
+        return {
+          routers: normalizeSrConfig(raw as Record<string, unknown>, endpoints, addresses, this.srConfigHost),
+          endpoints,
+          addresses,
+        };
       default:
-        return { routers: [], endpoints };
+        return { routers: [], endpoints, addresses };
     }
   }
 
@@ -503,5 +577,33 @@ export class ConfigurationService {
    */
   resolveEndpoint(ref: UpstreamEndpointRef): EndpointDial | null {
     return this.normalize().endpoints.get(ref);
+  }
+
+  /**
+   * The origin the router relay dials for one router's api-interface —
+   * `http://eth1-router:3000` on a helm mount, `http://<ROUTER_RELAY_HOST>:3360`
+   * on an SR_CONFIG one; `ws://` for the WebSocket transport, which rides the
+   * same listener. Null when the values file names no such router, or no
+   * listener for that interface.
+   *
+   * The interface matches exactly first, then ignoring case: the chart keys
+   * the port by the interface as written, and a caller holding `JSONRPC` for a
+   * `jsonrpc` listener means the same one. Own keys only: `iface` is the
+   * caller's, and `ports.constructor` is a function, not a port. Last, the
+   * listener an SR_CONFIG file gives no api-interface (keyed `""`), which is
+   * where the dashboard sends an interface with no listener of its own.
+   */
+  resolveRouterOrigin(routerId: string, iface: string, transport: "http" | "ws"): string | null {
+    const address = this.normalize().addresses.get(routerId);
+    if (!address) return null;
+    const { ports } = address;
+    const port = Object.hasOwn(ports, iface)
+      ? ports[iface]
+      : (Object.entries(ports).find(([name]) => name.toLowerCase() === iface.toLowerCase())?.[1] ??
+        (Object.hasOwn(ports, "") ? ports[""] : undefined));
+    if (port === undefined) return null;
+    // A bare IPv6 address needs brackets to carry a port.
+    const host = address.host.includes(":") && !address.host.startsWith("[") ? `[${address.host}]` : address.host;
+    return `${transport === "ws" ? "ws" : "http"}://${host}:${port}`;
   }
 }

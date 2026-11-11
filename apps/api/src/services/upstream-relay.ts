@@ -158,7 +158,7 @@ function redactAll(text: string, secrets: string[]): string {
 }
 
 /** Read at most `limit` bytes off a response body, then stop pulling. */
-async function readCapped(res: Response, limit: number): Promise<{ text: string; truncated: boolean }> {
+export async function readCapped(res: Response, limit: number): Promise<{ text: string; truncated: boolean }> {
   const reader = res.body?.getReader();
   if (!reader) return { text: "", truncated: false };
   const chunks: Uint8Array[] = [];
@@ -188,7 +188,7 @@ async function readCapped(res: Response, limit: number): Promise<{ text: string;
 }
 
 /** JSON when it parses, `{ _raw }` otherwise — the drawer renders both. */
-function parseBody(text: string): unknown {
+export function parseBody(text: string): unknown {
   if (text === "") return null;
   try {
     return JSON.parse(text);
@@ -353,7 +353,7 @@ export async function relayWs(
 }
 
 /** A cause phrase safe to show — never the url, never a stack. */
-function describeCause(e: unknown): string {
+export function describeCause(e: unknown): string {
   const cause = (e as { cause?: { code?: string } } | undefined)?.cause;
   if (cause?.code) return cause.code;
   return e instanceof Error ? e.name : "unknown error";
