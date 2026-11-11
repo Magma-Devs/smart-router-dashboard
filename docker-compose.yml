@@ -305,6 +305,9 @@ services:
       - ${SR_CONFIG_HOST:-./dev-config/values.yml}:/app/helm-values/core/values.yml:ro
     ports:
       - "8000:8000"
+    # So ROUTER_RELAY_HOST=host.docker.internal resolves on Linux too.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - prometheus
     restart: unless-stopped
