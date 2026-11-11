@@ -5,6 +5,36 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Added
+
+- **Providers tab** on the Metrics page (MAG-4256, MAG-4257). Upstreams
+  grouped by the company that runs them, across every chain: requests, peak
+  rate, error rate, error replies, p95, rate-limit hits and health-check
+  uptime per provider, then one provider's chains and methods. A chain row
+  opens that upstream in the Upstreams tab, and the picked provider is in
+  the URL (`?provider=`). New endpoints: `GET /api/metrics/providers` and
+  `GET /api/metrics/provider-detail`.
+  - **Error replies** are shown beside the error rate. The router counts a
+    request the provider answered with an error as served, so a node that
+    refuses most calls has an error rate near zero.
+  - A read the metrics store doesn't answer is a 503 and an error state,
+    never an empty list, a 100% error rate or "not emitted".
+  - Windows longer than a day sample the counters instead of reading every
+    scrape, and show no latency: that read is too heavy for a shared store.
+- **Provider report and CSV export** (MAG-4258). "Report" on a chain row
+  builds the text for a complaint to that provider: counts for the range,
+  first and last failure and example requests from the router's logs, and
+  for an error reply the provider's own request ID and its reply. Fields the
+  router doesn't record say so. `GET /api/providers/report`, `/report.csv`
+  and `/api/providers/export.csv`.
+
+### Fixed
+
+- **A try at a backup upstream shows in the request lists.** The router
+  announces a backup try on its own log line, which the parser didn't read,
+  so a backup's failure (a 429, a timeout) was dropped from the Errors and
+  Transactions rows.
+
 ## [0.32.2]
 
 ### Fixed
