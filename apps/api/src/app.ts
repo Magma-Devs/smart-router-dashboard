@@ -16,6 +16,7 @@ import { configRoutes } from "./routes/config.js";
 import { upstreamRoutes } from "./routes/upstreams.js";
 import { transactionRoutes } from "./routes/transactions.js";
 import { errorRequestRoutes } from "./routes/error-requests.js";
+import { providerRoutes } from "./routes/providers.js";
 import { authRoutes } from "./routes/auth.js";
 import { teamRoutes, teamPasswordRoutes, teamMemberRoutes } from "./routes/team.js";
 import { accountRoutes } from "./routes/account.js";
@@ -118,6 +119,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(upstreamRoutes);
   await app.register(transactionRoutes);
   await app.register(errorRequestRoutes);
+  await app.register(providerRoutes);
 
   return app;
 }
