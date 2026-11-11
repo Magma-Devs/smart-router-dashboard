@@ -20,6 +20,16 @@ export {
   type AuditWriterOptions,
 } from "./audit.js";
 export {
+  AUDIT_FORBIDDEN_PRIVILEGES,
+  AUDIT_TABLES,
+  currentRole,
+  grantRuntimeRole,
+  RUNTIME_AUDIT_PRIVILEGES,
+  RUNTIME_TABLE_PRIVILEGES,
+  RuntimeRoleError,
+  type RuntimeGrantReport,
+} from "./runtime-role.js";
+export {
   AUDIT_TOKEN_PREFIX,
   hashAuditToken,
   listAuditTokens,
