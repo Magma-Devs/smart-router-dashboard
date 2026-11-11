@@ -12,8 +12,24 @@ import { DATABASE_URL } from "./env.js";
 
 let handle: DbHandle | null = null;
 
+const LOOPBACK = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/** The suite wipes this database, so it only ever opens one on this machine. */
+export function assertDisposableDatabase(url: string): void {
+  const host = new URL(url).hostname;
+  if (!LOOPBACK.has(host)) {
+    throw new Error(
+      `E2E_DATABASE_URL points at ${host}; the suite truncates every table it ` +
+        `finds, so it refuses any database that is not on localhost.`,
+    );
+  }
+}
+
 function db(): DbHandle {
-  handle ??= createDb(DATABASE_URL);
+  if (!handle) {
+    assertDisposableDatabase(DATABASE_URL);
+    handle = createDb(DATABASE_URL);
+  }
   return handle;
 }
 
