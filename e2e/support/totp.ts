@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-import { TOTP_DIGITS, TOTP_STEP_SECONDS } from "@sr/shared";
+import { TOTP_DIGITS, TOTP_STEP_SECONDS, TOTP_WINDOW_STEPS } from "@sr/shared";
 
 /**
  * RFC 6238 code generation — enough of it to stand in for a phone.
@@ -60,30 +60,29 @@ export function codeAtStep(secret: string, step: number): string {
  * A stand-in for the phone, with the one piece of state that matters: which
  * step it has already spent.
  *
- * The api accepts a code from the step before or after the current one, and
- * separately refuses any step at or below the last one it accepted. Those two
- * rules collide in a test that generates twice inside thirty seconds — the
- * second code verifies against the window and is then refused as a replay,
- * which reads as "the code was wrong". Both `scripts/sanity-*.mjs` runners hit
- * this, in three places between them, and worked around it case by case.
- *
- * So `next()` waits for a step this authenticator has not used before handing
- * one out. Waiting is the honest fix: it is what the person with the phone does.
+ * The api accepts a code up to `TOTP_WINDOW_STEPS` either side of now and
+ * refuses any step at or below the last one it accepted. So `next()` hands out
+ * the current step, then the ones ahead of it in the window, and waits for a
+ * boundary only when those are spent.
  */
 export class Authenticator {
   private lastStep = -1;
 
   constructor(readonly secret: string) {}
 
-  /** The code showing now, once "now" is a step this has not already spent. */
+  /** The earliest code the api will still take. */
   async next(): Promise<string> {
-    while (currentStep() <= this.lastStep) {
+    for (;;) {
+      const now = currentStep();
+      const step = Math.max(now, this.lastStep + 1);
+      if (step <= now + TOTP_WINDOW_STEPS) {
+        this.lastStep = step;
+        return codeAtStep(this.secret, step);
+      }
       // Sleep to just past the next boundary rather than polling.
       const msToBoundary = STEP_MS - (Date.now() % STEP_MS) + 250;
       await new Promise((r) => setTimeout(r, msToBoundary));
     }
-    this.lastStep = currentStep();
-    return codeAtStep(this.secret, this.lastStep);
   }
 
   /**
