@@ -1,7 +1,7 @@
 import fp from "fastify-plugin";
 import type { FastifyInstance } from "fastify";
 import { createDb, migrate, seedAdmin, type Database, type DbHandle } from "@sr/db";
-import { config } from "../config.js";
+import { config, readDbPoolOptions } from "../config.js";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -52,6 +52,21 @@ export async function maybeSeedAdmin(app: FastifyInstance, db: Database): Promis
   app.log.warn({ result, email }, "development-only admin seed applied (ignored in production)");
 }
 
+/**
+ * Why the database refused, for a log line. The ORM reports every failure as
+ * `Failed query: <sql>` and keeps the driver's error on `cause`, so the message
+ * alone reads the same for a wrong password (`28P01`), a database that does
+ * not exist (`3D000`), nothing listening on the address (`ECONNREFUSED`) and a
+ * certificate that names another host (`ERR_TLS_CERT_ALTNAME_INVALID`).
+ * Undefined when the error carries no cause.
+ */
+export function dbFailureReason(err: unknown): string | undefined {
+  const cause = (err as { cause?: unknown } | null)?.cause;
+  if (!(cause instanceof Error)) return undefined;
+  const code = (cause as { code?: unknown }).code;
+  return typeof code === "string" && code !== "" ? `${code}: ${cause.message}` : cause.message;
+}
+
 /** Compose has no hard depends_on between api and postgres (AUTH_MODE=
  *  disabled must boot without a DB), so the api absorbs postgres's startup
  *  window by retrying forever: 2s between early attempts, backing off to
@@ -75,24 +90,35 @@ export const dbPlugin = fp(async (app: FastifyInstance) => {
     throw new Error("AUTH_MODE=enabled requires DATABASE_URL (postgres://user:pass@host:5432/db).");
   }
 
+  // Refused at register time, so a malformed DB_POOL_MAX fails the boot with
+  // its name rather than opening a pool nobody sized (see readDbPoolOptions).
+  const pool = readDbPoolOptions();
+
   app.decorate("db", null as Database | null);
   let handle: DbHandle | null = null;
   let stopped = false;
 
   const connectLoop = (async () => {
     for (let attempt = 1; !stopped; attempt++) {
+      let candidate: DbHandle | null = null;
       try {
-        const candidate = createDb(url);
+        candidate = createDb(url, pool);
         await migrate(candidate.db);
         await maybeSeedAdmin(app, candidate.db);
         handle = candidate;
         app.db = candidate.db;
-        app.log.info({ attempt }, "database connected, migrations applied");
+        app.log.info({ attempt, pool }, "database connected, migrations applied");
         return;
       } catch (err) {
+        // An attempt can fail after it connected: a migration that lost a race
+        // or that the role may not run. Its pool is closed before the next
+        // attempt opens one; left open, each retry holds a connection for the
+        // idle timeout, and the retries fill the role's connection limit,
+        // which the deployment's serving backends share.
+        await candidate?.sql.end({ timeout: 0 }).catch(() => undefined);
         const delay = Math.min(RETRY_DELAY_MS * Math.ceil(attempt / 10), RETRY_DELAY_MAX_MS);
         app.log.warn(
-          { attempt, retryInMs: delay, err: (err as Error).message },
+          { attempt, retryInMs: delay, err: (err as Error).message, reason: dbFailureReason(err) },
           "database not ready, retrying",
         );
         await new Promise((r) => setTimeout(r, delay));

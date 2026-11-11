@@ -244,6 +244,12 @@ services:
       - AUTH_MODE=${AUTH_MODE:-disabled}
       - AUTH_SECRET=${AUTH_SECRET:-}
       - DATABASE_URL=${DATABASE_URL:-}
+      # The pool each api process holds and the name the database's TLS
+      # certificate must carry (see .env.example). Empty = unset = the api's
+      # defaults: 20 connections, 30 s idle, TLS as DATABASE_URL says.
+      - DB_POOL_MAX=${DB_POOL_MAX:-}
+      - DB_IDLE_TIMEOUT_S=${DB_IDLE_TIMEOUT_S:-}
+      - DB_TLS_SERVERNAME=${DB_TLS_SERVERNAME:-}
       - ADMIN_EMAIL=${ADMIN_EMAIL:-}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
       # Two-factor secrets are encrypted at rest with this, and the api refuses

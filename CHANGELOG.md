@@ -5,6 +5,74 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.57.0]
+
+### Added
+
+- **The Postgres pool is configurable: `DB_POOL_MAX` and `DB_IDLE_TIMEOUT_S`.**
+  Both default to what the api always ran with (20 connections, each closed
+  after 30 s idle), so a deployment that sets neither is unchanged. Every
+  authenticated request takes a connection for the session join, so the pool
+  bounds a backend's concurrency and, summed over a deployment's backends,
+  what its Postgres has to admit: the fleet runs one backend per node against
+  a shared instance and sets the pool per backend from that instance's
+  connection budget. `DB_IDLE_TIMEOUT_S=0` keeps idle connections for the life
+  of the process; the first request after an idle close pays for a new
+  connection (TCP, TLS and three SCRAM legs). A value that is not a whole
+  number in range refuses the boot, naming the variable, rather than quietly
+  becoming the default (`readDbPoolOptions` in `config.ts`; `createDb` in
+  `@sr/db` takes the same options and refuses a pool of nothing).
+  `db-pool.test.ts` and `packages/db`'s `client.test.ts` pin both.
+- **`DB_TLS_SERVERNAME` verifies the server certificate against a name of
+  its own.** The fleet keeps its Postgres private and reaches it through a
+  Cloudflare Tunnel: a cloudflared sidecar listens on `127.0.0.1:5432` in the
+  pod, so `DATABASE_URL` names the loopback address while the TLS session
+  still ends on RDS, whose certificate names the endpoint. For an IP address
+  the driver sends no server name and Node checks the certificate against
+  `localhost`, so `sslmode=verify-full` alone refuses every connection through
+  the sidecar (and would accept a certificate that names `localhost`). Set, the
+  driver gets `ssl: { servername }`: TLS is always on, the chain is checked
+  against the trusted CAs (`NODE_EXTRA_CA_CERTS` for the RDS bundle) and the
+  certificate must name exactly that host — `sslmode=verify-full` with the
+  name supplied — whatever the URL's own `sslmode` says. Unset, nothing
+  changes. A value that is not a DNS name (a scheme, a port, an IP address)
+  refuses the boot, naming the variable, because the driver would accept it
+  and every connection would then fail its name check, which reads like an
+  outage. `createDb` takes it as `tlsServername`; the same two test files
+  pin it.
+- **`GET /health/ready` checks the database under `AUTH_MODE=enabled`.** The
+  probe pinged Prometheus only, so a backend whose database was unreachable
+  was Ready while every authenticated request answered 503 — the gate fails
+  closed by design (`plugins/auth.ts`). It now also runs `select 1`, within
+  3 s, and reports `components.database` as `ok`, `not_connected` (the lazy
+  connect loop has not succeeded: Postgres unreachable, the credential
+  refused, or migrations still running), `query_failed` or `timeout`;
+  anything but `ok` is a 503. On the fleet's surge-first rollout that makes
+  the order of a credential change mechanical: a new pod that cannot reach
+  its database never replaces the one serving. With auth off the body carries
+  no `database` key, as before. Give the probe a timeout of 5 s or more.
+  `health-ready.test.ts` pins every state.
+
+### Fixed
+
+- **A connect attempt that fails closes its pool.** With auth on, the api
+  retries the database every 2 s at first. An attempt can fail after it
+  connected (a migration that lost a race, or one the role may not run), and
+  its pool then kept that connection for the idle timeout while the next
+  attempt opened another. Against a role with a connection limit of 7 a
+  backend that could not migrate held all 7 within 25 s, which leaves none
+  for the backends serving on the same role. Each failed attempt now closes
+  its pool before the next opens one; the same backend holds none between
+  attempts. `db-connect-loop.test.ts` pins it.
+- **The api's log says why the database refused.** The retry line and the
+  readiness warning carried the ORM's message alone, `Failed query: <sql>`,
+  which reads the same for a wrong password, a database that does not exist,
+  nothing listening on the address and a certificate that names another
+  host. Both now carry `reason`: the driver's code and message, for example
+  `28P01: password authentication failed for user "acme"` or
+  `ECONNREFUSED: connect ECONNREFUSED 127.0.0.1:5432`. The readiness body is
+  unchanged.
+
 ## [0.56.0]
 
 ### Changed
