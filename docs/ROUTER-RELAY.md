@@ -55,8 +55,8 @@ POST /api/routers/relay
   "httpMethod": "POST",
   "path": "/",                   // a REST call's path, a socket's /ws or /websocket
   "body": { "jsonrpc": "2.0", "id": 1, "method": "eth_blockNumber", "params": [] },
-  "selectProvider": "eth-publicnode",   // optional: lava-select-provider
-  "forceCacheRefresh": true             // optional: lava-force-cache-refresh
+  "selectProvider": "eth-publicnode",   // optional: smartrouter-select-provider (and lava-select-provider)
+  "forceCacheRefresh": true             // optional: smartrouter-force-cache-refresh (and lava-force-cache-refresh)
 }
 ```
 
@@ -78,13 +78,19 @@ set `ROUTER_RELAY_ENABLED=false`.
 ## What crosses over, and what comes back
 
 - **Sent:** the method, the path, the JSON body, and the two router directives:
-  `lava-select-provider` and `lava-force-cache-refresh`, on HTTP only. The router
+  select-provider and force-cache-refresh, on HTTP only. Each goes out under
+  both of its names, `smartrouter-select-provider` / `smartrouter-force-cache-refresh`
+  and `lava-select-provider` / `lava-force-cache-refresh`: a router from the
+  Lava → Smart Router rename on reads the first pair, an earlier one the
+  second, and each drops the name it does not know before the upstream. The router
   reads no directives on a WebSocket. No other header of the caller's is
   forwarded. The path and query go on the wire as written, so a REST query
   reaches the router byte for byte as a browser sends it.
 - **Returned:** `{ httpStatus, latencyMs, body, truncated, transport, servedBy,
   retries, cvStatus, cvAgreeing, cvDisagreeing }`. The last five are the
-  router's `Lava-Provider-Address`, `Lava-Retries` and cross-validation headers,
+  router's `Smart-Router-Provider-Address`, `Smart-Router-Retries` and
+  `smartrouter-cross-validation-*` headers, or the `Lava-Provider-Address`,
+  `Lava-Retries` and `lava-cross-validation-*` of a router before the rename,
   read on the server, so `cvStatus` is available too (a browser send never has
   it, because the router does not CORS-expose it). Nothing is redacted: these
   are the bytes the router gives any caller of its public hostname.

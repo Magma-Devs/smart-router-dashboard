@@ -59,9 +59,12 @@ services:
       - "*"
       # Expose the router's relay-provenance headers so the dashboard's Live
       # test can show which upstream served a request (and "Cached" on a cache
-      # hit). Read by the browser from the Lava-Provider-Address response header.
+      # hit). Read by the browser from the Smart-Router-Provider-Address response
+      # header. Both spellings of each header are listed: a router image from
+      # before the Lava -> Smart Router rename answers with the Lava-* /
+      # lava-* ones, and exposing a name the router never sends costs nothing.
       - "--cors-expose-headers"
-      - "Lava-Provider-Address,Lava-Retries,Provider-Latest-Block,lava-cross-validation-agreeing-providers,lava-cross-validation-disagreeing-providers"
+      - "Smart-Router-Provider-Address,Smart-Router-Retries,Provider-Latest-Block,smartrouter-cross-validation-agreeing-providers,smartrouter-cross-validation-disagreeing-providers,Lava-Provider-Address,Lava-Retries,lava-cross-validation-agreeing-providers,lava-cross-validation-disagreeing-providers"
       - "--log-level"
       - "${SR_LOG_LEVEL:-info}"
       - "--log-format"

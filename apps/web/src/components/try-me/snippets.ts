@@ -16,6 +16,7 @@
  * go straight to the local listen port, so no auth header/placeholder is
  * injected anywhere.
  */
+import { routerDirectiveHeaders } from "@sr/shared";
 import type { ResolvedGrpc, ResolvedHttp, ResolvedWs, ResolvedRequest } from "./build-request";
 
 /** Language hint for the renderer. Restricted to the small set the
@@ -464,7 +465,9 @@ function grpcCli(req: ResolvedGrpc, metadata: Record<string, string> = {}): Snip
 export function grpcDiscoveryCli(url: string, selectUpstream?: string): string {
   const addr = dialAuthority(url);
   const flags = isPlaintext(url) ? "-plaintext " : "";
-  const pin = selectUpstream ? `-H "lava-select-provider: ${selectUpstream}" ` : "";
+  const pin = Object.entries(routerDirectiveHeaders({ selectProvider: selectUpstream }))
+    .map(([k, v]) => `-H "${k}: ${v}" `)
+    .join("");
   return [
     `# What does this endpoint serve?`,
     `grpcurl ${flags}${addr} list`,
@@ -651,9 +654,10 @@ export function snippetsFor(req: ResolvedRequest, selectUpstream?: string): Snip
   // carries it as a header; gRPC as call metadata, which the router's gRPC
   // listener hands to the same directive parser as an HTTP header. WebSocket
   // carries none — the router reads no directives there (`pinCarrierFor`).
-  const pin: Record<string, string> = selectUpstream
-    ? { "lava-select-provider": selectUpstream }
-    : {};
+  // Both spellings of the directive go in (`smartrouter-select-provider` and
+  // the `lava-select-provider` of a router before the rename), so the copied
+  // call is pinned whichever generation of router it reaches.
+  const pin = routerDirectiveHeaders({ selectProvider: selectUpstream });
   if (req.transport === "http") {
     return {
       cli: httpCli(req, pin),

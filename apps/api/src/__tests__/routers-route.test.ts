@@ -72,6 +72,29 @@ function stubRouter(response: () => Response) {
   return calls;
 }
 
+/**
+ * A router of one generation, as far as the relay can tell them apart: it
+ * acts on its own spelling of the directives and on no other, and answers in
+ * its own header family. Pinned, it is served by the upstream named; unpinned
+ * it picks `picked-by-router`. A request it isn't told to refresh is a cache
+ * hit.
+ */
+function stubRouterOf(generation: "current" | "legacy") {
+  const mine =
+    generation === "current"
+      ? { pin: "smartrouter-select-provider", refresh: "smartrouter-force-cache-refresh", served: "Smart-Router-Provider-Address", retries: "Smart-Router-Retries" }
+      : { pin: "lava-select-provider", refresh: "lava-force-cache-refresh", served: "Lava-Provider-Address", retries: "Lava-Retries" };
+  vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
+    const sent = new Headers(init.headers);
+    const upstream = sent.get(mine.pin) ?? "picked-by-router";
+    const servedBy = sent.has(mine.refresh) ? upstream : "Cached";
+    return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: "0x10" }), {
+      status: 200,
+      headers: { [mine.served]: servedBy, [mine.retries]: "0" },
+    });
+  });
+}
+
 /** A router that takes the request and answers only when told to. */
 function stubHeldRouter() {
   const waiting: (() => void)[] = [];
@@ -185,12 +208,40 @@ describe("router relay · AUTH_MODE=enabled", () => {
     });
     expect(calls).toHaveLength(1);
     expect(calls[0]!.url).toBe("http://eth1-router:3000/");
+    // Both spellings of each directive: the router reads its generation's.
     expect(calls[0]!.init.headers).toEqual({
+      "smartrouter-select-provider": "eth-publicnode",
       "lava-select-provider": "eth-publicnode",
+      "smartrouter-force-cache-refresh": "true",
       "lava-force-cache-refresh": "true",
       "content-type": "application/json",
     });
   });
+
+  it.each(["current", "legacy"] as const)(
+    "pins the relay and skips the cache on a %s-generation router, and reads its telemetry",
+    async (generation) => {
+      stubRouterOf(generation);
+      const body = { jsonrpc: "2.0", id: 1, method: "eth_blockNumber", params: [] };
+
+      const pinned = await post("/api/routers/relay", {
+        routerId: "ETH1",
+        iface: "jsonrpc",
+        body,
+        selectProvider: "eth-publicnode",
+        forceCacheRefresh: true,
+      });
+      expect(pinned.statusCode).toBe(200);
+      expect(pinned.json()).toMatchObject({ httpStatus: 200, servedBy: "eth-publicnode", retries: 0 });
+
+      // Without the cache skip the router answers from its cache, and without
+      // the pin it picks the upstream: the directives above did the work.
+      const cached = await post("/api/routers/relay", { routerId: "ETH1", iface: "jsonrpc", body, selectProvider: "eth-publicnode" });
+      expect(cached.json()).toMatchObject({ servedBy: "Cached", retries: 0 });
+      const unpinned = await post("/api/routers/relay", { routerId: "ETH1", iface: "jsonrpc", body, forceCacheRefresh: true });
+      expect(unpinned.json()).toMatchObject({ servedBy: "picked-by-router", retries: 0 });
+    },
+  );
 
   it("puts a REST path and its query on the router's listener for that interface", async () => {
     const calls = stubRouter(() => new Response("{}"));
@@ -298,7 +349,10 @@ describe("router relay · AUTH_MODE=enabled", () => {
     const calls = stubRouter(() => new Response("{}"));
     const res = await post("/api/routers/relay", { routerId: "ETH1", iface: "jsonrpc", selectProvider: "café eth-1" });
     expect(res.statusCode).toBe(200);
-    expect(calls[0]!.init.headers).toMatchObject({ "lava-select-provider": "café eth-1" });
+    expect(calls[0]!.init.headers).toMatchObject({
+      "smartrouter-select-provider": "café eth-1",
+      "lava-select-provider": "café eth-1",
+    });
   });
 
   it("is a 502 when the router cannot be reached", async () => {

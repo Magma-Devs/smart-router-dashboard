@@ -24,7 +24,8 @@ SR_CONFIG_HOST=./docs/validation/MAG-4226/values.yml SR_SPEC=specs/ \
 The config contains a direct public Ethereum endpoint and a switchable HTTP
 proxy to that same public endpoint. The switchable URL remains in config
 throughout. Send `eth_blockNumber` requests to `localhost:3360` and observe
-`Lava-Provider-Address`. Once both upstreams have answered:
+`Smart-Router-Provider-Address` (`Lava-Provider-Address` from a router before
+the rename). Once both upstreams have answered:
 
 ```bash
 docker compose -p mag4226-review -f docker-compose.yml \

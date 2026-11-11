@@ -97,9 +97,13 @@ describe("sendDeadlineMs", () => {
 });
 
 describe("directiveHeaders", () => {
-  it("turns the drawer's two directives into the headers the router reads", () => {
+  it("turns the drawer's two directives into the headers a router of either generation reads", () => {
+    // `smartrouter-*` for a router from the rename on, `lava-*` for one before
+    // it. Each reads its own and drops the other, so both always go.
     expect(directiveHeaders({ selectProvider: "eth-publicnode", forceCacheRefresh: true })).toEqual({
+      "smartrouter-select-provider": "eth-publicnode",
       "lava-select-provider": "eth-publicnode",
+      "smartrouter-force-cache-refresh": "true",
       "lava-force-cache-refresh": "true",
     });
   });
@@ -124,7 +128,38 @@ describe("retriesOf", () => {
 });
 
 describe("relayRouterHttp", () => {
-  it("hands back the router's body and its Lava-* telemetry", async () => {
+  it("hands back the telemetry of a router from the rename on (Smart-Router-*)", async () => {
+    vi.stubGlobal("fetch", async () =>
+      new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: "0x10" }), {
+        status: 200,
+        headers: {
+          "Smart-Router-Provider-Address": "eth-publicnode",
+          "Smart-Router-Retries": "1",
+          "smartrouter-cross-validation-status": "agreed",
+          "smartrouter-cross-validation-agreeing-providers": "a,b",
+          "smartrouter-cross-validation-disagreeing-providers": "",
+        },
+      }),
+    );
+    const res = await relayRouterHttp("http://eth1-router:3000/", { ...OPTS, body: { id: 1 } });
+    expect(res).toMatchObject({
+      httpStatus: 200,
+      body: { result: "0x10" },
+      servedBy: "eth-publicnode",
+      retries: 1,
+      cvStatus: "agreed",
+      cvAgreeing: "a,b",
+      cvDisagreeing: "",
+    });
+  });
+
+  it("reads no telemetry off a reply that carries neither header family", async () => {
+    vi.stubGlobal("fetch", async () => new Response("{}", { status: 200 }));
+    const res = await relayRouterHttp("http://eth1-router:3000/", { ...OPTS, body: { id: 1 } });
+    expect(res).toMatchObject({ servedBy: null, retries: null, cvStatus: null, cvAgreeing: null, cvDisagreeing: null });
+  });
+
+  it("hands back the router's body and the Lava-* telemetry of a router before the rename", async () => {
     vi.stubGlobal("fetch", async () =>
       new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: "0x10" }), {
         status: 200,

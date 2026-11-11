@@ -39,9 +39,9 @@ export function routerRelayPayload(args: {
    *  (`jsonrpc`), never its `-ws` variant — a socket rides the same listener. */
   iface: string;
   resolved: ResolvedRequest;
-  /** Pin to this upstream with `lava-select-provider`. */
+  /** Pin to this upstream with the select-provider directive. */
   selectUpstream?: string;
-  /** Skip the router's cache with `lava-force-cache-refresh`. */
+  /** Skip the router's cache with the force-cache-refresh directive. */
   skipCache: boolean;
 }): RouterRelayPayloadResult {
   const { routerId, iface, resolved, selectUpstream, skipCache } = args;

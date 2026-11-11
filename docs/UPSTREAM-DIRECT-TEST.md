@@ -14,7 +14,8 @@ Every upstream row on the page carries its own Try-now, so the mode applies to
 exactly one node url. What the drawer shows changes with it:
 
 - **Via router** — the address bar shows the router's own url with a copy
-  button, and the banner explains the `lava-select-provider` pin.
+  button, and the banner explains the `smartrouter-select-provider` pin
+  (`lava-select-provider` on a router before the rename; the drawer sends both).
 - **Direct to upstream** — the address bar shows the upstream's masked host
   followed by a dimmed `/…`, and the copy button gives way to a `url masked`
   tag: there is nothing to copy, because the dashboard never receives the
@@ -123,7 +124,8 @@ reporting the upstream's 401 as the upstream's verdict on the request.
 
 ### Backup-tier upstreams can only be reached direct
 
-The router matches `lava-select-provider` against its **primary** pool and
+The router matches `smartrouter-select-provider` (`lava-select-provider` before
+the rename) against its **primary** pool and
 nothing else. A provider declared under `backup-direct-rpc` (SR_CONFIG) or with
 `is_backup: true` (helm values) lives in a separate pool it reaches only once
 every primary is exhausted, and it chooses among those by QoS itself — the
@@ -252,7 +254,8 @@ Other knobs: `UPSTREAM_RELAY_TIMEOUT_MS`, `UPSTREAM_RELAY_MAX_BODY_BYTES`,
 - **Differing bodies are usually fine.** Anything that tracks the head (block
   number, latest block, gas price) legitimately moves between two calls made a
   moment apart. A difference on a *fixed-height* read is the one worth chasing.
-- **A cache hit makes the router look fast.** `Lava-Provider-Address: Cached` on
+- **A cache hit makes the router look fast.** `Smart-Router-Provider-Address: Cached`
+  (`Lava-Provider-Address` from a router before the rename) on
   the router leg means you're comparing a cache read against a network call.
 
 ## Where the pieces live

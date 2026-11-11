@@ -18,7 +18,13 @@
  * any caller of its public hostname, a browser send included.
  */
 
-import type { RouterRelayResponse } from "@sr/shared";
+import {
+  ROUTER_REPLY_HEADERS,
+  readRouterHeader,
+  routerDirectiveHeaders,
+  type RouterDirectives,
+  type RouterRelayResponse,
+} from "@sr/shared";
 import {
   RelayTransportError,
   describeCause,
@@ -113,21 +119,22 @@ export class RelaySlots {
 }
 
 /** The router directives the drawer can set. */
-export interface RouterDirectives {
-  selectProvider?: string;
-  forceCacheRefresh?: boolean;
-}
+export type { RouterDirectives };
 
-/** The directives as the request headers the router reads. */
+/**
+ * The directives as the request headers the router reads, each under both of
+ * its spellings (`smartrouter-*` and the `lava-*` of a router before the
+ * rename). A router acts on the one it knows and drops the other before the
+ * upstream, so the pin and the cache skip take effect on either generation
+ * with no round trip to find out which is listening. See `router-wire.ts` in
+ * `@sr/shared`.
+ */
 export function directiveHeaders(d: RouterDirectives): Record<string, string> {
-  const headers: Record<string, string> = {};
-  if (d.selectProvider) headers["lava-select-provider"] = d.selectProvider;
-  if (d.forceCacheRefresh) headers["lava-force-cache-refresh"] = "true";
-  return headers;
+  return routerDirectiveHeaders(d);
 }
 
-/** `Lava-Retries` read the way the drawer's browser send reads it: absent or
- *  blank is unknown, and a value that is not a number counts as no retries. */
+/** The retries header read the way the drawer's browser send reads it: absent
+ *  or blank is unknown, and a value that is not a number counts as no retries. */
 export function retriesOf(header: string | null): number | null {
   if (header === null || header === "") return null;
   return Number(header) || 0;
@@ -158,8 +165,8 @@ export interface RouterHttpOptions {
 }
 
 /**
- * Fire one HTTP request at a router and read back its body and its `Lava-*`
- * headers. Answers with the router's own status inside, like the upstream
+ * Fire one HTTP request at a router and read back its body and its telemetry
+ * headers (`Smart-Router-*`, or `Lava-*` from a router before the rename). Answers with the router's own status inside, like the upstream
  * relay: a 429 from the router is a result to show, not a failure of ours.
  *
  * The deadline covers the body as well as the headers. Some routes never
@@ -212,11 +219,11 @@ export async function relayRouterHttp(url: string, opts: RouterHttpOptions): Pro
     body: parseBody(read.text),
     truncated: read.truncated,
     transport: "http",
-    servedBy: res.headers.get("Lava-Provider-Address"),
-    retries: retriesOf(res.headers.get("Lava-Retries")),
-    cvStatus: res.headers.get("Lava-Cross-Validation-Status"),
-    cvAgreeing: res.headers.get("Lava-Cross-Validation-Agreeing-Providers"),
-    cvDisagreeing: res.headers.get("Lava-Cross-Validation-Disagreeing-Providers"),
+    servedBy: readRouterHeader(res.headers, ROUTER_REPLY_HEADERS.providerAddress),
+    retries: retriesOf(readRouterHeader(res.headers, ROUTER_REPLY_HEADERS.retries)),
+    cvStatus: readRouterHeader(res.headers, ROUTER_REPLY_HEADERS.crossValidationStatus),
+    cvAgreeing: readRouterHeader(res.headers, ROUTER_REPLY_HEADERS.crossValidationAgreeing),
+    cvDisagreeing: readRouterHeader(res.headers, ROUTER_REPLY_HEADERS.crossValidationDisagreeing),
   };
 }
 
