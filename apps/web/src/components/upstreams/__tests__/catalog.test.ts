@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RouterTopology } from "@sr/shared";
-import { buildUpstreamRows, directTargetFor, groupByChain } from "../catalog";
+import { buildUpstreamRows, directTargetFor, groupByChain, matchCatalog } from "../catalog";
 
 /** Two chains, three upstreams, one of them serving both chains over two
  *  transports — the shape the grouping has to survive. */
@@ -194,5 +194,21 @@ describe("directTargetFor — internal paths", () => {
       httpIndex: 1,
       httpInternalPath: "/v3",
     });
+  });
+});
+
+// One rule for who runs a node: the Providers page's (`providerOf`), so a
+// logo and a provider row can't name two different companies.
+describe("matchCatalog", () => {
+  it("names the company by the URL host first, then the node name", () => {
+    expect(matchCatalog("eth-main", ["https://eth-mainnet.gateway.tatum.io"])?.id).toBe("tatum");
+    expect(matchCatalog("blockdaemon-2", ["https://svc.blockdaemon.com"])?.id).toBe("blockdaemon");
+    expect(matchCatalog("eth-public", ["https://rpc.ankr.com"])?.id).toBe("ankr");
+    expect(matchCatalog("eth-alchemy", [])?.id).toBe("alchemy");
+  });
+
+  it("gives no catalog entry to a company the catalog has no logo for", () => {
+    expect(matchCatalog("flashbots", ["https://rpc.flashbots.net"])).toBeNull();
+    expect(matchCatalog("publicnode", ["https://ethereum-rpc.publicnode.com"])).toBeNull();
   });
 });

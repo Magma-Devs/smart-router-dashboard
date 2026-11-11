@@ -32,6 +32,20 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   down when half or more of a provider's tries on a chain failed; it replaces
   the router's health gauge, which starts healthy and only moves with traffic,
   so an idle or disabled upstream read 100%. Windows up to a day.
+- **Rate-limited time, apart from uptime** (MAG-4257). A rate limit is often
+  the plan's limit, not the provider failing, so rate-limited tries no longer
+  make a minute down. Minutes where half or more of a provider's tries got
+  "too many requests" are counted on their own: a column in both tables, a
+  line on the rate-limit card, and the Rate limits graph. On one live
+  deployment a provider with 235,807 rate-limit hits in a day had 360
+  rate-limited minutes and no down minute.
+- **How the chain's other providers did**, on every chain row of a provider's
+  page: the other companies on that chain, together, with their error rate,
+  so a reader can tell the provider's fault from the chain's. Also in the CSV
+  export.
+- **A bar on a provider's graphs opens the report for that stretch**, on the
+  chain that failed most in it, with the provider's other failing chains a
+  pick away.
 - **The provider report follows the customer's outreach template** (MAG-4258):
   the same fields in the same order, times in the reader's time zone, and an
   example's raw request, the provider's reply and its `x-request-id` where the
@@ -42,6 +56,14 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   for an error reply the provider's own request ID and its reply. Fields the
   router doesn't record say so. `GET /api/providers/report`, `/report.csv`
   and `/api/providers/export.csv`.
+
+### Changed
+
+- **One rule for who runs an upstream.** The Upstreams page's logos now use
+  the same matcher as the Providers page (`providerOf` in `@sr/shared`), so a
+  logo and a provider row can't name two different companies. The shared list
+  gained Ankr and BlockPI's `.io` hosts, which only the web's own matcher
+  knew.
 
 ### Fixed
 

@@ -1067,6 +1067,12 @@ export interface ProviderFamilies {
   protocolErrors: boolean;
   /** smartrouter_rate_limit_holdoffs_total — "too many requests" hold-offs. */
   rateLimit: boolean;
+  /**
+   * The hold-offs carry the scrape target's `chain` label, so a rate-limited
+   * try can be put on its chain minute by minute. False ⇒ `rateLimitedMinutes`
+   * is null and a rate-limited try counts as a failed one in uptime.
+   */
+  rateLimitByChain: boolean;
   /** smartrouter_csm_provider_blocked — blocked-from-routing gauge. */
   blocked: boolean;
   /** rpc_endpoint_total_errored — failed relays per provider and method. */
@@ -1099,13 +1105,23 @@ export interface ProviderSummary {
   /** Mean of the router's health gauge over the window, 0..1. Not shown: the gauge starts healthy and only traffic moves it, so an idle upstream reads 100%. */
   healthUptime: number | null;
   /**
-   * Uptime, 0..1: of every minute it served one of your chains, the share where
-   * at least half its tries there succeeded. Each chain's minute counts once.
-   * Null past a day (`uptimeRead`) or with no traffic.
+   * Uptime, 0..1: of every minute it served one of your chains, the share
+   * that wasn't down. Each chain's minute counts once. Null past a day
+   * (`uptimeRead`) or with no traffic.
    */
   uptime: number | null;
-  /** Minutes, summed over its chains, where half or more of its tries failed. */
+  /**
+   * Minutes, summed over its chains, where half or more of its tries that
+   * weren't rate-limited failed. A rate limit is often the plan's limit, not
+   * the provider failing, so it counts in `rateLimitedMinutes` instead.
+   */
   downMinutes: number | null;
+  /**
+   * Minutes, summed over its chains, where half or more of its tries got "too
+   * many requests". Null past a day, or when the hold-offs can't be put on a
+   * chain (`families.rateLimitByChain`).
+   */
+  rateLimitedMinutes: number | null;
   /** Any of its nodes blocked from routing right now. Null when the family isn't emitted. */
   blockedNow: boolean | null;
 }
@@ -1145,9 +1161,23 @@ export interface ProviderChainStats {
   /** Uptime on this chain, 0..1 - see `ProviderSummary.uptime`. */
   uptime: number | null;
   downMinutes: number | null;
+  rateLimitedMinutes: number | null;
   /** Minutes in the window it served this chain at all. */
   trafficMinutes: number | null;
   blockedNow: boolean | null;
+  /** The chain's other providers over the same window: is it this provider, or the chain? */
+  others: ChainOthers;
+}
+
+/** Every other company's tries on one chain, together. */
+export interface ChainOthers {
+  /** Other companies with tries on the chain; 0 ⇒ this provider serves it alone. */
+  providers: number;
+  requests: number;
+  /** Their failed tries ÷ their tries. Null with no tries. */
+  errorRate: number | null;
+  /** Their error replies ÷ their tries. Null with no tries, or when the family isn't emitted. */
+  nodeErrorRate: number | null;
 }
 
 export interface ProviderMethodStats {
@@ -1196,8 +1226,12 @@ export interface ProviderSeries {
   errorReplies: TimePoint[] | null;
   /** "Too many requests" hold-offs. Null when the family isn't emitted. */
   rateLimitHits: TimePoint[] | null;
-  /** Down minutes, summed over its chains (`ProviderSummary.uptime`'s rule). Null past a day. */
+  /** Down minutes, summed over its chains (`ProviderSummary.downMinutes`' rule). Null past a day. */
   downMinutes: TimePoint[] | null;
+  /** Rate-limited minutes, summed over its chains (`ProviderSummary.rateLimitedMinutes`). Null past a day or when unknown. */
+  rateLimitedMinutes: TimePoint[] | null;
+  /** Failed tries plus error replies, per chain: the chain a bar's report opens on. Chains with none are left out. */
+  failuresByChain: { spec: string; points: TimePoint[] }[];
   /** Average answer time, ms, from the endpoint histogram's sum and count. Null past a day. */
   avgLatencyMs: TimePoint[] | null;
   families: ProviderFamilies;

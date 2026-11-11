@@ -20,6 +20,8 @@ describe("providerOf", () => {
   it("a URL host match beats the node name", () => {
     expect(providerOf({ name: "eth-main", urlHosts: ["eth-mainnet.gateway.tatum.io"] }).id).toBe("tatum");
     expect(providerOf({ name: "lava", urlHosts: ["x.quiknode.pro"] }).id).toBe("quicknode");
+    expect(providerOf({ name: "eth-public", urlHosts: ["rpc.ankr.com"] }).id).toBe("ankr");
+    expect(providerOf({ name: "bsc-x", urlHosts: ["bsc.blockpi.io"] }).id).toBe("blockpi");
   });
 
   it("the values file's group-label beats both", () => {

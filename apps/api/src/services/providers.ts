@@ -23,6 +23,7 @@ import {
   looksLikeNodeName,
   providerOf,
   qPresence,
+  type ChainOthers,
   type MetricWindow,
   type ProviderChainStats,
   type ProviderDetailReport,
@@ -94,8 +95,43 @@ export const latencyReadFor = (window: MetricWindow): boolean => WINDOWS[window]
  */
 export const UPTIME_MAX_SEC = 86_400;
 export const uptimeReadFor = (window: MetricWindow): boolean => WINDOWS[window].rangeSeconds <= UPTIME_MAX_SEC;
-/** A minute is down when at least this share of the tries in it failed. */
+/** A minute is down (or rate-limited) when at least this share of the tries in it failed (or got "too many requests"). */
 const DOWN_SHARE = 0.5;
+
+/**
+ * The per-minute rules, as PromQL over one set of nodes (`nodeSel` on the
+ * request counters, `holdSel` on the hold-offs; null when the hold-offs can't
+ * be put on a chain).
+ *
+ * A rate-limited try is taken out of the down rule and counted on its own: a
+ * "too many requests" is often the plan's limit, not the provider failing. A
+ * minute is down when half or more of the tries that weren't rate-limited
+ * failed - a minute of nothing but rate limits is 0/0, not down - and
+ * rate-limited when half or more of all its tries were.
+ *
+ * The hold-off counter names the node `provider` and knows the chain only by
+ * the scrape target's `chain` label. The request counter carries that label
+ * too, so the two meet on (node, chain) and the hold-offs take the request
+ * counter's `spec`. A node that never succeeded has no success series: zero
+ * successes, not no data.
+ */
+export function minuteRules(nodeSel: string, holdSel: string | null): { tries: string; down: string; limited: string | null } {
+  const by = "sum by (provider_address, spec)";
+  const tries = `${by} (increase(${ROUTER_METRICS.requestsTotal}${nodeSel}[1m]))`;
+  const ok = `${by} (increase(${ROUTER_METRICS.requestsSuccessTotal}${nodeSel}[1m]))`;
+  const failed = `(${tries} - (${ok} or ${tries} * 0))`;
+  if (holdSel === null) return { tries, down: `${failed} / ${tries} >= bool ${DOWN_SHARE}`, limited: null };
+  const present = `group by (provider_address, spec, chain) (${ROUTER_METRICS.requestsTotal}${nodeSel})`;
+  const holds =
+    `sum by (provider_address, chain) (label_replace(increase(${OPTIONAL_METRICS.rateLimitHoldoffsTotal}${holdSel}[1m]), ` +
+    `"provider_address", "$1", "provider", "(.+)"))`;
+  const limitedTries = `(${by} (${present} * on (provider_address, chain) group_left ${holds}) or ${by} (${present}) * 0)`;
+  return {
+    tries,
+    down: `clamp_min(${failed} - ${limitedTries}, 0) / clamp_min(${tries} - ${limitedTries}, 0) >= bool ${DOWN_SHARE}`,
+    limited: `${limitedTries} / ${tries} >= bool ${DOWN_SHARE}`,
+  };
+}
 
 /** Block lag is a "now" figure whatever the page's window, so the roster behind it is read over a short one. */
 const LAG_WINDOW: MetricWindow = "5m";
@@ -145,6 +181,8 @@ interface NodeCounts {
 interface Minutes {
   down: number;
   traffic: number;
+  /** Null when the hold-offs can't be put on a chain. */
+  limited: number | null;
 }
 
 interface Loaded {
@@ -211,14 +249,22 @@ export class ProvidersService {
   }
 
   private async families(): Promise<ProviderFamilies> {
-    const [nodeErrors, protocolErrors, rateLimit, blocked, endpointErrored] = await Promise.all([
+    const [nodeErrors, protocolErrors, rateLimit, blocked, endpointErrored, holdsWithChain] = await Promise.all([
       this.present(OPTIONAL_METRICS.nodeErrorsTotal),
       this.present(OPTIONAL_METRICS.protocolErrorsTotal),
       this.present(OPTIONAL_METRICS.rateLimitHoldoffsTotal),
       this.present(OPTIONAL_METRICS.csmProviderBlocked),
       this.present(OPTIONAL_METRICS.endpointErroredTotal),
+      // A hold-off can be put on its chain only through the scrape target's `chain` label.
+      this.read(`count(${OPTIONAL_METRICS.rateLimitHoldoffsTotal}{chain!=""})`),
     ]);
-    return { nodeErrors, protocolErrors, rateLimit, blocked, endpointErrored };
+    const rateLimitByChain = rateLimit && Number(holdsWithChain[0]?.value[1]) > 0;
+    return { nodeErrors, protocolErrors, rateLimit, rateLimitByChain, blocked, endpointErrored };
+  }
+
+  /** The hold-off selector for the minute rules, or null when they can't be put on a chain. */
+  private static holdSel(fam: ProviderFamilies, providerMatcher = ""): string | null {
+    return fam.rateLimitByChain ? `{${providerMatcher}event="recorded",chain!=""}` : null;
   }
 
   /** Config identity per node name: URL hosts, group label, role per chain. */
@@ -367,28 +413,37 @@ export class ProvidersService {
   }
 
   /**
-   * Down minutes and minutes with traffic per (node × chain), counted by the
-   * store at a one-minute step. A node with no successful try at all has no
-   * success series, so the failed share reads it as zero successes, not as
-   * no data.
+   * Down, rate-limited and traffic minutes per (node × chain), counted by the
+   * store at a one-minute step (`minuteRules`).
    */
-  private async minutes(window: MetricWindow): Promise<Map<string, Minutes> | null> {
+  private async minutes(window: MetricWindow, fam: ProviderFamilies): Promise<Map<string, Minutes> | null> {
     if (!uptimeReadFor(window)) return null;
     const r = `${WINDOWS[window].rangeSeconds}s`;
     const by = "sum by (provider_address, spec)";
-    const tries = `${by} (increase(${ROUTER_METRICS.requestsTotal}[1m]))`;
-    const ok = `${by} (increase(${ROUTER_METRICS.requestsSuccessTotal}[1m]))`;
-    const [down, traffic] = await Promise.all([
-      this.read(`${by} (sum_over_time(((${tries} - (${ok} or ${tries} * 0)) / ${tries} >= bool ${DOWN_SHARE})[${r}:1m]))`),
-      this.read(`${by} (count_over_time((${tries} > 0)[${r}:1m]))`),
+    const rules = minuteRules("", ProvidersService.holdSel(fam));
+    const [down, traffic, limited] = await Promise.all([
+      this.read(`${by} (sum_over_time((${rules.down})[${r}:1m]))`),
+      this.read(`${by} (count_over_time((${rules.tries} > 0)[${r}:1m]))`),
+      rules.limited ? this.read(`${by} (sum_over_time((${rules.limited})[${r}:1m]))`) : Promise.resolve(null),
     ]);
     const out = new Map<string, Minutes>();
     for (const s of traffic) {
-      out.set(key(s.metric.provider_address ?? "", s.metric.spec ?? ""), { down: 0, traffic: Math.round(num(s)) });
+      out.set(key(s.metric.provider_address ?? "", s.metric.spec ?? ""), {
+        down: 0,
+        traffic: Math.round(num(s)),
+        limited: limited ? 0 : null,
+      });
     }
     for (const s of down) {
       const row = out.get(key(s.metric.provider_address ?? "", s.metric.spec ?? ""));
       if (row) row.down = Math.min(row.traffic, Math.round(num(s)));
+    }
+    for (const s of limited ?? []) {
+      const k = key(s.metric.provider_address ?? "", s.metric.spec ?? "");
+      // A minute can be all hold-offs and no try sent at all.
+      const row = out.get(k) ?? { down: 0, traffic: 0, limited: 0 };
+      row.limited = Math.round(num(s));
+      out.set(k, row);
     }
     return out;
   }
@@ -528,7 +583,7 @@ export class ProvidersService {
       this.health(window),
       this.holdoffs(window, fam),
       this.blocked(fam),
-      this.minutes(window),
+      this.minutes(window, fam),
     ]);
     return { fam, cfg: this.configIndex(), counts, unattributed, lat, health, holdoffs, blocked, minutes };
   }
@@ -545,6 +600,7 @@ export class ProvidersService {
       health: number[];
       down: number;
       traffic: number;
+      limited: number;
       nodes: Set<string>;
       accounts: Set<string>;
     }
@@ -570,6 +626,7 @@ export class ProvidersService {
             healthUptime: null,
             uptime: null,
             downMinutes: null,
+            rateLimitedMinutes: null,
             blockedNow: fam.blocked ? false : null,
           },
           ok: 0,
@@ -579,6 +636,7 @@ export class ProvidersService {
           health: [],
           down: 0,
           traffic: 0,
+          limited: 0,
           nodes: new Set(),
           accounts: new Set(),
         };
@@ -605,6 +663,7 @@ export class ProvidersService {
       if (m) {
         acc.down += m.down;
         acc.traffic += m.traffic;
+        acc.limited += m.limited ?? 0;
       }
       if (blocked?.get(key(c.node, c.spec))) acc.summary.blockedNow = true;
     }
@@ -649,6 +708,7 @@ export class ProvidersService {
       // ten is down for a tenth of its chain-minutes, not for none of them.
       s.uptime = minutes && acc.traffic > 0 ? 1 - acc.down / acc.traffic : null;
       s.downMinutes = minutes ? acc.down : null;
+      s.rateLimitedMinutes = minutes && fam.rateLimitByChain ? acc.limited : null;
       const peak = peakSeries.get(s.id);
       s.peakRps = peak && peak.size ? Math.max(...peak.values()) : null;
       s.nodes = [...acc.nodes].sort();
@@ -675,12 +735,46 @@ export class ProvidersService {
       return {
         uptime: m && m.traffic > 0 ? 1 - m.down / m.traffic : null,
         downMinutes: minutes ? (m?.down ?? 0) : null,
+        rateLimitedMinutes: minutes && fam.rateLimitByChain ? (m?.limited ?? 0) : null,
         trafficMinutes: minutes ? (m?.traffic ?? 0) : null,
       };
     };
     // Chain totals for the share column: every provider's tries on the chain.
     const chainTotals = new Map<string, number>();
     for (const c of counts.values()) chainTotals.set(c.spec, (chainTotals.get(c.spec) ?? 0) + c.tries);
+
+    // Each company's tries on each chain, for the chain's other providers: is it this provider, or the chain?
+    const byChain = new Map<string, Map<string, { tries: number; failed: number; nodeErrors: number }>>();
+    for (const c of counts.values()) {
+      const id = cfg.identity(c.node).id;
+      const chain = byChain.get(c.spec) ?? new Map<string, { tries: number; failed: number; nodeErrors: number }>();
+      const t = chain.get(id) ?? { tries: 0, failed: 0, nodeErrors: 0 };
+      t.tries += c.tries;
+      t.failed += Math.max(0, c.tries - c.ok);
+      t.nodeErrors += c.nodeErrors ?? 0;
+      chain.set(id, t);
+      byChain.set(c.spec, chain);
+    }
+    const othersOn = (spec: string, node: string): ChainOthers => {
+      const self = cfg.identity(node).id;
+      let providers = 0;
+      let tries = 0;
+      let failed = 0;
+      let nodeErrors = 0;
+      for (const [id, t] of byChain.get(spec) ?? []) {
+        if (id === self || t.tries === 0) continue;
+        providers += 1;
+        tries += t.tries;
+        failed += t.failed;
+        nodeErrors += t.nodeErrors;
+      }
+      return {
+        providers,
+        requests: tries,
+        errorRate: ratio(failed, tries),
+        nodeErrorRate: ratio(fam.nodeErrors ? nodeErrors : null, tries),
+      };
+    };
     const upstreamByKey = new Map(upstreams.map((u) => [key(u.endpointId, u.spec), u]));
 
     // Hold-offs per (node × chain) when a chain label exists; otherwise per node only.
@@ -718,6 +812,7 @@ export class ProvidersService {
         healthUptime: health.get(k) ?? null,
         ...minuteFields(k),
         blockedNow: blocked ? (blocked.get(k) ?? false) : null,
+        others: othersOn(c.spec, c.node),
       });
     }
     // Configured but idle on a chain: show it with zero tries, never drop it.
@@ -742,6 +837,7 @@ export class ProvidersService {
         healthUptime: health.get(k) ?? null,
         ...minuteFields(k),
         blockedNow: blocked ? (blocked.get(k) ?? false) : null,
+        others: othersOn(spec, node),
       });
     }
     return rows.sort((a, b) => (b.errorRate ?? -1) - (a.errorRate ?? -1) || b.requests - a.requests);
@@ -809,6 +905,31 @@ export class ProvidersService {
     return points;
   }
 
+  /** `barsOf` with one series per value of `label` - every chain's bars in the same two reads. */
+  private async barsByLabel(
+    exprFor: (range: string) => string,
+    bars: ReturnType<typeof bucketGrid>,
+    step: string,
+    label: string,
+  ): Promise<Map<string, Map<number, number>>> {
+    const { grid, lastFull, partialSec } = bars;
+    const [whole, filling] = await Promise.all([
+      lastFull >= grid.start ? this.readRange(exprFor(step), grid.start, lastFull, step) : Promise.resolve([]),
+      partialSec > 0 ? this.read(exprFor(`${partialSec}s`)) : Promise.resolve([]),
+    ]);
+    const out = new Map<string, Map<number, number>>();
+    const put = (k: string, t: number, v: string) => {
+      const n = Number(v);
+      if (!Number.isFinite(n)) return;
+      const series = out.get(k) ?? new Map<number, number>();
+      series.set(t, n);
+      out.set(k, series);
+    };
+    for (const s of whole) for (const [t, v] of s.values) put(s.metric[label] ?? "", Number(t), v);
+    for (const s of filling) put(s.metric[label] ?? "", grid.end, s.value[1]);
+    return out;
+  }
+
   /** GET /api/metrics/provider-series */
   async series(providerId: string, window: MetricWindow): Promise<ProviderSeries> {
     const asOf = Math.floor(Date.now() / 1000);
@@ -825,6 +946,8 @@ export class ProvidersService {
       errorReplies: fam.nodeErrors ? [] : null,
       rateLimitHits: fam.rateLimit ? [] : null,
       downMinutes: uptimeReadFor(window) ? [] : null,
+      rateLimitedMinutes: uptimeReadFor(window) && fam.rateLimitByChain ? [] : null,
+      failuresByChain: [],
       avgLatencyMs: latencyReadFor(window) ? [] : null,
       families: fam,
     };
@@ -832,19 +955,18 @@ export class ProvidersService {
     const alt = nameAlternation(names);
     const sel = `{provider_address=~"${alt}"}`;
     const sum = (metric: string, matcher: string) => (range: string) => `sum(increase(${metric}${matcher}[${range}]))`;
-    const by = "sum by (provider_address, spec)";
-    const tries1m = `${by} (increase(${ROUTER_METRICS.requestsTotal}${sel}[1m]))`;
-    const ok1m = `${by} (increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[1m]))`;
-    const [tries, ok, replies, holds, down, latSum, latCount] = await Promise.all([
-      this.barsOf(sum(ROUTER_METRICS.requestsTotal, sel), bars, step),
-      this.barsOf(sum(ROUTER_METRICS.requestsSuccessTotal, sel), bars, step),
-      fam.nodeErrors ? this.barsOf(sum(OPTIONAL_METRICS.nodeErrorsTotal, sel), bars, step) : Promise.resolve(null),
+    const perChain = (metric: string) => (range: string) => `sum by (spec) (increase(${metric}${sel}[${range}]))`;
+    const rules = minuteRules(sel, ProvidersService.holdSel(fam, `provider=~"${alt}",`));
+    const minutesOf = (rule: string) => (range: string) => `sum(sum_over_time((${rule})[${range}:1m]))`;
+    const [triesBy, okBy, repliesBy, holds, down, limited, latSum, latCount] = await Promise.all([
+      this.barsByLabel(perChain(ROUTER_METRICS.requestsTotal), bars, step, "spec"),
+      this.barsByLabel(perChain(ROUTER_METRICS.requestsSuccessTotal), bars, step, "spec"),
+      fam.nodeErrors ? this.barsByLabel(perChain(OPTIONAL_METRICS.nodeErrorsTotal), bars, step, "spec") : Promise.resolve(null),
       fam.rateLimit
         ? this.barsOf(sum(OPTIONAL_METRICS.rateLimitHoldoffsTotal, `{provider=~"${alt}",event="recorded"}`), bars, step)
         : Promise.resolve(null),
-      uptimeReadFor(window)
-        ? this.barsOf((range) => `sum(sum_over_time(((${tries1m} - (${ok1m} or ${tries1m} * 0)) / ${tries1m} >= bool ${DOWN_SHARE})[${range}:1m]))`, bars, step)
-        : Promise.resolve(null),
+      uptimeReadFor(window) ? this.barsOf(minutesOf(rules.down), bars, step) : Promise.resolve(null),
+      uptimeReadFor(window) && rules.limited ? this.barsOf(minutesOf(rules.limited), bars, step) : Promise.resolve(null),
       latencyReadFor(window)
         ? this.barsOf((range) => `sum(increase(${ENDPOINT_METRICS.latencySum}{endpoint_id=~"${alt}"}[${range}]))`, bars, step)
         : Promise.resolve(null),
@@ -852,12 +974,27 @@ export class ProvidersService {
         ? this.barsOf((range) => `sum(increase(${ENDPOINT_METRICS.latencyCount}{endpoint_id=~"${alt}"}[${range}]))`, bars, step)
         : Promise.resolve(null),
     ]);
+    // Every bar any chain has, in order; a chain with no point in a bar had nothing there.
+    const times = [...new Set([...triesBy.values()].flatMap((series) => [...series.keys()]))].sort((a, b) => a - b);
+    const total = (by: Map<string, Map<number, number>> | null, t: number): number => {
+      let n = 0;
+      for (const series of by?.values() ?? []) n += series.get(t) ?? 0;
+      return n;
+    };
+    const tries = times.map((t) => ({ t, v: Math.round(total(triesBy, t)) }));
+    const failed = times.map((t) => ({ t, v: Math.max(0, Math.round(total(triesBy, t) - total(okBy, t))) }));
+    const errorReplies = repliesBy ? times.map((t) => ({ t, v: Math.round(total(repliesBy, t)) })) : null;
+    // Failed tries plus error replies on each chain: the chain a clicked bar's report opens on.
+    const failuresByChain = [...triesBy.entries()]
+      .map(([spec, series]) => ({
+        spec,
+        points: times.map((t) => {
+          const failedHere = Math.max(0, (series.get(t) ?? 0) - (okBy.get(spec)?.get(t) ?? 0));
+          return { t, v: Math.round(failedHere + (repliesBy?.get(spec)?.get(t) ?? 0)) };
+        }),
+      }))
+      .filter((c) => c.spec !== "" && c.points.some((p) => p.v > 0));
     const at = (points: TimePoint[]) => new Map(points.map((p) => [p.t, p.v]));
-    const okAt = at(ok);
-    const failed = tries.map((p) => ({
-      t: p.t,
-      v: p.v == null ? null : Math.max(0, Math.round(p.v - (okAt.get(p.t) ?? 0))),
-    }));
     const round = (points: TimePoint[] | null) => points?.map((p) => ({ t: p.t, v: p.v == null ? null : Math.round(p.v) })) ?? null;
     // Average answer time per bar; no answers in a bar is no latency there, never 0 ms.
     const countAt = latCount ? at(latCount) : null;
@@ -869,11 +1006,13 @@ export class ProvidersService {
       : null;
     return {
       ...empty,
-      tries: round(tries)!,
+      tries,
       failed,
-      errorReplies: round(replies),
+      errorReplies,
       rateLimitHits: round(holds),
       downMinutes: round(down),
+      rateLimitedMinutes: round(limited),
+      failuresByChain,
       avgLatencyMs,
     };
   }

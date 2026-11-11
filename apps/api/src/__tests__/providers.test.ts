@@ -11,20 +11,35 @@ const v = (metric: Record<string, string>, value: number): Row => ({ metric, val
  * families whose presence probe answers 1; `down` picks the reads the store
  * doesn't answer.
  */
-function fakeProm(present: string[], down?: (q: string) => boolean): { prom: PrometheusClient; queries: string[] } {
+function fakeProm(
+  present: string[],
+  down?: (q: string) => boolean,
+  opts: { holdsHaveChain?: boolean; more?: { tries: Row[]; ok: Row[] } } = {},
+): { prom: PrometheusClient; queries: string[] } {
   const queries: string[] = [];
   const answer = (q: string): Row[] => {
     if (q.startsWith("count({__name__=")) {
       const name = /__name__="([^"]+)"/.exec(q)?.[1] ?? "";
       return present.includes(name) ? [v({}, 1)] : [];
     }
+    // Whether the hold-offs carry the scrape target's chain label.
+    if (q === 'count(smartrouter_rate_limit_holdoffs_total{chain!=""})') {
+      return opts.holdsHaveChain !== false && present.includes("smartrouter_rate_limit_holdoffs_total") ? [v({}, 2)] : [];
+    }
     if (q.includes("by (provider_address, spec, method)")) return [];
-    // Down minutes, then minutes with traffic, per (node × chain).
+    // Rate-limited minutes, down minutes, then minutes with traffic, per (node × chain).
+    if (q.includes("(sum_over_time(") && q.includes("rate_limit_holdoffs") && !q.includes("clamp_min")) {
+      return [v({ provider_address: "blockdaemon", spec: "NEAR" }, 12)];
+    }
     if (q.includes("(sum_over_time(")) {
       return [v({ provider_address: "tatum", spec: "ETH1" }, 30), v({ provider_address: "tatum", spec: "SOLANA" }, 0)];
     }
     if (q.includes("(count_over_time(")) {
-      return [v({ provider_address: "tatum", spec: "ETH1" }, 1440), v({ provider_address: "tatum", spec: "SOLANA" }, 1440)];
+      return [
+        v({ provider_address: "tatum", spec: "ETH1" }, 1440),
+        v({ provider_address: "tatum", spec: "SOLANA" }, 1440),
+        v({ provider_address: "blockdaemon", spec: "NEAR" }, 600),
+      ];
     }
     if (q.startsWith("sum by (provider_address, spec) (increase(smartrouter_requests_total")) {
       return [
@@ -34,6 +49,7 @@ function fakeProm(present: string[], down?: (q: string) => boolean): { prom: Pro
         v({ provider_address: "blockdaemon-2", spec: "BTCT" }, 100),
         v({ provider_address: "Cached", spec: "ETH1" }, 9999),
         v({ provider_address: "d644d", spec: "XRP" }, 7),
+        ...(opts.more?.tries ?? []),
       ];
     }
     if (q.startsWith("sum by (provider_address, spec) (increase(smartrouter_requests_success_total")) {
@@ -42,6 +58,7 @@ function fakeProm(present: string[], down?: (q: string) => boolean): { prom: Pro
         v({ provider_address: "tatum", spec: "SOLANA" }, 500),
         v({ provider_address: "blockdaemon", spec: "NEAR" }, 240),
         v({ provider_address: "blockdaemon-2", spec: "BTCT" }, 100),
+        ...(opts.more?.ok ?? []),
       ];
     }
     if (q.startsWith("sum by (provider_address, spec) (increase(smartrouter_node_errors_total")) {
@@ -201,6 +218,7 @@ describe("ProvidersService.list", () => {
       nodeErrors: false,
       protocolErrors: false,
       rateLimit: false,
+      rateLimitByChain: false,
       blocked: false,
       endpointErrored: false,
     });
@@ -235,6 +253,37 @@ describe("ProvidersService.list", () => {
     expect(down).toContain("or sum by (provider_address, spec) (increase(smartrouter_requests_total[1m])) * 0");
     const detail = await new ProvidersService(prom, null, new MetricsService(prom)).detail("tatum", "1d");
     expect(detail.chains.find((c) => c.spec === "ETH1")).toMatchObject({ downMinutes: 30, trafficMinutes: 1440 });
+  });
+
+  // A "too many requests" is often the plan's limit, not the provider failing:
+  // it doesn't make a minute down, and it is counted on its own.
+  it("rate limits: not counted as down, counted as rate-limited minutes", async () => {
+    const { prom, queries } = fakeProm(ALL);
+    const svc = new ProvidersService(prom, null, new MetricsService(prom));
+    const report = await svc.list("1d");
+    expect(report.families.rateLimitByChain).toBe(true);
+    const down = queries.find((q) => q.includes("(sum_over_time(") && q.includes("clamp_min"))!;
+    // Half or more of the tries that weren't rate-limited failed; nothing but rate limits is 0/0, not down.
+    expect(down).toContain("clamp_min(");
+    // The hold-offs meet the request counter on (node, chain) and take its spec.
+    expect(down).toContain('label_replace(increase(smartrouter_rate_limit_holdoffs_total{event="recorded",chain!=""}[1m]), "provider_address", "$1", "provider", "(.+)")');
+    expect(down).toContain("* on (provider_address, chain) group_left");
+    const limited = queries.find((q) => q.includes("(sum_over_time(") && q.includes("rate_limit_holdoffs") && !q.includes("clamp_min"))!;
+    expect(limited).toContain(">= bool 0.5)[86400s:1m]");
+    expect(report.providers.find((p) => p.id === "blockdaemon")?.rateLimitedMinutes).toBe(12);
+    expect(report.providers.find((p) => p.id === "tatum")?.rateLimitedMinutes).toBe(0);
+    const detail = await svc.detail("blockdaemon", "1d");
+    expect(detail.chains.find((c) => c.spec === "NEAR")?.rateLimitedMinutes).toBe(12);
+  });
+
+  it("rate limits that can't be put on a chain count as failures, as before - and rate-limited minutes say unknown", async () => {
+    const { prom, queries } = fakeProm(ALL, undefined, { holdsHaveChain: false });
+    const report = await new ProvidersService(prom, null, new MetricsService(prom)).list("1d");
+    expect(report.families.rateLimitByChain).toBe(false);
+    expect(queries.some((q) => q.includes("(sum_over_time(") && q.includes("rate_limit_holdoffs"))).toBe(false);
+    expect(report.providers.every((p) => p.rateLimitedMinutes === null)).toBe(true);
+    // Uptime still reads, on the old rule.
+    expect(report.providers.find((p) => p.id === "tatum")?.downMinutes).toBe(30);
   });
 
   it("uptime isn't read past a day - it needs every minute", async () => {
@@ -289,10 +338,80 @@ describe("ProvidersService.detail", () => {
     expect(detail.chains.find((c) => c.spec === "BTCT")?.rateLimitHits).toBe(2);
   });
 
+  // Is it the provider, or the chain? Every other company on the chain, together.
+  it("each chain row carries the chain's other providers", async () => {
+    const { prom } = fakeProm(ALL, undefined, {
+      more: {
+        tries: [v({ provider_address: "alchemy", spec: "ETH1" }, 200), v({ provider_address: "lava", spec: "ETH1" }, 100)],
+        ok: [v({ provider_address: "alchemy", spec: "ETH1" }, 150), v({ provider_address: "lava", spec: "ETH1" }, 100)],
+      },
+    });
+    const detail = await new ProvidersService(prom, null, new MetricsService(prom)).detail("tatum", "1d");
+    // Alchemy failed 50 of 200, Lava none of 100: 50 of 300 together.
+    expect(detail.chains.find((c) => c.spec === "ETH1")?.others).toEqual({
+      providers: 2,
+      requests: 300,
+      errorRate: 50 / 300,
+      nodeErrorRate: 0,
+    });
+    // Alone on a chain: no others, and no rate to compare with.
+    expect(detail.chains.find((c) => c.spec === "SOLANA")?.others).toEqual({
+      providers: 0,
+      requests: 0,
+      errorRate: null,
+      nodeErrorRate: null,
+    });
+  });
+
+  it("a company's second account is not another provider on the chain", async () => {
+    const { prom } = fakeProm(ALL, undefined, {
+      more: { tries: [v({ provider_address: "blockdaemon-2", spec: "NEAR" }, 50)], ok: [v({ provider_address: "blockdaemon-2", spec: "NEAR" }, 50)] },
+    });
+    const detail = await new ProvidersService(prom, null, new MetricsService(prom)).detail("blockdaemon", "1d");
+    expect(detail.chains.find((c) => c.spec === "NEAR" && c.node === "blockdaemon")?.others.providers).toBe(0);
+  });
+
   it("returns an empty detail for an unknown provider", async () => {
     const { prom } = fakeProm(ALL);
     const detail = await new ProvidersService(prom, null, new MetricsService(prom)).detail("nope", "1d");
     expect(detail.provider).toBeNull();
     expect(detail.chains).toEqual([]);
+  });
+});
+
+describe("ProvidersService.series", () => {
+  // Every chain's bars come back in one read, so a clicked bar can open its report on the chain that failed most.
+  it("adds the chains up, and keeps each chain's failures for the bar's report", async () => {
+    const queries: string[] = [];
+    const prom = {
+      async queryOrNull(q: string) {
+        queries.push(q);
+        if (q.startsWith("count({__name__=")) return q.includes("node_errors") ? [v({}, 1)] : [];
+        if (q.startsWith("count by (provider_address)")) return [v({ provider_address: "tatum" }, 1)];
+        return [];
+      },
+      async queryRangeOrNull(q: string) {
+        queries.push(q);
+        const rows = (eth: [number, string][], sol: [number, string][]) => [
+          { metric: { spec: "ETH1" }, values: eth },
+          { metric: { spec: "SOLANA" }, values: sol },
+        ];
+        if (q.startsWith("sum by (spec) (increase(smartrouter_requests_total{")) return rows([[100, "10"], [200, "20"]], [[100, "5"]]);
+        if (q.startsWith("sum by (spec) (increase(smartrouter_requests_success_total{")) return rows([[100, "10"], [200, "15"]], [[100, "5"]]);
+        if (q.startsWith("sum by (spec) (increase(smartrouter_node_errors_total{")) return [{ metric: { spec: "ETH1" }, values: [[200, "2"]] }];
+        return [];
+      },
+    } as unknown as PrometheusClient;
+    const series = await new ProvidersService(prom, null, new MetricsService(prom)).series("tatum", "1d");
+    const at = (points: { t: number; v: number | null }[], t: number) => points.find((p) => p.t === t)?.v;
+    expect(at(series.tries, 100)).toBe(15);
+    expect(at(series.tries, 200)).toBe(20);
+    expect(at(series.failed, 200)).toBe(5);
+    expect(at(series.errorReplies!, 200)).toBe(2);
+    // Solana had nothing go wrong, so only Ethereum is kept: 5 failed + 2 error replies in the second bar.
+    expect(series.failuresByChain.map((c) => c.spec)).toEqual(["ETH1"]);
+    expect(at(series.failuresByChain[0]!.points, 200)).toBe(7);
+    // No hold-off family here: the old down rule, and no rate-limited minutes.
+    expect(series.rateLimitedMinutes).toBeNull();
   });
 });

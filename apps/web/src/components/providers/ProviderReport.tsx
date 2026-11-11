@@ -17,6 +17,7 @@ import { SideSheet } from "@/components/gateway/SideSheet";
 import { CopyButton } from "@/components/gateway/CopyButton";
 import { Skel } from "@/components/gateway/Skel";
 import { ProvidersTab } from "./ProvidersTab";
+import type { ReportTarget } from "./report-target";
 
 /** `datetime-local` value (local time) ↔ unix ms. */
 const toLocalInput = (ms: number) => {
@@ -62,25 +63,28 @@ export function ExportButton({ timeWindow }: { timeWindow: MetricWindow }) {
 }
 
 export function ProviderReportSheet({ target, timeWindow, onClose }: {
-  target: { providerId: string; providerName: string; spec: string } | null;
+  target: ReportTarget | null;
   timeWindow: MetricWindow;
   onClose: () => void;
 }) {
   const { scopeQ } = useFilters();
-  // The range starts as the page window; the reader can narrow it to the incident.
+  // The range starts as the clicked bar's, or the page window; the reader can narrow it to the incident.
   const [range, setRange] = useState<{ from: number; to: number }>(() => {
+    if (target?.range) return target.range;
     const to = Date.now();
     return { from: to - WINDOWS[timeWindow].rangeSeconds * 1000, to };
   });
   const [draft, setDraft] = useState(range);
+  // A bar covers every chain: it opens on the one that failed most, and the others are a pick away.
+  const [spec, setSpec] = useState(target?.spec ?? "");
   // The report's times in the reader's own zone, as the customer's outreach template writes them.
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const q = target
-    ? `provider=${encodeURIComponent(target.providerId)}&spec=${encodeURIComponent(target.spec)}&from=${range.from}&to=${range.to}&tz=${encodeURIComponent(tz)}${scopeQ}`
+    ? `provider=${encodeURIComponent(target.providerId)}&spec=${encodeURIComponent(spec)}&from=${range.from}&to=${range.to}&tz=${encodeURIComponent(tz)}${scopeQ}`
     : null;
   const res = useApi<ProviderReport>(q ? `/api/providers/report?${q}` : null, 0);
   const r = res.data;
-  const chainName = target ? buildChainMetaByIndex(target.spec).name : "";
+  const chainName = target ? buildChainMetaByIndex(spec).name : "";
   const noFailures = r && r.failedTries === 0 && !r.errorReplies;
 
   return (
@@ -99,6 +103,14 @@ export function ProviderReportSheet({ target, timeWindow, onClose }: {
         ) : undefined
       }>
       <div style={{ display: "flex", alignItems: "flex-end", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
+        {target?.chains && target.chains.length > 1 && (
+          <label style={{ fontSize: 11, color: "var(--text-3)", display: "grid", gap: 4 }}>
+            Chain
+            <select className="gw-input" value={spec} onChange={(e) => setSpec(e.target.value)}>
+              {target.chains.map((c) => <option key={c} value={c}>{buildChainMetaByIndex(c).name}</option>)}
+            </select>
+          </label>
+        )}
         <label style={{ fontSize: 11, color: "var(--text-3)", display: "grid", gap: 4 }}>
           From
           <input type="datetime-local" className="gw-input" value={toLocalInput(draft.from)}
@@ -149,15 +161,16 @@ export function ProvidersWithReports({ timeWindow, chainFilter, selectedId, onSe
   onSelect: (id: string | null) => void;
   onOpenUpstream?: (ref: { endpointId: string; spec: string }) => void;
 }) {
-  const [target, setTarget] = useState<{ providerId: string; providerName: string; spec: string } | null>(null);
+  const [target, setTarget] = useState<ReportTarget | null>(null);
   return (
     <>
       <ProvidersTab timeWindow={timeWindow} chainFilter={chainFilter} selectedId={selectedId} onSelect={onSelect} onOpenUpstream={onOpenUpstream}
+        onOpenReport={setTarget}
         rosterActions={<ExportButton timeWindow={timeWindow} />}
         renderChainAction={(p, c) =>
           c.requests > 0 ? <ReportButton onClick={() => setTarget({ providerId: p.id, providerName: p.name, spec: c.spec })} /> : null
         } />
-      <ProviderReportSheet key={target ? `${target.providerId}|${target.spec}` : "none"} target={target}
+      <ProviderReportSheet key={target ? `${target.providerId}|${target.spec}|${target.range?.from ?? ""}` : "none"} target={target}
         timeWindow={timeWindow} onClose={() => setTarget(null)} />
     </>
   );

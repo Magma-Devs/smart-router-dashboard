@@ -114,6 +114,9 @@ export async function providerRoutes(app: FastifyInstance) {
           n(c.rateLimitHits),
           p(c.uptime),
           n(c.downMinutes),
+          n(c.rateLimitedMinutes),
+          n(c.others.providers),
+          p(c.others.errorRate),
           new Date(start).toISOString(),
           new Date(end).toISOString(),
         ]);
@@ -124,7 +127,7 @@ export async function providerRoutes(app: FastifyInstance) {
       .header("Content-Disposition", `attachment; filename="providers-${window}.csv"`)
       .send(
         toCsv(
-          ["provider", "account", "chain", "spec", "role", "requests", "failed_requests", "error_pct", "error_reply_pct", "timeout_and_connection_error_pct", "p95_ms", "rate_limit_hits", "uptime_pct", "down_minutes", "window_start", "window_end"],
+          ["provider", "account", "chain", "spec", "role", "requests", "failed_requests", "error_pct", "error_reply_pct", "timeout_and_connection_error_pct", "p95_ms", "rate_limit_hits", "uptime_pct", "down_minutes", "rate_limited_minutes", "other_providers_on_chain", "other_providers_error_pct", "window_start", "window_end"],
           rows,
         ),
       );

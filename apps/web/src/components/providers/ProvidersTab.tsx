@@ -9,9 +9,10 @@
  *  - a family the router doesn't emit (rate-limit hold-offs, timeouts, the
  *    blocked gauge) renders "—" with a tip saying so, never 0;
  *  - "Uptime" counts a minute as down when half or more of the provider's
- *    tries on a chain failed (the PRD's rule). It is not the router's health
- *    gauge: that starts healthy and only traffic moves it, so an idle or
- *    disabled upstream would read 100%;
+ *    tries on a chain failed (the PRD's rule), rate limits left out: a "too
+ *    many requests" is often the plan's limit, so it is its own "rate-limited
+ *    time". It is not the router's health gauge: that starts healthy and only
+ *    traffic moves it, so an idle or disabled upstream would read 100%;
  *  - traffic under label values that can't be a node name is counted once,
  *    below the table, instead of inventing a provider for it;
  *  - "Error replies" are requests the provider answered with an error. The
@@ -41,12 +42,19 @@ import { errRateColor, tipLagColor, uptimeColorFrac } from "@/lib/colors";
 import { fmtLag, fmtNum } from "@/lib/format";
 import { PMNoVal, PMPanel, PMStat } from "@/components/metrics/upstream/PMPanel";
 import { ProviderCharts } from "./ProviderCharts";
+import type { ReportTarget } from "./report-target";
 
 const NOT_EMITTED = "This router build doesn't emit the metric behind this number yet.";
 const TIP_TIMEOUTS =
   "**Timeouts and refused or reset connections** as a share of the tries sent to this provider. The router counts these together today - a separate timeout figure needs an error-type label on the router's counters.";
 const TIP_UPTIME =
-  "Of every minute this provider served one of your chains, the share where **at least half** of its requests there got an answer. A minute with half or more failed counts as **down**. An error reply is an answer, so it doesn't make a minute down - it has its own column. Read for windows of a day or less.";
+  "Of every minute this provider served one of your chains, the share that **wasn't down**. A minute is down when half or more of its requests failed, **rate limits not counted** - they have their own column. An error reply is an answer, so it doesn't make a minute down either. Read for windows of a day or less.";
+const TIP_LIMITED =
+  "Minutes where half or more of its requests got **\"too many requests\"**. They don't count as down: a rate limit is often your plan's limit, not the provider failing. Read for windows of a day or less.";
+const LIMITED_UNKNOWN =
+  "Not read for windows longer than a day, or when the router's rate-limit counts don't say which chain they were on.";
+const TIP_OTHERS =
+  "The error rate of the **other providers on this chain**, together, over the same window. If they are fine and this one isn't, the problem is this provider, not the chain.";
 const UPTIME_NOT_READ = "Uptime isn't read for windows longer than a day - it needs every minute of the window. Pick a day or less.";
 const TIP_RATE =
   "Times the provider answered **\"too many requests\"** and the router held it off. A provider that limits your whole account counts every chain here together.";
@@ -92,6 +100,20 @@ const msCell = (ms: number | null, read = true) =>
   ) : (
     <span className="gw-mono gw-tnum" style={{ fontSize: 12, whiteSpace: "nowrap" }}>{Math.round(ms)} ms</span>
   );
+const minutesCell = (n: number | null) =>
+  n == null ? (
+    <span style={{ fontSize: 12, color: "var(--text-4)" }} title={LIMITED_UNKNOWN}>—</span>
+  ) : (
+    <span className="gw-mono gw-tnum" style={{ fontSize: 12, color: n > 0 ? "var(--warn)" : "var(--text-4)", whiteSpace: "nowrap" }}>{fmtNum(n)} min</span>
+  );
+const othersCell = (o: ProviderChainStats["others"]) =>
+  o.providers === 0 ? (
+    <span style={{ fontSize: 12, color: "var(--text-4)" }} title="No other provider serves this chain for you.">None</span>
+  ) : (
+    <span title={`${o.providers} other provider${o.providers === 1 ? "" : "s"}, ${fmtNum(o.requests)} requests${o.nodeErrorRate != null ? `, ${(o.nodeErrorRate * 100).toFixed(2)}% answered with an error` : ""}`}>
+      {pctCell(o.errorRate)}
+    </span>
+  );
 const uptimeCell = (u: number | null, read = true, down: number | null = null) =>
   u == null ? (
     <span style={{ fontSize: 12, color: "var(--text-4)" }} title={read ? undefined : UPTIME_NOT_READ}>—</span>
@@ -131,6 +153,7 @@ interface RosterRow {
   p95: number;
   rate: number;
   uptime: number;
+  limited: number;
 }
 
 function ProvidersRoster({ report, rows, activeId, onSelect, timeWindow, loading, refreshing, stale, actions }: {
@@ -159,6 +182,7 @@ function ProvidersRoster({ report, rows, activeId, onSelect, timeWindow, loading
     p95: p.p95Ms ?? Infinity,
     rate: p.rateLimitHits ?? -1,
     uptime: p.uptime ?? -1,
+    limited: p.rateLimitedMinutes ?? -1,
   }));
   const { sorted, sort, onSort } = useSort<RosterRow>(built, { key: "natural", dir: "asc" });
 
@@ -188,6 +212,7 @@ function ProvidersRoster({ report, rows, activeId, onSelect, timeWindow, loading
               <ThCol align="right" tip={TIP_RATE} sortKey="rate" sort={sort} onSort={onSort}>{two("Rate-limit", "hits")}</ThCol>
               <ThCol align="right" sortKey="p95" sort={sort} onSort={onSort}>p95</ThCol>
               <ThCol align="right" tip={TIP_UPTIME} sortKey="uptime" sort={sort} onSort={onSort}>Uptime</ThCol>
+              <ThCol align="right" tip={TIP_LIMITED} sortKey="limited" sort={sort} onSort={onSort}>{two("Rate-limited", "time")}</ThCol>
               <ThCol align="right" tip={tipPeak(report?.peakWindowSec)} sortKey="peak" sort={sort} onSort={onSort}>{two("Peak", "req/s")}</ThCol>
               <ThCol align="right" tip={TIP_TIMEOUTS} sortKey="timeouts" sort={sort} onSort={onSort}>Timeouts</ThCol>
             </tr>
@@ -219,6 +244,7 @@ function ProvidersRoster({ report, rows, activeId, onSelect, timeWindow, loading
                   <td style={{ textAlign: "right" }}>{numCell(p.rateLimitHits, fam?.rateLimit ?? true, "var(--warn)")}</td>
                   <td style={{ textAlign: "right" }}>{msCell(p.p95Ms, report?.latencyRead ?? true)}</td>
                   <td style={{ textAlign: "right" }}>{uptimeCell(p.uptime, report?.uptimeRead ?? true, p.downMinutes)}</td>
+                  <td style={{ textAlign: "right" }}>{minutesCell(p.rateLimitedMinutes)}</td>
                   <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{fmtRps(p.peakRps)}</span></td>
                   <td style={{ textAlign: "right" }}>{pctCell(p.protocolErrorRate, fam?.protocolErrors ?? true)}</td>
                 </tr>
@@ -226,10 +252,10 @@ function ProvidersRoster({ report, rows, activeId, onSelect, timeWindow, loading
             })}
             {loading && <SkelRows rows={6} cols={[
               { w: 140 }, { w: 30, align: "right" }, { w: 60, align: "right" }, { w: 50, align: "right" }, { w: 50, align: "right" },
-              { w: 50, align: "right" }, { w: 52, align: "right" }, { w: 60, align: "right" }, { w: 40, align: "right" }, { w: 40, align: "right" },
+              { w: 50, align: "right" }, { w: 52, align: "right" }, { w: 60, align: "right" }, { w: 44, align: "right" }, { w: 40, align: "right" }, { w: 40, align: "right" },
             ]} />}
             {!loading && rows.length === 0 && (
-              <tr><td colSpan={10} style={{ padding: "24px 16px", textAlign: "center", color: "var(--text-4)", fontSize: 13 }}>No provider traffic in this window.</td></tr>
+              <tr><td colSpan={11} style={{ padding: "24px 16px", textAlign: "center", color: "var(--text-4)", fontSize: 13 }}>No provider traffic in this window.</td></tr>
             )}
           </tbody>
         </table>
@@ -259,6 +285,8 @@ interface ChainRow {
   lag: number;
   rate: number;
   uptime: number;
+  limited: number;
+  others: number;
 }
 
 function ChainsTable({ detail, chainFilter, renderAction, onOpenUpstream }: {
@@ -282,9 +310,12 @@ function ChainsTable({ detail, chainFilter, renderAction, onOpenUpstream }: {
     lag: c.behindSec ?? -1,
     rate: c.rateLimitHits ?? -1,
     uptime: c.uptime ?? -1,
+    limited: c.rateLimitedMinutes ?? -1,
+    // A chain it serves alone sorts below every comparison.
+    others: c.others.providers > 0 ? (c.others.errorRate ?? -1) : -2,
   }));
   const { sorted, sort, onSort } = useSort<ChainRow>(built, { key: "natural", dir: "asc" });
-  const cols = renderAction ? 11 : 10;
+  const cols = renderAction ? 13 : 12;
 
   return (
     <PMPanel title="Chains" tip="Every chain this provider serves for you. **Share** is its part of that chain's tries." full>
@@ -296,11 +327,13 @@ function ChainsTable({ detail, chainFilter, renderAction, onOpenUpstream }: {
               <ThCol align="right" sortKey="requests" sort={sort} onSort={onSort}>Requests</ThCol>
               <ThCol align="right" sortKey="share" sort={sort} onSort={onSort}>Share</ThCol>
               <ThCol align="right" sortKey="err" sort={sort} onSort={onSort}>{two("Error", "rate")}</ThCol>
+              <ThCol align="right" tip={TIP_OTHERS} sortKey="others" sort={sort} onSort={onSort}>{two("Others on", "this chain")}</ThCol>
               <ThCol align="right" tip={TIP_REPLIES} sortKey="replies" sort={sort} onSort={onSort}>{two("Error", "replies")}</ThCol>
               <ThCol align="right" tip={TIP_RATE} sortKey="rate" sort={sort} onSort={onSort}>{two("Rate-limit", "hits")}</ThCol>
               <ThCol align="right" sortKey="p95" sort={sort} onSort={onSort}>p95</ThCol>
               <ThCol align="right" tip="How far this provider's newest block is behind the chain's best, in seconds." sortKey="lag" sort={sort} onSort={onSort}>Behind</ThCol>
               <ThCol align="right" tip={TIP_UPTIME} sortKey="uptime" sort={sort} onSort={onSort}>Uptime</ThCol>
+              <ThCol align="right" tip={TIP_LIMITED} sortKey="limited" sort={sort} onSort={onSort}>{two("Rate-limited", "time")}</ThCol>
               <ThCol align="right" tip={TIP_TIMEOUTS} sortKey="timeouts" sort={sort} onSort={onSort}>Timeouts</ThCol>
               {renderAction && <th style={STICKY_HEAD} />}
             </tr>
@@ -327,6 +360,7 @@ function ChainsTable({ detail, chainFilter, renderAction, onOpenUpstream }: {
                 <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12, color: c.requests > 0 ? "var(--text)" : "var(--text-4)" }}>{fmtNum(c.requests)}</span></td>
                 <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12, color: "var(--text-3)" }}>{c.share != null ? `${(c.share * 100).toFixed(0)}%` : "—"}</span></td>
                 <td style={{ textAlign: "right" }}>{pctCell(c.errorRate)}</td>
+                <td style={{ textAlign: "right" }}>{othersCell(c.others)}</td>
                 <td style={{ textAlign: "right" }}>{pctCell(c.nodeErrorRate, fam.nodeErrors)}</td>
                 <td style={{ textAlign: "right" }}>
                   {fam.rateLimit && c.rateLimitHits == null ? (
@@ -336,6 +370,7 @@ function ChainsTable({ detail, chainFilter, renderAction, onOpenUpstream }: {
                 <td style={{ textAlign: "right" }}>{msCell(c.p95Ms, detail.latencyRead)}</td>
                 <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12, color: tipLagColor(c.behindSec) }}>{fmtLag(c.behindSec)}</span></td>
                 <td style={{ textAlign: "right" }}>{uptimeCell(c.uptime, detail.uptimeRead, c.downMinutes)}</td>
+                <td style={{ textAlign: "right" }}>{minutesCell(c.rateLimitedMinutes)}</td>
                 <td style={{ textAlign: "right" }}>{pctCell(c.protocolErrorRate, fam.protocolErrors)}</td>
                 {renderAction && <td style={STICKY_CELL}>{renderAction(c)}</td>}
               </tr>
@@ -452,7 +487,7 @@ function MethodsTable({ detail, chainFilter }: { detail: ProviderDetailReport; c
 /** A provider's numbers cover minutes to weeks: a read a minute is plenty, and each costs the store a dozen queries. */
 const REFRESH_MS = 60_000;
 
-export function ProvidersTab({ timeWindow, chainFilter, selectedId, onSelect, rosterActions, renderChainAction, onOpenUpstream }: {
+export function ProvidersTab({ timeWindow, chainFilter, selectedId, onSelect, rosterActions, renderChainAction, onOpenUpstream, onOpenReport }: {
   timeWindow: MetricWindow;
   chainFilter: string | null;
   /** The provider the page shows; null = every provider, side by side. */
@@ -464,6 +499,8 @@ export function ProvidersTab({ timeWindow, chainFilter, selectedId, onSelect, ro
   renderChainAction?: (provider: ProviderSummary, chain: ProviderChainStats) => React.ReactNode;
   /** A chain row's name: opens that upstream in the Upstreams tab. */
   onOpenUpstream?: (ref: { endpointId: string; spec: string }) => void;
+  /** A graph bar: opens the provider report on that stretch. */
+  onOpenReport?: (target: ReportTarget) => void;
 }) {
   const { scopeQ } = useFilters();
   const listRes = useApi<ProvidersReport>(`/api/metrics/providers?window=${timeWindow}${scopeQ}`, REFRESH_MS);
@@ -561,7 +598,11 @@ export function ProvidersTab({ timeWindow, chainFilter, selectedId, onSelect, ro
               ) : (
                 <>
                   <div className="gw-mono gw-tnum" style={{ fontSize: 26, fontWeight: 700, lineHeight: 1, color: (sel.rateLimitHits ?? 0) > 0 ? "var(--warn)" : "var(--text)" }}>{fmtNum(sel.rateLimitHits)}</div>
-                  <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 8 }}>"too many requests" hold-offs · {timeWindow}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 8 }}>
+                    {sel.rateLimitedMinutes != null
+                      ? <>{fmtNum(sel.rateLimitedMinutes)} min rate-limited · {timeWindow}</>
+                      : <>"too many requests" hold-offs · {timeWindow}</>}
+                  </div>
                 </>
               )}
             </PMStat>
@@ -570,7 +611,7 @@ export function ProvidersTab({ timeWindow, chainFilter, selectedId, onSelect, ro
                 <>
                   <div className="gw-mono gw-tnum" style={{ fontSize: 26, fontWeight: 700, lineHeight: 1, color: uptimeColorFrac(sel.uptime) }}>{(sel.uptime * 100).toFixed(2)}%</div>
                   <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 8 }}>
-                    {fmtNum(sel.downMinutes ?? 0)} down minute{sel.downMinutes === 1 ? "" : "s"} · {timeWindow}
+                    {fmtNum(sel.downMinutes ?? 0)} down minute{sel.downMinutes === 1 ? "" : "s"} · rate limits not counted
                   </div>
                 </>
               ) : report?.uptimeRead === false ? (
@@ -579,7 +620,7 @@ export function ProvidersTab({ timeWindow, chainFilter, selectedId, onSelect, ro
             </PMStat>
           </div>
 
-          <ProviderCharts providerId={sel.id} providerName={sel.name} timeWindow={timeWindow} />
+          <ProviderCharts providerId={sel.id} providerName={sel.name} timeWindow={timeWindow} onOpenReport={onOpenReport} />
 
           {detailRes.error && !detail ? (
             <div className="gw-card" style={{ padding: 16, fontSize: 12, color: "var(--text-3)" }}>

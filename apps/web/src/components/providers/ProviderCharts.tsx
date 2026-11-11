@@ -1,10 +1,11 @@
 "use client";
 
-/* One provider over the window, every chain of it together: errors, rate-limit
- * hits, down minutes and average latency, in bars on the clock (the same bars
- * as the Upstreams tab's errors over time - a bar at t covers the step before
- * it, and the last one is still filling). One pointer moves across all four.
- * Live data: /api/metrics/provider-series. */
+/* One provider over the window, every chain of it together: errors, rate
+ * limits, down minutes and average latency, in bars on the clock (the same
+ * bars as the Upstreams tab's errors over time - a bar at t covers the step
+ * before it, and the last one is still filling). One pointer moves across all
+ * four, and a bar with failures in it opens the provider report on that
+ * stretch, on the chain that failed most. Live data: /api/metrics/provider-series. */
 
 import { useMemo, useState } from "react";
 import { WINDOWS, type MetricWindow, type ProviderSeries } from "@sr/shared";
@@ -16,6 +17,7 @@ import { PMPanel } from "@/components/metrics/upstream/PMPanel";
 import {
   barSpanWords, ChartRow, dayOf, fmtMs, gridTimes, hhmm, LegendLine, onGrid, PAD_R, PAD_X, timeTicks, type LegendRow,
 } from "@/components/metrics/upstream/PMBody";
+import type { ReportTarget } from "./report-target";
 
 const REFRESH_MS = 60_000;
 const ERR = "var(--err)";
@@ -27,10 +29,12 @@ const empty = (text: string) => (
 );
 const pct = (part: number, whole: number) => (whole > 0 ? `${((part / whole) * 100).toFixed(2)}%` : "—");
 
-export function ProviderCharts({ providerId, providerName, timeWindow }: {
+export function ProviderCharts({ providerId, providerName, timeWindow, onOpenReport }: {
   providerId: string;
   providerName: string;
   timeWindow: MetricWindow;
+  /** A bar opens the provider report on that stretch, on the chain that failed most in it. */
+  onOpenReport?: (target: ReportTarget) => void;
 }) {
   const { scopeQ } = useFilters();
   const res = useApi<ProviderSeries>(`/api/metrics/provider-series?provider=${encodeURIComponent(providerId)}&window=${timeWindow}${scopeQ}`, REFRESH_MS);
@@ -40,12 +44,21 @@ export function ProviderCharts({ providerId, providerName, timeWindow }: {
   const grid = d?.grid;
   const times = useMemo(() => gridTimes(grid), [grid]);
   const zero = (v: number[]) => v.map((x) => (Number.isFinite(x) ? x : 0));
-  const [tries, failed, replies, holds, down, lat] = useMemo(() => {
-    const series = [d?.tries ?? [], d?.failed ?? [], d?.errorReplies ?? [], d?.rateLimitHits ?? [], d?.downMinutes ?? [], d?.avgLatencyMs ?? []];
+  const [tries, failed, replies, holds, down, lat, limited] = useMemo(() => {
+    const series = [
+      d?.tries ?? [], d?.failed ?? [], d?.errorReplies ?? [], d?.rateLimitHits ?? [], d?.downMinutes ?? [], d?.avgLatencyMs ?? [],
+      d?.rateLimitedMinutes ?? [],
+    ];
     return onGrid(times, grid, series);
   }, [times, grid, d]);
+  // Each chain's failures per bar: which chain a clicked bar's report opens on.
+  const byChain = useMemo(() => {
+    const chains = d?.failuresByChain ?? [];
+    const rows = onGrid(times, grid, chains.map((c) => c.points));
+    return chains.map((c, k) => ({ spec: c.spec, values: rows[k] ?? [] }));
+  }, [times, grid, d]);
   const sum = (v: number[] | undefined) => (v ?? []).reduce((a, b) => (Number.isFinite(b) ? a + b : a), 0);
-  const totals = { tries: sum(tries), failed: sum(failed), replies: sum(replies), holds: sum(holds), down: sum(down) };
+  const totals = { tries: sum(tries), failed: sum(failed), replies: sum(replies), holds: sum(holds), down: sum(down), limited: sum(limited) };
 
   const barSec = grid?.stepSec ?? 0;
   const asOf = d?.asOf ?? 0;
@@ -57,6 +70,30 @@ export function ProviderCharts({ providerId, providerName, timeWindow }: {
     const end = times[i]! > asOf ? "now" : hhmm(to);
     return `${dayOf(from)}, ${hhmm(from)} - ${end}`;
   };
+  // The chains that failed in bar i, worst first.
+  const failedChains = (i: number) =>
+    byChain
+      .map((c) => ({ spec: c.spec, n: c.values[i] ?? NaN }))
+      .filter((c) => Number.isFinite(c.n) && c.n > 0)
+      .sort((a, b) => b.n - a.n);
+  const reportAt = onOpenReport
+    ? (i: number) => {
+        const ranked = failedChains(i);
+        if (!ranked.length) return;
+        const t = times[i]!;
+        onOpenReport({
+          providerId,
+          providerName,
+          spec: ranked[0]!.spec,
+          range: { from: (t - barSec) * 1000, to: Math.min(t, asOf) * 1000 },
+          chains: ranked.map((c) => c.spec),
+        });
+      }
+    : undefined;
+  const clickHint = (i: number) =>
+    reportAt && failedChains(i).length ? (
+      <div style={{ color: "var(--text-4)", marginTop: 6 }}>Click for a report on this stretch</div>
+    ) : null;
   const shared = { xDomain: dom, xTicks: ticks, hoverAt: hovT, onHoverAt: setHovT, padX: PAD_X, padR: PAD_R, xs: times, barSpan: barSec } as const;
   const tipRow = (name: string, color: string, value: string) => (
     <div key={name} style={{ display: "flex", alignItems: "center", gap: 7, padding: "2px 0" }}>
@@ -80,6 +117,12 @@ export function ProviderCharts({ providerId, providerName, timeWindow }: {
     ...(d?.errorReplies ? [{ key: "r", name: "Error replies", color: REPLY, mark: "box" as const, value: `${fmtComma(totals.replies)} · ${pct(totals.replies, totals.tries)}` }] : []),
   ];
 
+  /* rate limits: rate-limited minutes where the router can put a hold-off on its chain, else the hits */
+  const byMinute = !!d?.rateLimitedMinutes;
+  const rateTip = byMinute
+    ? `Minutes where half or more of ${providerName}'s requests got **"too many requests"**, and how many times it said so. They don't count as down: a rate limit is often your plan's limit, not the provider failing.\n\n${perBar} Minutes are read for windows of a day or less.`
+    : `Times ${providerName} answered **"too many requests"** and the router held it off. A provider that limits your whole account counts every chain together.\n\n${perBar}`;
+
   /* average latency: no answers in a bar is a gap, never 0 ms */
   const latVals = lat ?? [];
   const latAll = latVals.filter(Number.isFinite);
@@ -88,38 +131,54 @@ export function ProviderCharts({ providerId, providerName, timeWindow }: {
   return (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))", gap: 12, marginBottom: 12 }}>
       <PMPanel title="Errors over time"
-        tip={`**Failed**: requests ${providerName} didn't answer usefully - a timeout, a refused connection, a 429, an HTTP 5xx.\n\n**Error replies**: requests it answered with an error. The router counts these as served.\n\n${perBar}`}>
+        tip={`**Failed**: requests ${providerName} didn't answer usefully - a timeout, a refused connection, a 429, an HTTP 5xx.\n\n**Error replies**: requests it answered with an error. The router counts these as served.\n\n${perBar}${reportAt ? " Click a bar for a report on that stretch." : ""}`}>
         {totals.failed + totals.replies > 0 ? (
           <ChartRow height={170}
-            chart={<ColumnChart stacks={errStacks} id={"pve" + pid} integerY {...shared}
+            chart={<ColumnChart stacks={errStacks} id={"pve" + pid} integerY {...shared} onBarClick={reportAt}
               tooltip={(i) => (
                 <>
                   {when(i)}
                   {tipRow("Failed", ERR, `${fmtComma(failed?.[i] ?? 0)} · ${pct(failed?.[i] ?? 0, tries?.[i] ?? 0)}`)}
                   {d?.errorReplies && tipRow("Error replies", REPLY, `${fmtComma(replies?.[i] ?? 0)} · ${pct(replies?.[i] ?? 0, tries?.[i] ?? 0)}`)}
                   {tipRow("Requests", "var(--text-4)", fmtComma(tries?.[i] ?? 0))}
+                  {clickHint(i)}
                 </>
               )} />}
             legend={<LegendLine heading="This window" rows={errRows} />} />
         ) : d && totals.tries > 0 ? empty(`No failed requests and no error replies at ${providerName} in this window.`) : loadingOr(`No requests to ${providerName} in this window.`)}
       </PMPanel>
 
-      <PMPanel title="Rate-limit hits"
-        tip={`Times ${providerName} answered **"too many requests"** and the router held it off. A provider that limits your whole account counts every chain together.\n\n${perBar}`}>
-        {d && !d.rateLimitHits ? empty("This router build doesn't count rate-limit hits yet.") : totals.holds > 0 ? (
+      <PMPanel title="Rate limits" tip={rateTip}>
+        {d && !d.rateLimitHits ? empty("This router build doesn't count rate-limit hits yet.") : byMinute ? (
+          totals.limited > 0 ? (
+            <ChartRow height={170}
+              chart={<ColumnChart stacks={[{ name: "Rate-limited minutes", values: zero(limited ?? []), color: WARN }]} id={"pvr" + pid} integerY {...shared} onBarClick={reportAt}
+                tooltip={(i) => (
+                  <>
+                    {when(i)}
+                    {tipRow("Rate-limited", WARN, `${fmtComma(limited?.[i] ?? 0)} min`)}
+                    {tipRow("Rate-limit hits", "var(--text-4)", fmtComma(holds?.[i] ?? 0))}
+                    {clickHint(i)}
+                  </>
+                )} />}
+              legend={<LegendLine heading="This window" rows={[{ key: "l", name: "Rate-limited", color: WARN, mark: "box", value: `${fmtComma(totals.limited)} min · ${fmtComma(totals.holds)} hits` }]} />} />
+          ) : totals.holds > 0 ? (
+            empty(`${fmtComma(totals.holds)} rate-limit hits, but never half of a minute's requests - no rate-limited minute in this window.`)
+          ) : d ? empty(`${providerName} didn't rate-limit you in this window.`) : loadingOr("")
+        ) : totals.holds > 0 ? (
           <ChartRow height={170}
-            chart={<ColumnChart stacks={[{ name: "Rate-limit hits", values: zero(holds ?? []), color: WARN }]} id={"pvr" + pid} integerY {...shared}
-              tooltip={(i) => <>{when(i)}{tipRow("Rate-limit hits", WARN, fmtComma(holds?.[i] ?? 0))}</>} />}
+            chart={<ColumnChart stacks={[{ name: "Rate-limit hits", values: zero(holds ?? []), color: WARN }]} id={"pvr" + pid} integerY {...shared} onBarClick={reportAt}
+              tooltip={(i) => <>{when(i)}{tipRow("Rate-limit hits", WARN, fmtComma(holds?.[i] ?? 0))}{clickHint(i)}</>} />}
             legend={<LegendLine heading="This window" rows={[{ key: "h", name: "Rate-limit hits", color: WARN, mark: "box", value: fmtComma(totals.holds) }]} />} />
         ) : d ? empty(`${providerName} didn't rate-limit you in this window.`) : loadingOr("")}
       </PMPanel>
 
       <PMPanel title="Down minutes"
-        tip={`Minutes, summed over its chains, where **half or more** of its requests on a chain failed. An error reply is an answer, so it doesn't make a minute down.\n\n${perBar} Read for windows of a day or less.`}>
+        tip={`Minutes, summed over its chains, where **half or more** of its requests failed. **Rate limits don't count** - they are in Rate limits. An error reply is an answer, so it doesn't make a minute down either.\n\n${perBar} Read for windows of a day or less.`}>
         {d && !d.downMinutes ? empty("Down minutes aren't read for windows longer than a day - pick a day or less.") : totals.down > 0 ? (
           <ChartRow height={170}
-            chart={<ColumnChart stacks={[{ name: "Down minutes", values: zero(down ?? []), color: ERR }]} id={"pvd" + pid} integerY {...shared}
-              tooltip={(i) => <>{when(i)}{tipRow("Down minutes", ERR, fmtComma(down?.[i] ?? 0))}</>} />}
+            chart={<ColumnChart stacks={[{ name: "Down minutes", values: zero(down ?? []), color: ERR }]} id={"pvd" + pid} integerY {...shared} onBarClick={reportAt}
+              tooltip={(i) => <>{when(i)}{tipRow("Down minutes", ERR, fmtComma(down?.[i] ?? 0))}{clickHint(i)}</>} />}
             legend={<LegendLine heading="This window" rows={[{ key: "d", name: "Down minutes", color: ERR, mark: "box", value: fmtComma(totals.down) }]} />} />
         ) : d ? empty(`${providerName} had no down minute in this window.`) : loadingOr("")}
       </PMPanel>

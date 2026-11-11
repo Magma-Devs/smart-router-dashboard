@@ -8,7 +8,8 @@
  * here, shared by the api (which aggregates) and the web (which labels).
  *
  * The web's `UPSTREAM_CATALOG` still owns logos and the add-upstream flow;
- * this list owns identity for numbers.
+ * this list owns identity - for the numbers, and for which logo a configured
+ * upstream gets (`matchCatalog` asks `providerOf`).
  */
 
 export interface ProviderCompany {
@@ -33,9 +34,10 @@ export const PROVIDER_COMPANIES: readonly ProviderCompany[] = [
   { id: "chainstack", name: "Chainstack", hosts: [/\.p2pify\.com$/, /(^|\.)chainstack\.com$/] },
   { id: "drpc", name: "dRPC", hosts: [/(^|\.)drpc\.org$/] },
   { id: "getblock", name: "GetBlock", hosts: [/(^|\.)getblock\.io$/] },
-  { id: "blockpi", name: "BlockPI", hosts: [/(^|\.)blockpi\.network$/] },
+  { id: "blockpi", name: "BlockPI", hosts: [/(^|\.)blockpi\.network$/, /(^|\.)blockpi\.io$/] },
   { id: "nodereal", name: "NodeReal", hosts: [/(^|\.)nodereal\.io$/] },
   { id: "publicnode", name: "PublicNode", hosts: [/(^|\.)publicnode\.com$/] },
+  { id: "ankr", name: "Ankr", hosts: [/(^|\.)ankr\.com$/] },
 ];
 
 export interface ProviderIdentity {
