@@ -351,13 +351,36 @@ export function qUpstreamRelays(window: MetricWindow = DEFAULT_WINDOW, spec?: st
   return `sum by (provider_address, spec) (increase(${ROUTER_METRICS.requestsTotal}${sel}[${rangeFor(window)}]))`;
 }
 
-/** Successful relays per (upstream, chain) over the window — the roster's numerator, unrounded. */
+/**
+ * Successful relays per (upstream, chain) over the window, unrounded. "Successful"
+ * is the router's transport verdict: an answer that carried a node error is in
+ * it too, so the roster takes `qUpstreamNodeErrors` off it.
+ */
 export function qUpstreamSuccesses(window: MetricWindow = DEFAULT_WINDOW, spec?: string): string {
   const sel = selector({ spec });
   if (recordedReadsFor(window)) {
     return `sum by (provider_address, spec) (${sot(`${RECORDED.successByProvider}${sel}`, rangeFor(window))}) * ${K}`;
   }
   return `sum by (provider_address, spec) (increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${rangeFor(window)}]))`;
+}
+
+/**
+ * Relays per (upstream, chain) the upstream answered with a node error, over the
+ * window, unrounded: the part of `qUpstreamSuccesses` that was not a success.
+ * Raw at every window — no rule records this family — and an absent family
+ * (no node error yet) matches nothing, which the roster reads as zero.
+ */
+export function qUpstreamNodeErrors(window: MetricWindow = DEFAULT_WINDOW, spec?: string): string {
+  return `sum by (provider_address, spec) (increase(${OPTIONAL_METRICS.nodeErrorsTotal}${selector({ spec })}[${rangeFor(window)}]))`;
+}
+
+/**
+ * Clients' reads per (upstream, chain) answered with a result over the window,
+ * whole. Raw at every window, like `qUpstreamNodeErrors`. Read only where the
+ * family exists: on a router that predates it, no series is not zero.
+ */
+export function qUpstreamResults(window: MetricWindow = DEFAULT_WINDOW, spec?: string): string {
+  return `round(sum by (provider_address, spec) (increase(${OPTIONAL_METRICS.nodeResultsTotal}${selector({ spec })}[${rangeFor(window)}])))`;
 }
 
 /** Read relays per method over the window — the methods tab's read column. */
@@ -833,14 +856,31 @@ export function qUpstreamRequestsTotal(ref: UpstreamRef, window: MetricWindow = 
   return `sum(increase(${ROUTER_METRICS.requestsTotal}${sel}[${rangeFor(window)}]))`;
 }
 
-/** One upstream's success / total over the window (router scope), clamped to 1 as `qAvailability` is. */
-export function qUpstreamAvailability(ref: UpstreamRef, window: MetricWindow = DEFAULT_WINDOW): string {
+/**
+ * One upstream's relays answered without an error, as a share of its relays over
+ * the window (router scope), clamped to 0..1. The router's success counter takes
+ * in an answer that carried a node error, so the node errors come off it; with
+ * that family absent (no node error yet) they read as zero and the share is the
+ * plain success / total. The node errors are raw at every window: no rule records
+ * them, so a recorded success count is scaled back to whole relays to meet them.
+ */
+function upstreamAnsweredShare(ref: UpstreamRef, window: MetricWindow): string {
   const sel = upstreamProviderSelector(ref);
   const r = rangeFor(window);
+  const nodeErrors = `(sum(increase(${OPTIONAL_METRICS.nodeErrorsTotal}${sel}[${r}])) or vector(0))`;
   if (recordedReadsFor(window)) {
-    return `clamp_max(sum(${sot(`${RECORDED.successByProvider}${sel}`, r)}) / sum(${sot(`${RECORDED.requestsByProvider}${sel}`, r)}), 1)`;
+    const ok = `sum(${sot(`${RECORDED.successByProvider}${sel}`, r)}) * ${K}`;
+    const tot = `sum(${sot(`${RECORDED.requestsByProvider}${sel}`, r)}) * ${K}`;
+    return `clamp((${ok} - ${nodeErrors}) / (${tot}), 0, 1)`;
   }
-  return `clamp_max(sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${r}])) / sum(increase(${ROUTER_METRICS.requestsTotal}${sel}[${r}])), 1)`;
+  const ok = `sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${r}]))`;
+  const tot = `sum(increase(${ROUTER_METRICS.requestsTotal}${sel}[${r}]))`;
+  return `clamp((${ok} - ${nodeErrors}) / ${tot}, 0, 1)`;
+}
+
+/** One upstream's success rate over the window: `upstreamAnsweredShare`, a node-error answer counted as a failure. */
+export function qUpstreamAvailability(ref: UpstreamRef, window: MetricWindow = DEFAULT_WINDOW): string {
+  return upstreamAnsweredShare(ref, window);
 }
 
 /** One upstream's failed relays over the window (total − success, whole, ≥ 0). */
@@ -853,17 +893,12 @@ export function qUpstreamFailedCount(ref: UpstreamRef, window: MetricWindow = DE
   return `round(clamp_min(sum(increase(${ROUTER_METRICS.requestsTotal}${sel}[${r}])) - sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${r}])), 0))`;
 }
 
-/** Per-upstream error rate over the window (router scope). */
+/** Per-upstream error rate over the window (router scope): 1 − `qUpstreamAvailability`, node errors included. */
 export function qUpstreamErrorRate(
   ref: UpstreamRef,
   window: MetricWindow = DEFAULT_WINDOW,
 ): string {
-  const sel = upstreamProviderSelector(ref);
-  const r = rangeFor(window);
-  if (recordedReadsFor(window)) {
-    return `1 - (sum(${sot(`${RECORDED.successByProvider}${sel}`, r)}) / sum(${sot(`${RECORDED.requestsByProvider}${sel}`, r)}))`;
-  }
-  return `1 - (sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${r}])) / sum(increase(${ROUTER_METRICS.requestsTotal}${sel}[${r}])))`;
+  return `1 - (${upstreamAnsweredShare(ref, window)})`;
 }
 
 /* ── Health / block-lag / scores / gauges ────────────────────────────────── */

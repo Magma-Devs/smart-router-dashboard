@@ -864,3 +864,93 @@ describe("MetricsService.pulse · the topbar reads six series, not the overview 
     expect(queries.every((q) => q !== "smartrouter_overall_health")).toBe(true);
   });
 });
+
+/**
+ * MAG-5194. The router counts an answer that carried a node error as a success
+ * on `smartrouter_requests_success_total`, so the roster's 1 − success/total read
+ * 0% errors for an upstream that answered every relay with one: typically a
+ * backup that only gets the retries of calls the primary already failed. Its
+ * node errors come off the successes. `results` reads the reads it answered with
+ * a result, from a router that reports them (smart-router PR #692).
+ */
+describe("MetricsService.upstreams · a node-error answer is not a success", () => {
+  interface Answers {
+    relays?: [string, string][];
+    ok?: [string, string][];
+    tot?: [string, string][];
+    nodeErr?: [string, string][];
+    results?: [string, string][];
+    /** Whether the router reports `smartrouter_node_results_total` at all. */
+    resultsFamily?: boolean;
+  }
+  function prom(a: Answers): PrometheusClient {
+    const byProvider = (rows: [string, string][]) =>
+      rows.map(([id, v]) => ({ metric: { provider_address: id, spec: "ETH1" }, value: [1, v] as [number, string] }));
+    return {
+      async query(expr: string) {
+        if (expr.startsWith("count by (spec)")) return [{ metric: { spec: "ETH1" }, value: [1, "1"] as [number, string] }];
+        if (expr.includes("total_relays_serviced")) {
+          return (a.relays ?? []).map(([id, v]) => ({ metric: { endpoint_id: id, spec: "ETH1" }, value: [1, v] as [number, string] }));
+        }
+        if (expr.includes("smartrouter_requests_success_total")) return byProvider(a.ok ?? []);
+        if (expr.includes("smartrouter_requests_total")) return byProvider(a.tot ?? []);
+        if (expr.includes("smartrouter_node_errors_total")) return byProvider(a.nodeErr ?? []);
+        if (expr.includes("smartrouter_node_results_total")) return byProvider(a.results ?? []);
+        return [];
+      },
+      async queryRange() { return []; },
+      async scalar(expr: string) {
+        return a.resultsFamily && expr.includes("smartrouter_node_results_total") ? 4 : null;
+      },
+      async ping() { return true; },
+    } as unknown as PrometheusClient;
+  }
+  const rowsOf = async (a: Answers) =>
+    new Map((await new MetricsService(prom(a)).upstreams(undefined, "1d")).map((r) => [r.endpointId, r]));
+
+  it("an upstream that answers every relay with a node error reads 100% errors, not 0%", async () => {
+    const rows = await rowsOf({
+      relays: [["backup", "100"]], tot: [["backup", "100"]], ok: [["backup", "100"]], nodeErr: [["backup", "100"]],
+    });
+    expect(rows.get("backup")?.uptime).toBe(0);
+    expect(rows.get("backup")?.errorRate).toBe(1);
+  });
+
+  it("counts both kinds of failure: no answer, and an answer that carried a node error", async () => {
+    // 10 got no answer (100 − 90), 30 answered with a node error: 60 of 100 succeeded.
+    const rows = await rowsOf({
+      relays: [["eth-a", "90"]], tot: [["eth-a", "100"]], ok: [["eth-a", "90"]], nodeErr: [["eth-a", "30"]],
+    });
+    expect(rows.get("eth-a")?.uptime).toBeCloseTo(0.6);
+    expect(rows.get("eth-a")?.errorRate).toBeCloseTo(0.4);
+  });
+
+  it("keeps success / total where the router has counted no node error", async () => {
+    const rows = await rowsOf({ relays: [["eth-a", "90"]], tot: [["eth-a", "100"]], ok: [["eth-a", "90"]] });
+    expect(rows.get("eth-a")?.uptime).toBeCloseTo(0.9);
+    expect(rows.get("eth-a")?.errorRate).toBeCloseTo(0.1);
+  });
+
+  it("never reads below 0% when each counter's extrapolation leaves more node errors than successes", async () => {
+    const rows = await rowsOf({
+      relays: [["eth-a", "50"]], tot: [["eth-a", "100"]], ok: [["eth-a", "50"]], nodeErr: [["eth-a", "52"]],
+    });
+    expect(rows.get("eth-a")?.uptime).toBe(0);
+    expect(rows.get("eth-a")?.errorRate).toBe(1);
+  });
+
+  it("reads answered with a result: 0 for an upstream that answered none, where the router reports the family", async () => {
+    const rows = await rowsOf({
+      resultsFamily: true,
+      relays: [["primary", "100"], ["backup", "40"]],
+      results: [["primary", "81.6"]],
+    });
+    expect(rows.get("primary")?.results).toBe(82);
+    expect(rows.get("backup")?.results).toBe(0);
+  });
+
+  it("leaves results null on a router that does not report them: no series there is not zero", async () => {
+    const rows = await rowsOf({ relays: [["primary", "100"]], results: [["primary", "80"]] });
+    expect(rows.get("primary")?.results).toBeNull();
+  });
+});

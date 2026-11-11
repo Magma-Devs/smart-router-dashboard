@@ -93,8 +93,16 @@ export const OPTIONAL_METRICS = {
   requestsWriteTotal: "smartrouter_requests_write_total",
   requestsBatchTotal: "smartrouter_requests_batch_total",
   // {spec, apiInterface, provider_address, method} — upstream returned a
-  // JSON-RPC error object (counts as SUCCESS on requests_success_total).
+  // JSON-RPC error object (counts as SUCCESS on requests_success_total, so
+  // every success rate per upstream takes these off its successes). Never
+  // counted on a write: all but one provider refuse a broadcast.
   nodeErrorsTotal: "smartrouter_node_errors_total",
+  // {spec, apiInterface, provider_address, method} — clients' reads the
+  // upstream answered with a result: no node error, no write, not the
+  // router's own health check, not a reply from the cache. Routers from
+  // smart-router PR #692 (MAG-5179) on; absent on older ones, and on a newer
+  // one until its first read is answered.
+  nodeResultsTotal: "smartrouter_node_results_total",
   protocolErrorsTotal: "smartrouter_protocol_errors_total",
   // CLASSIFIED error counter — ⚠ labels {chain_id, error_category, error_name,
   // retryable}: chain_id (NOT spec), category ∈ {internal, external}, bounded

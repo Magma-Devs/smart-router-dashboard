@@ -51,6 +51,8 @@ import {
   qRpsSeriesExpr,
   qUpstreamAvailability,
   qUpstreamErrorRate,
+  qUpstreamNodeErrors,
+  qUpstreamResults,
   qUpstreamFailedCount,
   qUpstreamFailedSeriesExpr,
   qUpstreamRelays,
@@ -125,6 +127,8 @@ const STAYS_RAW: Array<[string, (w: "6h") => string]> = [
   ["qMethodLatencyQuantile", (w) => qMethodLatencyQuantile(0.95, w, "ETH1")],
   ["qRetriesTotal", (w) => qRetriesTotal("recovered", w)],
   ["qPerEndpointPollsSeriesExpr", () => qPerEndpointPollsSeriesExpr("ok", "ETH1", "2m")],
+  ["qUpstreamNodeErrors", (w) => qUpstreamNodeErrors(w, "ETH1")],
+  ["qUpstreamResults", (w) => qUpstreamResults(w, "ETH1")],
 ];
 
 afterEach(() => setRecordedReads({ from: null, available: false }));
@@ -217,6 +221,17 @@ describe("builders under the recorded reads policy", () => {
     const raw = build("6h");
     setRecordedReads({ from: "3h", available: true, historySeconds: 2_592_000 });
     expect(build("6h")).toBe(raw);
+  });
+
+  // MAG-5194: no rule records node errors, so the recorded success count is
+  // scaled back to whole relays to meet the raw node errors, and the total with
+  // it; the share itself is unchanged by the scaling.
+  it("an upstream's recorded success rate meets its raw node errors in whole relays", () => {
+    setRecordedReads({ from: "3h", available: true, historySeconds: 2_592_000 });
+    const sel = '{spec="ETH1",provider_address="eth-lava"}';
+    expect(qUpstreamAvailability(REF, "6h")).toBe(
+      `clamp((sum(sum_over_time(${RECORDED.successByProvider}${sel}[21600s])) * 60 - (sum(increase(smartrouter_node_errors_total${sel}[21600s])) or vector(0))) / (sum(sum_over_time(${RECORDED.requestsByProvider}${sel}[21600s])) * 60), 0, 1)`,
+    );
   });
 
   it("scales a count by the ruler interval and leaves a ratio and a quantile unscaled", () => {

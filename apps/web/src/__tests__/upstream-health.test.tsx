@@ -33,6 +33,7 @@ const upstream = (over: Partial<UpstreamMetrics> = {}): UpstreamMetrics => ({
   uptime: 0.999999,
   p95Ms: 24,
   errorRate: 0,
+  results: null,
   scores: { composite: 1 },
   scoreSource: "optimizer",
   polls: { ok: 0, failed: 10 },

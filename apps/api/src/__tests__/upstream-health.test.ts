@@ -34,6 +34,8 @@ async function roster(healthRows: PromVectorSample[], total = 1_000_000, ok = 99
         ];
       return [];
     },
+    // Presence probes: no optional family here, so the roster reads none of them.
+    scalar: async () => null,
   } as unknown as PrometheusClient;
   const metrics = new MetricsService(prom);
   const app = Fastify();

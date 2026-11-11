@@ -5,6 +5,27 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.58.2]
+
+### Fixed
+
+- **An upstream's error rate counts an answer that carried a node error.**
+  The router counts a JSON-RPC error object, or a REST error status it reads
+  as the node's own reply, as a delivered relay, so an upstream that answered
+  every request with one read 0% errors and 100% success. The roster's error
+  rate, the upstream's request success rate and its 1h / 24h / 7d figures now
+  take `smartrouter_node_errors_total` off the router's successes. A write's
+  refusal by an upstream that lost the broadcast to another is still not an
+  error: the router keeps those off the node-error counter.
+
+### Added
+
+- **Reads answered with a result, per upstream.** The upstream's Throughput
+  tile shows how many clients' reads it answered with a result over the
+  window, from `smartrouter_node_results_total`, on routers that report it
+  (smart-router PR #692). A backup that only gets the retries of calls another
+  upstream failed, and fails them too, shows its volume and 0 results.
+
 ## [0.58.1]
 
 ### Fixed

@@ -20,6 +20,7 @@ import { Refreshing, Skel, SkelRows } from "@/components/gateway/Skel";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 import { useRouterFilter } from "@/hooks/use-router-options";
 
+const ERROR_TIP = "**Requests routed to this upstream that failed**, as a share of all of them: no answer (a transport failure or a timeout), or an answer that carried a node error - a JSON-RPC error, a REST error status. The router counts the second kind as delivered; this column does not.\n\nA write's refusal by an upstream that lost the broadcast to another is not an error here.";
 const BLOCK_TIP = "**The head this upstream reports** - `rpc_endpoint_latest_block`, its own tip rather than the router's.\n\n**Click a height** to open it on the chain\u2019s block explorer and check it against the public chain. Chains with no verified block page show the number plain - the chain name still opens their explorer.";
 
 /**
@@ -125,7 +126,7 @@ export function PMRoster({ rows, activeKey, onSelect, timeWindow, loading = fals
             <ThCol align="right" sortKey="requests" sort={sort} onSort={onSort}>Total requests</ThCol>
             <ThCol align="right" sortKey="status" sort={sort} onSort={onSort}>Status</ThCol>
             <ThCol align="right" tip={`p95 latency over ${timeWindow}. Historical request data, independent of current health.`} sortKey="latency" sort={sort} onSort={onSort}>Latency</ThCol>
-            <ThCol align="right" sortKey="err" sort={sort} onSort={onSort}>Error rate</ThCol>
+            <ThCol align="right" tip={ERROR_TIP} sortKey="err" sort={sort} onSort={onSort}>Error rate</ThCol>
           </tr>
         </thead>
         <tbody>
