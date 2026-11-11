@@ -85,6 +85,10 @@ export default defineConfig({
    *
    * The api runs `tsx src/main.ts` rather than its `dev` script: the watcher
    * that script adds has nothing to watch here and one more thing to shut down.
+   *
+   * Never reused: a server already on :3000 or :8000 may be another checkout's,
+   * and the suite would test that code against the database it wipes. A busy
+   * port fails the run instead; `E2E_WEB_URL` / `E2E_API_URL` reuse on purpose.
    */
   webServer: MANAGED_STACK
     ? [
@@ -94,7 +98,7 @@ export default defineConfig({
           url: `${API_URL}/health`,
           env: serverEnv,
           timeout: 120_000,
-          reuseExistingServer: !process.env.CI,
+          reuseExistingServer: false,
           stdout: "pipe",
           stderr: "pipe",
         },
@@ -112,7 +116,7 @@ export default defineConfig({
             AUTH_URL: WEB_URL,
           },
           timeout: 180_000,
-          reuseExistingServer: !process.env.CI,
+          reuseExistingServer: false,
           stdout: "pipe",
           stderr: "pipe",
         },
