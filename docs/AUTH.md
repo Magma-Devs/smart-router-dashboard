@@ -61,7 +61,10 @@ Browser ── Authorization: Bearer <same JWT> ──▶ Fastify api (@fastify/
   **row's** role rather than the token's.
 - **Database** (`packages/db`) — Drizzle + Postgres: `users` and
   `sessions`. The api's db plugin connects **lazily with retries** (no
-  compose `depends_on`), runs migrations, then seeds the admin. While it
+  compose `depends_on`), runs migrations, then seeds the admin. With
+  `DATABASE_RUNTIME_URL` it migrates as `DATABASE_URL`'s role, grants the
+  runtime role its privileges, and serves as the runtime role
+  ([`DATABASE-ROLES.md`](DATABASE-ROLES.md)). While it
   is settling, `/auth/*` **and** every authenticated route answer 503 —
   the gate fails closed, because a signature check alone cannot tell
   whether a session was revoked or an account removed.
@@ -587,7 +590,8 @@ exercising the real flow.
 |---|---|---|
 | `AUTH_MODE` | api + web | `disabled` (default) / `enabled` — must match on both |
 | `AUTH_SECRET` | api + web | HS256 signing secret, must match. `openssl rand -base64 32` |
-| `DATABASE_URL` | api | Empty in both compose files. `make up-auth` / `make dev-auth` supply `postgres://sr:dev@postgres:5432/sr_dashboard`; only read when `AUTH_MODE=enabled` |
+| `DATABASE_URL` | api | Empty in both compose files. `make up-auth` / `make dev-auth` supply `postgres://sr:dev@postgres:5432/sr_dashboard`; only read when `AUTH_MODE=enabled`. Its role runs the migrations, and serves requests too unless `DATABASE_RUNTIME_URL` is set |
+| `DATABASE_RUNTIME_URL` | api | Optional, empty in both compose files. Set, every request is served as this role, which the api grants read and write on the application's tables and only `SELECT`/`INSERT` on the audit log after migrating as `DATABASE_URL`'s role; a role that could still alter the log is refused. See [`DATABASE-ROLES.md`](DATABASE-ROLES.md) |
 | `DB_POOL_MAX` | api | Connections each api process holds to Postgres (default `20`). Every authenticated request takes one for the session join, so it bounds a backend's concurrency and, summed over a deployment's backends, what the instance must admit. Refused unless a whole number ≥ 1 |
 | `DB_IDLE_TIMEOUT_S` | api | Seconds an idle pooled connection is kept before it is closed (default `30`); the next request pays for a new one. `0` keeps idle connections for the life of the process. Refused unless a whole number ≥ 0 |
 | `DB_TLS_SERVERNAME` | api | The name the server's TLS certificate must carry when `DATABASE_URL` names a local proxy instead of the database (the fleet's cloudflared sidecar on `127.0.0.1`, the TLS session ending on RDS). Set, TLS is on and the certificate must match this name whatever the URL's `sslmode` says; unset, the URL decides. Refused unless a DNS name — no scheme, port or IP address |

@@ -273,9 +273,12 @@ pnpm --filter @sr/api exec tsx src/recover.ts reset-2fa --email x@y.com  # dev s
 > your host user as `--by` unless the command names one — inside the container
 > the shell user is the container's, not yours.
 
-Before acting it prints which database (host and name, never the credentials)
-and which deployment shape it will record — `DATABASE_URL` and
-`DEPLOYMENT_MODE` come from the shell it runs in, which is not always the api's.
+Before acting it prints which database (host and name, never the credentials),
+which variable it took the credential from, and which deployment shape it will
+record — the database URL and `DEPLOYMENT_MODE` come from the shell it runs in,
+which is not always the api's. It connects with `DATABASE_RUNTIME_URL` when
+that is set and `DATABASE_URL` otherwise: nothing a recovery does needs more
+than the runtime role ([`DATABASE-ROLES.md`](DATABASE-ROLES.md)).
 The change and its `host.recovery` row commit in one transaction: a recovery
 with no row is exactly what this tool exists to rule out, so if the row cannot
 be written the recovery does not happen.

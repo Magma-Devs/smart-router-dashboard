@@ -1,7 +1,16 @@
 import fp from "fastify-plugin";
 import type { FastifyInstance } from "fastify";
-import { createDb, migrate, seedAdmin, type Database, type DbHandle } from "@sr/db";
-import { config, readDbPoolOptions } from "../config.js";
+import {
+  createDb,
+  currentRole,
+  grantRuntimeRole,
+  migrate,
+  RuntimeRoleError,
+  seedAdmin,
+  type Database,
+  type DbHandle,
+} from "@sr/db";
+import { config, readDbPoolOptions, readRuntimeDatabaseUrl } from "../config.js";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -82,6 +91,21 @@ const RETRY_DELAY_MAX_MS = 30_000;
  * `app.db` and 503 while it's still null — the rest of the api (metrics,
  * health) never blocks on the database. The setup token is announced once
  * this settles, by `announceSetupToken` in `app.ts`.
+ *
+ * Two shapes, chosen by `DATABASE_RUNTIME_URL` (docs/DATABASE-ROLES.md):
+ *
+ *   - **One role** (unset): `DATABASE_URL` migrates and serves, one pool.
+ *   - **Two roles** (set): `DATABASE_URL`'s role — the schema's owner —
+ *     migrates over a single connection and grants the runtime role its
+ *     privileges (`grantRuntimeRole`), and that connection is closed; every
+ *     request is served by a pool opened as the runtime role, which may only
+ *     read and append to the audit log. A runtime role that could still alter
+ *     the log (or lacks what the api needs) fails the attempt like any other
+ *     error, so the backend stays unready and the loop keeps trying — a fixed
+ *     role is picked up without a restart.
+ *
+ * Every attempt does all of it, so "migrations run on connect, retried until
+ * the database answers" holds in both shapes.
  */
 export const dbPlugin = fp(async (app: FastifyInstance) => {
   // Live env first (config snapshots at module load, before tests set it).
@@ -89,6 +113,7 @@ export const dbPlugin = fp(async (app: FastifyInstance) => {
   if (!url) {
     throw new Error("AUTH_MODE=enabled requires DATABASE_URL (postgres://user:pass@host:5432/db).");
   }
+  const runtimeUrl = readRuntimeDatabaseUrl();
 
   // Refused at register time, so a malformed DB_POOL_MAX fails the boot with
   // its name rather than opening a pool nobody sized (see readDbPoolOptions).
@@ -100,8 +125,36 @@ export const dbPlugin = fp(async (app: FastifyInstance) => {
 
   const connectLoop = (async () => {
     for (let attempt = 1; !stopped; attempt++) {
+      let owner: DbHandle | null = null;
       let candidate: DbHandle | null = null;
       try {
+        if (runtimeUrl) {
+          // The owner needs one connection for the length of the boot, not a
+          // pool: the migrator and the grant pass each run in one transaction.
+          owner = createDb(url, { ...pool, max: 1 });
+          await migrate(owner.db);
+          candidate = createDb(runtimeUrl, pool);
+          // Ask the server who the runtime credential is: it is the role every
+          // privilege check runs against, whatever the URL spells.
+          const grants = await grantRuntimeRole(owner.db, await currentRole(candidate.db));
+          await owner.sql.end({ timeout: 5 }).catch(() => undefined);
+          owner = null;
+          await maybeSeedAdmin(app, candidate.db);
+          handle = candidate;
+          app.db = candidate.db;
+          app.log.info(
+            {
+              attempt,
+              pool,
+              migrationRole: grants.owner,
+              runtimeRole: grants.role,
+              tables: grants.tables.length,
+              appendOnly: grants.appendOnly,
+            },
+            "database connected as the runtime role, migrations applied as the owner",
+          );
+          return;
+        }
         candidate = createDb(url, pool);
         await migrate(candidate.db);
         await maybeSeedAdmin(app, candidate.db);
@@ -111,16 +164,26 @@ export const dbPlugin = fp(async (app: FastifyInstance) => {
         return;
       } catch (err) {
         // An attempt can fail after it connected: a migration that lost a race
-        // or that the role may not run. Its pool is closed before the next
-        // attempt opens one; left open, each retry holds a connection for the
+        // or that the role may not run. Its pools are closed before the next
+        // attempt opens any; left open, each retry holds a connection for the
         // idle timeout, and the retries fill the role's connection limit,
         // which the deployment's serving backends share.
+        await owner?.sql.end({ timeout: 0 }).catch(() => undefined);
         await candidate?.sql.end({ timeout: 0 }).catch(() => undefined);
         const delay = Math.min(RETRY_DELAY_MS * Math.ceil(attempt / 10), RETRY_DELAY_MAX_MS);
-        app.log.warn(
-          { attempt, retryInMs: delay, err: (err as Error).message, reason: dbFailureReason(err) },
-          "database not ready, retrying",
-        );
+        if (err instanceof RuntimeRoleError) {
+          // Not a database that is still starting: the roles are provisioned
+          // wrongly, and retrying changes nothing until somebody fixes them.
+          app.log.error(
+            { attempt, retryInMs: delay, err: err.message, runtimeRole: err.role },
+            "DATABASE_RUNTIME_URL's role is not separated from DATABASE_URL's — not serving with it (docs/DATABASE-ROLES.md)",
+          );
+        } else {
+          app.log.warn(
+            { attempt, retryInMs: delay, err: (err as Error).message, reason: dbFailureReason(err) },
+            "database not ready, retrying",
+          );
+        }
         await new Promise((r) => setTimeout(r, delay));
       }
     }

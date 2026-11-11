@@ -290,6 +290,8 @@ packages/db/              @sr/db — Drizzle + Postgres (AUTH_MODE=enabled only)
     schema.ts           users · sessions
     schema-audit.ts     audit_events · audit_event_changes (append-only)
     audit.ts            createAuditWriter — the writer every task emits through
+    runtime-role.ts     grantRuntimeRole — the runtime role's privileges, granted
+                        by the owner after every migration run (docs/DATABASE-ROLES.md)
     testing.ts          createTestDb() — pglite, a real Postgres in-process
 apps/api/                 @sr/api — Fastify 5 (:8000)
   src/
@@ -1068,7 +1070,8 @@ Auth (only read when `AUTH_MODE=enabled`; the metrics path never touches the DB)
 |---|---|---|
 | `AUTH_MODE` | `disabled` | `enabled` turns on the session gate + `/auth/*` + Postgres |
 | `AUTH_SECRET` | (unset) | HS256 signing secret shared with the web (must match) |
-| `DATABASE_URL` | (unset) | Postgres connection string for `users` + `sessions` |
+| `DATABASE_URL` | (unset) | Postgres connection string. Its role runs the migrations on connect (retried until the database answers) and — alone — serves every request too. With `DATABASE_RUNTIME_URL` set it is the schema's owner: one connection while the backend boots, closed afterwards |
+| `DATABASE_RUNTIME_URL` | (unset) | The runtime role's connection string. Set, the api migrates as `DATABASE_URL`'s role, grants this role read and write on the application's tables and only `SELECT`/`INSERT` on the two audit tables, and serves every request through a pool opened as it, so nothing on the request path can alter the audit log. A runtime role that could (the same role, a superuser, a member of the owner, the database's owner, one holding `DELETE` on the log) is refused: the backend stays unready, logs why at `error`, and retries. Unset or blank = one role, as before. `recover` uses it when set. See [`docs/DATABASE-ROLES.md`](docs/DATABASE-ROLES.md) |
 | `DB_POOL_MAX` | `20` | Connections each api process holds open to Postgres. Every authenticated request takes one for the session join, so this bounds a backend's concurrency and, summed over a deployment's backends, what its instance must admit — the fleet sets it per backend from a shared instance's connection budget. Anything but a whole number ≥ 1 refuses the boot |
 | `DB_IDLE_TIMEOUT_S` | `30` | Seconds a pooled connection sits idle before it is closed; the next request pays for a new one (TCP, TLS, three SCRAM legs). `0` keeps idle connections for the life of the process. Anything but a whole number ≥ 0 refuses the boot |
 | `DB_TLS_SERVERNAME` | (unset) | The name the Postgres server's TLS certificate must carry, when `DATABASE_URL` points at a local proxy rather than at the database — the fleet's backends dial a cloudflared sidecar on `127.0.0.1:5432` while the TLS session ends on RDS, whose certificate names the endpoint; for an IP in the URL Node checks the certificate against `localhost`, so `sslmode=verify-full` alone refuses every connection there. Set, TLS is always on and the certificate must match this name whatever the URL's `sslmode` says (`verify-full` with the name supplied; the chain still needs the CA, `NODE_EXTRA_CA_CERTS`). Unset, the URL decides. Anything but a DNS name refuses the boot |

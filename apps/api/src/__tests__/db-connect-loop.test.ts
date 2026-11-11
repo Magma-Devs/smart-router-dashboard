@@ -16,11 +16,18 @@ import Fastify, { type FastifyInstance } from "fastify";
  * one backend that cannot migrate fill the role's connection limit — the one
  * the deployment's serving backends share. These pin that a failed attempt's
  * pool is closed before the next attempt opens one.
+ *
+ * With `DATABASE_RUNTIME_URL` an attempt opens two: the owner's single
+ * connection, which migrates and grants and is closed once the boot is done,
+ * and the runtime role's pool, which serves. The grant pass itself runs
+ * against a real database in `@sr/db`'s `runtime-role.test.ts`.
  */
 const driver = vi.hoisted(() => ({
   pools: [] as Array<{ end: ReturnType<typeof vi.fn>; db: { attempt: number } }>,
   opened: [] as unknown[][],
   migrate: vi.fn(),
+  currentRole: vi.fn(),
+  grant: vi.fn(),
   endFails: false,
 }));
 
@@ -38,13 +45,23 @@ vi.mock("@sr/db", async (importOriginal) => {
       return { db: pool.db, sql: { end } };
     }),
     migrate: (...args: unknown[]) => driver.migrate(...args),
+    currentRole: (...args: unknown[]) => driver.currentRole(...args),
+    grantRuntimeRole: (...args: unknown[]) => driver.grant(...args),
   };
 });
 
 const { dbPlugin, dbFailureReason } = await import("../plugins/db.js");
+const { RuntimeRoleError } = await import("@sr/db");
 
 const URL = "postgres://sr:x@192.0.2.1:5432/na";
-const KNOBS = ["DATABASE_URL", "DB_POOL_MAX", "DB_IDLE_TIMEOUT_S", "DB_TLS_SERVERNAME"] as const;
+const RUNTIME_URL = "postgres://sr_app:y@192.0.2.1:5432/na";
+const KNOBS = [
+  "DATABASE_URL",
+  "DATABASE_RUNTIME_URL",
+  "DB_POOL_MAX",
+  "DB_IDLE_TIMEOUT_S",
+  "DB_TLS_SERVERNAME",
+] as const;
 
 let app: FastifyInstance | null = null;
 const saved: Partial<Record<(typeof KNOBS)[number], string | undefined>> = {};
@@ -58,6 +75,8 @@ beforeEach(() => {
   driver.pools.length = 0;
   driver.opened.length = 0;
   driver.migrate.mockReset();
+  driver.currentRole.mockReset();
+  driver.grant.mockReset();
   driver.endFails = false;
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
 });
@@ -177,6 +196,101 @@ describe("the db plugin's connect loop", () => {
     await app.dbReady;
     expect(app.db).toBe(driver.pools[1]!.db);
     driver.endFails = false;
+  });
+});
+
+describe("the db plugin's connect loop with a runtime role", () => {
+  const REPORT = { role: "sr_app", owner: "sr", tables: ["users", "sessions"], appendOnly: ["audit_events"] };
+
+  it("migrates as DATABASE_URL over one connection, grants, closes it, and serves as the runtime role", async () => {
+    process.env.DATABASE_RUNTIME_URL = RUNTIME_URL;
+    process.env.DB_POOL_MAX = "5";
+    process.env.DB_TLS_SERVERNAME = "fleet-prod.abc123.us-east-1.rds.amazonaws.com";
+    const order: string[] = [];
+    driver.migrate.mockImplementation(async () => void order.push("migrate"));
+    driver.currentRole.mockImplementation(async () => {
+      order.push("currentRole");
+      return "sr_app";
+    });
+    driver.grant.mockImplementation(async () => {
+      order.push("grant");
+      return REPORT;
+    });
+    app = await register();
+    await app.dbReady;
+
+    const tls = { tlsServername: "fleet-prod.abc123.us-east-1.rds.amazonaws.com" };
+    expect(driver.opened).toEqual([
+      [URL, { max: 1, idleTimeout: 30, ...tls }],
+      [RUNTIME_URL, { max: 5, idleTimeout: 30, ...tls }],
+    ]);
+    const [owner, runtime] = driver.pools;
+    expect(order).toEqual(["migrate", "currentRole", "grant"]);
+    expect(driver.migrate).toHaveBeenCalledExactlyOnceWith(owner!.db);
+    expect(driver.currentRole).toHaveBeenCalledExactlyOnceWith(runtime!.db);
+    expect(driver.grant).toHaveBeenCalledExactlyOnceWith(owner!.db, "sr_app");
+    // The owner's connection is gone once the boot is done; requests go to the runtime pool.
+    expect(owner!.end).toHaveBeenCalledExactlyOnceWith({ timeout: 5 });
+    expect(app.db).toBe(runtime!.db);
+    expect(runtime!.end).not.toHaveBeenCalled();
+  });
+
+  it("treats a blank DATABASE_RUNTIME_URL as unset: one role, as before", async () => {
+    process.env.DATABASE_RUNTIME_URL = " ";
+    driver.migrate.mockResolvedValue(undefined);
+    app = await register();
+    await app.dbReady;
+    expect(driver.opened).toEqual([[URL, { max: 20, idleTimeout: 30 }]]);
+    expect(driver.grant).not.toHaveBeenCalled();
+    expect(app.db).toBe(driver.pools[0]!.db);
+  });
+
+  it("does not serve with a runtime role that could alter the log: both pools closed, an error logged, retried", async () => {
+    process.env.DATABASE_RUNTIME_URL = RUNTIME_URL;
+    driver.migrate.mockResolvedValue(undefined);
+    driver.currentRole.mockResolvedValue("sr_app");
+    driver.grant
+      .mockRejectedValueOnce(new RuntimeRoleError("sr_app", ["it can use DELETE on audit_events"]))
+      .mockResolvedValue(REPORT);
+    app = await register();
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(driver.pools).toHaveLength(2);
+    expect(driver.pools[0]!.end).toHaveBeenCalledExactlyOnceWith({ timeout: 0 });
+    expect(driver.pools[1]!.end).toHaveBeenCalledExactlyOnceWith({ timeout: 0 });
+    expect(app.db).toBeNull();
+    expect(logged).toHaveLength(1);
+    expect(logged[0]).toMatchObject({ level: 50, attempt: 1, runtimeRole: "sr_app" });
+    expect(String(logged[0]!.err)).toMatch(/it can use DELETE on audit_events/);
+
+    // Fixed out of band (the role re-provisioned): the next attempt serves.
+    await vi.advanceTimersByTimeAsync(2_000);
+    await app.dbReady;
+    expect(driver.pools).toHaveLength(4);
+    expect(app.db).toBe(driver.pools[3]!.db);
+  });
+
+  it("closes the owner's pool when the runtime credential is refused", async () => {
+    process.env.DATABASE_RUNTIME_URL = RUNTIME_URL;
+    driver.migrate.mockResolvedValue(undefined);
+    driver.currentRole
+      .mockRejectedValueOnce(
+        failedQuery(Object.assign(new Error('password authentication failed for user "sr_app"'), { code: "28P01" })),
+      )
+      .mockResolvedValue("sr_app");
+    driver.grant.mockResolvedValue(REPORT);
+    app = await register();
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(driver.pools[0]!.end).toHaveBeenCalledExactlyOnceWith({ timeout: 0 });
+    expect(driver.pools[1]!.end).toHaveBeenCalledExactlyOnceWith({ timeout: 0 });
+    expect(driver.grant).not.toHaveBeenCalled();
+    expect(logged[0]).toMatchObject({
+      msg: "database not ready, retrying",
+      reason: '28P01: password authentication failed for user "sr_app"',
+    });
+    await vi.advanceTimersByTimeAsync(2_000);
+    await app.dbReady;
   });
 });
 

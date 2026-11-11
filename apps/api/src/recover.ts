@@ -4,7 +4,7 @@ import { createAuditWriter, createDb, users, type Database, type User } from "@s
 import { createPasswordReset, resetUrl } from "./services/password-reset.js";
 import { clearEnrolment, isEnrolled, revokeChallenges } from "./services/two-factor.js";
 import { signOutEverywhere } from "./services/sessions.js";
-import { config } from "./config.js";
+import { config, readRuntimeDatabaseUrl } from "./config.js";
 
 /**
  * Recovery from the host — what you run when nobody can get into the dashboard.
@@ -280,6 +280,22 @@ export function describeDatabase(url: string): string {
   }
 }
 
+/**
+ * The credential recovery connects with: the runtime role's when the deployment
+ * has one, else `DATABASE_URL`'s. Everything a recovery does — update an
+ * account, end its sessions, issue a reset link, append its `host.recovery`
+ * row — is something the runtime role may do, and nothing it does needs to
+ * alter the audit log, so it runs with the credential that cannot.
+ */
+export function recoveryDatabaseUrl(source: NodeJS.ProcessEnv = process.env): {
+  url: string | undefined;
+  variable: "DATABASE_RUNTIME_URL" | "DATABASE_URL";
+} {
+  const runtime = readRuntimeDatabaseUrl(source);
+  if (runtime) return { url: runtime, variable: "DATABASE_RUNTIME_URL" };
+  return { url: source.DATABASE_URL || undefined, variable: "DATABASE_URL" };
+}
+
 async function main(): Promise<void> {
   const parsed = parseArgs(process.argv.slice(2));
   if ("error" in parsed) {
@@ -287,7 +303,7 @@ async function main(): Promise<void> {
     process.exit(2);
   }
 
-  const url = config.auth.databaseUrl;
+  const { url, variable } = recoveryDatabaseUrl();
   if (!url) {
     console.error("DATABASE_URL is not set. Recovery talks to the accounts database directly.");
     process.exit(2);
@@ -298,7 +314,7 @@ async function main(): Promise<void> {
   // shell has — so the operator sees which database, and which shape of
   // deployment the audit row will be written as, instead of assuming it.
   // stderr, so stdout stays only the result (which may be a link to copy).
-  console.error(`Acting on ${describeDatabase(url)} as a ${config.deploymentMode} deployment.`);
+  console.error(`Acting on ${describeDatabase(url)} (${variable}) as a ${config.deploymentMode} deployment.`);
 
   const handle = createDb(url);
   try {

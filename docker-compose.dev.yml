@@ -250,6 +250,11 @@ services:
       - AUTH_MODE=${AUTH_MODE:-disabled}
       - AUTH_SECRET=${AUTH_SECRET:-}
       - DATABASE_URL=${DATABASE_URL:-}
+      # A second, runtime role to serve requests as (docs/DATABASE-ROLES.md).
+      # Empty = one role. The bundled postgres keeps one: its `sr` is a
+      # superuser, so there is nothing to separate from; set this when the api
+      # points at a Postgres of your own with a runtime role provisioned.
+      - DATABASE_RUNTIME_URL=${DATABASE_RUNTIME_URL:-}
       # The pool each api process holds and the name the database's TLS
       # certificate must carry (see .env.example). Empty = unset = the api's
       # defaults: 20 connections, 30 s idle, TLS as DATABASE_URL says.

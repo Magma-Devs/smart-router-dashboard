@@ -194,6 +194,8 @@ export const config = {
   auth: {
     mode: (env("AUTH_MODE") ?? "disabled") as "disabled" | "enabled",
     secret: env("AUTH_SECRET"),
+    /** The role that owns the schema and runs the migrations — and, alone,
+     *  the one that serves requests too. See `readRuntimeDatabaseUrl`. */
     databaseUrl: env("DATABASE_URL"),
     adminEmail: env("ADMIN_EMAIL"),
     adminPassword: env("ADMIN_PASSWORD"),
@@ -389,6 +391,26 @@ export function readMetricsScope(source: NodeJS.ProcessEnv = process.env): Metri
     );
   }
   return { label, value };
+}
+
+/**
+ * The runtime credential, from `DATABASE_RUNTIME_URL` — undefined when unset
+ * or blank (the compose files pass it through empty), which is the single-role
+ * shape every deployment had before it: `DATABASE_URL` migrates and serves.
+ *
+ * Set, the api runs its migrations as `DATABASE_URL`'s role over one
+ * connection, grants this URL's role the runtime privileges (`@sr/db`'s
+ * `grantRuntimeRole`: read and write the application's tables, only read and
+ * append to the audit log, own nothing) and serves every request through a
+ * pool opened with it; the owner's connection is closed once that is done.
+ * `DATABASE_URL` keeps naming the owner on purpose: an image that predates
+ * this variable ignores it and runs as before, where swapping the meaning of
+ * `DATABASE_URL` would hand that image a role that may not migrate. See
+ * docs/DATABASE-ROLES.md. Read live, like `readDbPoolOptions`.
+ */
+export function readRuntimeDatabaseUrl(source: NodeJS.ProcessEnv = process.env): string | undefined {
+  const url = source.DATABASE_RUNTIME_URL?.trim();
+  return url ? url : undefined;
 }
 
 /**

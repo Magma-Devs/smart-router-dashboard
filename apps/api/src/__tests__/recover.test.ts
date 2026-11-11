@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { eq, sql } from "drizzle-orm";
 import { createTestDb, enrolledTwoFactor, type TestDb } from "@sr/db/testing";
 import { sessions, users, type User } from "@sr/db";
-import { describeDatabase, parseArgs, runRecovery } from "../recover.js";
+import { describeDatabase, parseArgs, recoveryDatabaseUrl, runRecovery } from "../recover.js";
 import { createSession } from "../services/sessions.js";
 import { issueChallenge, consumeChallenge, resetTotpKeyForTests } from "../services/two-factor.js";
 
@@ -255,6 +255,27 @@ describe("saying where it acts", () => {
       "db.internal:5432/sr_dashboard",
     );
     expect(describeDatabase("not a url")).toBe("the configured database");
+  });
+});
+
+describe("which credential it acts with", () => {
+  const OWNER = "postgres://owner:o@db.internal:5432/sr_dashboard";
+  const RUNTIME = "postgres://app:a@db.internal:5432/sr_dashboard";
+
+  it("takes the runtime role's when there is one: nothing it does may alter the audit log", () => {
+    expect(recoveryDatabaseUrl({ DATABASE_URL: OWNER, DATABASE_RUNTIME_URL: RUNTIME })).toEqual({
+      url: RUNTIME,
+      variable: "DATABASE_RUNTIME_URL",
+    });
+  });
+
+  it("takes DATABASE_URL on a single-role deployment, a blank runtime URL included", () => {
+    expect(recoveryDatabaseUrl({ DATABASE_URL: OWNER })).toEqual({ url: OWNER, variable: "DATABASE_URL" });
+    expect(recoveryDatabaseUrl({ DATABASE_URL: OWNER, DATABASE_RUNTIME_URL: "  " })).toEqual({
+      url: OWNER,
+      variable: "DATABASE_URL",
+    });
+    expect(recoveryDatabaseUrl({}).url).toBeUndefined();
   });
 });
 

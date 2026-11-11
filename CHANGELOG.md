@@ -5,6 +5,34 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Added
+
+- **The api can serve as a second database role, one that cannot alter the
+  audit log: `DATABASE_RUNTIME_URL`.** The log's append-only trigger stops a
+  stray `UPDATE` or `DELETE`, not the role holding the credential: any role
+  with `DELETE` opens the retention hatch (`SET LOCAL audit.purge = 'on'`),
+  and the tables' owner can drop the trigger — and the api connected as the
+  owner. With `DATABASE_RUNTIME_URL` set, the api still migrates on connect,
+  retried until the database answers, as `DATABASE_URL`'s role over one
+  connection that it closes once the boot is done. It then grants the runtime
+  role `SELECT`, `INSERT`, `UPDATE` and `DELETE` on the application's tables
+  and only `SELECT` and `INSERT` on `audit_events` and `audit_event_changes`,
+  and serves every request as that role. The grant runs after every migration
+  run, so a table a later migration adds is covered, and it converges: a
+  privilege granted by hand is revoked on the next boot. Unset or blank,
+  nothing changes. See `docs/DATABASE-ROLES.md`.
+- **A runtime role that could still alter the log is refused.** That is the
+  same role as `DATABASE_URL`'s, a superuser, a role that is or can become the
+  owner of an audit table or of schema `public` (on Postgres 15 and later the
+  database's owner owns `public`), or one that can reach `UPDATE`, `DELETE`,
+  `TRUNCATE`, `REFERENCES` or `TRIGGER` on the log. The backend logs why at
+  `error`, stays unready and retries, so it picks up a fixed role without a
+  restart.
+- **`DATABASE_URL` keeps naming the owner.** An image before this release
+  ignores `DATABASE_RUNTIME_URL` and serves as it did. The host `recover`
+  commands connect with `DATABASE_RUNTIME_URL` when it is set. Both compose
+  files pass it through, empty: their bundled Postgres keeps one role.
+
 ## [0.58.2]
 
 ### Added
