@@ -267,10 +267,10 @@ describe("transaction rows from the router's log lines", () => {
     expect(byGuid("333")).toMatchObject({ outcome: "unknown", replyMs: null, error: null, note: NOTE.noEnd });
   });
 
-  it("the success rate leaves out transactions whose end can't be told", () => {
+  it("counts each result and gives no success rate", () => {
     const s = summarize(rowsOf(ALL));
     expect(s).toMatchObject({ total: 7, accepted: 1, rejected: 3, failed: 0 });
-    expect(s.successRate).toBeCloseTo(1 / 4);
+    expect(s).not.toHaveProperty("successRate");
   });
 });
 
@@ -516,7 +516,7 @@ describe("GET /api/transactions", () => {
     const res = await app.inject({ method: "GET", url: "/api/transactions?window=1h" });
     expect(res.statusCode).toBe(200);
     const body = res.json();
-    expect(body).toMatchObject({ available: true, total: 1, rejected: 1, successRate: 0 });
+    expect(body).toMatchObject({ available: true, total: 1, rejected: 1 });
     expect(body.rows[0]).toMatchObject({ method: "eth_sendRawTransaction", spec: "ETH1", answeredBy: "eth-mevblocker" });
   });
 });

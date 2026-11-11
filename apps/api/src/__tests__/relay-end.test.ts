@@ -554,7 +554,7 @@ describe("relay_end's caller, hash and on-chain fields", () => {
   });
 
   it("a failure on chain counts as failed: in the totals and against the success rate", () => {
-    expect(summarize(txRows([SENT, SUI_FAILED, SUI_OK]))).toEqual({ total: 3, accepted: 2, rejected: 0, failed: 0, failedOnChain: 1, successRate: 2 / 3 });
+    expect(summarize(txRows([SENT, SUI_FAILED, SUI_OK]))).toEqual({ total: 3, accepted: 2, rejected: 0, failed: 0, failedOnChain: 1 });
   });
 
   it("the Errors tab's rows carry the same facts, and the blocks a read named and the router had", () => {

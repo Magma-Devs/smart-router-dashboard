@@ -102,7 +102,7 @@ function nextOf(r: TxLogRow): string | null {
   // The error's own next step, in the words the opened row shows.
   if (r.outcome === "rejected") { const entry = mayBeOnChain(r); return entry ? `May already be on chain. ${entry.action || "Check the chain before sending again."}` : null; }
   if (r.outcome === "unknown") return "May have been sent. Look up the hash before signing a new one.";
-  if (r.outcome === "failed") return "Nothing reached a provider. Sending again is safe.";
+  if (r.outcome === "failed") return "Nothing reached a provider, so it didn't go through.";
   return null;
 }
 const OUTCOME_ORDER: TxLogRow["outcome"][] = ["accepted", "rejected", "failed-on-chain", "failed", "unknown"];
@@ -286,7 +286,9 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
     { label: "Refused", tipKey: "txRefused", value: fmtComma(sum.rejected),
       sub: <>{share(sum.rejected)} · usually the transaction itself</> },
     { label: "Outcome unknown", tipKey: "txUnknown", value: fmtComma(sum.unknown),
-      sub: <>may have been sent{sum.failed ? <> · {fmtComma(sum.failed)} not sent</> : null}</> },
+      sub: sum.unknown
+        ? <>may have been sent{sum.failed ? <> · {fmtComma(sum.failed)} not sent</> : null}</>
+        : <>none in these transactions{sum.failed ? <> · {fmtComma(sum.failed)} not sent</> : null}</> },
   ];
 
   return (
@@ -362,7 +364,7 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
         <div className="gw-log-scroll">
           <table className="gw-table" style={{ tableLayout: "fixed", width: "100%", minWidth: 860 }}>
             <colgroup>
-              <col style={{ width: 150 }} />
+              <col style={{ width: 166 }} />
               <col style={{ width: "20%" }} />
               <col />
               <col style={{ width: 170 }} />
@@ -385,9 +387,10 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
                 const toggle = () => toggleRow(r.guid);
                 return (
                   <Fragment key={r.guid}>
-                    <tr tabIndex={0} aria-expanded={isOpen} style={{ cursor: "pointer" }} onClick={toggle} onKeyDown={onRowKey(toggle)}>
+                    <tr tabIndex={0} aria-expanded={isOpen} className={`gw-logrow${isOpen ? " is-open" : ""}`} onClick={toggle} onKeyDown={onRowKey(toggle)}>
                       <td style={{ maxWidth: 0, verticalAlign: "top" }}>
-                        <WhenCell time={r.time} customer={r.customer} />
+                        <svg className="gw-logrow-chev" viewBox="0 0 12 12" aria-hidden><path d="M4.5 2.5 8 6l-3.5 3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+<WhenCell time={r.time} customer={r.customer} />
                       </td>
                       <td style={{ maxWidth: 0, verticalAlign: "top" }}>
                         {/* The icon sits on the chain's line, not halfway down the cell. */}
@@ -413,8 +416,8 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
                       <td style={{ textAlign: "right", verticalAlign: "top" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{fmtTook(r.replyMs)}</span></td>
                     </tr>
                     {isOpen && (
-                      <tr>
-                        <td colSpan={5} style={{ background: "var(--bg-2)" }}><Details row={r} /></td>
+                      <tr className="gw-logrow-detail">
+                        <td colSpan={5}><Details row={r} /></td>
                       </tr>
                     )}
                   </Fragment>

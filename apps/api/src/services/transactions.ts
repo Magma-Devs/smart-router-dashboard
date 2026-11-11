@@ -338,30 +338,28 @@ function rowOfEvent(e: RouterLine, guid: string, index: UpstreamIndex): TxLogRow
   };
 }
 
-/** Totals and success rate over the rows. `unknown` rows are counted in
- *  `total` but left out of the rate: their end can't be told. One the chain
- *  ran and failed is a failure. */
+/** Totals over the rows, by result. No success rate: a refused transaction is
+ *  usually the client's own mistake (a used nonce, too little gas), so a rate
+ *  over refusals would count those against the router. */
 export function summarize(
   rows: TxLogRow[],
-): Pick<TransactionsReport, "total" | "accepted" | "rejected" | "failed" | "failedOnChain" | "successRate"> {
+): Pick<TransactionsReport, "total" | "accepted" | "rejected" | "failed" | "failedOnChain"> {
   const count = (o: TxOutcome) => rows.filter((r) => r.outcome === o).length;
   const accepted = count("accepted");
   const rejected = count("rejected");
   const failed = count("failed");
   const failedOnChain = count("failed-on-chain");
-  const decided = accepted + rejected + failed + failedOnChain;
   return {
     total: rows.length,
     accepted,
     rejected,
     failed,
     failedOnChain,
-    successRate: decided > 0 ? accepted / decided : null,
   };
 }
 
 function emptyReport(available: boolean, reason?: LogUnavailable): TransactionsReport {
-  return { available, ...(reason ? { reason } : {}), total: 0, accepted: 0, rejected: 0, failed: 0, failedOnChain: 0, successRate: null, rows: [], more: false, nextBefore: null };
+  return { available, ...(reason ? { reason } : {}), total: 0, accepted: 0, rejected: 0, failed: 0, failedOnChain: 0, rows: [], more: false, nextBefore: null };
 }
 
 export class TransactionsService {

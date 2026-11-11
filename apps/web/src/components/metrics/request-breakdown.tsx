@@ -116,7 +116,7 @@ export function stepsOf(attempts: RelayAttempt[]): { title: string; attempts: Re
   });
 }
 
-const PROVIDER_COLUMNS = "minmax(110px, 1fr) minmax(150px, 2fr) 64px";
+const PROVIDER_COLUMNS = "minmax(110px, 1fr) minmax(150px, 2fr) 96px";
 
 /** One provider's line in a send: its name, what it answered, how long it took; its own words under it. */
 function ProviderLine({ a, isWrite }: { a: RelayAttempt; isWrite: boolean }) {
@@ -258,9 +258,15 @@ export function RequestBreakdown(p: BreakdownProps) {
           <span className="gw-mono gw-tnum" title="How long the request took, start to answer" style={{ fontSize: 12, color: "var(--text-2)", whiteSpace: "nowrap" }}>{fmtTook(p.tookMs)}</span>
         </div>
         {entry && <div style={{ fontSize: 13, color: "var(--text-2)", lineHeight: 1.45 }}>{entry.meaning}</div>}
-        {(entry?.action || p.retries || blockAhead || p.extra?.length) && (
+        {/* The one thing to do gets its own box, apart from the facts below it. */}
+        {entry?.action && (
+          <div className="gw-next-step">
+            <span className="gw-next-step-label">Next step</span>
+            <span>{entry.action}</span>
+          </div>
+        )}
+        {Boolean(p.retries || blockAhead || p.extra?.length) && (
           <div style={{ ...kvGrid, rowGap: 6, marginTop: 2 }}>
-            {entry?.action && <KV label="Next step">{entry.action}</KV>}
             {p.retries && <KV label="Retries"><span style={{ color: "var(--text-2)" }}>{p.retries}</span></KV>}
             {blockAhead && <KV label="Note"><span style={{ color: "var(--text-2)" }}>Requested block is ahead of the router&apos;s latest block.</span></KV>}
             {p.extra?.map((x) => <KV key={x.label} label={x.label}>{x.value}</KV>)}
@@ -280,7 +286,7 @@ export function RequestBreakdown(p: BreakdownProps) {
                     <div style={{ display: "grid", gridTemplateColumns: PROVIDER_COLUMNS, columnGap: 12, padding: "6px 12px", fontSize: 11, color: "var(--text-4)" }}>
                       <span>Provider</span>
                       <span>What it answered</span>
-                      <span style={{ textAlign: "right" }}>Took</span>
+                      <span style={{ textAlign: "right" }}>Response time</span>
                     </div>
                     {s.attempts.map((a, j) => <ProviderLine key={j} a={a} isWrite={p.isWrite} />)}
                   </div>
