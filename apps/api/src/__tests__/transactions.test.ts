@@ -153,6 +153,7 @@ describe("transaction rows from the router's log lines", () => {
       attempts: [{
         upstream: "eth-mevblocker", batch: 0, outcome: "failed", replied: true, code: "NODE_SERVER_ERROR", retryable: null,
         message: "Request of eth_sendRawTransaction failed with: typed transaction has unknown type: 0", note: null, atMs: 3, endMs: 87,
+        errorReply: { requestId: null, body: null }, // the node answered; the cut-down lines carry no headers or body
       }],
       answeredBy: "eth-mevblocker",
       replyMs: 103,
@@ -187,10 +188,12 @@ describe("transaction rows from the router's log lines", () => {
       {
         upstream: "sol-solana-labs", batch: 0, outcome: "failed", replied: true, code: "USER_INVALID_PARAMS", retryable: null,
         message: "failed to deserialize solana_transaction::versioned::VersionedTransaction: Attempting to read 32 bytes", note: null, atMs: 1, endMs: 79,
+        errorReply: { requestId: null, body: null },
       },
       {
         upstream: "sol-publicnode", batch: 0, outcome: "failed", replied: false, code: "USER_INVALID_REQUEST", retryable: null,
         message: "unable to decode tx.Message: unable to decode mx.RecentBlockhash: short buffer", note: null, atMs: 1, endMs: 180,
+        errorReply: { requestId: null, body: null },
       },
     ]);
   });

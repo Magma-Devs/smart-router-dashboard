@@ -269,9 +269,21 @@ export class ErrorRequestsService {
    * two reads can come back in both; the client keeps it once, by GUID.
    * `upstream` keeps the requests whose try at that upstream failed - what
    * an errors-over-time bar counts - and narrows the read to it, so the cap
-   * applies to what was asked for.
+   * applies to what was asked for. `onChainLines` narrows it further, to the
+   * upstream's failures on `spec`: a vendor's node name serves many chains,
+   * and a busy one would use the cap up before a quiet one is reached. It
+   * reads only lines that name the chain, which a failed try's and an error
+   * reply's do - the "Relay received a node error" a 1.5.x router writes
+   * alone doesn't, so a caller that gets nothing back should read without it.
    */
-  async report(range: ReadRange, spec?: string, routerId?: string, before?: number, upstream?: string): Promise<ErrorRequestsReport> {
+  async report(
+    range: ReadRange,
+    spec?: string,
+    routerId?: string,
+    before?: number,
+    upstream?: string,
+    opts: { onChainLines?: boolean } = {},
+  ): Promise<ErrorRequestsReport> {
     const read = { startMs: range.startMs, endMs: range.endMs };
     const none = (available: boolean, reason?: LogUnavailable): ErrorRequestsReport =>
       ({ available, ...(reason ? { reason } : { range: read }), rows: [], more: false, nextBefore: null });
@@ -293,7 +305,8 @@ export class ErrorRequestsService {
       ...(names?.filter(inRawString).map(escapeRe) ?? []),
       ...(names && chain && LABEL_TOKEN.test(chain) ? [listenerPattern(chain)] : []),
     ];
-    const narrow = alts.length ? ` |~ \`${alts.join("|")}\`` : "";
+    const chainLine = opts.onChainLines && upstream && spec && LABEL_TOKEN.test(spec) ? ` |= \`"chain_id":"${spec}"\`` : "";
+    const narrow = (alts.length ? ` |~ \`${alts.join("|")}\`` : "") + chainLine;
     const limit = this.cap * 4;
     const found = await loki.queryRange(
       `${this.selector} |~ \`${FOUND_BY.map(escapeRe).join("|")}\` !~ \`PROTOCOL_CONTEXT_CANCELED|context canceled\`${narrow}`,

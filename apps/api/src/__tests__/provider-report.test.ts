@@ -37,7 +37,9 @@ const row = (guid: string, time: number, upstream: string, outcome: "ok" | "fail
   error: null,
 });
 
-function deps(rows: ErrorRequestRow[]) {
+const COUNTS = { tries: 1000, failed: 210, errorReplies: 0 as number | null, methods: [{ method: "getLedger", tries: 1000, failed: 210, errorReplies: 0 as number | null }], rateLimitHits: null as number | null };
+
+function deps(rows: ErrorRequestRow[], counts = COUNTS, more = false) {
   const providers = {
     async nodesOn() {
       return ["tatum"];
@@ -46,12 +48,12 @@ function deps(rows: ErrorRequestRow[]) {
       return { identity: () => ({ id: "tatum", name: "Tatum", account: null }), role: () => null };
     },
     async rangeCounts() {
-      return { tries: 1000, failed: 210, methods: [{ method: "getLedger", tries: 1000, failed: 210 }], rateLimitHits: null };
+      return counts;
     },
   } as unknown as ProvidersService;
   const errorRequests = {
     async report(): Promise<ErrorRequestsReport> {
-      return { available: true, rows, more: false, nextBefore: null };
+      return { available: true, rows, more, nextBefore: null };
     },
   } as unknown as ErrorRequestsService;
   const config = {
@@ -89,6 +91,56 @@ describe("buildProviderReport", () => {
       { providerId: "tatum", spec: "XLM", range },
     );
     expect(r!.examples.map((e) => e.guid)).toEqual(["mine"]);
+  });
+
+  // A node that answers "not supported" to nine calls in ten has an error
+  // rate near zero: the router counts an error reply as served.
+  it("an error reply is counted and shown apart from a failed request, with what the provider sent back", async () => {
+    const reply = row("r1", Date.UTC(2026, 9, 12, 16, 5), "tatum", "failed", "NODE_SERVER_ERROR");
+    reply.attempts[0]!.errorReply = { requestId: "1a2b3c4d", body: '{"error":{"code":-32000,"message":"not supported"}}' };
+    const counts = { tries: 1000, failed: 0, errorReplies: 920, methods: [{ method: "getLedger", tries: 1000, failed: 0, errorReplies: 920 }], rateLimitHits: 0 };
+    const r = await buildProviderReport(deps([reply], counts), { providerId: "tatum", spec: "XLM", range });
+    expect(r!.problem).toBe(
+      "Between 16:05 and 16:05 UTC on 2026-10-12, 920 of 1,000 requests to Tatum on Stellar got an error reply (92.0%), mostly NODE_SERVER_ERROR.",
+    );
+    expect(r!.text).toContain("Method(s): getLedger (920 error replies of 1,000)");
+    expect(r!.text).toContain("Affected volume: 0 failed requests out of 1,000 (0.0%). Error replies: 920 (92.0%).");
+    expect(r!.examples[0]).toMatchObject({ kind: "error-reply", providerRequestId: "1a2b3c4d" });
+    expect(r!.text).toContain("· error reply · NODE_SERVER_ERROR ·");
+    expect(r!.text).toContain("provider request ID 1a2b3c4d");
+    expect(r!.text).toContain("Provider request ID: With each example above that got a reply.");
+    expect(r!.text).not.toContain("No failed requests");
+  });
+
+  it("both kinds: each gets its own count and its own examples", async () => {
+    const failed = [1, 2, 3, 4, 5, 6].map((i) => row(`f${i}`, Date.UTC(2026, 9, 12, 15, i), "tatum", "failed", "NODE_RATE_LIMITED"));
+    const replies = [1, 2, 3].map((i) => {
+      const x = row(`e${i}`, Date.UTC(2026, 9, 12, 14, i), "tatum", "failed", "NODE_SERVER_ERROR");
+      x.attempts[0]!.errorReply = { requestId: null, body: null };
+      return x;
+    });
+    const counts = { tries: 1000, failed: 60, errorReplies: 30, methods: [{ method: "getLedger", tries: 1000, failed: 60, errorReplies: 30 }], rateLimitHits: 60 };
+    const r = await buildProviderReport(deps([...failed, ...replies], counts), { providerId: "tatum", spec: "XLM", range });
+    expect(r!.problem).toContain("60 of 1,000 requests to Tatum on Stellar failed (6.0%), mostly NODE_RATE_LIMITED. 30 more got an error reply (3.0%), mostly NODE_SERVER_ERROR.");
+    expect(r!.examples.map((e) => e.kind)).toEqual(["failed", "failed", "failed", "error-reply", "error-reply"]);
+    // A reply the router logged nothing of is still said to be uncaptured.
+    expect(r!.text).toContain("Provider request ID: Not captured - the router doesn't record");
+  });
+
+  it("with more failures than one read holds, the start is the range's - not the oldest one read", async () => {
+    const r = await buildProviderReport(
+      deps([row("g1", Date.UTC(2026, 9, 12, 19, 58), "tatum", "failed", "NODE_RATE_LIMITED")], COUNTS, true),
+      { providerId: "tatum", spec: "XLM", range },
+    );
+    expect(r!.problem).toContain("Between 12:00 and 19:58 UTC");
+    expect(r!.text).toContain("Incident start: 2026-10-12 12:00:00 UTC (the start of the range - it holds more failures than the report read)");
+  });
+
+  it("nothing wrong in the range says so once", async () => {
+    const counts = { tries: 1000, failed: 0, errorReplies: 0, methods: [{ method: "getLedger", tries: 1000, failed: 0, errorReplies: 0 }], rateLimitHits: 0 };
+    const r = await buildProviderReport(deps([], counts), { providerId: "tatum", spec: "XLM", range });
+    expect(r!.problem).toBe("No failed requests and no error replies to Tatum on Stellar in this range.");
+    expect(r!.text).toContain("Method(s): None");
   });
 
   it("is null when the provider has no traffic on the chain", async () => {

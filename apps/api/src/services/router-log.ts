@@ -146,9 +146,12 @@ export function lastWhere<T>(items: T[], pred: (x: T) => boolean): T | undefined
  *                                             are reopened, lag and all
  *   consistency fallback accepted stale …     so the batch just passed over is
  *                                             sent after all
+ *   [BackupProviders] Optimizer selected …    a try at a backup: `selected`. It
+ *                                             gets no "Choosing providers" line
  */
 export const TRY_MSG = {
   choosing: "Choosing providers",
+  backupChosen: "[BackupProviders] Optimizer selected backup provider",
   nodeErrorReply: "received node error reply from provider",
   nodeError: "Relay received a node error",
   directFailed: "direct RPC relay failed in goroutine",
@@ -225,23 +228,37 @@ export function triesOf(ordered: RouterLine[], t0: number, finished: RouterLine 
     a.endMs = a.endMs ?? ms(l);
   };
 
+  const send = (l: RouterLine, upstreams: string) => {
+    batch += 1;
+    batchStart = attempts.length;
+    for (const upstream of upstreams.split(",").map((s) => s.trim()).filter(Boolean)) {
+      attempts.push({ upstream, batch, outcome: "no-result", replied: false, code: null, retryable: null, message: null, note: null, atMs: ms(l), endMs: null });
+    }
+  };
+
   for (const l of ordered) {
     switch (l.message) {
       case TRY_MSG.choosing:
-        batch += 1;
-        batchStart = attempts.length;
-        for (const upstream of str(l.f.chosenProviders).split(",").map((s) => s.trim()).filter(Boolean)) {
-          attempts.push({ upstream, batch, outcome: "no-result", replied: false, code: null, retryable: null, message: null, note: null, atMs: ms(l), endMs: null });
-        }
+        send(l, str(l.f.chosenProviders));
+        break;
+      // With the primaries used up the router picks a backup, and says so on
+      // this line only: without it a backup's failure belongs to no try.
+      case TRY_MSG.backupChosen:
+        send(l, str(l.f.selected));
         break;
       case TRY_MSG.nodeErrorReply: {
         const p = providerOf(l.f.provider);
-        fail(open(p) ?? latest(p), l, str(l.f.error_name), str(l.f.chain_error_message) || str(l.f.error));
+        const a = open(p) ?? latest(p);
+        fail(a, l, str(l.f.error_name), str(l.f.chain_error_message) || str(l.f.error));
+        if (a && a.outcome === "failed") a.errorReply = replyOf(l);
         break;
       }
       case TRY_MSG.nodeError: {
         const p = providerOf(l.f.provider);
-        fail(open(p) ?? latest(p), l, "", str(l.f.Error));
+        const a = open(p) ?? latest(p);
+        fail(a, l, "", str(l.f.Error));
+        // The other line of the pair names the reply; a 1.5.x router writes this one only.
+        if (a && a.outcome === "failed") a.errorReply = a.errorReply ?? { requestId: null, body: null };
         break;
       }
       case TRY_MSG.directFailed:
@@ -287,6 +304,20 @@ export function triesOf(ordered: RouterLine[], t0: number, finished: RouterLine 
     replied.endMs = replied.endMs ?? ms(finished);
   }
   return attempts;
+}
+
+/** How much of a reply body a row carries. */
+const REPLY_BODY_MAX = 600;
+
+/**
+ * What the upstream sent back with an error, off the "received node error
+ * reply" line: its own request ID and the body. `headers` is Go's print of
+ * the response headers (`{X-Request-Id:[1a2b3c4d], …}`).
+ */
+function replyOf(l: RouterLine): { requestId: string | null; body: string | null } {
+  const requestId = /\bX-Request-Id:\[([^\]\s]{1,128})\]/i.exec(str(l.f.headers))?.[1] ?? null;
+  const body = str(l.f.payload).trim();
+  return { requestId, body: body ? scrubUrls(body).slice(0, REPLY_BODY_MAX) : null };
 }
 
 /** The GUID suffix the router appends to its own errors. */

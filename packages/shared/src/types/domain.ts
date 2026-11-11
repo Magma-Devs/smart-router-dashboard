@@ -567,6 +567,14 @@ export interface RelayAttempt {
   atMs: number;
   /** ms from the request's arrival to its answer or its failure; null when the logs show neither. */
   endMs: number | null;
+  /**
+   * Set when the upstream ANSWERED with an error, as opposed to not answering
+   * usefully (a timeout, a 429). Holds what the router logged of that answer:
+   * the upstream's own request ID (its `X-Request-Id` response header) and
+   * the reply body, cut to a few hundred characters. Either is null on a
+   * router build that doesn't log it.
+   */
+  errorReply?: { requestId: string | null; body: string | null };
 }
 
 /** One request that hit an error - a try failed, or the router gave up - rebuilt from the router's log lines. */
@@ -1136,18 +1144,34 @@ export interface ProviderReport {
   /** Node URLs, scheme + host, keys masked. Empty when the mounted config doesn't declare them. */
   urls: string[];
   tries: number;
+  /** Tries the provider didn't answer usefully: a timeout, a refused connection, a 429. */
   failedTries: number;
+  /** Tries the provider answered with an error. Null when the node-error family isn't emitted. */
+  errorReplies: number | null;
   /** Null when the hold-off family isn't emitted. */
   rateLimitHits: number | null;
-  methods: { method: string; tries: number; failed: number }[];
-  /** First and last failed try at this provider in the range, from the logs; null when the logs can't say. */
+  methods: { method: string; tries: number; failed: number; errorReplies: number | null }[];
+  /** First and last failed try or error reply at this provider in the range, from the logs; null when the logs can't say. */
   firstFailureMs: number | null;
   lastFailureMs: number | null;
   /** The logs held more failures than were read: the first failure may be earlier. */
   moreFailures: boolean;
-  /** The router's most common error code on the failed tries read. */
+  /** The router's most common error code on the failed tries read, and on the error replies read. */
   topCode: string | null;
-  examples: { time: number; method: string; code: string | null; message: string | null; guid: string }[];
+  topReplyCode: string | null;
+  examples: {
+    time: number;
+    method: string;
+    /** `failed` = no useful answer; `error-reply` = the provider answered with an error. */
+    kind: "failed" | "error-reply";
+    code: string | null;
+    message: string | null;
+    guid: string;
+    /** The provider's own request ID, when it replied and the router logged it. */
+    providerRequestId: string | null;
+    /** The provider's reply as logged, when it replied. */
+    response: string | null;
+  }[];
   logs: "ok" | "unconfigured" | "unreachable";
   problem: string;
   /** Plain text, one field per line — what the customer pastes. */
