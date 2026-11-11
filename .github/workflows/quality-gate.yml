@@ -9,6 +9,9 @@ on:
   pull_request:
   push:
     branches: [main]
+  # By hand: `gh workflow run quality-gate.yml --ref <branch>`. For a PR whose
+  # merge ref is stuck, so the gate still shows a result for a replaced commit.
+  workflow_dispatch:
 
 # Checkout + run tests only — no write surface needed.
 permissions:

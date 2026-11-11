@@ -13,7 +13,9 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "pnpm -r test",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "e2e": "pnpm --filter @sr/e2e e2e",
+    "e2e:ui": "pnpm --filter @sr/e2e e2e:ui"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

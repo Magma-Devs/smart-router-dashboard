@@ -1,0 +1,96 @@
+name: Browser tests
+
+# e2e/: the 2FA flows in a browser against a real api and Postgres. Not a
+# required check. PRs only: main is strict, so a push to main is a tree its PR
+# already tested.
+on:
+  pull_request:
+    paths:
+      - "apps/api/**"
+      - "apps/web/**"
+      - "packages/**"
+      - "e2e/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/e2e.yml"
+      - "!**/*.md"
+      - "!**/__tests__/**"
+      - "!**/*.generated.json"
+      - "!apps/web/public/**"
+      - "!apps/web/scripts/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: Browser tests (2FA flows)
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      E2E_DATABASE_URL: postgres://sr:dev@localhost:5432/sr_dashboard
+    steps:
+      # In the background, so Postgres boots while dependencies install. The
+      # api migrates it on boot.
+      - name: Start Postgres
+        run: |
+          docker run -d --name pg -p 5432:5432 -e POSTGRES_USER=sr -e POSTGRES_PASSWORD=dev \
+            -e POSTGRES_DB=sr_dashboard postgres:18-alpine > "$RUNNER_TEMP/pg.log" 2>&1 &
+
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Enable corepack and install dependencies
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+
+      - name: Build workspace packages
+        run: pnpm --filter @sr/shared build && pnpm --filter @sr/db build
+
+      - name: Playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('./e2e/node_modules/@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      # The runner image already has Chromium's system libraries, so only the
+      # headless shell is fetched, and only when this version is not cached.
+      - name: Cache the headless shell
+        id: browser
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-shell-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+
+      - name: Install the headless shell
+        if: steps.browser.outputs.cache-hit != 'true'
+        run: pnpm --filter @sr/e2e exec playwright install --only-shell chromium
+
+      - name: Wait for Postgres
+        run: |
+          timeout 60 sh -c 'until docker exec pg pg_isready -q -U sr -d sr_dashboard; do sleep 1; done' \
+            || { cat "$RUNNER_TEMP/pg.log"; docker logs pg; exit 1; }
+
+      # Playwright boots the api and the web itself (e2e/playwright.config.ts).
+      - name: Run the suite
+        run: pnpm e2e
+
+      - name: Upload the report on failure
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: playwright-report
+          path: |
+            e2e/playwright-report/
+            e2e/.playwright/results/
+          retention-days: 7

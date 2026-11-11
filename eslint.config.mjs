@@ -18,6 +18,8 @@ export default tseslint.config(
     ignores: [
       "**/dist/**",
       "**/.next/**",
+      "e2e/.playwright/**",
+      "e2e/playwright-report/**",
       "**/node_modules/**",
       "**/*.d.ts",
       "apps/web/next-env.d.ts",
@@ -77,11 +79,22 @@ export default tseslint.config(
     },
   },
 
-  // Test + script files may reach for looser patterns.
+  // Test + script files may reach for looser patterns. `e2e/` is browser tests
+  // that drive a live stack — same latitude, and it also reaches into `window`.
   {
-    files: ["**/__tests__/**", "**/*.test.{ts,tsx}", "**/scripts/**"],
+    files: ["**/__tests__/**", "**/*.test.{ts,tsx}", "**/*.spec.ts", "**/scripts/**", "e2e/**"],
     rules: {
       "@typescript-eslint/no-explicit-any": "off",
+    },
+  },
+
+  // Playwright reads a fixture's first parameter to decide what to build for
+  // it, so "this one needs nothing" is spelled `async ({}, use)`. There is no
+  // other way to write it that the runner understands.
+  {
+    files: ["e2e/**"],
+    rules: {
+      "no-empty-pattern": "off",
     },
   },
 
