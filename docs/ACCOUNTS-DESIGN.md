@@ -5,12 +5,32 @@ Technical design for [MAG-2729](https://magmadevs.atlassian.net/browse/MAG-2729)
 dashboard's shared login with named users — roles, sessions, invitations,
 credential lifecycle, and the member record an auditor reads.
 
-Written to be built from. Every table, route and flow below is a decision, not a
-sketch. Supersedes [`docs/AUTH.md`](AUTH.md) once slice 1 lands; until then that
-document describes what actually ships.
+This is the design the account system was built from: every table, route and flow
+below was a decision, and the reasoning for each is kept here. It is a record of
+those decisions, not the operator reference.
 
-> **Status:** all six slices built and open as PRs (#111, #118–#122) · 3 open
-> decisions (§16). **§16.1 and §16.3 are answered; nothing blocks #111** — see below.
+> **Status: built.** All six slices are merged (#111, #118–#122), with managed email
+> (MAG-2870), two-factor sign-in (MAG-2730) and the audit log (MAG-2770) on top.
+> What the system does today is in [`AUTH.md`](AUTH.md), [`TWO-FACTOR.md`](TWO-FACTOR.md)
+> and [`AUDIT.md`](AUDIT.md); [`MAG-2729-REQUIREMENTS.md`](MAG-2729-REQUIREMENTS.md)
+> maps the ticket line by line to the code. Where the build departs from this design,
+> the table below says how, and the current docs win.
+
+### Where the build departs from this design
+
+| § | Designed | Built |
+|---|---|---|
+| 16.4, 12.1, 6.2 | Social sign-in removed entirely | **Google and GitHub stay** (decided 24 Sep 2026); Discord is removed and `discord_id` is inert. Both are link-only as §12.1 designed: `upsertOAuthUser` never creates an account, and an invitation redeemed through either must match the invited address or is refused with 403 |
+| 5.2, 12.3 | Forwarded client context as a `clientContext` body field; `trustProxy` narrowed to the ingress CIDR | Forwarded in `X-Forwarded-Client-Ip` / `-Ua` headers, believed only beside `X-Internal-Auth`, because the per-IP limiter runs before a body exists. `TRUST_PROXY` is a hop count (default `1`), a proxy list or `false`; `true` is not accepted |
+| 7.3 | Per address, 3 token emails / 15 min | Not built. Forgot-password and the other credential routes carry the 10 / minute per-IP limit |
+| 8 | Managed: we create the first admin and email a join link | A Magma operator runs `/setup` (not mode-gated), then invites the customer's admin, who sets their own password. That account is marked as Magma's in the member list and the CSV (`users.is_magma_account`, migration `0005`) |
+| 8, 11 | "Forgot password" hidden on-prem | `/forgot-password` is linked from sign-in in both shapes; on-prem the api answers 404 and the page says to ask an administrator. Managed without a mail transport fails the same way |
+| 12.2 | SES down: the invite fails, surfaced to the admin | The invitation is committed, and the link is handed to the admin with `deliveryFallback: true` so the dialog says the email was not sent |
+| 10 | A no-op `AuditWriter` until MAG-2770 | MAG-2770's writer shipped with slice 6. `setup.completed` is in the catalog |
+| 11, 16 | 2FA column renders `—` | Populated: two-factor sign-in is required ([`TWO-FACTOR.md`](TWO-FACTOR.md)), Google and GitHub sign-in ask for the code too, and an admin can reset a member's 2FA |
+| 4 | One migration, `0001_accounts.sql` | `0001_accounts`, `0002_invitations`, `0003_password_lifecycle`, then `0005_magma_account`; 2FA and audit add their own |
+| 14 | Test harness to be decided | pglite: real in-process Postgres, no Docker |
+| 13.3 | Remove the shared credential from the chart | The chart no longer carries one; its `dashboard.auth` block turns accounts on per deployment (§13.3) |
 
 ---
 
@@ -325,7 +345,7 @@ arrives with the request that knows it.
 > columns, two sources; the rule is that whichever party terminated the browser's
 > connection is the one that reports it.
 >
-> **Related and live today:** `apps/api/src/app.ts:20` sets `trustProxy: true`
+> **Related, at design time:** `apps/api/src/app.ts:20` set `trustProxy: true`
 > unconditionally. On a publicly-reachable api that means anyone can set
 > `X-Forwarded-For` and become any IP — which silently defeats the per-IP rate limit on
 > `/auth/*`. Narrow it to the ingress CIDR as part of slice 1, and treat per-account
@@ -746,56 +766,28 @@ customer database before it goes near one. After slice 1, rolling the api back t
 build that reads `admin | member` will fail on the enum — so slice 1 is the release that
 gets a real backup taken first.
 
-### 13.3 The shared-login cutover
+### 13.3 Turning accounts on, per deployment
 
 "The shared login is disabled at the same moment" is a done-when **this repo cannot
-satisfy** — and it is a live piece of work, not a hypothetical: Omer confirmed on
-17 Aug 2026 that customers run the v1 backend, so the shared credential really is what
-stands in front of the dashboard today. The shared credential is `dashboard.AUTH_USERNAME`
-(`charts/smart-router/values.yaml:390`, default `"admin"`) plus the `auth-password`
-secret key, injected by `templates/dashboard/dashboard-backend-deployment.yaml` in
-`smart-router-helm-chart` — a different repo. Per customer, the sequence is:
+satisfy** on its own: what a deployment runs is set by `smart-router-helm-chart`, a
+different repo. The chart side has shipped. The chart carries no shared credential for
+this backend, and its `dashboard.auth` block sets `AUTH_MODE=enabled`, `DEPLOYMENT_MODE`
+and `PUBLIC_WEB_ORIGIN`. What remains is per deployment, tracked in
+[MAG-3002](https://magmadevs.atlassian.net/browse/MAG-3002):
 
-1. Deploy the release with accounts enabled.
-2. Create an admin for one named person on their side; send the join link.
-3. **Confirm they have signed in.**
-4. Remove the shared credential from the chart and roll the deployment.
-5. **The people who shared the login are set up as admins** (Omer, 17 Aug 2026 — §16.1).
-   In practice: the named person from step 2 is an admin by construction, and invites the
-   rest at `admin` rather than at a lower role.
-
-Step 4 is where this stops being ours to do, and **it splits three ways** — which the
-earlier version of this section missed by treating the cutover as one job:
+1. Deploy the release with `dashboard.auth` enabled.
+2. Create the first admin for one named person on their side (§6.1, §8) and send the
+   join link.
+3. **Confirm they have signed in** before anything else changes.
+4. **The people who used the deployment before are set up as admins** (Omer, 17 Aug
+   2026 — §16.1). In practice: the named person from step 2 is an admin by
+   construction, and invites the rest at `admin` rather than at a lower role.
 
 | Part | Whose |
 |---|---|
-| Ship the chart change that makes the credential removable | **Ours.** `AUTH_USERNAME` was added by Sebastian Sejzer in *"add dashboard (#40)"* |
-| Apply it to a **Magma-operated** box | **Ours — while we hold root.** See the window below |
-| Apply it to a **customer-operated** box | **The customer's.** We can ship the release; we cannot roll it |
-
-MAG-2749 is explicit about the third row: such a box is *"another customer's live server and we
-may only read from it, never change it"*, with restarting a deployment listed under
-cannot-do. So for those deployments the honest done-when is "the release is available and
-the customer has been told what to change", not "we disabled it".
-
-**Owner: MAG-2805, item 1 (victoria).** The cutover was never unassigned work — it is
-already the first open item on that deployment's handover ticket, and that item is
-this exact credential. Raised there on 18 Aug 2026.
-
-**The window may be closing.** MAG-2805's item 6 leaves open *"who keeps root access
-after handover"*. While Magma holds root on that box this is step 4 as written; after
-handover it becomes the customer's, and we drop to the third row above.
-
-**Order is not negotiable.** Steps 2 → 3 → 4, never 4 first. Removing the shared
-credential before confirming a named admin can sign in locks the customer out of their
-own dashboard with nothing to fall back to.
-
-> **Resolved:** which backend image customers run. Omer, 17 Aug 2026 — the **v1** image,
-> which is why the shared credential is genuinely what stands in front of the dashboard
-> and why `AUTH_MODE` is never set. The same template also injects `DEBUG`,
-> `CORS_ALLOW_CREDENTIALS` and `AUTH_GATEWAY_*`, all v1-only; they become dead
-> configuration the moment a deployment moves to the v2 image, and should be removed from
-> the chart in the same change as `AUTH_USERNAME`.
+| Ship the chart support | **Ours** — shipped |
+| Roll it out to a **Magma-operated** deployment | **Ours**, while we operate it |
+| Roll it out to a **customer-operated** deployment | **The customer's.** We ship the release; we do not roll it. The done-when there is "the release is available and the customer has been told what to change" |
 
 ---
 
@@ -881,7 +873,8 @@ themselves" requires. Slices 4–6 are what makes it pass the review.
 
 ## 16. Open decisions
 
-Five things that are not the implementer's call. The first three block slice 1.
+Five things that were not the implementer's call. All are settled; how each landed is in the
+table at the top.
 
 **16.1 · What do existing `member` rows become?** — **ANSWERED, 17 Aug 2026.**
 Omer on MAG-2729: *"use V1 logic"* and *"existing users would become admin in the next
@@ -903,14 +896,20 @@ is the expensive direction to be wrong in, where the other costs one click per p
 **16.2 · Who generates and surfaces the setup token?**
 Our installer is a helm chart. **Recommend**: the api generates one on first boot when
 there are zero active users, logs it once and writes it to `SETUP_TOKEN_FILE`, with
-`SETUP_TOKEN` as a chart-supplied override. Needs whoever owns the chart.
+`SETUP_TOKEN` as a chart-supplied override. Needs whoever owns the chart. **Built as
+recommended:** the token resolves at boot.
 
-**16.3 · Who disables the shared login, per customer?** — **ANSWERED, 18 Aug 2026.**
-It was already open item 1 on **MAG-2805** (victoria), a deployment's handover
-ticket. See §13.3 for the three-way split and the root-access window;
-the part that is genuinely ours is shipping the chart change.
+**16.3 · Who disables the shared login, per customer?** — **ANSWERED.**
+Per deployment, tracked in [MAG-3002](https://magmadevs.atlassian.net/browse/MAG-3002).
+The part that is genuinely ours, the chart support, has shipped. See §13.3 for the
+three-way split.
 
 **16.4 · Social sign-in — ANSWERED (wrongly asked). Removed, 18 Aug.**
+
+> **Reversed on 24 Sep 2026: Google and GitHub stay, Discord goes.** What follows is the
+> 18 Aug reasoning. As built, §12.1's link-only rule and §6.2's email-match check both
+> hold, and neither provider can create an account.
+
 This question rested on a misreading. It said "the ticket names email + password and
 Google"; the ticket says *"Email and password. That is the only way in"* and lists
 "Social sign-in — Google, GitHub, Discord" as out, twice — once in the out-of-scope line
