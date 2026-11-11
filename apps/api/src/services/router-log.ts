@@ -43,7 +43,7 @@ export const parseAll = (lines: LokiLine[]): RouterLine[] =>
 
 /** An upstream's name: node-error lines print the provider struct
  *  (`{ProviderAddress:sol-publicnode …}`), the others the bare name. */
-export function providerOf(v: unknown): string {
+export function upstreamNameOf(v: unknown): string {
   const s = str(v);
   return /ProviderAddress:([^\s},]+)/.exec(s)?.[1] ?? s.trim();
 }
@@ -352,14 +352,14 @@ export function triesOf(ordered: RouterLine[], t0: number, finished: RouterLine 
         send(l, str(l.f.selected));
         break;
       case TRY_MSG.nodeErrorReply: {
-        const p = providerOf(l.f.provider);
+        const p = upstreamNameOf(l.f.provider);
         const a = open(p) ?? latest(p);
         fail(a, l, str(l.f.error_name), str(l.f.chain_error_message) || str(l.f.error));
         if (a && a.outcome === "failed") a.errorReply = replyOf(l);
         break;
       }
       case TRY_MSG.nodeError: {
-        const p = providerOf(l.f.provider);
+        const p = upstreamNameOf(l.f.provider);
         const a = open(p) ?? latest(p);
         fail(a, l, "", str(l.f.Error));
         // The other line of the pair names the reply; a 1.5.x router writes this one only.
@@ -370,7 +370,7 @@ export function triesOf(ordered: RouterLine[], t0: number, finished: RouterLine 
         fail(open(str(l.f.endpoint)), l, "", str(l.f.error));
         break;
       case TRY_MSG.sendFailed: {
-        const p = providerOf(l.f.provider);
+        const p = upstreamNameOf(l.f.provider);
         fail(open(p) ?? latest(p), l, str(l.f.error_name), str(l.f.error));
         break;
       }

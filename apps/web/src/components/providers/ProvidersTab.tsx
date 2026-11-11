@@ -21,6 +21,7 @@
  *  - a read the store didn't answer is said, never drawn as an empty table. */
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   buildChainMetaByIndex,
   WINDOWS,
@@ -44,6 +45,7 @@ import { errRateColor, tipLagColor, uptimeColorFrac } from "@/lib/colors";
 import { fmtLag, fmtNum } from "@/lib/format";
 import { PMNoVal, PMPanel, PMStat } from "@/components/metrics/upstream/PMPanel";
 import { TT } from "@/lib/tooltips";
+import { chainHref } from "@/lib/chain-drawer";
 import { Pager } from "@/components/metrics/request-log";
 import { ProviderCharts } from "./ProviderCharts";
 import type { ReportTarget } from "./report-target";
@@ -337,7 +339,15 @@ function ChainsTable({ detail, chainFilter, renderAction, onOpenUpstream }: {
                   </div>
                 </td>
                 <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12, color: c.requests > 0 ? "var(--text)" : "var(--text-4)" }}>{fmtNum(c.requests)}</span></td>
-                <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12, color: "var(--text-3)" }}>{c.share != null ? `${(c.share * 100).toFixed(0)}%` : "—"}</span></td>
+                <td style={{ textAlign: "right" }}>
+                  {/* The share over time, beside the chain's other providers: Metrics' "Traffic by provider". */}
+                  {c.share != null ? (
+                    <Link href={chainHref(c.spec)} className="gw-mono gw-tnum" title={`Every provider's share of ${buildChainMetaByIndex(c.spec).name} over time`}
+                      onClick={(e) => e.stopPropagation()} style={{ fontSize: 12, color: "var(--text-3)", textDecoration: "underline dotted" }}>
+                      {`${(c.share * 100).toFixed(0)}%`}
+                    </Link>
+                  ) : <span className="gw-mono" style={{ fontSize: 12, color: "var(--text-3)" }}>—</span>}
+                </td>
                 <td style={{ textAlign: "right" }}>{pctCell(c.errorRate)}</td>
                 <td style={{ textAlign: "right" }}>{othersCell(c.others)}</td>
                 <td style={{ textAlign: "right" }}>{pctCell(c.nodeErrorRate, fam.nodeErrors)}</td>

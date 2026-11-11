@@ -56,7 +56,7 @@ export const TT: Record<string, string> = {
   providerLimited:    "Minutes where half or more of its attempts got **\"too many requests\"**. They don't count as down: a rate limit is often your plan's limit, not the provider failing. Read for windows of a day or less.",
   providerTimeouts:   "**Timeouts and refused or reset connections** as a share of the attempts sent to this provider. The router counts these together today - a separate timeout figure needs an error-type label on the router's counters.",
   providerOthers:     "The error rate of the **other providers on this chain**, together, over the same window. If they are fine and this one isn't, the problem is this provider, not the chain.",
-  providerChains:     "Every chain this provider serves for you. **Share** is its part of that chain's attempts.",
+  providerChains:     "Every chain this provider serves for you. **Share** is its part of that chain's attempts; click it for every provider's share over time (Traffic by provider on Metrics).",
   providerBehind:     "How far this provider's newest block is behind the chain's best, in seconds.",
   providerMethods:    "Every method sent to this provider, worst first. **Failed attempts** counts the ones this provider didn't answer - the router may still have answered the caller from another provider. **Node errors** counts the ones it answered with an error.",
   providerErrorRate:  "Attempts at this provider that **failed**, before the router retried or failed over.",

@@ -63,7 +63,7 @@ import {
   namesOf,
   onChain,
   ownRow,
-  providerOf,
+  upstreamNameOf,
   scrubUrls,
   str,
   TRY_MSG,
@@ -207,7 +207,7 @@ export function buildTxRows(lines: RouterLine[], index: UpstreamIndex): TxLogRow
     // The client got the answering upstream's reply; with a single upstream,
     // its error line is that reply.
     const replyError =
-      nodeErrors.find((l) => providerOf(l.f.provider) === answeredBy) ??
+      nodeErrors.find((l) => upstreamNameOf(l.f.provider) === answeredBy) ??
       (sentTo.length === 1 ? nodeErrors[0] : undefined);
     const routerError = withoutGuid(str((finished ?? noAnswer)?.f.error));
     const replyDecides = method === REPLY_DECIDES_PATH || interfaces.some((i) => REPLY_DECIDES_INTERFACES.has(i));
