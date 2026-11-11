@@ -1,8 +1,33 @@
 /* A chart's time axis, shared by the charts laid out by time: the Upstreams
    deep-dive's and the Transactions tab's. Times are unix seconds unless a
    name says ms. */
-import type { ChartGrid } from "@sr/shared";
+import type { ChartGrid, TimePoint } from "@sr/shared";
 import type { XTick } from "@/components/gateway/charts";
+import { fmtComma } from "@/lib/format";
+
+/** Every stacked chart's margins: on the left the widest axis labels' (a block
+ *  height), on the right just room for the last tick - the legend sits under
+ *  the chart. Charts that stack on one time axis must share both, or the same
+ *  moment lands at a different x in each. */
+export const PAD_X = 80;
+export const PAD_R = 16;
+
+/** Series laid on a grid by time - NaN where one has no point there, which
+ *  the chart draws as a gap. A point lands on its nearest slot. */
+export function onGrid(times: number[], grid: ChartGrid | undefined, series: TimePoint[][]): number[][] {
+  return series.map((s) => {
+    const out: number[] = new Array(times.length).fill(NaN);
+    if (!grid || !times.length) return out;
+    for (const p of s) {
+      if (p.v == null) continue;
+      const k = Math.round((p.t - grid.start) / grid.stepSec);
+      if (k >= 0 && k < out.length) out[k] = p.v;
+    }
+    return out;
+  });
+}
+
+export const fmtMs = (v: number) => `${fmtComma(Math.round(v))} ms`;
 
 /** Every point of a grid, unix seconds: the chart's time axis. */
 export function gridTimes(grid: ChartGrid | undefined): number[] {

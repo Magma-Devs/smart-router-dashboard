@@ -488,7 +488,8 @@ function normalizeSrConfig(
           };
         });
 
-      router.nodes.push({ name, isBackup, endpoints });
+      const groupLabel = asString(pick(provider, "group-label", "group_label", "groupLabel")) || null;
+      router.nodes.push({ name, isBackup, endpoints, ...(groupLabel ? { groupLabel } : {}) });
       router.interfaces = dedupe([...router.interfaces, iface]);
     }
   };

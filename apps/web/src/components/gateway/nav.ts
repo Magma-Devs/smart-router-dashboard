@@ -1,5 +1,5 @@
 import type { ComponentType } from "react";
-import { IconChart, IconLedger, IconReport, IconServer, IconSettings, IconUsers } from "./icons";
+import { IconChart, IconLedger, IconPulse, IconReport, IconServer, IconSettings, IconUsers } from "./icons";
 import { normalizeGrafanaDashboardUrl } from "@/lib/grafana-dashboard-url";
 
 export interface NavItem {
@@ -31,6 +31,8 @@ export const NAV_SECTIONS: NavSection[] = [
       // config the other two groupings read.
       { href: "/metrics", label: "Metrics", icon: IconChart },
       { href: "/upstreams", label: "Upstreams", icon: IconServer },
+      // How each provider behaves across every chain, and the report to send one.
+      { href: "/providers", label: "Providers", icon: IconPulse },
     ],
   },
   {

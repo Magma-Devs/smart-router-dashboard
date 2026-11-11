@@ -48,7 +48,7 @@ function Sidebar({ grafanaDashboardUrl, grafanaCustomerUsageDashboardUrl }: {
 }) {
   const pathname = usePathname();
   const sections = visibleNavSections(useAuthMode(), grafanaDashboardUrl, grafanaCustomerUsageDashboardUrl);
-  const { visible: drawerOpen, menuCollapsed: compact, setMenuCollapsed } = useChainDrawer();
+  const { visible: drawerOpen, listPage, menuCollapsed: compact, setMenuCollapsed } = useChainDrawer();
   const { setChain, setRouterId, setRouter } = useFilters();
   // Home or Metrics while on Metrics: back to every chain, as the drawer's
   // first row does, with the menu folded again. Navigating would land on the
@@ -62,7 +62,7 @@ function Sidebar({ grafanaDashboardUrl, grafanaCustomerUsageDashboardUrl }: {
     setMenuCollapsed(true);
   } : undefined;
   return (
-    // Beside the chains drawer the menu folds to its icons, each naming itself
+    // Beside a page's own list (chains, providers) the menu folds to its icons, each naming itself
     // on hover, so the page doesn't carry two lists side by side.
     <aside className={`gw-side${compact ? " gw-side--compact" : ""}`}>
       {/* The brand is the way home, as it is on every product: `/` redirects to
@@ -89,7 +89,7 @@ function Sidebar({ grafanaDashboardUrl, grafanaCustomerUsageDashboardUrl }: {
         </div>
       </Link>
       <nav className="gw-side__nav">
-        {drawerOpen && (
+        {listPage && (
           <button
             type="button"
             className="gw-nav-item gw-side__toggle"
@@ -322,6 +322,17 @@ export function Shell({ children, grafanaDashboardUrl, grafanaCustomerUsageDashb
   );
 }
 
+/** Where a list page other than Metrics puts its list beside the sidebar
+ *  (the Providers page, through a portal: its list shares the page's reads). */
+export const PAGE_DRAWER_SLOT_ID = "gw-page-drawer";
+
 function ChainDrawerSlot() {
-  return useChainDrawer().visible ? <ChainDrawer /> : null;
+  // The slot is always drawn, empty off its page: a page reads it at render,
+  // and one drawn in the same commit as the page would not be there yet.
+  return (
+    <>
+      {useChainDrawer().visible && <ChainDrawer />}
+      <div id={PAGE_DRAWER_SLOT_ID} style={{ display: "contents" }} />
+    </>
+  );
 }

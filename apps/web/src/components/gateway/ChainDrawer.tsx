@@ -26,33 +26,41 @@ import { byAttention, chainHref, type DrawerChain } from "@/lib/chain-drawer";
 
 /** The page the drawer belongs to. */
 export const CHAIN_DRAWER_PATH = "/metrics";
+/** The pages that put a list of their own beside the sidebar, which folds there:
+ *  Metrics its chains, Providers its providers (in the shell's page slot). */
+export const LIST_PAGE_PATHS = [CHAIN_DRAWER_PATH, "/providers"] as const;
 
 export interface ChainDrawerState {
   /** On its page, inside the Shell (then the page drops its chain and router
    *  dropdowns); the standalone page has no drawer. */
   visible: boolean;
-  /** The sidebar is folded to its icons beside the drawer. Always false off its page. */
+  /** A page with its own list beside the sidebar (`LIST_PAGE_PATHS`): the menu folds there. */
+  listPage: boolean;
+  /** The sidebar is folded to its icons beside the list. Always false off a list page. */
   menuCollapsed: boolean;
   setMenuCollapsed: (collapsed: boolean) => void;
 }
 
 const ChainDrawerContext = createContext<ChainDrawerState>({
-  visible: false, menuCollapsed: false, setMenuCollapsed: () => {},
+  visible: false, listPage: false, menuCollapsed: false, setMenuCollapsed: () => {},
 });
 
 export function ChainDrawerProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const onPage = pathname === CHAIN_DRAWER_PATH || pathname.startsWith(`${CHAIN_DRAWER_PATH}/`);
-  // Folded each time the page is reached; opening it lasts for that visit.
+  const under = (path: string) => pathname === path || pathname.startsWith(`${path}/`);
+  const onPage = under(CHAIN_DRAWER_PATH);
+  const listPage = LIST_PAGE_PATHS.find(under) ?? null;
+  // Folded each time a list page is reached, one from the other included;
+  // opening it lasts for that visit.
   const [collapsed, setCollapsed] = useState(true);
-  const [wasOnPage, setWasOnPage] = useState(onPage);
-  if (wasOnPage !== onPage) {
-    setWasOnPage(onPage);
-    if (onPage) setCollapsed(true);
+  const [wasOn, setWasOn] = useState(listPage);
+  if (wasOn !== listPage) {
+    setWasOn(listPage);
+    if (listPage) setCollapsed(true);
   }
   const value = useMemo(
-    () => ({ visible: onPage, menuCollapsed: onPage && collapsed, setMenuCollapsed: setCollapsed }),
-    [onPage, collapsed],
+    () => ({ visible: onPage, listPage: listPage !== null, menuCollapsed: listPage !== null && collapsed, setMenuCollapsed: setCollapsed }),
+    [onPage, listPage, collapsed],
   );
   return <ChainDrawerContext.Provider value={value}>{children}</ChainDrawerContext.Provider>;
 }

@@ -78,6 +78,7 @@ import {
   linesOfLookup,
   LOOKUP_ID,
   methodOf,
+  requestOf,
   namesOf,
   onChain,
   ownRow,
@@ -132,7 +133,12 @@ const REQUEST_SPAN_MS = 60_000;
  * keeps every request the lines hold - what a look-up by ID wants, for a
  * request that went fine as much as one that didn't.
  */
-export function buildErrorRows(lines: RouterLine[], index: UpstreamIndex, every = false): ErrorRequestRow[] {
+export function buildErrorRows(
+  lines: RouterLine[],
+  index: UpstreamIndex,
+  every = false,
+  opts: { request?: boolean } = {},
+): ErrorRequestRow[] {
   const byGuid = new Map<string, RouterLine[]>();
   for (const l of lines) byGuid.set(l.guid, [...(byGuid.get(l.guid) ?? []), l]);
 
@@ -178,6 +184,7 @@ export function buildErrorRows(lines: RouterLine[], index: UpstreamIndex, every 
       time: Math.round(t0),
       ...chainOf(ordered, namesOf(ordered, attempts), index),
       method: methodOf(received, ordered),
+      ...(opts.request && received ? { request: requestOf(received) } : {}),
       attempts,
       result,
       resolvedBy: result === "failed" || result === "write-unknown" ? null : str(finished?.f.served_by) || null,
@@ -471,13 +478,27 @@ export class ErrorRequestsService {
    * two reads can come back in both; the client keeps it once, by GUID.
    * `upstream` keeps the requests whose try at that upstream failed - what
    * an errors-over-time bar counts - and narrows the read to it, so the cap
-   * applies to what was asked for. One read scans at most
+   * applies to what was asked for. `onChainLines` narrows it further, to the
+   * upstream's failures on `spec`: a vendor's node name serves many chains,
+   * and a busy one would use the cap up before a quiet one is reached. It
+   * reads only lines that name the chain, which a failed try's and an error
+   * reply's do - the "Relay received a node error" a 1.5.x router writes
+   * alone doesn't, so a caller that gets nothing back should read without it.
+   * `withRequest` adds what the client sent to each row (the provider report).
+   * One read scans at most
    * LOG_READ_BUDGET_BYTES of logs (`readStart`): on a busy deployment a long
    * range is read in parts, newest first, one per "Load older". One read per
    * list at a time on this process, its answer kept (`ListReads`); a poll of a
    * page window reads only what is new since the last (`readList`).
    */
-  async report(range: ReadRange, spec?: string, routerId?: string, before?: number, upstream?: string): Promise<ErrorRequestsReport> {
+  async report(
+    range: ReadRange,
+    spec?: string,
+    routerId?: string,
+    before?: number,
+    upstream?: string,
+    opts: { onChainLines?: boolean; withRequest?: boolean } = {},
+  ): Promise<ErrorRequestsReport> {
     const read = { startMs: range.startMs, endMs: range.endMs };
     const none = (available: boolean, reason?: LogUnavailable): ErrorRequestsReport =>
       ({ available, ...(reason ? { reason } : { range: read }), rows: [], more: false, nextBefore: null });
@@ -486,7 +507,7 @@ export class ErrorRequestsService {
     const endMs = readEnd(range, before);
     if (endMs <= range.startMs) return none(true);
 
-    return this.reads.get(range, before, [spec, routerId, upstream], async (last) => {
+    return this.reads.get(range, before, [spec, routerId, upstream, opts.onChainLines ? "on-chain" : "", opts.withRequest ? "request" : ""], async (last) => {
       // A request writes several of these lines, so read a few per request.
       // Called-off tries are left out here: they alone don't make an error.
       // A chain, router or upstream narrows the read to those names, so the
@@ -504,11 +525,17 @@ export class ErrorRequestsService {
         ...(names?.filter(inRawString).map(escapeRe) ?? []),
         ...(names && chain && LABEL_TOKEN.test(chain) ? [listenerPattern(chain)] : []),
       ];
-      const narrow = alts.length ? ` |~ \`${alts.join("|")}\`` : "";
+      // The provider report reads one provider on one chain. A node name serves
+      // many chains, so its error lines are narrowed by their chain_id, and its
+      // relay_end events by the event's own chain.
+      const reportChain = opts.onChainLines && upstream && spec && LABEL_TOKEN.test(spec) ? spec : null;
+      const chainLine = reportChain ? ` |= \`"chain_id":"${reportChain}"\`` : "";
+      const narrow = (alts.length ? ` |~ \`${alts.join("|")}\`` : "") + chainLine;
       // A relay_end is one line per request and names its chain and its tries' upstreams.
-      const eventNarrow = upstream
+      const eventNarrow = (upstream
         ? inRawString(upstream) ? ` |= \`"upstream":"${upstream}"\`` : ""
-        : chain && LABEL_TOKEN.test(chain) ? ` |= \`"chain":"${chain}"\`` : "";
+        : chain && LABEL_TOKEN.test(chain) ? ` |= \`"chain":"${chain}"\`` : "")
+        + (reportChain ? ` |= \`"chain":"${reportChain}"\`` : "");
       const index = new UpstreamIndex(routers);
       const got = await readList(loki, selector, {
         finders: [
@@ -525,7 +552,7 @@ export class ErrorRequestsService {
         // lines needs the rest of them - and its relay_end, when it has one.
         follow: { messages: [...Object.values(ERROR_MSG), RELAY_END], perGuid: 40, beforeMs: REQUEST_SPAN_MS, afterMs: REQUEST_SPAN_MS },
         cap: this.cap,
-        rowsOf: (lines) => buildErrorRows(lines, index),
+        rowsOf: (lines) => buildErrorRows(lines, index, false, { request: opts.withRequest }),
         basis: JSON.stringify(routers),
         // At most LOG_READ_BUDGET_BYTES of logs per whole read: the older part of the range is the next read's.
         wholeFrom: (r) => readStart(loki, selector, r, r.endMs),

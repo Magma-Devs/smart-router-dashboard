@@ -7,7 +7,7 @@
  * file. Catalog entries drive presentation only (logos, "looks like X"
  * hints) — never data. */
 
-import { buildChainMetaByIndex, type HealthState, type UpstreamMetrics, type RouterTopology } from "@sr/shared";
+import { buildChainMetaByIndex, providerOf, type HealthState, type UpstreamMetrics, type RouterTopology } from "@sr/shared";
 import type { DirectTarget } from "@/components/try-me/direct-request";
 
 /** The honest-state copy for every config-mutating commit button. */
@@ -248,19 +248,23 @@ export function directTargetFor(
 }
 
 /* ─────────────────────────────────────────────
-   Upstream identity — catalog match by urlHost domain (preferred),
-   falling back to the node name (the design matched by name).
+   Upstream identity — which company runs a node is decided once, by
+   @sr/shared's `providerOf` (the URL host first, then the node name), the
+   rule the Providers page groups by. The catalog only adds the logo and the
+   add-upstream flow.
 ───────────────────────────────────────────── */
-export function matchCatalog(name: string, urlHosts: string[]): UpstreamCatalogEntry | null {
-  for (const cat of UPSTREAM_CATALOG) {
-    const domain = UPSTREAM_DOMAINS[cat.id];
-    for (const host of urlHosts) {
-      if (domain && host.includes(domain)) return cat;
-      if (cat.domainPattern && cat.domainPattern.test(host)) return cat;
-    }
+/** "https://svc.blockdaemon.com" → "svc.blockdaemon.com"; a bare host stays as it is. */
+function hostOf(urlHost: string): string {
+  try {
+    return new URL(urlHost).host;
+  } catch {
+    return urlHost;
   }
-  const lower = name.toLowerCase();
-  return UPSTREAM_CATALOG.find((c) => lower.includes(c.name.toLowerCase()) || lower.includes(c.id)) ?? null;
+}
+
+export function matchCatalog(name: string, urlHosts: string[]): UpstreamCatalogEntry | null {
+  const { id } = providerOf({ name, urlHosts: urlHosts.filter(Boolean).map(hostOf) });
+  return UPSTREAM_CATALOG.find((c) => c.id === id) ?? null;
 }
 
 /* ─────────────────────────────────────────────

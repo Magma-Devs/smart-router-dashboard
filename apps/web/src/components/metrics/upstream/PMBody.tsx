@@ -27,34 +27,14 @@ import { ColumnChart, LineChart, niceScale, type ChartHover, type Layer, type Se
 import { useApi } from "@/hooks/use-api";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 import { fmtComma } from "@/lib/format";
-import { barSpanWords, dayOf, gridTimes, hhmm, timeTicks } from "@/lib/chart-time";
+import { NODE_ERROR_COLOR } from "@/lib/colors";
+import { barSpanWords, dayOf, fmtMs, gridTimes, hhmm, onGrid, PAD_R, PAD_X, timeTicks } from "@/lib/chart-time";
+import { ChartRow, LegendLine, type LegendRow } from "@/components/gateway/ChartLegend";
 import type { ErrorsJump } from "../ErrorsBreakdown";
 import { PMPanel } from "./PMPanel";
 
-/** Every chart's margins: on the left the widest axis labels' (a block
- *  height), on the right just room for the last tick - the legend sits under
- *  the chart. The four stack on one time axis, so they must share both, or
- *  the same moment lands at a different x in each. */
-const PAD_X = 80;
-const PAD_R = 16;
-
 /** The peers' colours; the selected upstream is always the brand colour. */
 const PEER_COLORS = ["#38bdf8", "#a78bfa", "#22c55e", "#eab308", "#ec4899", "#14b8a6", "#f97316", "#94a3b8"];
-
-/** Series laid on a grid by time - NaN where one has no point there, which
- *  the chart draws as a gap. A point lands on its nearest slot. */
-function onGrid(times: number[], grid: ChartGrid | undefined, series: TimePoint[][]): number[][] {
-  return series.map((s) => {
-    const out: number[] = new Array(times.length).fill(NaN);
-    if (!grid || !times.length) return out;
-    for (const p of s) {
-      if (p.v == null) continue;
-      const k = Math.round((p.t - grid.start) / grid.stepSec);
-      if (k >= 0 && k < out.length) out[k] = p.v;
-    }
-    return out;
-  });
-}
 
 const whenOf = (t: number | undefined) =>
   t ? new Date(t * 1000).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }) : "";
@@ -65,60 +45,10 @@ const quantile = (xs: number[], q: number) => {
   return s.length ? s[Math.floor(q * (s.length - 1))]! : 0;
 };
 
-const fmtMs = (v: number) => `${fmtComma(Math.round(v))} ms`;
 /** "the hour", "the 16 minutes", "the 150 seconds" - how long each point averages. */
 const spanWords = (sec: number) =>
   sec % 3600 === 0 ? (sec === 3600 ? "the hour" : `the ${sec / 3600} hours`) : sec % 60 === 0 ? `the ${sec / 60} minutes` : `the ${sec} seconds`;
 const fmtRps = (v: number) => (v === 0 ? "0" : v < 0.1 ? v.toFixed(3) : v < 10 ? v.toFixed(2) : fmtComma(Math.round(v)));
-
-interface LegendRow {
-  key: string;
-  name: string;
-  color: string;
-  /** A count beside the name (the errors legend); the line legends name their lines only. */
-  value?: string;
-  selected?: boolean;
-  /** A line for a line chart's series, a square for a bar chart's. */
-  mark?: "line" | "box";
-}
-
-/**
- * The legend under a chart, one line left to right: which line is which. The
- * values themselves are read on the chart, beside the dots under the pointer
- * (LineChart pointLabels), where the eye already is. It starts where the plot
- * starts, and pointing at a name brings its line forward.
- */
-function LegendLine({ heading, rows, foot, onFocus }: {
-  heading?: string;
-  rows: LegendRow[];
-  foot?: ReactNode;
-  onFocus?: (key: string | null) => void;
-}) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", columnGap: 18, rowGap: 6, marginTop: 6, paddingLeft: PAD_X, paddingRight: PAD_R }}>
-      {heading && <span className="gw-mono" style={{ fontSize: 10, color: "var(--text-4)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{heading}</span>}
-      {rows.map((r) => (
-        <span key={r.key} onMouseEnter={onFocus ? () => onFocus(r.key) : undefined} onMouseLeave={onFocus ? () => onFocus(null) : undefined}
-          style={{ display: "inline-flex", alignItems: "center", gap: 7, minWidth: 0 }}>
-          <span style={{ width: r.mark === "box" ? 9 : 12, height: r.mark === "box" ? 9 : r.selected ? 3 : 2, borderRadius: r.mark === "box" ? 2 : 1, background: r.color, flexShrink: 0 }} />
-          <span className={r.mark === "box" ? undefined : "gw-mono"} style={{ fontSize: 11, color: r.selected ? "var(--text)" : "var(--text-2)", fontWeight: r.selected ? 600 : 400, whiteSpace: "nowrap" }}>{r.name}</span>
-          {r.value != null && <span className="gw-mono gw-tnum" style={{ fontSize: 12, fontWeight: 700, color: "var(--text)" }}>{r.value}</span>}
-        </span>
-      ))}
-      {foot && <span style={{ marginLeft: "auto", fontSize: 10.5, color: "var(--text-4)" }}>{foot}</span>}
-    </div>
-  );
-}
-
-/** A chart, and its legend on one line under it. */
-function ChartRow({ height, chart, legend }: { height: number; chart: ReactNode; legend: ReactNode }) {
-  return (
-    <div>
-      <div style={{ height }}>{chart}</div>
-      {legend}
-    </div>
-  );
-}
 
 const empty = (text: string) => (
   <div style={{ height: 120, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "var(--text-4)" }}>{text}</div>
@@ -225,7 +155,7 @@ export function PMBody({ pm, detail, name, timeWindow, onOpenErrors }: {
   const zeroGaps = (vals: number[] | undefined) => (vals ?? []).map((v) => (Number.isFinite(v) ? v : 0));
   const errStacks: Layer[] = [
     { name: "Failed attempts", values: zeroGaps(errVals[0]), color: "var(--err)" },
-    ...(eot?.node ? [{ name: "Node errors", values: zeroGaps(errVals[1]), color: "#f97316" }] : []),
+    ...(eot?.node ? [{ name: "Node errors", values: zeroGaps(errVals[1]), color: NODE_ERROR_COLOR }] : []),
   ];
   const sumOf = (vals: number[]) => vals.reduce((a, b) => a + b, 0);
   const errTotals = errStacks.map((l) => ({ name: l.name, color: l.color, total: sumOf(l.values) }));

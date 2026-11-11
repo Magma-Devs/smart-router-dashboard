@@ -43,7 +43,7 @@ export const parseAll = (lines: LokiLine[]): RouterLine[] =>
 
 /** An upstream's name: node-error lines print the provider struct
  *  (`{ProviderAddress:sol-publicnode …}`), the others the bare name. */
-export function providerOf(v: unknown): string {
+export function upstreamNameOf(v: unknown): string {
   const s = str(v);
   return /ProviderAddress:([^\s},]+)/.exec(s)?.[1] ?? s.trim();
 }
@@ -74,6 +74,33 @@ export function methodOf(received: RouterLine | undefined, others: RouterLine[] 
     else if (named) return named;
   }
   return redacted ? METHOD_REDACTED : "unknown";
+}
+
+/** How much of a request body a report carries. */
+const REQUEST_BODY_MAX = 2000;
+/** What the router writes where it cut a long body short. */
+const TRUNCATED = "...truncated...";
+
+/**
+ * What the client sent, off the "received" line: the body as the router
+ * logged it and the path. The router cuts a long body short, which breaks
+ * its JSON - `cut` says so. The line also carries the client's headers; they
+ * hold credentials and are never read.
+ */
+export function requestOf(received: RouterLine): { path: string | null; body: string | null; cut: boolean } {
+  const rawPath = str(received.f.path);
+  const path = rawPath && rawPath !== REDACTED ? rawPath : null;
+  const raw = str(received.f.body).trim();
+  if (!raw) return { path, body: null, cut: false };
+  // The router cuts a long body in the middle and marks the cut; a cut can
+  // also land in a string and leave the JSON valid, so the marker decides.
+  let cut = raw.includes(TRUNCATED);
+  try {
+    JSON.parse(raw);
+  } catch {
+    cut ||= raw.startsWith("{") || raw.startsWith("[");
+  }
+  return { path, body: scrubUrls(raw).slice(0, REQUEST_BODY_MAX), cut };
 }
 
 /** What a log collector that masks paths leaves of one (the fleet's does). */
@@ -224,9 +251,12 @@ export function lastWhere<T>(items: T[], pred: (x: T) => boolean): T | undefined
  *                                             are reopened, lag and all
  *   consistency fallback accepted stale …     so the batch just passed over is
  *                                             sent after all
+ *   [BackupProviders] Optimizer selected …    a try at a backup: `selected`. It
+ *                                             gets no "Choosing providers" line
  */
 export const TRY_MSG = {
   choosing: "Choosing providers",
+  backupChosen: "[BackupProviders] Optimizer selected backup provider",
   nodeErrorReply: "received node error reply from provider",
   nodeError: "Relay received a node error",
   directFailed: "direct RPC relay failed in goroutine",
@@ -303,30 +333,44 @@ export function triesOf(ordered: RouterLine[], t0: number, finished: RouterLine 
     a.endMs = a.endMs ?? ms(l);
   };
 
+  const send = (l: RouterLine, upstreams: string) => {
+    batch += 1;
+    batchStart = attempts.length;
+    for (const upstream of upstreams.split(",").map((s) => s.trim()).filter(Boolean)) {
+      attempts.push({ upstream, batch, outcome: "no-result", replied: false, code: null, retryable: null, message: null, note: null, atMs: ms(l), endMs: null });
+    }
+  };
+
   for (const l of ordered) {
     switch (l.message) {
       case TRY_MSG.choosing:
-        batch += 1;
-        batchStart = attempts.length;
-        for (const upstream of str(l.f.chosenProviders).split(",").map((s) => s.trim()).filter(Boolean)) {
-          attempts.push({ upstream, batch, outcome: "no-result", replied: false, code: null, retryable: null, message: null, note: null, atMs: ms(l), endMs: null });
-        }
+        send(l, str(l.f.chosenProviders));
+        break;
+      // With the primaries used up the router picks a backup, and says so on
+      // this line only: without it a backup's failure belongs to no try.
+      case TRY_MSG.backupChosen:
+        send(l, str(l.f.selected));
         break;
       case TRY_MSG.nodeErrorReply: {
-        const p = providerOf(l.f.provider);
-        fail(open(p) ?? latest(p), l, str(l.f.error_name), str(l.f.chain_error_message) || str(l.f.error));
+        const p = upstreamNameOf(l.f.provider);
+        const a = open(p) ?? latest(p);
+        fail(a, l, str(l.f.error_name), str(l.f.chain_error_message) || str(l.f.error));
+        if (a && a.outcome === "failed") a.errorReply = replyOf(l);
         break;
       }
       case TRY_MSG.nodeError: {
-        const p = providerOf(l.f.provider);
-        fail(open(p) ?? latest(p), l, "", str(l.f.Error));
+        const p = upstreamNameOf(l.f.provider);
+        const a = open(p) ?? latest(p);
+        fail(a, l, "", str(l.f.Error));
+        // The other line of the pair names the reply; a 1.5.x router writes this one only.
+        if (a && a.outcome === "failed") a.errorReply = a.errorReply ?? { requestId: null, body: null };
         break;
       }
       case TRY_MSG.directFailed:
         fail(open(str(l.f.endpoint)), l, "", str(l.f.error));
         break;
       case TRY_MSG.sendFailed: {
-        const p = providerOf(l.f.provider);
+        const p = upstreamNameOf(l.f.provider);
         fail(open(p) ?? latest(p), l, str(l.f.error_name), str(l.f.error));
         break;
       }
@@ -365,6 +409,20 @@ export function triesOf(ordered: RouterLine[], t0: number, finished: RouterLine 
     replied.endMs = replied.endMs ?? ms(finished);
   }
   return attempts;
+}
+
+/** How much of a reply body a row carries. */
+const REPLY_BODY_MAX = 600;
+
+/**
+ * What the upstream sent back with an error, off the "received node error
+ * reply" line: its own request ID and the body. `headers` is Go's print of
+ * the response headers (`{X-Request-Id:[1a2b3c4d], …}`).
+ */
+function replyOf(l: RouterLine): { requestId: string | null; body: string | null } {
+  const requestId = /\bX-Request-Id:\[([^\]\s]{1,128})\]/i.exec(str(l.f.headers))?.[1] ?? null;
+  const body = str(l.f.payload).trim();
+  return { requestId, body: body ? scrubUrls(body).slice(0, REPLY_BODY_MAX) : null };
 }
 
 /** The GUID suffix the router appends to its own errors. */

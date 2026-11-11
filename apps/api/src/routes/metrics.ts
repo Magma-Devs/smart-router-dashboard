@@ -246,6 +246,59 @@ export async function metricRoutes(app: FastifyInstance, opts: MetricRoutesOptio
     }));
   });
 
+  // Providers tab: upstreams grouped by the company that runs them.
+  app.get<{ Querystring: WindowQuery }>("/api/metrics/providers", tag("Providers grouped by company (requests, errors, p95, rate-limit hits, uptime)", false), async (request, reply) => {
+    const { router } = request.query;
+    const window = parseWindow(request.query.window);
+    // A read the store refused throws (503), so no degraded answer is kept.
+    return snapshot(reply, "live", window, ["providers", window, scopeKey(router)], () =>
+      app.scoped(router).providers.list(window));
+  });
+
+  app.get<{ Querystring: WindowQuery & { provider?: string } }>("/api/metrics/provider-detail", {
+    schema: {
+      tags: ["Metrics"],
+      summary: "One provider company: per-chain and per-method rows",
+      querystring: {
+        type: "object" as const,
+        required: ["provider"],
+        properties: {
+          provider: { type: "string" as const, description: "Provider company id from /api/metrics/providers" },
+          window: windowQuerySchema.properties.window,
+          router: windowQuerySchema.properties.router,
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const { router } = request.query;
+    const provider = String(request.query.provider);
+    const window = parseWindow(request.query.window);
+    return snapshot(reply, "live", window, ["provider-detail", window, provider, scopeKey(router)], () =>
+      app.scoped(router).providers.detail(provider, window));
+  });
+
+  app.get<{ Querystring: WindowQuery & { provider?: string } }>("/api/metrics/provider-series", {
+    schema: {
+      tags: ["Metrics"],
+      summary: "One provider company over the window, in bars on the clock: attempts, failures, node errors, rate-limit hits, down minutes, average latency",
+      querystring: {
+        type: "object" as const,
+        required: ["provider"],
+        properties: {
+          provider: { type: "string" as const, pattern: "^[A-Za-z0-9 ._-]{1,64}$", description: "Provider company id from /api/metrics/providers" },
+          window: windowQuerySchema.properties.window,
+          router: windowQuerySchema.properties.router,
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const { router } = request.query;
+    const provider = String(request.query.provider);
+    const window = parseWindow(request.query.window);
+    return snapshot(reply, "window", window, ["provider-series", window, provider, scopeKey(router)], () =>
+      app.scoped(router).providers.series(provider, window));
+  });
+
   // Upstream roster (optionally scoped to one spec and/or one config router).
   app.get<{ Querystring: WindowQuery }>("/api/metrics/upstreams", tag("Upstream roster + selection scores"), async (request, reply) => {
     const { spec, router, routerId } = request.query;

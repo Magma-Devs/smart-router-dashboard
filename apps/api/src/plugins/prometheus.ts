@@ -4,6 +4,7 @@ import { PrometheusClient } from "../services/prometheus-client.js";
 import { MetricsService } from "../services/metrics.js";
 import { MetricsDetailService } from "../services/metrics-detail.js";
 import { MetricsDashboardService } from "../services/metrics-dashboard.js";
+import { ProvidersService } from "../services/providers.js";
 import { ConfigurationService } from "../services/configuration.js";
 import { RECORDED, RECORDED_CHART_FLOOR, ROUTER_METRICS, recordedReadsPolicy, recordedWindows, scrapeIntervalMatches, setRecordedReads, type RecordedReadsState } from "@sr/shared";
 import { ROUTER_SCOPE_CANDIDATES, config, readMetricsScope } from "../config.js";
@@ -13,6 +14,7 @@ export interface ScopedServices {
   metrics: MetricsService;
   metricsDetail: MetricsDetailService;
   metricsDashboard: MetricsDashboardService;
+  providers: ProvidersService;
 }
 
 /** What the last freshness probe saw. */
@@ -210,17 +212,20 @@ export const prometheusPlugin = fp(async (app: FastifyInstance) => {
     if (typeof router === "string" && router !== "" && !resolved) await routerScopeLabel();
   });
 
-  const unscoped: ScopedServices = { metrics, metricsDetail, metricsDashboard };
+  const providers = new ProvidersService(prom, routerConfig, metrics);
+  const unscoped: ScopedServices = { metrics, metricsDetail, metricsDashboard, providers };
   app.decorate("scoped", (router?: string): ScopedServices => {
     if (!router) return unscoped;
     const scopedProm = prom.withScope({ label: resolved ?? ROUTER_SCOPE_CANDIDATES[0], value: router });
     // withScope returns `this` when the scope is unusable — no point building
     // a second set of services around the same client.
     if (scopedProm === prom) return unscoped;
+    const scopedMetrics = new MetricsService(scopedProm, routerConfig);
     return {
-      metrics: new MetricsService(scopedProm, routerConfig),
+      metrics: scopedMetrics,
       metricsDetail: new MetricsDetailService(scopedProm, routerConfig),
       metricsDashboard: new MetricsDashboardService(scopedProm),
+      providers: new ProvidersService(scopedProm, routerConfig, scopedMetrics),
     };
   });
 });

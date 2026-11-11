@@ -660,6 +660,14 @@ export interface RelayAttempt {
   atMs: number;
   /** ms from the request's arrival to its answer or its failure; null when the logs show neither. */
   endMs: number | null;
+  /**
+   * Set when the upstream ANSWERED with an error, as opposed to not answering
+   * usefully (a timeout, a 429). Holds what the router logged of that answer:
+   * the upstream's own request ID (its `X-Request-Id` response header) and
+   * the reply body, cut to a few hundred characters. Either is null on a
+   * router build that doesn't log it.
+   */
+  errorReply?: { requestId: string | null; body: string | null };
   /** The node's own numeric JSON-RPC error code for this try (`node_code` on `relay_end`), when the router wrote one. */
   nodeCode?: number;
 }
@@ -725,6 +733,14 @@ export interface ErrorRequestRow extends CallFacts {
   totalMs: number | null;
   /** The router's own error, for `failed` and `write-unknown`: what the client got. */
   error: string | null;
+  /**
+   * What the client sent, as the router logged it - only on a read that asks
+   * for it (the provider report). `body` is cut short past a few hundred
+   * characters by the router's log (`cut`); `path` is null where the log
+   * collector masked it. The client's headers are never read: they carry
+   * credentials.
+   */
+  request?: { path: string | null; body: string | null; cut: boolean };
   /**
    * The request's own error code, as the router's `relay_end` names it
    * (`error_code`), e.g. NODE_GATEWAY_TIMEOUT on a write it couldn't settle.
@@ -983,6 +999,8 @@ export interface RouterNode {
   name: string;
   isBackup: boolean;
   endpoints: RouterNodeEndpoint[];
+  /** SR_CONFIG `group-label`: the company running the node, when declared. */
+  groupLabel?: string;
 }
 
 /**
@@ -1265,6 +1283,242 @@ export interface DashboardData {
   /** Empty until labelled error counters exist (design's ✓ empty state). */
   trouble: DashboardTroubleRow[];
   lastUpdated: string | null;
+}
+
+/* ─────────────────────────────────────────────
+   Providers tab — upstreams grouped by the company that runs them
+───────────────────────────────────────────── */
+
+/** Which optional families this deployment emits; false ⇒ the field is null. */
+export interface ProviderFamilies {
+  /** smartrouter_node_errors_total — JSON-RPC error replies per provider. */
+  nodeErrors: boolean;
+  /** smartrouter_protocol_errors_total — timeouts, refused and reset connections. */
+  protocolErrors: boolean;
+  /** smartrouter_rate_limit_holdoffs_total — "too many requests" hold-offs. */
+  rateLimit: boolean;
+  /**
+   * The hold-offs carry the scrape target's `chain` label, so a rate-limited
+   * try can be put on its chain minute by minute. False ⇒ `rateLimitedMinutes`
+   * is null and a rate-limited try counts as a failed one in uptime.
+   */
+  rateLimitByChain: boolean;
+  /** smartrouter_csm_provider_blocked — blocked-from-routing gauge. */
+  blocked: boolean;
+  /** rpc_endpoint_total_errored — failed relays per provider and method. */
+  endpointErrored: boolean;
+}
+
+export interface ProviderSummary {
+  /** Company id (see `providerOf`). */
+  id: string;
+  name: string;
+  /** Account suffixes seen, e.g. ["2"] for blockdaemon-2; empty for one plain account. */
+  accounts: string[];
+  /** The node names (metric label values) rolled into this provider. */
+  nodes: string[];
+  chains: { spec: string; role: "primary" | "backup" | null }[];
+  /** Tries sent to the provider in the window (relay-scoped, cache excluded). */
+  requests: number;
+  /** Highest average request rate over any `peakWindowSec` in the window, all its nodes together. Null when unread. */
+  peakRps: number | null;
+  /** Failed tries ÷ tries. Null with no tries. */
+  errorRate: number | null;
+  /** Timeouts + refused/reset connections ÷ tries. Null when the family isn't emitted. */
+  protocolErrorRate: number | null;
+  /** JSON-RPC error replies ÷ tries. Null when the family isn't emitted. */
+  nodeErrorRate: number | null;
+  /** p95 answer time across its nodes, ms. */
+  p95Ms: number | null;
+  /** Rate-limit hold-offs recorded in the window. Null when the family isn't emitted. */
+  rateLimitHits: number | null;
+  /**
+   * Uptime, 0..1: of every minute it served one of your chains, the share
+   * that wasn't down. Each chain's minute counts once. Null past a day
+   * (`uptimeRead`) or with no traffic.
+   */
+  uptime: number | null;
+  /**
+   * Minutes, summed over its chains, where half or more of its tries that
+   * weren't rate-limited failed. A rate limit is often the plan's limit, not
+   * the provider failing, so it counts in `rateLimitedMinutes` instead.
+   */
+  downMinutes: number | null;
+  /**
+   * Minutes, summed over its chains, where half or more of its tries got "too
+   * many requests". Null past a day, or when the hold-offs can't be put on a
+   * chain (`families.rateLimitByChain`).
+   */
+  rateLimitedMinutes: number | null;
+  /** Any of its nodes blocked from routing right now. Null when the family isn't emitted. */
+  blockedNow: boolean | null;
+}
+
+export interface ProvidersReport {
+  window: string;
+  providers: ProviderSummary[];
+  /** Traffic under label values that can't be a node name (URL or header fragments). */
+  unattributed: { requests: number; labels: string[] } | null;
+  families: ProviderFamilies;
+  /** What `peakRps` averages over, seconds: 300, or longer on a window too long to read every 5 minutes of. */
+  peakWindowSec: number;
+  /**
+   * False when `p95Ms` isn't read: a window longer than a day (too heavy a raw
+   * read for a shared store) that the store's recorded series don't cover.
+   */
+  latencyRead: boolean;
+  /** False on a window longer than a day: uptime needs every minute of it, so `uptime` and `downMinutes` are null. */
+  uptimeRead: boolean;
+}
+
+export interface ProviderChainStats {
+  spec: string;
+  /** The node name serving this chain — the Upstreams tab's endpoint id. */
+  node: string;
+  account: string | null;
+  role: "primary" | "backup" | null;
+  requests: number;
+  /** This provider's share of the chain's tries, 0..1. */
+  share: number | null;
+  errorRate: number | null;
+  protocolErrorRate: number | null;
+  nodeErrorRate: number | null;
+  p95Ms: number | null;
+  blockLag: number | null;
+  behindSec: number | null;
+  /** Null when the family isn't emitted or the series carries no chain label. */
+  rateLimitHits: number | null;
+  /** Uptime on this chain, 0..1 - see `ProviderSummary.uptime`. */
+  uptime: number | null;
+  downMinutes: number | null;
+  rateLimitedMinutes: number | null;
+  /** Minutes in the window it served this chain at all. */
+  trafficMinutes: number | null;
+  blockedNow: boolean | null;
+  /** The chain's other providers over the same window: is it this provider, or the chain? */
+  others: ChainOthers;
+}
+
+/** Every other company's tries on one chain, together. */
+export interface ChainOthers {
+  /** Other companies with tries on the chain; 0 ⇒ this provider serves it alone. */
+  providers: number;
+  requests: number;
+  /** Their failed tries ÷ their tries. Null with no tries. */
+  errorRate: number | null;
+  /** Their error replies ÷ their tries. Null with no tries, or when the family isn't emitted. */
+  nodeErrorRate: number | null;
+}
+
+export interface ProviderMethodStats {
+  spec: string;
+  node: string;
+  method: string;
+  requests: number;
+  failed: number;
+  errorRate: number | null;
+  nodeErrors: number | null;
+  p50Ms: number | null;
+  p95Ms: number | null;
+  p99Ms: number | null;
+}
+
+export interface ProviderDetailReport {
+  window: string;
+  provider: ProviderSummary | null;
+  chains: ProviderChainStats[];
+  methods: ProviderMethodStats[];
+  /** False when the per-endpoint latency histogram has no method label on this build. */
+  methodLatency: boolean;
+  /**
+   * False when the provider's and chains' p95 aren't read: a window longer
+   * than a day that the store's recorded series don't cover.
+   */
+  latencyRead: boolean;
+  /** False on a window longer than a day: latency per method has no recorded series, so its p50/p95/p99 are null there. */
+  methodLatencyRead: boolean;
+  /** False on a window longer than a day: uptime isn't read there. */
+  uptimeRead: boolean;
+  families: ProviderFamilies;
+}
+
+/**
+ * GET /api/metrics/provider-series — one provider over the window, all its
+ * chains together, in bars on the clock (`bucketGrid`, as the Upstreams
+ * tab's errors over time): a point at `t` covers the `grid.stepSec` before
+ * it, and the last bar is still filling up to `asOf`. Null where a family
+ * isn't emitted or a read isn't made on this window.
+ */
+export interface ProviderSeries {
+  window: string;
+  provider: { id: string; name: string } | null;
+  grid: ChartGrid;
+  asOf: number;
+  /** Tries sent to it, and the ones it didn't answer usefully. */
+  tries: TimePoint[];
+  failed: TimePoint[];
+  /** Tries it answered with an error. Null when the node-error family isn't emitted. */
+  errorReplies: TimePoint[] | null;
+  /** "Too many requests" hold-offs. Null when the family isn't emitted. */
+  rateLimitHits: TimePoint[] | null;
+  /** Down minutes, summed over its chains (`ProviderSummary.downMinutes`' rule). Null past a day. */
+  downMinutes: TimePoint[] | null;
+  /** Rate-limited minutes, summed over its chains (`ProviderSummary.rateLimitedMinutes`). Null past a day or when unknown. */
+  rateLimitedMinutes: TimePoint[] | null;
+  /** Failed tries plus error replies, per chain: the chain a bar's report opens on. Chains with none are left out. */
+  failuresByChain: { spec: string; points: TimePoint[] }[];
+  /** Average answer time, ms, from the endpoint histogram's sum and count. Null past a day. */
+  avgLatencyMs: TimePoint[] | null;
+  families: ProviderFamilies;
+}
+
+/** GET /api/providers/report — a complaint to one provider about one chain, ready to paste. */
+export interface ProviderReport {
+  provider: { id: string; name: string };
+  spec: string;
+  chainName: string;
+  environment: "Mainnet" | "Testnet";
+  /** The range the report covers, unix ms. */
+  range: { startMs: number; endMs: number };
+  /** Node URLs, scheme + host, keys masked. Empty when the mounted config doesn't declare them. */
+  urls: string[];
+  tries: number;
+  /** Tries the provider didn't answer usefully: a timeout, a refused connection, a 429. */
+  failedTries: number;
+  /** Tries the provider answered with an error. Null when the node-error family isn't emitted. */
+  errorReplies: number | null;
+  /** Null when the hold-off family isn't emitted. */
+  rateLimitHits: number | null;
+  methods: { method: string; tries: number; failed: number; errorReplies: number | null }[];
+  /** First and last failed try or error reply at this provider in the range, from the logs; null when the logs can't say. */
+  firstFailureMs: number | null;
+  lastFailureMs: number | null;
+  /** The logs held more failures than were read: the first failure may be earlier. */
+  moreFailures: boolean;
+  /** The router's most common error code on the failed tries read, and on the error replies read. */
+  topCode: string | null;
+  topReplyCode: string | null;
+  examples: {
+    time: number;
+    method: string;
+    /** `failed` = no useful answer; `error-reply` = the provider answered with an error. */
+    kind: "failed" | "error-reply";
+    code: string | null;
+    message: string | null;
+    guid: string;
+    /** The provider's own request ID, when it replied and the router logged it. */
+    providerRequestId: string | null;
+    /** The provider's reply as logged, when it replied. */
+    response: string | null;
+    /** What the client sent, as the router logged it; null when its log has no request line. */
+    request: { path: string | null; body: string | null; cut: boolean } | null;
+  }[];
+  /** The time zone the text's times are in (IANA name), "UTC" when none was asked for. */
+  timeZone: string;
+  logs: "ok" | "unconfigured" | "unreachable";
+  problem: string;
+  /** Plain text, one field per line — what the customer pastes. */
+  text: string;
 }
 
 /* ── Recorded reads (the api's read policy, as /api/metrics/reads reports it) ── */

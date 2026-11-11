@@ -34,6 +34,8 @@ export interface RouterHeaderProps {
   setTimeWindow: (w: MetricWindow) => void;
   /** False where the page puts its actions beside its title (PageActions). */
   withActions?: boolean;
+  /** False where the page's reads don't take a config router (the Providers page). */
+  withRouter?: boolean;
 }
 
 /** Refresh, the time window and the logs link: the page's own actions, beside its title. */
@@ -63,7 +65,7 @@ export function PageActions({ timeWindow, setTimeWindow, chainFilter }: {
   );
 }
 
-export function RouterHeader({ chains, chainFilter, setChainFilter, timeWindow, setTimeWindow, withActions = true }: RouterHeaderProps) {
+export function RouterHeader({ chains, chainFilter, setChainFilter, timeWindow, setTimeWindow, withActions = true, withRouter = true }: RouterHeaderProps) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, flexWrap: "wrap" }}>
 
@@ -72,7 +74,7 @@ export function RouterHeader({ chains, chainFilter, setChainFilter, timeWindow, 
 
       {/* Router filter — the second axis. A chain can be served by several
           config routers, which a chain filter alone folds together. */}
-      <RouterFilterSelect />
+      {withRouter && <RouterFilterSelect />}
 
       {withActions && (
         <>

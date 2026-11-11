@@ -4,7 +4,7 @@ import { buildApp } from "../app.js";
 import { buildErrorRows, ErrorRequestsService } from "../services/error-requests.js";
 import { LOG_READ_BUDGET_BYTES, readRange, readStart, UNSIZED_READ_SPAN_MS } from "../services/read-range.js";
 import type { RouterTopology } from "@sr/shared";
-import { CANCELLED_NOTE, METHOD_REDACTED, methodOf, onChain, ownRow, parseRouterLine, scrubUrls, UpstreamIndex, type RouterLine, type UpstreamInfo } from "../services/router-log.js";
+import { CANCELLED_NOTE, METHOD_REDACTED, methodOf, onChain, ownRow, parseRouterLine, requestOf, scrubUrls, UpstreamIndex, type RouterLine, type UpstreamInfo } from "../services/router-log.js";
 import type { LokiClient, LokiLine } from "../services/loki-client.js";
 import type { ConfigurationService } from "../services/configuration.js";
 
@@ -138,6 +138,25 @@ const NOT_RETRIED = [
   at(6093, { GUID: "13101775707732352358", served_by: "sol-solana-labs", stop_reason: "Success", status: "200", has_reply: "true", error: "", message: "relay finished" }),
 ];
 
+// eth_call on a testnet: the primary's node refused the call → retry → the
+// backup answered HTTP 429 → no one left: the client got the primary's error
+// reply. A backup try is announced by the [BackupProviders] line, never by
+// "Choosing providers". (Captured 2026-10-12; node names changed.)
+const NOT_SUPPORTED = "pending state is not supported";
+const BACKUP_RATE_LIMITED = [
+  at(7000, { GUID: "11735159355704160308", path: "/", body: '{"method":"eth_call","params":[{"to":"0x00"},"pending"],"id":1,"jsonrpc":"2.0"}', message: RECEIVED }),
+  at(7000.84, { GUID: "11735159355704160308", validAddresses: "eth-primary", chosenProviders: "eth-primary", stateful: "0", message: "Choosing providers" }),
+  at(7014.93, { GUID: "11735159355704160308", error: NOT_SUPPORTED, error_code: "2004", error_name: "NODE_SERVER_ERROR", retryable: "true", chain_error_message: NOT_SUPPORTED, chain_id: "ETH1", provider: struct("eth-primary", "0"), statusCode: "200", headers: "{Alt-Svc:[h3=\":443\"; ma=2592000], Content-Type:application/json, Via:1.1 google, X-Request-Id:[1a2b3c4d]}", payload: '{"id":1,"jsonrpc":"2.0","error":{"code":-32000,"message":"pending state is not supported"}}', message: "received node error reply from provider" }),
+  at(7014.96, { GUID: "11735159355704160308", Error: NOT_SUPPORTED, provider: struct("eth-primary", "0"), Request: "eth_call", message: "Relay received a node error" }),
+  at(7015.05, { GUID: "11735159355704160308", action: "retry", reason: "Default", batchNumber: "1", message: DECIDE }),
+  at(7015.75, { GUID: "11735159355704160308", selected: "eth-backup", candidates_considered: "eth-backup", remaining_backups: "0", message: "[BackupProviders] Optimizer selected backup provider" }),
+  at(7071.16, { GUID: "11735159355704160308", endpoint: "eth-backup", error: "HTTP 429: Disallowed status code error (429)", latency: "55.271798ms", message: "direct RPC relay failed in goroutine" }),
+  at(7071.24, { GUID: "11735159355704160308", error: "HTTP 429: Disallowed status code error (429)", error_code: "2005", error_name: "NODE_RATE_LIMITED", retryable: "true", chain_id: "ETH1", provider: "eth-backup", message: "could not send relay to provider" }),
+  at(7071.4, { GUID: "11735159355704160308", action: "retry", reason: "Default", batchNumber: "2", message: DECIDE }),
+  at(7072.71, { GUID: "11735159355704160308", batchNumber: "2", stillInFlight: "0", message: "Circuit breaker: all providers exhausted, stopping new attempts — relays already in flight may still answer" }),
+  at(7088.07, { GUID: "11735159355704160308", served_by: "eth-primary", stop_reason: "AllProvidersExhausted", status: "200", has_reply: "true", error: "", message: "relay finished" }),
+];
+
 const UPSTREAMS: Record<string, UpstreamInfo> = {
   "sol-publicnode": { spec: "SOLANA", interfaces: ["jsonrpc"] },
   "sol-solana-labs": { spec: "SOLANA", interfaces: ["jsonrpc"] },
@@ -169,7 +188,8 @@ describe("requests that hit an error, from the router's log lines", () => {
       spec: "SOLANA",
       method: "getBlock",
       attempts: [
-        { upstream: "sol-publicnode", batch: 0, outcome: "failed", replied: false, code: "CHAIN_STATE_PRUNED", retryable: true, message: PRUNED_1000, note: null, atMs: 9, endMs: 119 },
+        // The node answered, with an error: these cut-down lines carry no reply headers or body.
+        { upstream: "sol-publicnode", batch: 0, outcome: "failed", replied: false, code: "CHAIN_STATE_PRUNED", retryable: true, message: PRUNED_1000, note: null, atMs: 9, endMs: 119, errorReply: { requestId: null, body: null } },
         { upstream: "sol-solana-labs", batch: 1, outcome: "ok", replied: true, code: null, retryable: null, message: null, note: null, atMs: 121, endMs: 243 },
       ],
       result: "recovered",
@@ -201,6 +221,39 @@ describe("requests that hit an error, from the router's log lines", () => {
       ["sol-publicnode", "failed", true, "CHAIN_STATE_PRUNED"],
       ["sol-solana-labs", "failed", false, "NODE_RATE_LIMITED"],
     ]);
+  });
+
+  it("a try at a backup is a try: its failure shows, though no 'Choosing providers' line announced it", () => {
+    const r = rowsOf(BACKUP_RATE_LIMITED)[0];
+    expect(r?.attempts.map((a) => [a.upstream, a.batch, a.outcome, a.replied, a.code])).toEqual([
+      ["eth-primary", 0, "failed", true, "NODE_SERVER_ERROR"],
+      ["eth-backup", 1, "failed", false, "NODE_RATE_LIMITED"],
+    ]);
+    expect(r?.result).toBe("error-reply");
+    expect(r?.resolvedBy).toBe("eth-primary");
+  });
+
+  it("what the client sent comes only when asked for, never the client's headers, and a body the router cut says so", () => {
+    expect(rowsOf(BACKUP_RATE_LIMITED)[0]?.request).toBeUndefined();
+    const asked = buildErrorRows(parse(BACKUP_RATE_LIMITED), indexOf(UPSTREAMS), false, { request: true })[0];
+    expect(asked?.request).toEqual({ path: "/", body: '{"method":"eth_call","params":[{"to":"0x00"},"pending"],"id":1,"jsonrpc":"2.0"}', cut: false });
+    // The router cuts long bodies in the middle and marks it, sometimes inside a string where the JSON stays valid.
+    const long = '{"method":"eth_call","params":[{"to":"0x00","input":"0xab...truncated...cd"},"latest"],"id":1}';
+    const received = parseRouterLine(at(1, { GUID: "1", path: "/", body: long, headers: "{X-Origin-Auth:[secret]}", message: RECEIVED }))!;
+    expect(requestOf(received)).toEqual({ path: "/", body: long, cut: true });
+    expect(JSON.stringify(requestOf(received))).not.toContain("secret");
+    // A path the log collector masked is no path.
+    expect(requestOf(parseRouterLine(at(1, { GUID: "1", path: "/REDACTED", message: "Consumer received a new REST non-POST request" }))!))
+      .toEqual({ path: null, body: null, cut: false });
+  });
+
+  it("an error reply keeps what the upstream sent back: its own request ID and the body - a try with no reply has neither", () => {
+    const [primary, backup] = rowsOf(BACKUP_RATE_LIMITED)[0]!.attempts;
+    expect(primary?.errorReply).toEqual({
+      requestId: "1a2b3c4d",
+      body: '{"id":1,"jsonrpc":"2.0","error":{"code":-32000,"message":"pending state is not supported"}}',
+    });
+    expect(backup?.errorReply).toBeUndefined();
   });
 
   it("failed: cut off, passed over, then sent anyway - each try with the router's own reason", () => {
@@ -260,6 +313,7 @@ describe("requests that hit an error, from the router's log lines", () => {
     expect(row("1798399298462960308")?.attempts).toEqual([{
       upstream: "eth-publicnode", batch: 0, outcome: "failed", replied: true, code: "USER_INVALID_PARAMS", retryable: false,
       message: "Archive requests require a personal token. Get one at: https://www.allnodes.com", note: null, atMs: 0, endMs: 81,
+      errorReply: { requestId: null, body: null },
     }]);
   });
 
@@ -356,6 +410,19 @@ describe("ErrorRequestsService", () => {
     expect(r.rows.map((x) => [x.method, x.result])).toEqual([
       ["eth_getLogs", "error-reply"], ["eth_gasPrice", "failed"], ["getSlot", "recovered"], ["getBlock", "recovered"],
     ]);
+  });
+
+  // A vendor's node name serves many chains. Without this the cap goes to
+  // the busy one, and a quiet chain's failures are never reached.
+  it("an upstream can be read on one chain only: the read keeps the lines that name the chain", async () => {
+    const { loki, queries } = lokiStub(LINES);
+    const svc = new ErrorRequestsService(loki, '{service="router"}', configSvc);
+    await svc.report(RANGE, "SOLANA", undefined, undefined, "sol-solana-labs", { onChainLines: true });
+    expect(queries[0]).toMatch(/\|~ `sol-solana-labs` \|= `"chain_id":"SOLANA"`$/);
+    queries.length = 0;
+    // Unasked, an upstream's read is as it was: every chain's lines.
+    await svc.report(RANGE, "SOLANA", undefined, undefined, "sol-solana-labs");
+    expect(queries[0]).toMatch(/\|~ `sol-solana-labs`$/);
   });
 
   it("a chain or a config router narrows the read to its upstreams, and keeps only its own requests", async () => {

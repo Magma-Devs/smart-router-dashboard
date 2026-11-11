@@ -18,6 +18,7 @@ import { routerRelayRoutes } from "./routes/routers.js";
 import { transactionRoutes } from "./routes/transactions.js";
 import { errorRequestRoutes } from "./routes/error-requests.js";
 import { incidentRoutes } from "./routes/incidents.js";
+import { providerRoutes } from "./routes/providers.js";
 import { authRoutes } from "./routes/auth.js";
 import { teamRoutes, teamPasswordRoutes, teamMemberRoutes } from "./routes/team.js";
 import { accountRoutes } from "./routes/account.js";
@@ -128,6 +129,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(routerRelayRoutes, { authMode: authMode === "enabled" ? "enabled" : "disabled" });
   await app.register(transactionRoutes);
   await app.register(errorRequestRoutes);
+  await app.register(providerRoutes);
   // Both modes, behind its own switch: with accounts on, the global gate above
   // already requires a session and the reporter is the signed-in user; with
   // them off, anyone who reaches the api may report. Settings are read from the

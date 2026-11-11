@@ -72,3 +72,6 @@ export function tipLagColor(sec: number | null): string {
   if (sec < TIP_LAG_WARN_SEC) return "var(--warn)";
   return "var(--err)";
 }
+
+/** A node error (the upstream answered with an error) in charts: the Upstreams deep-dive and a provider's graphs. */
+export const NODE_ERROR_COLOR = "#f97316";

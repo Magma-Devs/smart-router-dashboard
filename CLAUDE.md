@@ -100,7 +100,12 @@ Loki (`LOKI_URL`, optional) feeds the **Transactions** tab, the
 each transaction or failed request is rebuilt from the router's own log lines,
 joined by the request GUID (`services/transactions.ts` and
 `services/error-requests.ts` list the lines they read; what each try at each
-upstream did is `triesOf` in `services/router-log.ts`, shared by both). That wording is the
+upstream did is `triesOf` in `services/router-log.ts`, shared by both and by the provider
+report). A try at a **backup** is announced by `[BackupProviders] Optimizer selected backup
+provider`, never by `Choosing providers`: without that line a backup's failure belongs to no
+try. A try the upstream answered with an error carries `errorReply` - the upstream's own
+request ID (its `X-Request-Id` response header) and the reply body, off the "received node
+error reply" line; a try that got no reply has neither. That wording is the
 router's, not an interface: a reworded line empties the tab, and the tests pin
 it with captured lines. A router on smart-router #543 or later ends each
 request in one `relay_end` event instead (`services/relay-end.ts`; contract:
@@ -277,6 +282,8 @@ packages/shared/          @sr/shared — domain types, metric catalog, PromQL bu
     constants/windows.ts    WINDOWS — 13-window catalog (5m..30d) → PromQL range + step;
                             alignedBounds — a range read's window, on step boundaries
     promql/builders.ts      typed query builders shared by api (+ docs)
+    constants/providers.ts  PROVIDER_COMPANIES + providerOf — which company
+                            runs an upstream (the Providers page's grouping)
     constants/roles.ts      ROLES + roleAtLeast — four cumulative roles
     constants/audit-events.ts  the audit log's verb set (see "Audit log")
     constants/error-codes.ts   every router error code → source, meaning, what to do,
@@ -294,7 +301,7 @@ packages/db/              @sr/db — Drizzle + Postgres (AUTH_MODE=enabled only)
 apps/api/                 @sr/api — Fastify 5 (:8000)
   src/
     routes/             health · version · metrics · config · transactions ·
-                        error-requests
+                        error-requests · providers (the report + CSV export)
     plugins/            error-handler · swagger · prometheus (decorates services) ·
                         loki (the transaction + error-request services)
     services/           prometheus-client · metrics · metrics-detail ·
@@ -304,12 +311,14 @@ apps/api/                 @sr/api — Fastify 5 (:8000)
                         log-list (how both lists read and poll them) ·
                         transactions-over-time (the Transactions tab's chart) ·
                         snapshot (the metrics routes' shared answers) ·
-                        read-health (the reads the store refused, per run)
+                        read-health (the reads the store refused, per run) ·
+                        providers (upstreams grouped by company) ·
+                        provider-report (the complaint text for one provider)
     config.ts           single source of truth for env defaults
 apps/web/                 @sr/web — Next.js 16 App Router (:3000)
   src/
-    app/(app)/          overview · upstreams · metrics · team · account
-                        (Shell layout)
+    app/(app)/          overview · upstreams · metrics · providers · team ·
+                        account (Shell layout)
     app/standalone/     chrome-less Metrics page (sharing/embedding)
     app/api/config/     runtime-config route (DASHBOARD_API_URL → browser)
     components/
@@ -337,6 +346,14 @@ apps/web/                 @sr/web — Next.js 16 App Router (:3000)
                         (a bar opens the Errors tab on the requests
                         that failed at its upstream),
                         volume, latency, latest block)
+      providers/        ProvidersView (the Providers page, its own menu
+                        entry, new UI only) · ProvidersDrawer (the providers
+                        list beside the sidebar, in the shell's page slot, as
+                        the chains list sits on Metrics) · ProvidersTab (all
+                        providers side by side, or one provider's page) ·
+                        ProviderCharts (one provider over the window; a bar
+                        opens the report on that stretch) ·
+                        ProviderReport (the report sheet and the CSV buttons)
       upstreams/        UpstreamsView (3 groupings) · RouterGroups ·
                         Add/Edit sheets · TestModal · catalog
       endpoints/        endpoint row model + IfaceTag + detail sheet — the
@@ -928,6 +945,11 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 | `GET /api/metrics/upstream-timeline` | **`spec`** (required), `window`, `router?`, **`routerId?`** | `UpstreamTimeline` - the Availability blocks (a router row's Availability view and the Metrics tab's Availability card): every upstream of one chain, a cell per stretch of the clock (`bucketGrid`, the errors-over-time bars' grid - 30 minutes on 12 hours; `grid` holds the cells' ends, the last still filling up to `asOf`): `rps` and `failedRps` (tries by `provider_address`), `share` of the chain's tries (the relay cache's counted in, as `qBackupShareExpr` divides), `pollsOk` / `pollsFailed` (`rpc_endpoint_fetch_latest_*` by `endpoint_id`), and `state` (`upstreamCellState`: unhealthy at half the tries failed or every poll failed, `unknown` when scraped but neither tried nor polled, `null` when nothing was scraped - a gap, never a health). No health-over-time series exists per upstream; `smartrouter_csm_provider_blocked` is not read (it says only whether the router took the provider out). Four range reads whatever the count; the stretch still filling is one more read of each at now. Recorded series for the tries from 12h. `served`: per cell, the clients' requests and the ones the router couldn't serve - the Failed requests card's recorded counts (`RECORDED_OUTCOMES`, `chain` and a router's `service_name=~".+-<id>"`), null where the store has none or the router can't be split; the top row, Requests served, reads it. Rows: the config's nodes on the chain (one router's with `routerId`), matched to series case-insensitively, `role` from helm `is_backup`, primaries then backups; without `routerId`, upstreams only the metrics name too (`inConfig: false`); `Cached` gets no row. `available:false` + `failed` when a read was refused. 400 without `spec`. See docs/METRICS-MAPPING.md |
 | `GET /api/metrics/upstream-detail` | **`endpointId`** + **`spec`** (both required), `window` | `UpstreamDetail` - the Upstreams deep-dive for ONE upstream on ONE chain (vendors reuse a node name across chains, so every selector carries `spec` too: `upstreamEndpointSelector` / `upstreamProviderSelector`): health, availability, requests, rpsNow, p50/95/99, errorRate, blockLag, inFlight, score gauges + per-score-type series (not shown), latency/volume/block-lag series (`volume.read` real; write/batch null), **`errorsOverTime`** (`failed` tries + `node` error replies per bar, on the clock (`bucketGrid`) - a bar at `t` covers the `stepSec` before it, the last one still filling up to `asOf`; clicking a bar opens the Errors tab on the requests whose attempt at that upstream failed over exactly that span, the list's upstream filter); `errorsByCode`/`recentErrors` empty + `emitted` flags. 400 without `endpointId` or `spec` |
 | `GET /api/metrics/upstream-peers` | **`spec`** (required), `window` | `UpstreamPeers` - every upstream of one chain side by side: `latencyP95`, `rps` and `latestBlock` series per upstream, from three range queries whatever the count, sampled on `grid` (`chartSampling`: ~300 points, each averaging a 24th of the window - volume as an average of short rates over what is there, see "Time windows"). The deep-dive draws the selected upstream bold against these and lays points out by time on the grid; latency and volume are cut where the upstream wasn't scraped, so missing data is a gap. No requests at a point ⇒ no latency there (`v: null`), never a zero. 400 without `spec` |
+| `GET /api/metrics/providers` | `window` | `ProvidersReport` - the Providers page's list: `{ window, providers[], unattributed, families }`. One row per **company** (`providerOf`: the config's group label, else the URL host, else the node name; `blockdaemon-2` is a second account of Blockdaemon), every chain together: `requests` (tries), `peakRps` (highest 5-minute rate), `errorRate` (tries it didn't answer usefully), `nodeErrorRate` (tries it answered with an error - the router counts those as served, so the two are disjoint), `protocolErrorRate`, `p95Ms`, `rateLimitHits`, **`uptime`** + `downMinutes` (a minute is down when half or more of its tries on a chain that weren't rate-limited failed - the router's own gRPC reflection calls, which it refuses before any provider sees them, left out; each chain's minute counts once; read up to a day, `uptimeRead`), **`rateLimitedMinutes`** (minutes where half or more of its tries got "too many requests" - not down: that is often the plan's limit, not the provider failing; null when the hold-offs carry no `chain` label to put them on a chain, `families.rateLimitByChain`), `blockedNow`, `nodes`, `accounts`, `chains`. Blocked first, then by error rate. On a window the store's recorded series cover (3h and up, while fresh - `recordedReadsFor`), tries, successes, the peak rate and **p95** come from the recorded per-provider rates and per-upstream buckets, so p95 shows past a day. Without them, past a day the counters are sampled rather than read whole, and **latency is not read** (`latencyRead: false`, p95 null): the raw histogram is thousands of series, and its read over a week took a shared store down. `peakWindowSec` says what the peak averages over. The family probes go out with the reads, in one round `unattributed` counts traffic under label values that can't be a node name (URL or header fragments) instead of naming a provider for it. A family the router doesn't emit is `null` + `families.* : false`. **A read the store doesn't answer is 503, never an empty list** (see `docs/METRICS-MAPPING.md` → "Providers - reads that must answer") |
+| `GET /api/metrics/provider-detail` | **`provider`** (required), `window` | `ProviderDetailReport` - one company: `chains[]` (per node × chain: requests, `share` of that chain's tries, both error rates, p95, `blockLag` / `behindSec`, `rateLimitHits`, `uptime` / `downMinutes` / `rateLimitedMinutes` / `trafficMinutes`, `role`, `blockedNow`, and **`others`** - every other company on that chain together: how many, their tries, error rate and error-reply rate, so a reader can tell the provider's fault from the chain's; a company's second account is not another provider; a chain it is configured on but idle on shows with zero tries) and `methods[]` (per chain × method: requests, `failed`, `nodeErrors`, p50/p95/p99 - `methodLatency: false` when the endpoint histogram has no method label; `methodLatencyRead: false` past a day - per-method latency has no recorded series). Chain requests add up to the list row's |
+| `GET /api/metrics/provider-series` | **`provider`** (required), `window` | `ProviderSeries` - one provider over the window, every chain of it together, in bars on the clock (`bucketGrid`, as the Upstreams tab's errors over time): `tries`, `failed`, `errorReplies`, `rateLimitHits`, `downMinutes` and `rateLimitedMinutes` (the uptime rules, summed over its chains), `failuresByChain` (failed tries plus error replies per chain per bar - a clicked bar opens the report on its worst chain, for that bar's span) and `avgLatencyMs` (the endpoint histogram's sum ÷ count - average, not p95). The counters are read `by (spec)` and added up, so the chains cost no extra read. Minutes and latency only up to a day; a family the router doesn't emit is null. The provider page's graphs |
+| `GET /api/providers/report` · `/report.csv` | **`provider`**, **`spec`**, `window` **or** `from` + `to`, `tz?` (IANA zone for the times; default UTC) | `ProviderReport` - the text a customer pastes into a complaint to one provider about one chain (`text`, one field per line, in the order of the customer's own outreach template: Chain, Environment, Network URL, Method(s), Problem statement, Example, Incident start / end, Affected volume, **x-request-id**, **Raw request**, **Raw response**) plus its fields. One example carries the raw request (the body as the router logged it - it cuts long ones, and the report says so; never the client's headers, which hold credentials) and the provider's reply and request ID - an error reply with an `X-Request-Id` when there is one. Counts from Prometheus over the exact range: `tries`, `failedTries` (no useful answer), `errorReplies` (answered with an error; null when the family is absent), `rateLimitHits`, per method. First and last failure and up to five `examples` from the router's logs, read for that provider **on that chain** (its lines name the chain, so a busy chain can't use the read up): time, method, `kind` (`failed` / `error-reply`), the router's code, the node's words, our request ID and - for an error reply - the provider's own request ID and its reply. When the logs hold more failures than one read, the start is the range's. Network URL is scheme + host with a key-looking host label masked. Fields the router doesn't record say "Not captured". 404 when the provider has no traffic on the chain |
+| `GET /api/providers/export.csv` | `window` | One row per provider × chain for the window: provider, account, chain, role, requests, failed requests, error %, error reply %, timeout %, p95, rate-limit hits, uptime %, down minutes, rate-limited minutes, other providers on the chain and their error %, window start and end |
 | `GET /api/metrics/errors` | `window`, `spec?` | `ErrorsReport` — derived `total` + `trend`, (chain × provider) **hotspots** (trend sparklines for the top 5), chain/method **pivots**; `category`/`code`/`retryability` pivots stay `[]` until labelled error counters exist (**`families`** presence flags) |
 | `GET /api/metrics/retries` | `window`, `spec?` | `RetriesReport` - the Errors tab's retry cards: `retried` / `recovered` / `failed` from `smartrouter_retries_{success,failed}_total` (`retried` = recovered + failed, so the cards add up), `recoveryRate`, `retryRate` (÷ client requests), `avgExtraAttempts` (the `retry_attempts` histogram). Null + `emitted:false` until the first retry. ⚠ "Recovered" = the router returned a reply, which can be an upstream error reply; and the router records a retry only once two of the request's tries have come back, so a request it couldn't retry (no upstream left, or a try that never answered) is in no counter - `GET /api/error-requests` lists those. Counts go through `increaseFromBirth`: plain `increase()` drops the first value of a counter born inside the window |
 | `GET /api/metrics/unavailable` | — | `{ unavailable: UnavailableChain[] }` — chains whose **every** backing endpoint reports down (`sinceSeconds` null for now) |
@@ -1001,8 +1023,8 @@ poll, shares them. `/api/metrics/query` (the caller's own PromQL) and
 
 | Answer | Routes (`/api/metrics/…`) | 5m–1h | 3h–12h | 1d–3d | 7d–30d |
 |---|---|---|---|---|---|
-| Figures over the window | `rps` · `traffic` · `methods` · `chain-series` · `upstream-timeline` · `upstream-peers` · `cross-validation` | 15 s | 60 s | 5 min | 15 min |
-| Figures about now too (health, latest block, in-flight, a current rate), and the Errors tab | `dashboard-summary` · `overview` · `dashboard` · `routers-rollup` · `chains` · `upstreams` · `upstream-detail` · `websocket` · `errors` · `retries` | 15 s | 60 s | 60 s | 60 s |
+| Figures over the window | `rps` · `traffic` · `methods` · `chain-series` · `upstream-timeline` · `upstream-peers` · `provider-series` · `cross-validation` | 15 s | 60 s | 5 min | 15 min |
+| Figures about now too (health, latest block, in-flight, a current rate), and the Errors tab | `dashboard-summary` · `overview` · `dashboard` · `routers-rollup` · `chains` · `upstreams` · `upstream-detail` · `providers` · `provider-detail` · `websocket` · `errors` · `retries` | 15 s | 60 s | 60 s | 60 s |
 | No window | `routers` · `specs` · `block-heights` · `unavailable` | 15 s | | | |
 | The topbar's pulse, polled every 30 s | `pulse` | 30 s | | | |
 
