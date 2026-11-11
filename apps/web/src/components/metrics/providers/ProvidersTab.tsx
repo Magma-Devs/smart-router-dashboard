@@ -1,0 +1,513 @@
+"use client";
+
+/* ProvidersTab — the Providers tab: every upstream grouped by the company that
+ * runs it (Tatum, Blockdaemon, …) across all chains, then one provider's
+ * chains and methods. Same building blocks as the Upstreams tab (gw-card
+ * roster, PMStat cards, ThCol/useSort tables), so the two read as one page.
+ * Live data: /api/metrics/providers (roster) + /api/metrics/provider-detail.
+ * Honest-state notes:
+ *  - a family the router doesn't emit (rate-limit hold-offs, timeouts, the
+ *    blocked gauge) renders "—" with a tip saying so, never 0;
+ *  - "Health-check uptime" is the router's health gauge over the window, not
+ *    an SLA figure, and the column says so;
+ *  - traffic under label values that can't be a node name is counted once,
+ *    below the table, instead of inventing a provider for it. */
+
+import { useEffect, useMemo, useState } from "react";
+import {
+  buildChainMetaByIndex,
+  WINDOWS,
+  type MetricWindow,
+  type ProviderChainStats,
+  type ProviderDetailReport,
+  type ProviderMethodStats,
+  type ProviderSummary,
+  type ProvidersReport,
+} from "@sr/shared";
+import { useApi } from "@/hooks/use-api";
+import { useFilters } from "@/components/gateway/FiltersProvider";
+import { ChainBadge } from "@/components/gateway/ChainBadge";
+import { Tip } from "@/components/gateway/Tip";
+import { ThCol, useSort } from "@/components/gateway/SortTable";
+import { Refreshing, Skel, SkelRows } from "@/components/gateway/Skel";
+import { UpstreamLogo } from "@/components/upstreams/UpstreamLogo";
+import { errRateColor, tipLagColor, uptimeColorFrac } from "@/lib/colors";
+import { fmtLag, fmtNum } from "@/lib/format";
+import { PMNoVal, PMPanel, PMStat } from "../upstream/PMPanel";
+
+const NOT_EMITTED = "This router build doesn't emit the metric behind this number yet.";
+const TIP_TIMEOUTS =
+  "**Timeouts and refused or reset connections** as a share of the tries sent to this provider. The router counts these together today - a separate timeout figure needs an error-type label on the router's counters.";
+const TIP_HEALTH =
+  "The router's **health gauge** for this provider, averaged over the window. It is the router's own check, **not** your SLA definition of downtime.";
+const TIP_RATE =
+  "Times the provider answered **\"too many requests\"** and the router held it off. A provider that limits your whole account counts every chain here together.";
+const TIP_PEAK = "The highest **5-minute average** request rate in the window, all of this provider's chains together.";
+
+const fmtRps = (n: number | null) =>
+  n == null ? "—" : n >= 1000 ? (n / 1000).toFixed(1) + "k" : n >= 10 ? Math.round(n).toString() : n.toFixed(1);
+const pctCell = (r: number | null, emitted = true) =>
+  !emitted ? (
+    <span style={{ fontSize: 12, color: "var(--text-4)" }} title={NOT_EMITTED}>—</span>
+  ) : r == null ? (
+    <span style={{ fontSize: 12, color: "var(--text-4)" }}>—</span>
+  ) : (
+    <span className="gw-mono gw-tnum" style={{ fontSize: 12, color: errRateColor(r * 100, "var(--text-3)") }}>
+      {(r * 100).toFixed(2)}%
+    </span>
+  );
+const numCell = (n: number | null, emitted = true, color = "var(--text)") =>
+  !emitted ? (
+    <span style={{ fontSize: 12, color: "var(--text-4)" }} title={NOT_EMITTED}>—</span>
+  ) : n == null ? (
+    <span style={{ fontSize: 12, color: "var(--text-4)" }}>—</span>
+  ) : (
+    <span className="gw-mono gw-tnum" style={{ fontSize: 12, color: n > 0 ? color : "var(--text-4)" }}>{fmtNum(n)}</span>
+  );
+const msCell = (ms: number | null) =>
+  ms == null ? (
+    <span style={{ fontSize: 12, color: "var(--text-4)" }}>—</span>
+  ) : (
+    <span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{Math.round(ms)} ms</span>
+  );
+const uptimeCell = (u: number | null) =>
+  u == null ? (
+    <span style={{ fontSize: 12, color: "var(--text-4)" }}>—</span>
+  ) : (
+    <span className="gw-mono gw-tnum" style={{ fontSize: 12, color: uptimeColorFrac(u) }}>{(u * 100).toFixed(2)}%</span>
+  );
+
+function Badge({ children, tone }: { children: React.ReactNode; tone: "err" | "primary" | "backup" | "muted" }) {
+  const c =
+    tone === "err"
+      ? { color: "var(--err)", bg: "rgba(239,68,68,0.1)" }
+      : tone === "primary"
+        ? { color: "#60a5fa", bg: "rgba(96,165,250,0.1)" }
+        : tone === "backup"
+          ? { color: "#fb923c", bg: "rgba(251,146,60,0.1)" }
+          : { color: "var(--text-3)", bg: "var(--hover)" };
+  return (
+    <span style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", padding: "1px 6px", borderRadius: 4, color: c.color, background: c.bg, whiteSpace: "nowrap" }}>
+      {children}
+    </span>
+  );
+}
+
+/* ── Roster ─────────────────────────────────────────────────────────────── */
+
+interface RosterRow {
+  p: ProviderSummary;
+  natural: number;
+  name: string;
+  chains: number;
+  requests: number;
+  peak: number;
+  err: number;
+  timeouts: number;
+  p95: number;
+  rate: number;
+  health: number;
+}
+
+function ProvidersRoster({ report, rows, activeId, onSelect, timeWindow, loading, refreshing, actions }: {
+  report: ProvidersReport | undefined;
+  rows: ProviderSummary[];
+  activeId: string | null;
+  onSelect: (id: string) => void;
+  timeWindow: MetricWindow;
+  loading: boolean;
+  refreshing: boolean;
+  actions?: React.ReactNode;
+}) {
+  const fam = report?.families;
+  const built: RosterRow[] = rows.map((p, i) => ({
+    p,
+    natural: i,
+    name: p.name.toLowerCase(),
+    chains: p.chains.length,
+    requests: p.requests,
+    peak: p.peakRps ?? -1,
+    err: p.errorRate ?? -1,
+    timeouts: p.protocolErrorRate ?? -1,
+    p95: p.p95Ms ?? Infinity,
+    rate: p.rateLimitHits ?? -1,
+    health: p.healthUptime ?? -1,
+  }));
+  const { sorted, sort, onSort } = useSort<RosterRow>(built, { key: "natural", dir: "asc" });
+
+  return (
+    <div className="gw-card" style={{ padding: 0, overflow: "hidden", marginBottom: 18 }}>
+      <div style={{ padding: "11px 14px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 6 }}>
+        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-2)" }}>All providers</span>
+        <Tip text="Every company behind your upstreams, across all your chains. Click a row to see its chains and methods below." />
+        <div style={{ flex: 1 }} />
+        <span style={{ fontSize: 11, color: "var(--text-3)", display: "inline-flex", alignItems: "center", gap: 7 }}>
+          {loading ? <Skel w={168} h={9} /> : <>{rows.length} provider{rows.length === 1 ? "" : "s"} · over {timeWindow}</>}
+          <Refreshing show={!loading && refreshing} label="Refreshing providers" />
+        </span>
+        {actions}
+      </div>
+      <div style={{ overflowX: "auto" }}>
+        <table className="gw-table">
+          <thead>
+            <tr>
+              <ThCol sortKey="name" sort={sort} onSort={onSort}>Provider</ThCol>
+              <ThCol align="right" sortKey="chains" sort={sort} onSort={onSort}>Chains</ThCol>
+              <ThCol align="right" sortKey="requests" sort={sort} onSort={onSort}>Requests</ThCol>
+              <ThCol align="right" tip={TIP_PEAK} sortKey="peak" sort={sort} onSort={onSort}>Peak req/s</ThCol>
+              <ThCol align="right" sortKey="err" sort={sort} onSort={onSort}>Error rate</ThCol>
+              <ThCol align="right" tip={TIP_TIMEOUTS} sortKey="timeouts" sort={sort} onSort={onSort}>Timeouts</ThCol>
+              <ThCol align="right" sortKey="p95" sort={sort} onSort={onSort}>p95</ThCol>
+              <ThCol align="right" tip={TIP_RATE} sortKey="rate" sort={sort} onSort={onSort}>Rate-limit hits</ThCol>
+              <ThCol align="right" tip={TIP_HEALTH} sortKey="health" sort={sort} onSort={onSort}>Health-check uptime</ThCol>
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((r) => {
+              const p = r.p;
+              const on = p.id === activeId;
+              return (
+                <tr key={p.id} onClick={() => onSelect(p.id)} style={{ cursor: "pointer", background: on ? "rgba(255,57,0,0.06)" : undefined, boxShadow: on ? "inset 2px 0 0 var(--brand)" : undefined }}>
+                  <td>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <UpstreamLogo id={p.id} size={18} />
+                      <span style={{ fontSize: 13, fontWeight: on ? 700 : 500 }}>{p.name}</span>
+                      {p.accounts.length > 0 && (
+                        <span title={`Node names: ${p.nodes.join(", ")}`}>
+                          <Badge tone="muted">{p.nodes.length} accounts</Badge>
+                        </span>
+                      )}
+                      {p.blockedNow && <Badge tone="err">Blocked</Badge>}
+                    </div>
+                  </td>
+                  <td style={{ textAlign: "right" }}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 3, justifyContent: "flex-end" }} title={p.chains.map((c) => buildChainMetaByIndex(c.spec).name).join(", ")}>
+                      {p.chains.slice(0, 4).map((c) => <ChainBadge key={c.spec} spec={c.spec} size={14} />)}
+                      <span className="gw-mono gw-tnum" style={{ fontSize: 12, marginLeft: 4 }}>{p.chains.length}</span>
+                    </span>
+                  </td>
+                  <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12, color: p.requests > 0 ? "var(--text)" : "var(--text-4)" }}>{fmtNum(p.requests)}</span></td>
+                  <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{fmtRps(p.peakRps)}</span></td>
+                  <td style={{ textAlign: "right" }}>{pctCell(p.errorRate)}</td>
+                  <td style={{ textAlign: "right" }}>{pctCell(p.protocolErrorRate, fam?.protocolErrors ?? true)}</td>
+                  <td style={{ textAlign: "right" }}>{msCell(p.p95Ms)}</td>
+                  <td style={{ textAlign: "right" }}>{numCell(p.rateLimitHits, fam?.rateLimit ?? true, "var(--warn)")}</td>
+                  <td style={{ textAlign: "right" }}>{uptimeCell(p.healthUptime)}</td>
+                </tr>
+              );
+            })}
+            {loading && <SkelRows rows={6} cols={[
+              { w: 140 }, { w: 70, align: "right" }, { w: 60, align: "right" }, { w: 50, align: "right" }, { w: 56, align: "right" },
+              { w: 56, align: "right" }, { w: 52, align: "right" }, { w: 60, align: "right" }, { w: 64, align: "right" },
+            ]} />}
+            {!loading && rows.length === 0 && (
+              <tr><td colSpan={9} style={{ padding: "24px 16px", textAlign: "center", color: "var(--text-4)", fontSize: 13 }}>No provider traffic in this window.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      {!loading && report?.unattributed && report.unattributed.requests > 0 && (
+        <div style={{ padding: "9px 14px", borderTop: "1px solid var(--line)", fontSize: 12, color: "var(--text-3)" }}
+          title={report.unattributed.labels.length ? `Label values: ${report.unattributed.labels.join(", ")}` : undefined}>
+          {fmtNum(report.unattributed.requests)} requests came from upstreams we can't name. Their numbers aren't in any row above.
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── One provider ───────────────────────────────────────────────────────── */
+
+interface ChainRow {
+  c: ProviderChainStats;
+  natural: number;
+  chain: string;
+  requests: number;
+  share: number;
+  err: number;
+  timeouts: number;
+  p95: number;
+  lag: number;
+  rate: number;
+  health: number;
+}
+
+function ChainsTable({ detail, chainFilter, renderAction }: {
+  detail: ProviderDetailReport;
+  chainFilter: string | null;
+  renderAction?: (c: ProviderChainStats) => React.ReactNode;
+}) {
+  const fam = detail.families;
+  const rows = chainFilter ? detail.chains.filter((c) => c.spec === chainFilter) : detail.chains;
+  const built: ChainRow[] = rows.map((c, i) => ({
+    c,
+    natural: i,
+    chain: buildChainMetaByIndex(c.spec).name.toLowerCase(),
+    requests: c.requests,
+    share: c.share ?? -1,
+    err: c.errorRate ?? -1,
+    timeouts: c.protocolErrorRate ?? -1,
+    p95: c.p95Ms ?? Infinity,
+    lag: c.behindSec ?? -1,
+    rate: c.rateLimitHits ?? -1,
+    health: c.healthUptime ?? -1,
+  }));
+  const { sorted, sort, onSort } = useSort<ChainRow>(built, { key: "natural", dir: "asc" });
+  const cols = renderAction ? 11 : 10;
+
+  return (
+    <PMPanel title="Chains" tip="Every chain this provider serves for you. **Share** is its part of that chain's tries." full>
+      <div style={{ overflowX: "auto", margin: "-12px -14px" }}>
+        <table className="gw-table">
+          <thead>
+            <tr>
+              <ThCol sortKey="chain" sort={sort} onSort={onSort}>Chain</ThCol>
+              <ThCol align="right" sortKey="requests" sort={sort} onSort={onSort}>Requests</ThCol>
+              <ThCol align="right" sortKey="share" sort={sort} onSort={onSort}>Share</ThCol>
+              <ThCol align="right" sortKey="err" sort={sort} onSort={onSort}>Error rate</ThCol>
+              <ThCol align="right" tip={TIP_TIMEOUTS} sortKey="timeouts" sort={sort} onSort={onSort}>Timeouts</ThCol>
+              <ThCol align="right" sortKey="p95" sort={sort} onSort={onSort}>p95</ThCol>
+              <ThCol align="right" tip="How far this provider's newest block is behind the chain's best, in seconds." sortKey="lag" sort={sort} onSort={onSort}>Behind</ThCol>
+              <ThCol align="right" tip={TIP_RATE} sortKey="rate" sort={sort} onSort={onSort}>Rate-limit hits</ThCol>
+              <ThCol align="right" tip={TIP_HEALTH} sortKey="health" sort={sort} onSort={onSort}>Health-check uptime</ThCol>
+              <ThCol>Status</ThCol>
+              {renderAction && <ThCol align="right"> </ThCol>}
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map(({ c }) => (
+              <tr key={`${c.node}|${c.spec}`}>
+                <td>
+                  <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                    <ChainBadge spec={c.spec} size={16} />
+                    <span style={{ fontSize: 12, color: "var(--text-2)" }}>{buildChainMetaByIndex(c.spec).name}</span>
+                    {c.account && <span className="gw-mono" style={{ fontSize: 10, color: "var(--text-4)" }}>{c.node}</span>}
+                    {c.role && <Badge tone={c.role}>{c.role === "primary" ? "Primary" : "Backup"}</Badge>}
+                  </div>
+                </td>
+                <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12, color: c.requests > 0 ? "var(--text)" : "var(--text-4)" }}>{fmtNum(c.requests)}</span></td>
+                <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12, color: "var(--text-3)" }}>{c.share != null ? `${(c.share * 100).toFixed(0)}%` : "—"}</span></td>
+                <td style={{ textAlign: "right" }}>{pctCell(c.errorRate)}</td>
+                <td style={{ textAlign: "right" }}>{pctCell(c.protocolErrorRate, fam.protocolErrors)}</td>
+                <td style={{ textAlign: "right" }}>{msCell(c.p95Ms)}</td>
+                <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12, color: tipLagColor(c.behindSec) }}>{fmtLag(c.behindSec)}</span></td>
+                <td style={{ textAlign: "right" }}>
+                  {fam.rateLimit && c.rateLimitHits == null ? (
+                    <span style={{ fontSize: 12, color: "var(--text-4)" }} title="Hold-offs carry no chain label on this deployment - see the provider total above.">—</span>
+                  ) : numCell(c.rateLimitHits, fam.rateLimit, "var(--warn)")}
+                </td>
+                <td style={{ textAlign: "right" }}>{uptimeCell(c.healthUptime)}</td>
+                <td>{c.blockedNow ? <Badge tone="err">Blocked</Badge> : <span style={{ fontSize: 12, color: "var(--text-4)" }}>{c.blockedNow === false ? "Routing" : "—"}</span>}</td>
+                {renderAction && <td style={{ textAlign: "right" }}>{renderAction(c)}</td>}
+              </tr>
+            ))}
+            {rows.length === 0 && (
+              <tr><td colSpan={cols} style={{ padding: "20px 16px", textAlign: "center", color: "var(--text-4)", fontSize: 13 }}>
+                {chainFilter ? `This provider doesn't serve ${buildChainMetaByIndex(chainFilter).name}.` : "No chains in this window."}
+              </td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </PMPanel>
+  );
+}
+
+interface MethodRow {
+  m: ProviderMethodStats;
+  natural: number;
+  method: string;
+  chain: string;
+  requests: number;
+  failed: number;
+  err: number;
+  p50: number;
+  p95: number;
+  p99: number;
+}
+
+function MethodsTable({ detail, chainFilter }: { detail: ProviderDetailReport; chainFilter: string | null }) {
+  const PAGE = 12;
+  const [page, setPage] = useState(0);
+  const rows = chainFilter ? detail.methods.filter((m) => m.spec === chainFilter) : detail.methods;
+  const built: MethodRow[] = rows.map((m, i) => ({
+    m,
+    natural: i,
+    method: m.method.toLowerCase(),
+    chain: buildChainMetaByIndex(m.spec).name.toLowerCase(),
+    requests: m.requests,
+    failed: m.failed,
+    err: m.errorRate ?? -1,
+    p50: m.p50Ms ?? Infinity,
+    p95: m.p95Ms ?? Infinity,
+    p99: m.p99Ms ?? Infinity,
+  }));
+  const { sorted, sort, onSort } = useSort<MethodRow>(built, { key: "natural", dir: "asc" });
+  const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE));
+  const cur = Math.min(page, pageCount - 1);
+  useEffect(() => { setPage(0); }, [rows.length, sort.key, sort.dir]);
+  const latTip = detail.methodLatency
+    ? undefined
+    : "This router build's latency histogram has no method label, so latency per method isn't available.";
+
+  return (
+    <PMPanel title="Methods" tip="Every method sent to this provider, worst first. **Failed** counts tries this provider didn't answer successfully - the router may still have answered the caller from another provider." full>
+      <div style={{ overflowX: "auto", margin: "-12px -14px" }}>
+        <table className="gw-table">
+          <thead>
+            <tr>
+              <ThCol sortKey="method" sort={sort} onSort={onSort}>Method</ThCol>
+              <ThCol sortKey="chain" sort={sort} onSort={onSort}>Chain</ThCol>
+              <ThCol align="right" sortKey="requests" sort={sort} onSort={onSort}>Requests</ThCol>
+              <ThCol align="right" sortKey="failed" sort={sort} onSort={onSort}>Failed</ThCol>
+              <ThCol align="right" sortKey="err" sort={sort} onSort={onSort}>Error rate</ThCol>
+              <ThCol align="right" tip={latTip} sortKey="p50" sort={sort} onSort={onSort}>p50</ThCol>
+              <ThCol align="right" tip={latTip} sortKey="p95" sort={sort} onSort={onSort}>p95</ThCol>
+              <ThCol align="right" tip={latTip} sortKey="p99" sort={sort} onSort={onSort}>p99</ThCol>
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.slice(cur * PAGE, cur * PAGE + PAGE).map(({ m }) => (
+              <tr key={`${m.node}|${m.spec}|${m.method}`}>
+                <td><span className="gw-mono" style={{ fontSize: 12 }}>{m.method}</span></td>
+                <td>
+                  <span style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                    <ChainBadge spec={m.spec} size={14} />
+                    <span style={{ fontSize: 12, color: "var(--text-2)" }}>{buildChainMetaByIndex(m.spec).name}</span>
+                  </span>
+                </td>
+                <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{fmtNum(m.requests)}</span></td>
+                <td style={{ textAlign: "right" }}>{numCell(m.failed, true, "var(--err)")}</td>
+                <td style={{ textAlign: "right" }}>{pctCell(m.errorRate)}</td>
+                <td style={{ textAlign: "right" }}>{msCell(m.p50Ms)}</td>
+                <td style={{ textAlign: "right" }}>{msCell(m.p95Ms)}</td>
+                <td style={{ textAlign: "right" }}>{msCell(m.p99Ms)}</td>
+              </tr>
+            ))}
+            {rows.length === 0 && (
+              <tr><td colSpan={8} style={{ padding: "20px 16px", textAlign: "center", color: "var(--text-4)", fontSize: 13 }}>No methods in this window.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      {pageCount > 1 && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, padding: "9px 0 0" }}>
+          <span style={{ fontSize: 11, color: "var(--text-4)" }}>{cur * PAGE + 1}-{Math.min(rows.length, cur * PAGE + PAGE)} of {rows.length}</span>
+          <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={cur === 0} className="gw-btn gw-btn--ghost" style={{ padding: "3px 9px", fontSize: 12, opacity: cur === 0 ? 0.4 : 1 }}>Prev</button>
+          <span style={{ fontSize: 11, color: "var(--text-3)", fontVariantNumeric: "tabular-nums" }}>{cur + 1} / {pageCount}</span>
+          <button onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))} disabled={cur >= pageCount - 1} className="gw-btn gw-btn--ghost" style={{ padding: "3px 9px", fontSize: 12, opacity: cur >= pageCount - 1 ? 0.4 : 1 }}>Next</button>
+        </div>
+      )}
+    </PMPanel>
+  );
+}
+
+/* ── The tab ────────────────────────────────────────────────────────────── */
+
+export function ProvidersTab({ timeWindow, chainFilter, rosterActions, renderChainAction }: {
+  timeWindow: MetricWindow;
+  chainFilter: string | null;
+  /** Extra controls in the roster header (the CSV export). */
+  rosterActions?: React.ReactNode;
+  /** A per-chain action cell (the provider report). */
+  renderChainAction?: (provider: ProviderSummary, chain: ProviderChainStats) => React.ReactNode;
+}) {
+  const { scopeQ } = useFilters();
+  const listRes = useApi<ProvidersReport>(`/api/metrics/providers?window=${timeWindow}${scopeQ}`);
+  const report = listRes.data;
+  const rows = useMemo(() => {
+    const all = report?.providers ?? [];
+    return chainFilter ? all.filter((p) => p.chains.some((c) => c.spec === chainFilter)) : all;
+  }, [report, chainFilter]);
+
+  const [selId, setSelId] = useState<string | null>(null);
+  const sel = rows.find((p) => p.id === selId) ?? rows[0] ?? null;
+  const detailRes = useApi<ProviderDetailReport>(
+    sel ? `/api/metrics/provider-detail?provider=${encodeURIComponent(sel.id)}&window=${timeWindow}${scopeQ}` : null,
+  );
+  const detail = detailRes.data;
+  const fam = report?.families;
+  const avgRps = sel ? sel.requests / WINDOWS[timeWindow].rangeSeconds : null;
+
+  return (
+    <div>
+      {chainFilter && (
+        <div style={{ fontSize: 12, color: "var(--text-3)", margin: "-8px 0 12px" }}>
+          Providers serving {buildChainMetaByIndex(chainFilter).name}. Totals in the list cover all their chains.
+        </div>
+      )}
+      <ProvidersRoster report={report} rows={rows} activeId={sel?.id ?? null} onSelect={setSelId} timeWindow={timeWindow}
+        loading={listRes.isLoading} refreshing={listRes.isValidating} actions={rosterActions} />
+
+      {sel && (
+        <>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "4px 0 14px" }}>
+            <UpstreamLogo id={sel.id} size={18} />
+            <span style={{ fontSize: 14, fontWeight: 700 }}>{sel.name}</span>
+            <span style={{ fontSize: 12, color: "var(--text-3)" }}>· {sel.chains.length} chain{sel.chains.length === 1 ? "" : "s"} · detailed metrics</span>
+            {sel.blockedNow && <Badge tone="err">Blocked now</Badge>}
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginBottom: 12 }}>
+            <PMStat label="Requests" tip={TIP_PEAK}>
+              {sel.requests > 0 ? (
+                <>
+                  <div className="gw-mono gw-tnum" style={{ fontSize: 26, fontWeight: 700, lineHeight: 1 }}>{fmtNum(sel.requests)}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 8 }}>
+                    avg {fmtRps(avgRps)} req/s · peak {fmtRps(sel.peakRps)} req/s
+                  </div>
+                </>
+              ) : <PMNoVal />}
+            </PMStat>
+            <PMStat label="Error rate" tip="Tries to this provider that **failed**, before the router retried or failed over.">
+              {sel.errorRate != null ? (
+                <>
+                  <div className="gw-mono gw-tnum" style={{ fontSize: 26, fontWeight: 700, lineHeight: 1, color: errRateColor(sel.errorRate * 100, "var(--ok)") }}>{(sel.errorRate * 100).toFixed(2)}%</div>
+                  <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 8 }}>
+                    timeouts {fam?.protocolErrors ? `${((sel.protocolErrorRate ?? 0) * 100).toFixed(2)}%` : "not emitted"}
+                  </div>
+                </>
+              ) : <PMNoVal />}
+            </PMStat>
+            <PMStat label="Latency">
+              {sel.p95Ms != null ? (
+                <>
+                  <div className="gw-mono gw-tnum" style={{ fontSize: 26, fontWeight: 700, lineHeight: 1 }}>{Math.round(sel.p95Ms)}<span style={{ fontSize: 13, color: "var(--text-3)", fontWeight: 500 }}> ms</span></div>
+                  <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 8 }}>p95 · all chains</div>
+                </>
+              ) : <PMNoVal />}
+            </PMStat>
+            <PMStat label="Rate-limit hits" tip={TIP_RATE}>
+              {!fam?.rateLimit ? (
+                <div style={{ fontSize: 13, color: "var(--text-4)", paddingTop: 4 }} title={NOT_EMITTED}>Not emitted</div>
+              ) : (
+                <>
+                  <div className="gw-mono gw-tnum" style={{ fontSize: 26, fontWeight: 700, lineHeight: 1, color: (sel.rateLimitHits ?? 0) > 0 ? "var(--warn)" : "var(--text)" }}>{fmtNum(sel.rateLimitHits)}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 8 }}>"too many requests" hold-offs · {timeWindow}</div>
+                </>
+              )}
+            </PMStat>
+            <PMStat label="Health-check uptime" tip={TIP_HEALTH}>
+              {sel.healthUptime != null ? (
+                <>
+                  <div className="gw-mono gw-tnum" style={{ fontSize: 26, fontWeight: 700, lineHeight: 1, color: uptimeColorFrac(sel.healthUptime) }}>{(sel.healthUptime * 100).toFixed(2)}%</div>
+                  <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 8 }}>router health gauge · not SLA</div>
+                </>
+              ) : <PMNoVal />}
+            </PMStat>
+          </div>
+
+          {detail ? (
+            <div style={{ display: "grid", gap: 12 }}>
+              <ChainsTable detail={detail} chainFilter={chainFilter}
+                renderAction={renderChainAction ? (c) => renderChainAction(sel, c) : undefined} />
+              <MethodsTable detail={detail} chainFilter={chainFilter} />
+            </div>
+          ) : (
+            <div className="gw-card" style={{ padding: 16 }}><Skel w={240} h={10} /></div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}

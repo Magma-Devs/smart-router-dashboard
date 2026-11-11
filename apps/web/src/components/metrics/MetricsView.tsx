@@ -1,8 +1,8 @@
 "use client";
 
 /* MetricsView — the Metrics page body, ported verbatim from the design
- * prototype (page-metrics.jsx MetricsPage): RouterHeader, the four tabs
- * (Overview / Upstreams / Errors / Transactions - the Errors tab folds the
+ * prototype (page-metrics.jsx MetricsPage): RouterHeader, the five tabs
+ * (Overview / Providers / Upstreams / Errors / Transactions - the Errors tab folds the
  * prototype's error breakdown and our retry breakdown into one, the
  * transaction tab is ours, and the prototype's Traffic tab is gone), and the
  * cross-tab
@@ -29,9 +29,10 @@ import { RouterOverview } from "./RouterOverview";
 import { ErrorsBreakdown, type ErrorsJump } from "./ErrorsBreakdown";
 import { TransactionLog } from "./TransactionLog";
 import { UpstreamMetricsTab } from "./upstream/UpstreamMetricsTab";
+import { ProvidersWithReports } from "./providers/ProviderReport";
 
 /** The first is the default, and the only one the URL leaves out. */
-const TABS = ["metrics", "upstreams", "errors", "transactions"] as const;
+const TABS = ["metrics", "providers", "upstreams", "errors", "transactions"] as const;
 type Tab = (typeof TABS)[number];
 
 export function MetricsView() {
@@ -98,7 +99,7 @@ export function MetricsView() {
       {/* The tabs outgrow a narrow screen: they scroll sideways rather than
           wrap each label onto two lines. */}
       <div style={{ display: "flex", borderBottom: "1px solid var(--line)", marginBottom: 24, overflowX: "auto", overflowY: "hidden" }}>
-        {([["metrics", "Overview"], ["upstreams", "Upstreams"], ["errors", "Errors"], ["transactions", "Transactions"]] as [Tab, string][]).map(([k, l]) => (
+        {([["metrics", "Overview"], ["providers", "Providers"], ["upstreams", "Upstreams"], ["errors", "Errors"], ["transactions", "Transactions"]] as [Tab, string][]).map(([k, l]) => (
           <button key={k} onClick={() => { setTab(k); setErrorsFocus(null); }} style={{
             whiteSpace: "nowrap", flexShrink: 0,
             padding: "8px 20px", border: "none", background: "transparent",
@@ -148,6 +149,7 @@ export function MetricsView() {
           <RouterOverview chainFilter={activeChain} timeWindow={timeWindow} onChainClick={(ch) => { setChainFilter(ch); setTab("upstreams"); }} />
         </>
       )}
+      {tab === "providers" && <ProvidersWithReports timeWindow={timeWindow} chainFilter={activeChain} />}
       {tab === "upstreams" && <UpstreamMetricsTab timeWindow={timeWindow} chainFilter={activeChain} onOpenErrors={openErrors} />}
       {tab === "errors" && <ErrorsBreakdown key={errorsFocus ? `${errorsFocus.upstream}|${errorsFocus.from}` : "window"} chainFilter={activeChain} win={timeWindow} focus={errorsFocus} />}
       {tab === "transactions" && <TransactionLog chainFilter={activeChain} win={timeWindow} />}
