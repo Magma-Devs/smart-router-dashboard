@@ -1,8 +1,8 @@
 "use client";
 
-/* ProvidersTab — the Providers tab: every upstream grouped by the company that
- * runs it (Tatum, Blockdaemon, …) across all chains, then one provider's
- * chains and methods. Same building blocks as the Upstreams tab (gw-card
+/* ProvidersTab — the body of the Providers page: every upstream grouped by the
+ * company that runs it (Tatum, Blockdaemon, …) across all chains, then one
+ * provider's chains and methods. Same building blocks as the Upstreams tab (gw-card
  * roster, PMStat cards, ThCol/useSort tables), so the two read as one page.
  * Live data: /api/metrics/providers (roster) + /api/metrics/provider-detail.
  * Honest-state notes:
@@ -39,7 +39,7 @@ import { Refreshing, Skel, SkelRows } from "@/components/gateway/Skel";
 import { UpstreamLogo } from "@/components/upstreams/UpstreamLogo";
 import { errRateColor, tipLagColor, uptimeColorFrac } from "@/lib/colors";
 import { fmtLag, fmtNum } from "@/lib/format";
-import { PMNoVal, PMPanel, PMStat } from "../upstream/PMPanel";
+import { PMNoVal, PMPanel, PMStat } from "@/components/metrics/upstream/PMPanel";
 
 const NOT_EMITTED = "This router build doesn't emit the metric behind this number yet.";
 const TIP_TIMEOUTS =

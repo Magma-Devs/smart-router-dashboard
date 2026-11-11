@@ -1,8 +1,8 @@
 "use client";
 
 /* MetricsView — the Metrics page body, ported verbatim from the design
- * prototype (page-metrics.jsx MetricsPage): RouterHeader, the five tabs
- * (Overview / Providers / Upstreams / Errors / Transactions - the Errors tab folds the
+ * prototype (page-metrics.jsx MetricsPage): RouterHeader, the four tabs
+ * (Overview / Upstreams / Errors / Transactions - the Errors tab folds the
  * prototype's error breakdown and our retry breakdown into one, the
  * transaction tab is ours, and the prototype's Traffic tab is gone), and the
  * cross-tab
@@ -14,7 +14,7 @@
  * sets it too, and a bar on the Upstreams tab's "Errors over time" opens the
  * Errors tab on its own requests. */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { buildChainMetaByIndex } from "@sr/shared";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 import { useChainFilter, useChainOptions, withMutedRows } from "@/hooks/use-chain-options";
@@ -29,13 +29,15 @@ import { RouterOverview } from "./RouterOverview";
 import { ErrorsBreakdown, type ErrorsJump } from "./ErrorsBreakdown";
 import { TransactionLog } from "./TransactionLog";
 import { UpstreamMetricsTab } from "./upstream/UpstreamMetricsTab";
-import { ProvidersWithReports } from "./providers/ProviderReport";
 
 /** The first is the default, and the only one the URL leaves out. */
-const TABS = ["metrics", "providers", "upstreams", "errors", "transactions"] as const;
+const TABS = ["metrics", "upstreams", "errors", "transactions"] as const;
 type Tab = (typeof TABS)[number];
 
-export function MetricsView() {
+export function MetricsView({ openOn = null }: {
+  /** The upstream a link asked to open on (`?chain=&tab=upstreams&upstream=`), read by the page on the server. */
+  openOn?: { endpointId: string; spec: string } | null;
+} = {}) {
   const { timeWindow, setTimeWindow } = useFilters();
   const { chain, select: selectChain } = useChainFilter();
   // With the chains drawer open, the drawer is the chain and router control.
@@ -53,14 +55,17 @@ export function MetricsView() {
     setErrorsFocus(jump);
     setTab("errors");
   };
-  /* A chain row clicked on the Providers tab: the Upstreams tab opens on that
-     chain and that upstream. Picking a tab yourself clears it, as above. */
-  const [upstreamFocus, setUpstreamFocus] = useState<{ endpointId: string; spec: string } | null>(null);
-  const openUpstream = (ref: { endpointId: string; spec: string }) => {
-    setChainFilter(ref.spec);
-    setUpstreamFocus(ref);
-    setTab("upstreams");
-  };
+  /* A chain row on the Providers page links here with `&upstream=`: the
+     Upstreams tab opens on that upstream of the link's chain. Read once, then
+     taken out of the URL, so Back and a reload don't open it again. Picking a
+     tab yourself clears it, as above. */
+  const [upstreamFocus, setUpstreamFocus] = useState<{ endpointId: string; spec: string } | null>(openOn);
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has("upstream")) return;
+    url.searchParams.delete("upstream");
+    window.history.replaceState(null, "", url);
+  }, []);
 
   /* Config ∪ traffic (see useChainOptions). A configured chain that has served
      nothing is offered but dimmed: every panel here would be empty for it, and
@@ -71,7 +76,8 @@ export function MetricsView() {
   // before. A tab from the URL is the whole window, as a tab picked by hand is.
   const { routers: configRouters, loaded: routersLoaded } = useRouterOptions();
   useScopeInUrl({ chain, router: routerId }, { selectChain, selectRouter }, routersLoaded ? configRouters : null,
-    { tab, setTab: (t) => { setTab(t); setErrorsFocus(null); setUpstreamFocus(null); }, tabs: TABS });
+    // The upstream a link opened on survives this: arriving IS adopting the link's tab.
+    { tab, setTab: (t) => { setTab(t); setErrorsFocus(null); }, tabs: TABS });
   const { chains: chainRows } = useChainOptions();
   const routedChains = withMutedRows(chainRows, (c) => (c.hasTraffic ? false : "no traffic yet"));
   const chainObj = activeChain
@@ -107,7 +113,7 @@ export function MetricsView() {
       {/* The tabs outgrow a narrow screen: they scroll sideways rather than
           wrap each label onto two lines. */}
       <div style={{ display: "flex", borderBottom: "1px solid var(--line)", marginBottom: 24, overflowX: "auto", overflowY: "hidden" }}>
-        {([["metrics", "Overview"], ["providers", "Providers"], ["upstreams", "Upstreams"], ["errors", "Errors"], ["transactions", "Transactions"]] as [Tab, string][]).map(([k, l]) => (
+        {([["metrics", "Overview"], ["upstreams", "Upstreams"], ["errors", "Errors"], ["transactions", "Transactions"]] as [Tab, string][]).map(([k, l]) => (
           <button key={k} onClick={() => { setTab(k); setErrorsFocus(null); setUpstreamFocus(null); }} style={{
             whiteSpace: "nowrap", flexShrink: 0,
             padding: "8px 20px", border: "none", background: "transparent",
@@ -157,7 +163,6 @@ export function MetricsView() {
           <RouterOverview chainFilter={activeChain} timeWindow={timeWindow} onChainClick={(ch) => { setChainFilter(ch); setUpstreamFocus(null); setTab("upstreams"); }} />
         </>
       )}
-      {tab === "providers" && <ProvidersWithReports timeWindow={timeWindow} chainFilter={activeChain} onOpenUpstream={openUpstream} />}
       {tab === "upstreams" && <UpstreamMetricsTab timeWindow={timeWindow} chainFilter={activeChain} onOpenErrors={openErrors} openOn={upstreamFocus} />}
       {tab === "errors" && <ErrorsBreakdown key={errorsFocus ? `${errorsFocus.upstream}|${errorsFocus.from}` : "window"} chainFilter={activeChain} win={timeWindow} focus={errorsFocus} />}
       {tab === "transactions" && <TransactionLog chainFilter={activeChain} win={timeWindow} />}

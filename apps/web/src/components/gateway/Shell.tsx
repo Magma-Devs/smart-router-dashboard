@@ -44,7 +44,7 @@ export function ThemeToggle() {
 
 function Sidebar({ grafanaDashboardUrl }: { grafanaDashboardUrl?: string | null }) {
   const pathname = usePathname();
-  const sections = visibleNavSections(useAuthMode(), grafanaDashboardUrl);
+  const sections = visibleNavSections(useAuthMode(), grafanaDashboardUrl, useNewUi());
   const drawerOpen = useChainDrawer().visible;
   const { setChain, setRouterId, setRouter } = useFilters();
   // Home or Metrics while on Metrics: back to every chain, as the drawer's

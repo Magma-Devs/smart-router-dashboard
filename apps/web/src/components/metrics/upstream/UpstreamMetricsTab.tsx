@@ -41,14 +41,16 @@ export function UpstreamMetricsTab({ timeWindow, chainFilter, onOpenErrors, open
 
   const [selKey, setSelKey] = useState<string | null>(openOn ? upstreamKey(openOn) : null);
   // jump the deep-dive to the first upstream on the filtered chain / router -
-  // on a change of either, not on arrival, which may name the upstream to open
+  // on a change of either, not on arrival, which may name the upstream to open.
+  // A link's chain lands just after the tab opens: an upstream picked on that
+  // chain stays picked (one the router excludes falls back to the first row).
   const scope = `${chainFilter ?? ""}|${routerId ?? ""}`;
   const shownScope = useRef(scope);
   useEffect(() => {
     if (shownScope.current === scope) return;
     shownScope.current = scope;
-    setSelKey(null);
-  }, [scope]);
+    setSelKey((k) => (k && chainFilter && k.endsWith(`\u0000${chainFilter}`) ? k : null));
+  }, [scope, chainFilter]);
 
   const visible = entries;
   const pm = visible.find((e) => upstreamKey(e) === selKey) ?? visible[0] ?? null;

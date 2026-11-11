@@ -7,12 +7,13 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ### Added
 
-- **Providers tab** on the Metrics page (MAG-4256, MAG-4257). Upstreams
-  grouped by the company that runs them, across every chain: requests, peak
-  rate, error rate, error replies, p95, rate-limit hits and health-check
-  uptime per provider, then one provider's chains and methods. A chain row
-  opens that upstream in the Upstreams tab, and the picked provider is in
-  the URL (`?provider=`). New endpoints: `GET /api/metrics/providers` and
+- **Providers page**, its own entry in the menu beside Metrics and Upstreams
+  (MAG-4256, MAG-4257; new UI only). Upstreams grouped by the company that
+  runs them, across every chain: requests, peak rate, error rate, error
+  replies, p95, rate-limit hits and uptime per provider, then one provider's
+  chains and methods. A chain row opens that upstream on the Metrics page's
+  Upstreams tab, and the picked provider is in the URL (`/providers?provider=`).
+  New endpoints: `GET /api/metrics/providers` and
   `GET /api/metrics/provider-detail`.
   - **Error replies** are shown beside the error rate. The router counts a
     request the provider answered with an error as served, so a node that
@@ -21,7 +22,7 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
     never an empty list, a 100% error rate or "not emitted".
   - Windows longer than a day sample the counters instead of reading every
     scrape, and show no latency: that read is too heavy for a shared store.
-- **Uptime counted in minutes** on the Providers tab (MAG-4257). A minute is
+- **Uptime counted in minutes** on the Providers page (MAG-4257). A minute is
   down when half or more of a provider's tries on a chain failed; it replaces
   the router's health gauge, which starts healthy and only moves with traffic,
   so an idle or disabled upstream read 100%. Windows up to a day.

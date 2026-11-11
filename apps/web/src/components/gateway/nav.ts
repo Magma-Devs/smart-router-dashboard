@@ -1,5 +1,5 @@
 import type { ComponentType } from "react";
-import { IconChart, IconLedger, IconReport, IconServer, IconSettings, IconUsers } from "./icons";
+import { IconChart, IconLedger, IconPulse, IconReport, IconServer, IconSettings, IconUsers } from "./icons";
 import { normalizeGrafanaDashboardUrl } from "@/lib/grafana-dashboard-url";
 
 export interface NavItem {
@@ -13,6 +13,8 @@ export interface NavItem {
   requiresAuth?: boolean;
   /** Opens the configured URL in a new tab, outside the dashboard's router. */
   external?: boolean;
+  /** Only under DASHBOARD_NEW_UI: the 0.27 screens have no such page. */
+  newUiOnly?: boolean;
 }
 
 export interface NavSection {
@@ -31,6 +33,8 @@ export const NAV_SECTIONS: NavSection[] = [
       // config the other two groupings read.
       { href: "/metrics", label: "Metrics", icon: IconChart },
       { href: "/upstreams", label: "Upstreams", icon: IconServer },
+      // How each provider behaves across every chain, and the report to send one.
+      { href: "/providers", label: "Providers", icon: IconPulse, newUiOnly: true },
     ],
   },
   {
@@ -55,10 +59,10 @@ export const NAV_SECTIONS: NavSection[] = [
  *
  * Exported and pure so the rule is testable without rendering the shell.
  */
-export function visibleNavSections(authEnabled: boolean, grafanaDashboardUrl?: string | null): NavSection[] {
+export function visibleNavSections(authEnabled: boolean, grafanaDashboardUrl?: string | null, newUi = false): NavSection[] {
   const sections = NAV_SECTIONS.map((section) => ({
     ...section,
-    items: section.items.filter((item) => authEnabled || !item.requiresAuth),
+    items: section.items.filter((item) => (authEnabled || !item.requiresAuth) && (newUi || !item.newUiOnly)),
   })).filter((section) => section.items.length > 0);
   const url = normalizeGrafanaDashboardUrl(grafanaDashboardUrl);
   if (url) {
