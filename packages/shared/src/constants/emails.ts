@@ -1,8 +1,9 @@
 /**
- * The transactional emails this product sends. The invitation and the password
- * reset are MAG-2870's; the notice that an admin reset somebody's two-factor
- * authentication is MAG-2869's. Approval notifications are MAG-2731's, and the
- * password-changed notice is parked in MAG-2868.
+ * The transactional emails this product sends. MAG-2870 specifies the two that
+ * carry a link, the invitation and the password reset. MAG-2868 adds the notice
+ * that a password changed and MAG-2869 the notice that an admin reset somebody's
+ * two-factor authentication; neither carries a link. Approval notifications are
+ * MAG-2731's.
  *
  * A typed catalog rather than string literals at the call sites, for the same
  * reason the audit log has one: a typo becomes a typecheck failure instead of a
@@ -12,9 +13,14 @@
  * the admin hands over directly, and no customer deployment ever needs a mail
  * server. The copy still matters there, because the same link lands in a chat
  * message instead. A 2FA reset there is recorded by its `2fa.reset` audit row,
- * which names both people.
+ * which names both people, and a password change by the audit row that records it.
  */
-export const EMAIL_TYPES = ["invitation", "password_reset", "two_factor_reset"] as const;
+export const EMAIL_TYPES = [
+  "invitation",
+  "password_reset",
+  "password_changed",
+  "two_factor_reset",
+] as const;
 
 export type EmailType = (typeof EMAIL_TYPES)[number];
 
@@ -30,6 +36,7 @@ export type EmailType = (typeof EMAIL_TYPES)[number];
 export const EMAIL_SUBJECTS: Record<EmailType, (customer: string) => string> = {
   invitation: (customer) => `You've been added to ${customer} on Smart Router`,
   password_reset: () => "Reset your Smart Router password",
+  password_changed: () => "Your Smart Router password was changed",
   two_factor_reset: () => "Your Smart Router two-factor authentication was reset",
 };
 
@@ -77,6 +84,25 @@ export const RESET_REQUEST_NOTES = {
  *  inside the cooldown, so nothing new was issued or sent. Recorded rather than
  *  dropped: a run of these against one account is what a flood looks like. */
 export const RESET_REQUEST_COOLING_DOWN_NOTE = "not re-sent, a recent link is still unused";
+
+/**
+ * How the password-changed notice is recorded, on the row that records the
+ * change itself: `password.changed` (the Account page) or
+ * `password.reset_completed` (a reset link), after that row's own note.
+ *
+ * Its own wording, not {@link EMAIL_DELIVERY_NOTES}: there is no link in this
+ * message for anybody to hold. What somebody investigating a takeover needs
+ * from the row is whether the owner was told. Managed deployments only; the
+ * row on-prem carries no such note, because nothing is ever sent there.
+ */
+export const PASSWORD_CHANGED_NOTICE_NOTES = {
+  /** Handed to SES. */
+  sent: "owner notified by email",
+  /** Managed with no transport configured. Nothing was attempted. */
+  link: "owner not notified, no mail transport",
+  /** SES refused it, or did not answer in time. */
+  failed: "owner not notified, email failed",
+} as const satisfies Record<EmailDelivery, string>;
 
 /**
  * How the two-factor reset notice is recorded, on its own `2fa.reset_notice`
