@@ -79,7 +79,7 @@ function fakeProm(
     if (q.includes("smartrouter_csm_provider_blocked")) {
       return [v({ provider_address: "blockdaemon", spec: "NEAR" }, 1)];
     }
-    if (q.includes("avg_over_time(rpc_endpoint_overall_health")) {
+    if (q.includes("last_over_time(rpc_endpoint_latest_block")) {
       return [
         v({ endpoint_id: "tatum", spec: "ETH1" }, 1),
         v({ endpoint_id: "tatum", spec: "SOLANA" }, 0.5),

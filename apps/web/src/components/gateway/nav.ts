@@ -13,8 +13,6 @@ export interface NavItem {
   requiresAuth?: boolean;
   /** Opens the configured URL in a new tab, outside the dashboard's router. */
   external?: boolean;
-  /** Only under DASHBOARD_NEW_UI: the 0.27 screens have no such page. */
-  newUiOnly?: boolean;
 }
 
 export interface NavSection {
@@ -34,7 +32,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { href: "/metrics", label: "Metrics", icon: IconChart },
       { href: "/upstreams", label: "Upstreams", icon: IconServer },
       // How each provider behaves across every chain, and the report to send one.
-      { href: "/providers", label: "Providers", icon: IconPulse, newUiOnly: true },
+      { href: "/providers", label: "Providers", icon: IconPulse },
     ],
   },
   {
@@ -59,17 +57,20 @@ export const NAV_SECTIONS: NavSection[] = [
  *
  * Exported and pure so the rule is testable without rendering the shell.
  */
-export function visibleNavSections(authEnabled: boolean, grafanaDashboardUrl?: string | null, newUi = false): NavSection[] {
+export function visibleNavSections(
+  authEnabled: boolean,
+  grafanaDashboardUrl?: string | null,
+  grafanaCustomerUsageDashboardUrl?: string | null,
+): NavSection[] {
   const sections = NAV_SECTIONS.map((section) => ({
     ...section,
-    items: section.items.filter((item) => (authEnabled || !item.requiresAuth) && (newUi || !item.newUiOnly)),
+    items: section.items.filter((item) => authEnabled || !item.requiresAuth),
   })).filter((section) => section.items.length > 0);
   const url = normalizeGrafanaDashboardUrl(grafanaDashboardUrl);
-  if (url) {
-    sections.push({
-      label: "Advanced",
-      items: [{ href: url, label: "Grafana", icon: IconReport, external: true }],
-    });
-  }
+  const usageUrl = normalizeGrafanaDashboardUrl(grafanaCustomerUsageDashboardUrl);
+  const items: NavItem[] = [];
+  if (url) items.push({ href: url, label: "Logs & Metrics", icon: IconReport, external: true });
+  if (usageUrl) items.push({ href: usageUrl, label: "Customer Usage", icon: IconReport, external: true });
+  if (items.length) sections.push({ label: "Advanced", items });
   return sections;
 }

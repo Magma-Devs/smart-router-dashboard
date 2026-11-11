@@ -42,6 +42,7 @@ import {
   qMethodLatencyQuantile,
   qPerSpecClientRpsSeriesExpr,
   qPerSpecHealth,
+  qProviderBlockedByEndpoint,
   qPerSpecLatencyQuantile,
   qPresence,
   qRequestsBy,
@@ -71,7 +72,7 @@ import {
   type ScoreType,
   type TimeSeries,
 } from "@sr/shared";
-import { WINDOWS } from "@sr/shared/constants";
+import { WINDOWS, alignedBounds, stepSeconds } from "@sr/shared/constants";
 import type { PrometheusClient, PromVectorSample } from "./prometheus-client.js";
 import type { ConfigurationService } from "./configuration.js";
 import { readUpstreamHealth } from "./upstream-health.js";
@@ -223,18 +224,18 @@ export class MetricsService {
    */
   async dashboardSummary(window: MetricWindow, spec?: string): Promise<HeroSummary> {
     const r = rangeFor(window);
-    // Label selector for the metrics that carry a `spec` label, so the hero
-    // KPIs scope to the selected chain (empty = account-wide across all chains).
-    const specSel = spec ? `{spec="${spec}"}` : "";
     const kpi = async (cur: string, prior: string): Promise<Kpi> => {
       const [value, p] = await Promise.all([this.prom.scalar(cur), this.prom.scalar(prior)]);
       return { value, prior: p };
     };
-    // hits / (hits + misses) over the window; `offset` reads the window before.
+    // Answers a cache served, on either tier, over the lookups on the router's
+    // own cache: a secondary hit follows a primary miss of the same request,
+    // so the primary's lookups are the denominator. `offset` reads the window before.
     const cacheOffload = (offset?: string): string => {
       const o = offset ? ` offset ${offset}` : "";
-      const inc = (metric: string) => `sum(increase(${metric}${specSel}[${r}]${o}))`;
-      return `${inc(OPTIONAL_METRICS.cacheTotalHits)} / (${inc(OPTIONAL_METRICS.cacheTotalHits)} + ${inc(OPTIONAL_METRICS.cacheTotalMisses)})`;
+      const inc = (metric: string, tier?: string) =>
+        `sum(increase(${metric}${selector({ spec, cache_tier: tier })}[${r}]${o}))`;
+      return `${inc(OPTIONAL_METRICS.cacheSuccessTotal)} / ${inc(OPTIONAL_METRICS.cacheRequestsTotal, "primary")}`;
     };
 
     const [
@@ -252,7 +253,7 @@ export class MetricsService {
       healthGauge,
     ] = await Promise.all([
       this.familyPresent(OPTIONAL_METRICS.retriesSuccessTotal),
-      this.familyPresent(OPTIONAL_METRICS.cacheTotalHits),
+      this.familyPresent(OPTIONAL_METRICS.cacheRequestsTotal),
       this.familyPresent(OPTIONAL_METRICS.consistencyFailedTotal),
       // CLIENT-scoped: the latency-histogram _count increments exactly once
       // per client request. requests_total is relay-scoped (per participant,
@@ -269,15 +270,13 @@ export class MetricsService {
       kpi(qRetriesTotal("recovered", window, spec), qRetriesTotal("recovered", window, spec, r)),
       kpi(cacheOffload(), cacheOffload(r)),
       this.listSpecs(),
-      // `rpc_endpoint_overall_health` carries {spec, apiInterface, endpoint_id}
-      // (smartrouter_metrics_manager.go endpointLabels), so it scopes exactly
-      // like the KPIs above — `selector` yields "" with no chain selected,
-      // which is the account-wide count. Unfiltered, this tile paired a
-      // chain-scoped request count with an account-wide upstream count and
-      // read "50.0K across 4 upstreams" on a chain that had one (MAG-2710).
-      this.prom.query(
-        `count by (endpoint_id) (${ENDPOINT_METRICS.overallHealth}${selector({ spec })})`,
-      ),
+      // The blocked gauge carries {spec, apiInterface, provider_address} for
+      // every configured provider, so it scopes exactly like the KPIs above —
+      // `selector` yields "" with no chain selected, which is the account-wide
+      // count. Unfiltered, this tile paired a chain-scoped request count with
+      // an account-wide upstream count and read "50.0K across 4 upstreams" on
+      // a chain that had one (MAG-2710).
+      this.prom.query(`count by (endpoint_id) (${qProviderBlockedByEndpoint(spec)})`),
       // Same reasoning for health: the ROUTER gauge is label-less, so under a
       // chain filter it reports the whole deployment. chainHealth() reads the
       // spec-labelled endpoint gauge — see chains()/chainFigures(), which has
@@ -314,8 +313,7 @@ export class MetricsService {
   ): Promise<import("@sr/shared").OverviewData> {
     const win = WINDOWS[window];
     const sel = selector({ spec });
-    const end = Math.floor(Date.now() / 1000);
-    const start = end - win.rangeSeconds;
+    const { start, end } = alignedBounds(win.rangeSeconds, stepSeconds(window), Date.now() / 1000);
     const r = rangeFor(window);
 
     // KPI value + its prior-window counterpart (offset PromQL range).
@@ -719,7 +717,7 @@ export class MetricsService {
         this.prom.query(qRouterTipChanges(label ?? undefined, spec)),
         this.prom.query(qUpstreamTips(spec)),
         this.prom.query(qTipChanges(spec)),
-        this.prom.query(`${ENDPOINT_METRICS.overallHealth}${selector({ spec })}`),
+        this.prom.query(qProviderBlockedByEndpoint(spec)),
       ]);
 
     const num = (v: string): number | null => {
@@ -737,7 +735,7 @@ export class MetricsService {
       // A negative deriv is a chain reset or a re-adopted tip, not a rate.
       if (r.metric.spec && v !== null && v > 0) rate.set(r.metric.spec, v);
     }
-    // changes() and the health gauge key on (endpoint_id, apiInterface), the
+    // changes() and the blocked gauge key on (endpoint_id, apiInterface), the
     // same identity the tip rows carry — an endpoint serving two interfaces is
     // two independent tips and must not collapse.
     const key = (id: string, iface: string) => `${id}\u0000${iface}`;
@@ -748,11 +746,13 @@ export class MetricsService {
         changes.set(key(r.metric.endpoint_id, r.metric.apiInterface ?? ""), v);
       }
     }
+    // The gauge is 1 while the router sends the provider no traffic; the row's
+    // health is the opposite.
     const healthByKey = new Map<string, number>();
     for (const r of healthRows) {
       const v = num(r.value[1]);
       if (r.metric.endpoint_id && v !== null) {
-        healthByKey.set(key(r.metric.endpoint_id, r.metric.apiInterface ?? ""), v);
+        healthByKey.set(key(r.metric.endpoint_id, r.metric.apiInterface ?? ""), 1 - v);
       }
     }
 
@@ -1166,8 +1166,7 @@ export class MetricsService {
     }[];
   }> {
     const win = WINDOWS[window];
-    const end = Math.floor(Date.now() / 1000);
-    const start = end - win.rangeSeconds;
+    const { start, end } = alignedBounds(win.rangeSeconds, stepSeconds(window), Date.now() / 1000);
     const specs = await this.listSpecs();
 
     const [aggMatrix, totalAll] = await Promise.all([
@@ -1292,8 +1291,7 @@ export class MetricsService {
   /** RPS time-series for the Traffic chart (client-scoped). */
   async rpsSeries(spec: string | undefined, window: MetricWindow): Promise<TimeSeries> {
     const win = WINDOWS[window];
-    const end = Math.floor(Date.now() / 1000);
-    const start = end - win.rangeSeconds;
+    const { start, end } = alignedBounds(win.rangeSeconds, stepSeconds(window), Date.now() / 1000);
     const expr = qClientRpsSeriesExpr(win.step, spec, window);
     const matrix = await this.prom.queryRange(expr, start, end, win.step);
     const first = matrix[0];

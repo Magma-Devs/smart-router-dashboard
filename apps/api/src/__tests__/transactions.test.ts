@@ -6,6 +6,7 @@ import type { RouterTopology } from "@sr/shared";
 import { onChain, parseRouterLine, UpstreamIndex, type RouterLine, type UpstreamInfo } from "../services/router-log.js";
 import { LokiClient, msToNs, type LokiLine } from "../services/loki-client.js";
 import type { ConfigurationService } from "../services/configuration.js";
+import { LOG_READ_BUDGET_BYTES } from "../services/read-range.js";
 
 /* Router log lines as a live router wrote them (smart-router :main,
    2026-09-27), cut down to the fields the tab reads. Every fixture except
@@ -282,12 +283,14 @@ describe("TransactionsService", () => {
   function lokiStub(lines: LokiLine[]) {
     const queries: string[] = [];
     const loki = {
+      async labelValues() { return null; }, async volume() { return 0; },
       async queryRange(query: string, startMs: number, endMs: number, limit: number) {
         queries.push(query);
         const asked = /`"GUID":"\(([^)]*)\)"`/.exec(query)?.[1]?.split("|");
         if (asked) return lines.filter((l) => asked.some((g) => l.line.includes(`"GUID":"${g}"`)));
-        const one = /\|= `"GUID":"([^"]+)"`/.exec(query)?.[1];
-        if (one) return lines.filter((l) => l.line.includes(`"GUID":"${one}"`));
+        // A look-up: the request with that ID, or whose relay_end carries it as a hash or a caller's id.
+        const one = /\|~ `"\(GUID\|tx_hash\|request_id\)":"([^"]+)"`/.exec(query)?.[1]?.replace(/\\(.)/g, "$1");
+        if (one) return lines.filter((l) => ["GUID", "tx_hash", "request_id"].some((k) => l.line.includes(`"${k}":"${one}"`)));
         // The two finding reads: newest first, in the range, at most `limit`.
         const inRange = (ls: LokiLine[]) => ls.filter((l) => l.tsMs >= startMs && l.tsMs < endMs).sort((a, b) => b.tsMs - a.tsMs).slice(0, limit);
         if (query.includes('|= `"event":"relay_end"`')) return inRange(lines.filter((l) => l.line.includes('"event":"relay_end"')));
@@ -352,7 +355,7 @@ describe("TransactionsService", () => {
     expect(await svc.lookup("9946532266546017239", RANGE)).toMatchObject({
       available: true, found: true, row: { method: "eth_sendRawTransaction", outcome: "rejected", answeredBy: "eth-mevblocker" },
     });
-    expect(queries.at(-1)).toBe('{service="router"} |= `"GUID":"9946532266546017239"`');
+    expect(queries.at(-1)).toBe('{service="router"} |= `9946532266546017239` |~ `"(GUID|tx_hash|request_id)":"9946532266546017239"`');
     expect(await svc.lookup("13101775707732352358", RANGE)).toEqual({ available: true, found: true, row: null }); // a read
     expect(await svc.lookup("424242", RANGE)).toEqual({ available: true, found: false, row: null });
   });
@@ -375,6 +378,7 @@ describe("TransactionsService", () => {
   }).flat();
   /** The stub, with the GUID reads that ask for `lateGuid` never answered - Loki's timeout. */
   const lateFor = (loki: LokiClient, lateGuid: (q: string) => boolean) => ({
+    async labelValues() { return null; }, async volume() { return 0; },
     queryRange: (query: string, ...rest: [number, number, number, "forward" | "backward"]) =>
       query.includes('"GUID":"(') && lateGuid(query) ? Promise.resolve(null) : loki.queryRange(query, ...rest),
   }) as unknown as LokiClient;
@@ -402,7 +406,7 @@ describe("TransactionsService", () => {
 
   it("no log store, or one that does not answer, is 'not available' - never 'no transactions'", async () => {
     expect((await new TransactionsService(null, '{service="router"}').report(RANGE)).available).toBe(false);
-    const down = { async queryRange() { return null; } } as unknown as LokiClient;
+    const down = { async queryRange() { return null; }, async labelValues() { return null; }, async volume() { return 0; } } as unknown as LokiClient;
     expect((await new TransactionsService(down, '{service="router"}').report(RANGE)).available).toBe(false);
     const { loki } = lokiStub([]);
     expect(await new TransactionsService(loki, '{service="router"}').report(RANGE)).toMatchObject({ available: true, total: 0, more: false });
@@ -416,6 +420,7 @@ describe("LokiClient", () => {
     const urls: URL[] = [];
     vi.stubGlobal("fetch", async (input: URL | string) => {
       const url = new URL(input.toString());
+      if (url.pathname.endsWith("/loki/api/v1/index/stats")) return Response.json({ streams: 0, chunks: 0, bytes: 0, entries: 0 });
       urls.push(url);
       if (url.searchParams.get("query") === "bad") return new Response("parse error", { status: 400 });
       return Response.json({ status: "success", data: { result: [{ values: [["1790539228476571721", "a line"]] }] } });
@@ -432,6 +437,13 @@ describe("LokiClient", () => {
       direction: "backward",
     });
     expect(await client.queryRange("bad", 0, 1, 1, "forward")).toBeNull();
+  });
+
+  it("keeps each line's stream labels: a router's name its chain", async () => {
+    vi.stubGlobal("fetch", async () =>
+      Response.json({ status: "success", data: { result: [{ stream: { chain: "xlmt", service_name: "t-stellar-testnet" }, values: [["1790539228476571721", "a line"]] }] } }));
+    const lines = await new LokiClient("http://loki:3100", 1000).queryRange("q", 0, 1, 10, "forward");
+    expect(lines?.[0]?.labels).toEqual({ chain: "xlmt", service_name: "t-stellar-testnet" });
   });
 
   it("sends Loki exact nanoseconds, fraction kept, so a read can end at a line's own time", () => {
@@ -460,11 +472,12 @@ describe("GET /api/transactions", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", async (input: URL | string) => {
       const url = new URL(input.toString());
+      if (url.pathname.endsWith("/loki/api/v1/index/stats")) return Response.json({ streams: 0, chunks: 0, bytes: 0, entries: 0 });
       if (!url.pathname.endsWith("/loki/api/v1/query_range")) {
         return Response.json({ status: "success", data: { resultType: "vector", result: [] } });
       }
       const q = url.searchParams.get("query") ?? "";
-      const lines = q.includes('`"GUID":"(') || q.includes('|= `"GUID":"')
+      const lines = q.includes('`"GUID":"(') || q.includes('"(GUID|tx_hash|request_id)":"')
         ? ETH_REJECTED
         : q.includes('|= "Choosing providers"')
           ? ETH_REJECTED.filter((l) => l.line.includes("Choosing providers"))
@@ -490,6 +503,10 @@ describe("GET /api/transactions", () => {
     process.env.LOKI_URL = "http://loki.test:3100";
     app = await buildApp();
     expect((await app.inject({ method: "GET", url: "/api/transactions/not%20an%20id" })).statusCode).toBe(400);
+    // A transaction hash and a caller's request id are look-ups too: 66 and 128 characters.
+    expect((await app.inject({ method: "GET", url: `/api/transactions/0x${"ab".repeat(32)}?window=1d` })).statusCode).toBe(200);
+    expect((await app.inject({ method: "GET", url: `/api/transactions/${"r".repeat(128)}?window=1d` })).statusCode).toBe(200);
+    expect((await app.inject({ method: "GET", url: `/api/transactions/${"r".repeat(129)}?window=1d` })).statusCode).toBe(400);
     const res = await app.inject({ method: "GET", url: "/api/transactions/9946532266546017239?window=1d" });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ available: true, found: true, row: { guid: "9946532266546017239", outcome: "rejected" } });
@@ -544,6 +561,7 @@ describe("the chain of a transaction through a shared node name", () => {
     const [row] = buildTxRows(parse(lines), new UpstreamIndex(routers as unknown as RouterTopology[]));
     expect(row).toMatchObject({ spec: "BASE", outcome: "accepted" });
     const loki = {
+      async labelValues() { return null; }, async volume() { return 0; },
       async queryRange(query: string) {
         return query.includes("GUID") || query.includes("stateful") ? lines.filter((l) => query.includes("GUID") || l.line.includes("Choosing")) : [];
       },
@@ -557,6 +575,14 @@ describe("the chain of a transaction through a shared node name", () => {
     const [row] = buildTxRows(parse(accepted("506", "publicnode")), new UpstreamIndex(routers as unknown as RouterTopology[]));
     expect(row).toMatchObject({ spec: null, specs: ["BASE", "ETH1"] });
     expect(onChain(row!, "BASE") && onChain(row!, "ETH1")).toBe(true);
+  });
+
+  it("a write still in flight names its chain from its router's stream, not from its node", () => {
+    // Received and sent, no end yet: no line names the chain; the stream's label does.
+    const inFlight = accepted("507", "publicnode").slice(0, 2).map((l) => ({ ...l, labels: { chain: "base" } }));
+    const [row] = buildTxRows(parse(inFlight), new UpstreamIndex(routers as unknown as RouterTopology[]));
+    expect(row).toMatchObject({ spec: "BASE", outcome: "unknown", note: NOTE.noEnd });
+    expect(row!.specs).toBeUndefined();
   });
 });
 
@@ -588,5 +614,21 @@ describe("a transaction no upstream could be chosen for", () => {
     ];
     const [row] = rowsOf(lines);
     expect(row).toMatchObject({ guid: "77", spec: "ETH1", outcome: "failed", attempts: [], replyMs: 2 });
+  });
+});
+
+describe("a range too heavy for one read", () => {
+  const HOUR = 3_600_000;
+  it("reads the newest part the budget allows, and an empty part still says where to read on", async () => {
+    const reads: [number, number][] = [];
+    // A day that weighs four budgets: the newest six hours fit one.
+    const loki = {
+      async labelValues() { return null; }, async volume(_s: string, a: number, b: number) { return ((b - a) / (24 * HOUR)) * 4 * LOG_READ_BUDGET_BYTES; },
+      async queryRange(_q: string, startMs: number, endMs: number) { reads.push([startMs, endMs]); return []; },
+    } as unknown as LokiClient;
+    const r = await new TransactionsService(loki, '{service="router"}').report({ startMs: 0, endMs: 24 * HOUR });
+    expect(reads).toEqual([[18 * HOUR, 24 * HOUR], [18 * HOUR, 24 * HOUR], [18 * HOUR, 24 * HOUR]]);
+    expect(r).toMatchObject({ available: true, rows: [], total: 0, more: true, range: { startMs: 0, endMs: 24 * HOUR } });
+    expect(r.nextBefore).toBeCloseTo(18 * HOUR, 0);
   });
 });

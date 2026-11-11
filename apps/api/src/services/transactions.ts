@@ -31,9 +31,11 @@
  * on `requests_success_total` (the router got a reply), and node errors on a
  * broadcast are not counted per upstream at all.
  */
-import type { LogUnavailable, RouterTopology, TransactionLookup, TransactionsReport, TxLogRow, TxOutcome } from "@sr/shared";
+import type { LogUnavailable, RouterTopology, TransactionLookup, TransactionsReport, TxLogRow, TxOutcome, TxResult } from "@sr/shared";
+import { WRITE_UNKNOWN_NOTE } from "@sr/shared";
 import {
   attemptsOf,
+  callFactsOf,
   FAILED_OUTCOMES,
   isRelayEnd,
   isSubscription,
@@ -43,8 +45,10 @@ import {
   RELAY_END,
   startMs as startOf,
 } from "./relay-end.js";
-import { readEnd, readOnFrom, type ReadRange } from "./read-range.js";
+import { readEnd, readStart, type ReadRange } from "./read-range.js";
+import { ListReads, readList } from "./log-list.js";
 import type { LokiClient } from "./loki-client.js";
+import { StreamScope } from "./stream-scope.js";
 import type { ConfigurationService } from "./configuration.js";
 import {
   chainOf,
@@ -53,14 +57,12 @@ import {
   inRawString,
   LABEL_TOKEN,
   lastWhere,
-  linesForGuids,
-  linesOfRequest,
-  REQUEST_ID,
+  linesOfLookup,
+  LOOKUP_ID,
   methodOf,
   namesOf,
   onChain,
   ownRow,
-  parseAll,
   providerOf,
   scrubUrls,
   str,
@@ -98,6 +100,45 @@ const TX_METHOD_SET: ReadonlySet<string> = new Set(TX_METHODS);
 const FAILED_SET: ReadonlySet<string> = new Set(FAILED_OUTCOMES);
 
 /**
+ * The line filters that find a transaction's `relay_end`: a write by the spec
+ * (`stateful:true`), or a transaction method by name - unlisted (`Default-`)
+ * or inside a batch (`&`) too. The list's read and the chart's count share it,
+ * as does the store's recording rule, `smartrouter_transactions:count1m`.
+ */
+export const TX_EVENT_FILTER = `|= \`${RELAY_END}\` |~ \`"stateful":true|"method":"([^"]*[&-])?(${TX_METHODS.join("|")})[&"]\``;
+
+/** What a transaction's `relay_end` says about how it ended - the fields the list and the chart both read. */
+export interface TxEndFacts {
+  /** The event's `outcome`. */
+  outcome: string;
+  /** A Cosmos node refused it inside a normal reply: a `tx_code` other than 0. */
+  txRefused: boolean;
+  /** The listener's interface: the router reads no code out of a gRPC reply. */
+  apiInterface: string;
+  /** `success` / `failure` where the send reply reports the on-chain result; "" otherwise. */
+  txStatus?: string;
+}
+
+/**
+ * A transaction's result from its `relay_end`: the one mapping the list's rows
+ * and the chart's bars both use, so the two can't disagree. The list refines
+ * two cases the chart's counts can't see: a subscription request the router
+ * failed is `rejected` when a node refused it on a try, and an outcome schema
+ * 1 doesn't have is explained in its note.
+ */
+export function txResultOf(f: TxEndFacts): TxResult {
+  if (f.outcome === "write_unknown") return "unknown";
+  if (f.outcome === "node_error") return "rejected";
+  if (FAILED_SET.has(f.outcome)) return "failed";
+  if (f.outcome !== "ok") return "unknown";
+  if (f.txRefused) return "rejected";
+  // The router reads no code out of a gRPC reply: protobuf.
+  if (f.apiInterface === "grpc" && !f.txStatus) return "unknown";
+  if (f.txStatus === "failure") return "failed-on-chain";
+  return "accepted";
+}
+
+/**
  * Where a refused transaction still gets a normal reply, with the refusal as
  * a code inside it: Cosmos SDK chains (CheckTx `code`, over Tendermint RPC,
  * gRPC and this REST path). The router doesn't log replies, so without a node
@@ -110,8 +151,8 @@ export const NOTE = {
   noEnd: "The logs show no end. It may still be in flight, or some of its log lines are missing.",
   replyNotLogged:
     "The node replied, but on this chain a refused transaction also gets a normal reply. The router doesn't log what the reply said, so the dashboard can't tell.",
-  writeUnknown:
-    "No upstream gave a definite answer, so the router can't tell whether the transaction reached a node. Check the chain before sending it again.",
+  /** The Errors tab's `write-unknown` says the same. */
+  writeUnknown: WRITE_UNKNOWN_NOTE,
 } as const;
 
 /** Transactions one read returns; `more` says when the range holds older ones. */
@@ -119,6 +160,9 @@ export const TX_READ_CAP = 500;
 
 /** A transaction's reply can land this long after the line that found it. */
 const REPLY_SPAN_MS = 60_000;
+
+/** A transaction's first lines come this long at most before the line that found it. */
+const LEAD_MS = 5_000;
 
 /**
  * One row per transaction - a request the spec marks `stateful:"1"`, or one
@@ -224,44 +268,42 @@ function rowOfEvent(e: RouterLine, guid: string, index: UpstreamIndex): TxLogRow
   const attempts = attemptsOf(e);
   const outcome = str(e.f.outcome);
   const replied = attempts.find((a) => a.replied);
+  const txCode = typeof e.f.tx_code === "number" ? e.f.tx_code : null;
+  const rawStatus = str(e.f.tx_status);
+  const txStatus = rawStatus === "success" || rawStatus === "failure" ? rawStatus : undefined;
+  const result = txResultOf({ outcome, txRefused: txCode !== null && txCode !== 0, apiInterface: str(e.f.api_interface), txStatus });
 
-  let txOutcome: TxOutcome = "accepted";
+  let txOutcome: TxOutcome = result;
   let error: TxLogRow["error"] = null;
   let note: string | null = null;
   if (outcome === "write_unknown") {
-    txOutcome = "unknown";
     note = NOTE.writeUnknown;
   } else if (outcome === "node_error") {
-    txOutcome = "rejected";
     error = { code: str(e.f.error_code) || "NODE_ERROR", message: scrubUrls(str(e.f.error)) };
-  } else if (FAILED_SET.has(outcome)) {
+  } else if (result === "failed") {
     // A subscription request keeps a node's refusal on its try: the router
     // answers the client itself rather than pass the refusal through.
     const refusal = isSubscription(e) ? nodeRefusalOf(e) : null;
-    txOutcome = refusal ? "rejected" : "failed";
+    if (refusal) txOutcome = "rejected";
     error = refusal
       ? { code: refusal.code || "NODE_ERROR", message: scrubUrls(refusal.message) }
       : { code: str(e.f.error_code) || "NO_REPLY", message: scrubUrls(withoutGuid(str(e.f.error)) || "no upstream replied") };
-  } else if (outcome === "ok") {
-    const txCode = typeof e.f.tx_code === "number" ? e.f.tx_code : null;
-    if (txCode !== null && txCode !== 0) {
-      // A Cosmos node refuses a transaction inside a normal reply; the router reads the code out of it.
-      txOutcome = "rejected";
-      const space = str(e.f.tx_codespace);
-      error = { code: space ? `${space}:${txCode}` : `code ${txCode}`, message: scrubUrls(str(e.f.tx_log)) || "the node refused the transaction" };
-      if (replied) Object.assign(replied, { outcome: "failed", code: error.code, message: error.message });
-    } else if (txCode === null && str(e.f.api_interface) === "grpc") {
-      // The router reads no code out of a gRPC reply: protobuf.
-      txOutcome = "unknown";
-      note = NOTE.replyNotLogged;
-      if (replied?.outcome === "ok") Object.assign(replied, { outcome: "no-result", note: "Responded; the response body isn't in the logs." });
-    }
-  } else {
-    txOutcome = "unknown";
+  } else if (outcome === "ok" && result === "rejected") {
+    // A Cosmos node refuses a transaction inside a normal reply; the router reads the code out of it.
+    const space = str(e.f.tx_codespace);
+    error = { code: space ? `${space}:${txCode}` : `code ${txCode}`, message: scrubUrls(str(e.f.tx_log)) || "the node refused the transaction" };
+    if (replied) Object.assign(replied, { outcome: "failed", code: error.code, message: error.message });
+  } else if (outcome === "ok" && result === "unknown") {
+    note = NOTE.replyNotLogged;
+    if (replied?.outcome === "ok") Object.assign(replied, { outcome: "no-result", note: "Responded; the response body isn't in the logs." });
+  } else if (result === "unknown") {
     note = `The router ended it as "${outcome}", an outcome this dashboard doesn't know.`;
   }
 
   const chain = str(e.f.chain);
+  const txHash = str(e.f.tx_hash).trim();
+  // The chain's own words on a failure; a node URL in them is cut like any other.
+  const txError = txStatus === "failure" ? scrubUrls(str(e.f.tx_error)).trim() : "";
   return {
     guid,
     time: Math.round(startOf(e)),
@@ -273,30 +315,37 @@ function rowOfEvent(e: RouterLine, guid: string, index: UpstreamIndex): TxLogRow
     outcome: txOutcome,
     error,
     note,
+    ...(txHash ? { txHash } : {}),
+    ...(txStatus ? { txStatus } : {}),
+    ...(txError ? { txError } : {}),
+    ...callFactsOf(e),
   };
 }
 
 /** Totals and success rate over the rows. `unknown` rows are counted in
- *  `total` but left out of the rate: their end can't be told. */
+ *  `total` but left out of the rate: their end can't be told. One the chain
+ *  ran and failed is a failure. */
 export function summarize(
   rows: TxLogRow[],
-): Pick<TransactionsReport, "total" | "accepted" | "rejected" | "failed" | "successRate"> {
+): Pick<TransactionsReport, "total" | "accepted" | "rejected" | "failed" | "failedOnChain" | "successRate"> {
   const count = (o: TxOutcome) => rows.filter((r) => r.outcome === o).length;
   const accepted = count("accepted");
   const rejected = count("rejected");
   const failed = count("failed");
-  const decided = accepted + rejected + failed;
+  const failedOnChain = count("failed-on-chain");
+  const decided = accepted + rejected + failed + failedOnChain;
   return {
     total: rows.length,
     accepted,
     rejected,
     failed,
+    failedOnChain,
     successRate: decided > 0 ? accepted / decided : null,
   };
 }
 
 function emptyReport(available: boolean, reason?: LogUnavailable): TransactionsReport {
-  return { available, ...(reason ? { reason } : {}), total: 0, accepted: 0, rejected: 0, failed: 0, successRate: null, rows: [], more: false, nextBefore: null };
+  return { available, ...(reason ? { reason } : {}), total: 0, accepted: 0, rejected: 0, failed: 0, failedOnChain: 0, successRate: null, rows: [], more: false, nextBefore: null };
 }
 
 export class TransactionsService {
@@ -307,8 +356,16 @@ export class TransactionsService {
     private readonly cap: number = TX_READ_CAP,
   ) {}
 
+  private readonly reads = new ListReads<TxLogRow, TransactionsReport>();
+
   private routers(): RouterTopology[] {
     return this.configSvc?.getRouters() ?? [];
+  }
+
+  private streams?: StreamScope;
+  /** The router's streams narrowed by their own labels (`StreamScope`), made on first use. */
+  private scope(loki: LokiClient): StreamScope {
+    return (this.streams ??= new StreamScope(loki, this.selector));
   }
 
   /** Upstreams the chain / config router declares; null when neither is asked for. */
@@ -319,99 +376,95 @@ export class TransactionsService {
   }
 
   /**
-   * One transaction by its request ID: every line the router wrote for it in
-   * `range`, as the same row the log shows. `found` without a row: the ID is
-   * a request that isn't a transaction.
+   * One transaction by its request ID, its hash or the caller's request id:
+   * every line the router wrote for it, as the same row the log shows - in
+   * the ID's own minutes when it carries its second (v1.6.1 on), else in
+   * `range` (`linesOfLookup`). `found` without a row: the value names a
+   * request that isn't a transaction. A value several requests carry - a
+   * transaction sent again keeps its hash - answers with the newest and how
+   * many there are.
    */
-  async lookup(guid: string, range: ReadRange): Promise<TransactionLookup> {
+  async lookup(id: string, range: ReadRange): Promise<TransactionLookup> {
     const loki = this.loki;
     if (!loki) return { available: false, reason: "unconfigured", found: false, row: null };
-    if (!REQUEST_ID.test(guid)) return { available: true, found: false, row: null };
-    const lines = await linesOfRequest(loki, this.selector, guid, range.startMs, range.endMs);
+    if (!LOOKUP_ID.test(id)) return { available: true, found: false, row: null };
+    const lines = await linesOfLookup(loki, this.selector, id, range);
     if (lines === null) return { available: false, reason: "unreachable", found: false, row: null };
-    const row = buildTxRows(lines, new UpstreamIndex(this.routers()))[0] ?? null;
-    return { available: true, found: lines.length > 0, row };
+    const rows = buildTxRows(lines, new UpstreamIndex(this.routers()));
+    return { available: true, found: lines.length > 0, row: rows[0] ?? null, ...(rows.length > 1 ? { matches: rows.length } : {}) };
   }
 
   /**
    * The newest transactions in `range`, ending at `before` when given (the
    * previous read's `nextBefore`). One on the seam between two reads can come
-   * back in both; the client keeps it once, by GUID.
+   * back in both; the client keeps it once, by GUID. One read scans at most
+   * LOG_READ_BUDGET_BYTES of logs (`readStart`): on a busy deployment a long
+   * range is read in parts, newest first, one per "Load older". One read per
+   * list at a time on this process, its answer kept (`ListReads`); a poll of a
+   * page window reads only what is new since the last (`readList`).
    */
   async report(range: ReadRange, spec?: string, routerId?: string, before?: number): Promise<TransactionsReport> {
     const loki = this.loki;
     if (!loki) return emptyReport(false, "unconfigured");
     const read = { startMs: range.startMs, endMs: range.endMs };
-    const startMs = range.startMs;
     const endMs = readEnd(range, before);
-    if (endMs <= startMs) return { ...emptyReport(true), range: read };
+    if (endMs <= range.startMs) return { ...emptyReport(true), range: read };
 
-    // Candidates, two ways. Writes by the spec: narrowed inside the query to
-    // the chain's upstreams (a name inside `chosenProviders`, bounded by a
-    // comma or the quote), so the cap applies to the chain asked for. And
-    // transaction methods by name - those lines name no upstream, so they
-    // are narrowed after the rows are built.
-    const names = this.upstreamsFor(spec, routerId);
-    const safe = names?.filter(inRawString);
-    const narrow = safe?.length
-      ? ` |~ \`"chosenProviders":"([^"]*,)?(${safe.map(escapeRe).join("|")})[,"]\``
-      : "";
-    // A relay_end names its chain: a write by the spec, or a transaction
-    // method by name - unlisted (`Default-`) or inside a batch (`&`) too.
-    const chain = routerId ? this.routers().find((r) => r.id === routerId)?.spec : spec;
-    const eventNarrow = chain && LABEL_TOKEN.test(chain) ? ` |= \`"chain":"${chain}"\`` : "";
-    const [byFlag, byMethod, byEvent] = await Promise.all([
-      loki.queryRange(`${this.selector} |= "${MSG.choosing}" |= \`"stateful":"1"\`${narrow}`, startMs, endMs, this.cap, "backward"),
-      loki.queryRange(`${this.selector} |= "${MSG.received}" |~ \`(${TX_METHODS.join("|")})\``, startMs, endMs, this.cap, "backward"),
-      loki.queryRange(
-        `${this.selector} |= \`${RELAY_END}\` |~ \`"stateful":true|"method":"([^"]*[&-])?(${TX_METHODS.join("|")})[&"]\`${eventNarrow}`,
-        startMs,
-        endMs,
-        this.cap,
-        "backward",
-      ),
-    ]);
-    if (byFlag === null || byMethod === null || byEvent === null) return emptyReport(false, "unreachable");
+    return this.reads.get(range, before, [spec, routerId], async (last) => {
+      // Candidates, two ways. Writes by the spec: narrowed inside the query to
+      // the chain's upstreams (a name inside `chosenProviders`, bounded by a
+      // comma or the quote), so the cap applies to the chain asked for. And
+      // transaction methods by name - those lines name no upstream, so they
+      // are narrowed after the rows are built.
+      const routers = this.routers();
+      // Where the streams carry the chain or the router as a label, read only theirs: exact, and the
+      // transaction methods' lines - which name no upstream - stop filling the cap with other chains'.
+      const chain = routerId ? routers.find((r) => r.id === routerId)?.spec : spec;
+      const scoped = await this.scope(loki).narrow(chain, routerId);
+      const selector = scoped ?? this.selector;
+      const names = scoped ? undefined : this.upstreamsFor(spec, routerId);
+      const safe = names?.filter(inRawString);
+      const narrow = safe?.length
+        ? ` |~ \`"chosenProviders":"([^"]*,)?(${safe.map(escapeRe).join("|")})[,"]\``
+        : "";
+      // A relay_end names its chain: a write by the spec, or a transaction
+      // method by name - unlisted (`Default-`) or inside a batch (`&`) too.
+      const eventNarrow = !scoped && chain && LABEL_TOKEN.test(chain) ? ` |= \`"chain":"${chain}"\`` : "";
+      const index = new UpstreamIndex(routers);
+      const got = await readList(loki, selector, {
+        finders: [
+          { query: `${selector} |= "${MSG.choosing}" |= \`"stateful":"1"\`${narrow}`, limit: this.cap },
+          { query: `${selector} |= "${MSG.received}" |~ \`(${TX_METHODS.join("|")})\``, limit: this.cap },
+          { query: `${selector} ${TX_EVENT_FILTER}${eventNarrow}`, limit: this.cap },
+        ],
+        // A transaction found by its relay_end needs nothing more. One found by
+        // its lines needs the rest of them, and its relay_end when it has one:
+        // the received line comes a few ms before the choice, and the reply can
+        // land after the range closed.
+        follow: { messages: [...Object.values(MSG), RELAY_END], perGuid: 30, beforeMs: LEAD_MS, afterMs: REPLY_SPAN_MS },
+        cap: this.cap,
+        rowsOf: (lines) => buildTxRows(lines, index),
+        basis: JSON.stringify(routers),
+        // At most LOG_READ_BUDGET_BYTES of logs per whole read: the older part of the range is the next read's.
+        wholeFrom: (r) => readStart(loki, selector, r, r.endMs),
+      }, { startMs: range.startMs, endMs }, last);
+      if (got === null) return { report: emptyReport(false, "unreachable") };
+      const { nextBefore } = got.read;
+      if (!got.read.found) {
+        return { report: { ...emptyReport(true), ...(nextBefore === null ? {} : { more: true, nextBefore }), range: read }, head: got.head };
+      }
 
-    const found = parseAll([...byFlag, ...byMethod, ...byEvent]);
-    const newest = new Map<string, number>();
-    for (const l of found) newest.set(l.guid, Math.max(newest.get(l.guid) ?? 0, l.tsMs));
-    const ranked = [...newest].sort((a, b) => b[1] - a[1]);
-    const picked = ranked.slice(0, this.cap);
-    if (!picked.length) return { ...emptyReport(true), range: read };
-    const kept = new Set(picked.map(([g]) => g));
-    const cutOf = (read: { tsMs: number }[]) => (read.length >= this.cap ? [Math.min(...read.map((l) => l.tsMs))] : []);
-    const nextBefore = readOnFrom(ranked, this.cap, [...cutOf(byFlag), ...cutOf(byMethod), ...cutOf(byEvent)], endMs);
-
-    // A transaction found by its relay_end needs nothing more. One found by
-    // its lines needs the rest of them, and its relay_end when it has one:
-    // the received line comes a few ms before the choice, and the reply can
-    // land after the range closed.
-    const ends = found.filter((l) => isRelayEnd(l) && kept.has(l.guid));
-    const inHand = new Set(ends.map((l) => l.guid));
-    const toRead = new Set([...kept].filter((g) => !inHand.has(g)));
-    const toReadTimes = found.filter((l) => toRead.has(l.guid)).map((l) => l.tsMs);
-    const guidLines = toRead.size
-      ? await linesForGuids(
-          loki,
-          this.selector,
-          [...toRead],
-          Math.min(...toReadTimes) - 5_000,
-          [...Object.values(MSG), RELAY_END],
-          30,
-          Math.min(Date.now(), Math.max(...toReadTimes) + REPLY_SPAN_MS),
-        )
-      : { lines: [], unread: [] };
-    if (guidLines === null) return emptyReport(false, "unreachable");
-
-    const routers = this.routers();
-    let rows = buildTxRows([...guidLines.lines, ...ends], new UpstreamIndex(routers));
-    if (spec) rows = rows.filter((r) => onChain(r, spec));
-    if (routerId) {
-      const router = routers.find((r) => r.id === routerId);
-      rows = router ? rows.filter((r) => ownRow(r, router, routers)) : [];
-    }
-    const unread = guidLines.unread.length ? { unread: guidLines.unread.length } : {};
-    return { available: true, ...summarize(rows), rows, ...unread, more: nextBefore !== null, nextBefore, range: read };
+      let rows = got.read.rows;
+      if (spec) rows = rows.filter((r) => onChain(r, spec));
+      if (routerId) {
+        const router = routers.find((r) => r.id === routerId);
+        rows = router ? rows.filter((r) => ownRow(r, router, routers)) : [];
+      }
+      const unread = got.read.unread ? { unread: got.read.unread } : {};
+      return {
+        report: { available: true, ...summarize(rows), rows, ...unread, more: nextBefore !== null, nextBefore, range: read },
+        head: got.head,
+      };
+    });
   }
 }

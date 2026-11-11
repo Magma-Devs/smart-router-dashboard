@@ -9,7 +9,10 @@ import { DEFAULT_WINDOW, isMetricWindow, type MetricWindow } from "@sr/shared";
  *  **The time window persists** (localStorage `sr:window`, read once on mount,
  *  SSR-safe). It is a viewing preference — how far back you like to look — not
  *  a claim about what you're looking at, so carrying it between screens is a
- *  convenience rather than a surprise.
+ *  convenience rather than a surprise. A window from a link (`linkWindow`, the
+ *  Metrics page's `?window=`) is the sender's, not a preference: it is shown on
+ *  that page only, like the chain below, and never saved. Picking a window by
+ *  hand saves it and replaces the link's.
  *
  *  **The chain and the router belong to the page you set them on.** They narrow
  *  WHICH data a screen shows, and a narrowing that outlives its screen is a
@@ -35,13 +38,20 @@ interface Narrowing {
   chain: string | null;
   router: string | null;
   routerId: string | null;
+  /** A link's window: shown on this page instead of the saved one, never saved. */
+  window: MetricWindow | null;
 }
 
-const NOTHING = { chain: null, router: null, routerId: null } as const;
+const NOTHING = { chain: null, router: null, routerId: null, window: null } as const;
 
 interface FiltersContextValue {
   timeWindow: MetricWindow;
+  /** Picks a window by hand: shown, and saved as the viewer's preference. */
   setTimeWindow: (w: MetricWindow) => void;
+  /** Shows a link's window on this page, leaving the saved one alone. */
+  linkWindow: (w: MetricWindow) => void;
+  /** `timeWindow` is the one the viewer sees for good: a link's, or the saved one once read. */
+  windowSettled: boolean;
   /** Scope-label value of the selected router; null = every router. */
   router: string | null;
   setRouter: (r: string | null) => void;
@@ -67,6 +77,8 @@ const FiltersContext = createContext<FiltersContextValue | null>(null);
 
 export function FiltersProvider({ children }: { children: React.ReactNode }) {
   const [timeWindow, setTimeWindowState] = useState<MetricWindow>(DEFAULT_WINDOW);
+  /** The saved window has been looked for: until then `timeWindow` is the default, not the viewer's. */
+  const [savedRead, setSavedRead] = useState(false);
   const [narrowing, setNarrowing] = useState<Narrowing>({ path: "", ...NOTHING });
   const pathname = usePathname();
 
@@ -78,16 +90,9 @@ export function FiltersProvider({ children }: { children: React.ReactNode }) {
     } catch {
       /* localStorage unavailable (private mode etc.) — keep the default. */
     }
+    setSavedRead(true);
   }, []);
 
-  const setTimeWindow = useCallback((w: MetricWindow) => {
-    setTimeWindowState(w);
-    try {
-      window.localStorage.setItem(STORAGE_KEY, w);
-    } catch {
-      /* best-effort persistence */
-    }
-  }, []);
 
   // Only the CURRENT page's selection is visible — this is what makes the
   // reset instant: on the first render after navigating, the stamp already
@@ -117,6 +122,17 @@ export function FiltersProvider({ children }: { children: React.ReactNode }) {
     [pathname],
   );
 
+  const setTimeWindow = useCallback((w: MetricWindow) => {
+    setTimeWindowState(w);
+    update({ window: null });
+    try {
+      window.localStorage.setItem(STORAGE_KEY, w);
+    } catch {
+      /* best-effort persistence */
+    }
+  }, [update]);
+  const linkWindow = useCallback((w: MetricWindow) => update({ window: w }), [update]);
+
   const setRouter = useCallback((r: string | null) => update({ router: r }), [update]);
   const setChain = useCallback((c: string | null) => update({ chain: c }), [update]);
   const setRouterId = useCallback((id: string | null) => update({ routerId: id }), [update]);
@@ -124,8 +140,10 @@ export function FiltersProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo(() => {
     const param = active.router ? `router=${encodeURIComponent(active.router)}` : "";
     return {
-      timeWindow,
+      timeWindow: active.window ?? timeWindow,
       setTimeWindow,
+      linkWindow,
+      windowSettled: savedRead || active.window !== null,
       router: active.router,
       setRouter,
       chain: active.chain,
@@ -136,7 +154,7 @@ export function FiltersProvider({ children }: { children: React.ReactNode }) {
       // Keeps the URL (and so the SWR cache key) clean when nothing is scoped.
       withScope: (url: string) => (param ? `${url}${url.includes("?") ? "&" : "?"}${param}` : url),
     };
-  }, [timeWindow, setTimeWindow, active, setRouter, setChain, setRouterId]);
+  }, [timeWindow, setTimeWindow, linkWindow, savedRead, active, setRouter, setChain, setRouterId]);
 
   return <FiltersContext.Provider value={value}>{children}</FiltersContext.Provider>;
 }

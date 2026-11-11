@@ -6,6 +6,7 @@ import type { ConfigurationService } from "../services/configuration.js";
 import { readUpstreamHealth, healthWindowSeconds } from "../services/upstream-health.js";
 import type { PrometheusClient, PromVectorSample } from "../services/prometheus-client.js";
 
+// For a gauge row the value is the blocked gauge: "1" blocked, "0" serving.
 const sample = (value: string, spec = "ETH1", apiInterface = "jsonrpc"): PromVectorSample => ({
   metric: { endpoint_id: "test-upstream", spec, apiInterface },
   value: [1, value],
@@ -14,9 +15,12 @@ const sample = (value: string, spec = "ETH1", apiInterface = "jsonrpc"): PromVec
 async function roster(healthRows: PromVectorSample[], total = 1_000_000, ok = 999_999) {
   const prom = {
     query: async (q: string) => {
-      if (q.startsWith("rpc_endpoint_overall_health")) return healthRows;
+      if (q.startsWith("label_replace(smartrouter_csm_provider_blocked")) return healthRows;
+      // Every upstream the router routes to also answers its block polls here.
       if (q.includes("rpc_endpoint_fetch_latest_success"))
-        return healthRows.filter((row) => row.value[1] === "1");
+        return healthRows
+          .filter((row) => row.value[1] === "0")
+          .map((row) => ({ ...row, value: [row.value[0], "1"] as [number, string] }));
       if (q.includes("smartrouter_requests_success_total"))
         return [
           { metric: { provider_address: "test-upstream", spec: "ETH1" }, value: [1, String(ok)] },
@@ -46,13 +50,13 @@ async function roster(healthRows: PromVectorSample[], total = 1_000_000, ok = 99
 
 describe("MAG-4226: upstream health through the HTTP route", () => {
   it("keeps current unhealthiness separate from nearly 100% successful past traffic", async () => {
-    const [row] = await roster([sample("0")]);
+    const [row] = await roster([sample("1")]);
     expect(row.health).toBe("unhealthy");
     expect(row.uptime).toBe(0.999999);
   });
 
   it("does not manufacture success rate when no requests were sent", async () => {
-    const [row] = await roster([sample("0")], 0, 0);
+    const [row] = await roster([sample("1")], 0, 0);
     expect(row.health).toBe("unhealthy");
     expect(row.uptime).toBeNull();
   });
@@ -60,7 +64,7 @@ describe("MAG-4226: upstream health through the HTTP route", () => {
   it.each([false, true])(
     "uses the worst interface health independent of result order (reversed=%s)",
     async (reverse) => {
-      const rows = [sample("0", "ETH1", "rest"), sample("1"), sample("1", "SOLANA")];
+      const rows = [sample("1", "ETH1", "rest"), sample("0"), sample("0", "SOLANA")];
       const result = await roster(reverse ? rows.reverse() : rows);
       expect(result.find((row: { spec: string }) => row.spec === "ETH1").health).toBe("unhealthy");
       expect(result.find((row: { spec: string }) => row.spec === "SOLANA").health).toBe(
@@ -77,7 +81,7 @@ describe("MAG-4226: upstream health through the HTTP route", () => {
   it.each([false, true])(
     "does not let a healthy interface mask an unknown interface (reversed=%s)",
     async (reverse) => {
-      const samples = [sample("NaN", "ETH1", "rest"), sample("1")];
+      const samples = [sample("NaN", "ETH1", "rest"), sample("0")];
       const [row] = await roster(reverse ? samples.reverse() : samples);
       expect(row.health).toBe("unknown");
     },
@@ -117,7 +121,7 @@ function healthProm(
   const prom = {
     query: async (q: string) => {
       queries.push(q);
-      if (q.startsWith("rpc_endpoint_overall_health")) return gauges;
+      if (q.startsWith("label_replace(smartrouter_csm_provider_blocked")) return gauges;
       if (q.includes("rpc_endpoint_fetch_latest_success")) return ok;
       if (q.includes("rpc_endpoint_fetch_latest_fails")) return failed;
       if (q.includes("deriv(")) return rates;
@@ -166,9 +170,9 @@ describe("MAG-4226 review: configured upstream liveness", () => {
     expect(overview.upstreamHealthCounts).toEqual({ unhealthy: 0, unknown: 4 });
   });
 
-  it("failed recent block polls override a stuck healthy gauge with no traffic", async () => {
+  it("failed recent block polls override a provider the router still routes to, with no traffic", async () => {
     const { rows, overview } = await healthHttp(
-      [sample("1")],
+      [sample("0")],
       [],
       [sample("2")],
       "&routerId=eth-prod",
@@ -191,15 +195,15 @@ describe("MAG-4226 review: configured upstream liveness", () => {
     ]);
   });
 
-  it("mixed poll results do not override a healthy gauge", async () => {
-    const { prom } = healthProm([sample("1")], [sample("1")], [sample("2")]);
+  it("mixed poll results do not override a provider in rotation", async () => {
+    const { prom } = healthProm([sample("0")], [sample("1")], [sample("2")]);
     expect([...(await readUpstreamHealth(prom))].map(([, row]) => row.health)).toEqual([
       "operational",
     ]);
   });
 
-  it("successful polls never override an unhealthy live check", async () => {
-    const { prom } = healthProm([sample("0")], [sample("4")]);
+  it("successful polls never override a blocked provider", async () => {
+    const { prom } = healthProm([sample("1")], [sample("4")]);
     expect([...(await readUpstreamHealth(prom))].map(([, row]) => row.health)).toEqual([
       "unhealthy",
     ]);
@@ -208,7 +212,7 @@ describe("MAG-4226 review: configured upstream liveness", () => {
   it.each([false, true])(
     "does not let another interface's successful polls mask failures (reverse=%s)",
     async (reverse) => {
-      const gauges = [sample("1"), sample("1", "ETH1", "rest")];
+      const gauges = [sample("0"), sample("0", "ETH1", "rest")];
       const { prom } = healthProm(
         reverse ? gauges.reverse() : gauges,
         [sample("3")],
@@ -226,7 +230,7 @@ describe("MAG-4226 review: configured upstream liveness", () => {
       metric: { ...sample(value).metric, instance },
     });
     const { prom } = healthProm(
-      [replica("1", "a"), replica("1", "b")],
+      [replica("0", "a"), replica("0", "b")],
       [replica("3", "a")],
       [replica("2", "b")],
     );
@@ -247,7 +251,7 @@ describe("MAG-4226 review: configured upstream liveness", () => {
         },
       ],
     } as unknown as ConfigurationService;
-    const { prom } = healthProm([sample("1")], [sample("1")]);
+    const { prom } = healthProm([sample("0")], [sample("1")]);
     const row = [...(await readUpstreamHealth(prom, config))][0][1];
     expect(row.health).toBe("unknown");
     expect(row.healthReason).toContain("rest interface");
@@ -255,7 +259,7 @@ describe("MAG-4226 review: configured upstream liveness", () => {
 
   it("isolates the same vendor name on different chains and filters both counts and rows", async () => {
     const { rows, overview } = await healthHttp(
-      [sample("0"), sample("1", "SOLANA")],
+      [sample("1"), sample("0", "SOLANA")],
       [sample("1", "SOLANA")],
       [],
       "&spec=SOLANA&routerId=sol",
@@ -267,7 +271,7 @@ describe("MAG-4226 review: configured upstream liveness", () => {
   });
 
   it("uses four bounded current-health queries, without traffic, QoS or histograms", async () => {
-    const { prom, queries } = healthProm([sample("1")]);
+    const { prom, queries } = healthProm([sample("0")]);
     await readUpstreamHealth(prom, configured);
     expect(queries).toHaveLength(4);
     expect(queries.every((q) => !/histogram|selection_score|requests_total/.test(q))).toBe(true);
@@ -322,7 +326,7 @@ describe("MAG-4226 slow-chain windows", () => {
     "uses thirty minutes for %s in both HTTP counts and rows",
     async (spec) => {
       const { prom, queries } = healthProm(
-        [sample("1", spec)],
+        [sample("0", spec)],
         [],
         [sample("1", spec)],
         [sample(String(1 / 600), spec)],
@@ -361,9 +365,9 @@ describe("MAG-4226 slow-chain windows", () => {
     },
   );
 
-  it("does not let an empty or expired poll window turn a reset gauge green", async () => {
+  it("does not let an empty or expired poll window turn a provider in rotation green", async () => {
     const { prom } = healthProm(
-      [sample("1", "BTC")],
+      [sample("0", "BTC")],
       [sample("0", "BTC")],
       [sample("0", "BTC")],
       [sample("0", "BTC")],
@@ -374,9 +378,9 @@ describe("MAG-4226 slow-chain windows", () => {
     expect(row.healthReason).toContain("30 minutes");
   });
 
-  it("requires positive success evidence to recover from a stuck gauge", async () => {
+  it("requires positive success evidence to show a provider in rotation operational", async () => {
     const { prom } = healthProm(
-      [sample("1", "BTC")],
+      [sample("0", "BTC")],
       [sample("1", "BTC")],
       [sample("2", "BTC")],
       [sample(String(1 / 600), "BTC")],

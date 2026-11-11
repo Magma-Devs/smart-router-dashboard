@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  countPointsPerStep,
+  countRangeSec,
+  qClientRpsSeriesExpr,
+  rateRange,
   selector,
   upstreamEndpointSelector,
   upstreamProviderSelector,
@@ -55,6 +59,8 @@ import {
   qOptimizerScore,
   qOptimizerScoresByEndpoint,
   qEndpointPolls,
+  qPerEndpointPollsSeriesExpr,
+  qPerUpstreamFailedRpsExpr,
   qClientRequestsBy,
   qClientRequestsTotal,
   qConsistencyCaught,
@@ -76,9 +82,12 @@ import {
   toMetricWindow,
   DEFAULT_WINDOW,
   stepSeconds,
+  alignedBounds,
   bucketGrid,
   chartSampling,
+  durationSeconds,
   errorBuckets,
+  MIN_RATE_RANGE_SEC,
 } from "../constants/windows.js";
 import { applyScope } from "../promql/scope.js";
 
@@ -194,6 +203,16 @@ describe("buildChainMetaByIndex", () => {
     // it; the testnet inherits through its KASPA import.
     expect(buildChainMetaByIndex("KASPA").family).toBe("kaspa");
     expect(buildChainMetaByIndex("KASPAT").family).toBe("kaspa");
+    // Siacoin serves only walletd's REST API under a bare `/api/` prefix and
+    // reached the same fallback. Its consensus and v2 txpool routes identify
+    // it; the Zen testnet inherits through its SC import.
+    expect(buildChainMetaByIndex("SC").family).toBe("siacoin");
+    expect(buildChainMetaByIndex("SCT").family).toBe("siacoin");
+    // Decred serves dcrd JSON-RPC: bitcoind's method names without a BTC
+    // import and without eth_*. Its ticket-pool methods identify it; the
+    // testnet3 spec inherits through its DCR import.
+    expect(buildChainMetaByIndex("DCR").family).toBe("decred");
+    expect(buildChainMetaByIndex("DCRT").family).toBe("decred");
   });
   it("inherits a forked chain's family from its imports", () => {
     // Dash imports BTC and Koii imports SOLANA; neither index shares a prefix
@@ -348,8 +367,9 @@ describe("series expressions", () => {
   it("error-count series clamps at zero", () => {
     expect(qErrorCountSeriesExpr("10m")).toContain("clamp_min(");
   });
-  it("rps series uses rate over the step", () => {
-    expect(qRpsSeriesExpr("30s")).toBe("sum(rate(smartrouter_requests_total[30s]))");
+  it("rps series uses rate over the step, never less than a minute", () => {
+    expect(qRpsSeriesExpr("10m")).toBe("sum(rate(smartrouter_requests_total[10m]))");
+    expect(qRpsSeriesExpr("30s")).toBe("sum(rate(smartrouter_requests_total[1m]))");
   });
   it("latency series drops the spec grouping (single-chain scope)", () => {
     expect(qLatencySeriesExpr(0.5, "10m", "ETH1")).toBe(
@@ -435,8 +455,8 @@ describe("health / lag / score / gauge builders", () => {
       'max(rpc_endpoint_latest_block{spec="ETH1"}) - max(rpc_endpoint_latest_block{spec="ETH1",endpoint_id="eth-lava"})',
     );
   });
-  it("chain-down is a bool comparison on the spec max", () => {
-    expect(qChainDown()).toBe("max by (spec) (rpc_endpoint_overall_health) == bool 0");
+  it("chain-down is a bool comparison on the spec min of the blocked gauge", () => {
+    expect(qChainDown()).toBe("min by (spec) (smartrouter_csm_provider_blocked) == bool 1");
   });
   it("score expressions target both scopes", () => {
     expect(qScoreExpr("composite", "ETH1", "eth-lava")).toBe(
@@ -468,6 +488,19 @@ describe("health / lag / score / gauge builders", () => {
     expect(qEndpointPolls("ok", undefined, "1d")).not.toBe(
       qEndpointPolls("failed", undefined, "1d"),
     );
+  });
+  it("polls per step per endpoint, on the availability line's rate range", () => {
+    expect(qPerEndpointPollsSeriesExpr("ok", "ETH1", "15s")).toBe(
+      'sum by (endpoint_id) (increase(rpc_endpoint_fetch_latest_success{spec="ETH1"}[1m]))',
+    );
+    expect(qPerEndpointPollsSeriesExpr("failed", "ETH1", "4h")).toBe(
+      'sum by (endpoint_id) (increase(rpc_endpoint_fetch_latest_fails{spec="ETH1"}[4h]))',
+    );
+  });
+  it("failed tries per upstream: relays minus successes, every try failed where no success was ever counted", () => {
+    const tot = 'sum by (provider_address) (rate(smartrouter_requests_total{spec="ETH1"}[1m]))';
+    const ok = 'sum by (provider_address) (rate(smartrouter_requests_success_total{spec="ETH1"}[1m]))';
+    expect(qPerUpstreamFailedRpsExpr("15s", "ETH1", "30m")).toBe(`clamp_min(${tot} - (${ok} or ${tot} * 0), 0)`);
   });
   it("consistency caught reads the FAILED counter — success = checks that passed", () => {
     expect(qConsistencyCaught("1d")).toBe(
@@ -658,18 +691,18 @@ describe("an upstream against its peers", () => {
     const q = qUpstreamFailedSeriesExpr({ spec: "ETH1", endpointId: "eth-tenderly" }, "10m");
     expect(q).toContain('spec="ETH1"');
     expect(q).toContain('provider_address="eth-tenderly"');
-    expect(q).toMatch(/^round\(clamp_min\(sum\(increase\(smartrouter_requests_total\{.*\}\[10m\]\)\) - \(sum\(increase\(smartrouter_requests_success_total\{.*\}\[10m\]\)\) or .* \* 0\), 0\)\)$/);
+    expect(q).toMatch(/^round\(clamp_min\(sum\(\(rate\(smartrouter_requests_total\{.*\}\[615s\]\) \* 600\)\) - \(sum\(\(rate\(smartrouter_requests_success_total\{.*\}\[615s\]\) \* 600\)\) or .* \* 0\), 0\)\)$/);
   });
 
   it("an upstream that never succeeded still has failed tries: no success series is no successes", () => {
     const q = qUpstreamFailedSeriesExpr({ spec: "ETH1", endpointId: "eth-dead" }, "10m");
-    const tot = 'sum(increase(smartrouter_requests_total{spec="ETH1",provider_address="eth-dead"}[10m]))';
+    const tot = 'sum((rate(smartrouter_requests_total{spec="ETH1",provider_address="eth-dead"}[615s]) * 600))';
     expect(q).toContain(`or ${tot} * 0)`);
   });
 
   it("one upstream's node-error replies per bucket read the optional family, on its own chain only", () => {
     expect(qUpstreamNodeErrorSeriesExpr({ spec: "SOLANA", endpointId: "sol-publicnode" }, "1m")).toBe(
-      'round(sum(increase(smartrouter_node_errors_total{spec="SOLANA",provider_address="sol-publicnode"}[1m])))',
+      'round(sum((rate(smartrouter_node_errors_total{spec="SOLANA",provider_address="sol-publicnode"}[75s]) * 60)))',
     );
   });
 });
@@ -723,6 +756,49 @@ describe("how a chart samples a window", () => {
   });
 });
 
+// MAG-4571: range reads ended on the current second, so no two polls asked
+// for the same window and no cache (ours or Mimir's) could answer one.
+describe("range reads end on a step boundary", () => {
+  const nows = [
+    Date.UTC(2026, 8, 28, 15, 23, 32) / 1000,
+    Date.UTC(2026, 8, 28, 15, 23, 32, 750) / 1000, // a fraction of a second
+    Date.UTC(2026, 8, 28, 16, 0) / 1000, // exactly on a boundary
+  ];
+
+  it("every window, at its own step and at its chart step: both ends on the step, the end no later than now", () => {
+    for (const w of Object.keys(WINDOWS) as (keyof typeof WINDOWS)[]) {
+      for (const stepSec of [stepSeconds(w), chartSampling(w).stepSec]) {
+        for (const now of nows) {
+          const { start, end } = alignedBounds(WINDOWS[w].rangeSeconds, stepSec, now);
+          const at = `${w} @ ${stepSec}s, now ${now}`;
+          expect(start % stepSec, at).toBe(0);
+          expect(end % stepSec, at).toBe(0);
+          expect(end, at).toBeLessThanOrEqual(now);
+          expect(now, at).toBeLessThan(end + stepSec);
+          // Every window is a whole number of both its steps.
+          expect(end - start, at).toBe(WINDOWS[w].rangeSeconds);
+        }
+      }
+    }
+  });
+
+  it("stays the same for a whole step, then moves by one", () => {
+    const at = Date.UTC(2026, 8, 28, 15, 0) / 1000;
+    const first = alignedBounds(1800, 15, at);
+    expect(alignedBounds(1800, 15, at + 14.999)).toEqual(first);
+    expect(alignedBounds(1800, 15, at + 15)).toEqual({ start: first.start + 15, end: first.end + 15 });
+    expect(first).toEqual({ start: at - 1800, end: at });
+  });
+
+  it("a range that is not a whole number of steps starts at the boundary before it", () => {
+    // 100 s at a 30 s step ends at 13:30:00 and starts at 13:28:00, not 13:28:20.
+    const now = Date.UTC(2026, 8, 28, 13, 30, 10) / 1000;
+    const { start, end } = alignedBounds(100, 30, now);
+    expect(end).toBe(Date.UTC(2026, 8, 28, 13, 30) / 1000);
+    expect(start).toBe(Date.UTC(2026, 8, 28, 13, 28) / 1000);
+  });
+});
+
 describe("grouped per-chain reads (MAG-4294)", () => {
   it("qPerSpecLatencyQuantile keeps the chain on every bucket", () => {
     expect(qPerSpecLatencyQuantile(0.5, "1h")).toBe(
@@ -733,17 +809,17 @@ describe("grouped per-chain reads (MAG-4294)", () => {
     );
   });
 
-  it("qPerSpecHealth reads the spec-labelled endpoint gauge, one row per chain", () => {
-    expect(qPerSpecHealth()).toBe("max by (spec) (rpc_endpoint_overall_health)");
-    expect(qPerSpecHealth("ETH1")).toBe('max by (spec) (rpc_endpoint_overall_health{spec="ETH1"})');
+  it("qPerSpecHealth reads the spec-labelled blocked gauge, one row per chain", () => {
+    expect(qPerSpecHealth()).toBe("1 - min by (spec) (smartrouter_csm_provider_blocked)");
+    expect(qPerSpecHealth("ETH1")).toBe('1 - min by (spec) (smartrouter_csm_provider_blocked{spec="ETH1"})');
   });
 
   it("qPerSpecClientRpsSeriesExpr is the client-scoped rate, one matrix row per chain", () => {
-    expect(qPerSpecClientRpsSeriesExpr("30s")).toBe(
-      "sum by (spec) (rate(smartrouter_end_to_end_latency_milliseconds_count[30s]))",
+    expect(qPerSpecClientRpsSeriesExpr("5m")).toBe(
+      "sum by (spec) (rate(smartrouter_end_to_end_latency_milliseconds_count[5m]))",
     );
     expect(qPerSpecClientRpsSeriesExpr("30s", "ETH1")).toBe(
-      'sum by (spec) (rate(smartrouter_end_to_end_latency_milliseconds_count{spec="ETH1"}[30s]))',
+      'sum by (spec) (rate(smartrouter_end_to_end_latency_milliseconds_count{spec="ETH1"}[1m]))',
     );
   });
 });
@@ -762,9 +838,11 @@ describe("grouped chain-level reads (MAG-4295)", () => {
       "histogram_quantile(0.95, sum by (spec, le) (rate(smartrouter_end_to_end_latency_milliseconds_bucket[1800s])))",
     );
     expect(qGroupedQos(["spec"])).toBe('avg by (spec) (rpc_endpoint_selection_score{score_type="composite"})');
-    expect(qGroupedHealth(["spec"])).toBe("max by (spec) (rpc_endpoint_overall_health)");
+    expect(qGroupedHealth(["spec"])).toBe("1 - min by (spec) (smartrouter_csm_provider_blocked)");
     expect(qGroupedLatestBlock(["spec"])).toBe("max by (spec) (smartrouter_latest_block)");
-    expect(qGroupedUpstreams(["spec"])).toBe("count by (spec, endpoint_id) (rpc_endpoint_overall_health)");
+    expect(qGroupedUpstreams(["spec"])).toBe(
+      'count by (spec, endpoint_id) (label_replace(smartrouter_csm_provider_blocked, "endpoint_id", "$1", "provider_address", "(.*)"))',
+    );
   });
 
   it("keeps the scrape-target label beside the chain for per-router rows", () => {
@@ -774,11 +852,95 @@ describe("grouped chain-level reads (MAG-4295)", () => {
     expect(qGroupedLatencyQuantile(0.95, perTarget, "30m")).toBe(
       "histogram_quantile(0.95, sum by (spec, service, le) (rate(smartrouter_end_to_end_latency_milliseconds_bucket[1800s])))",
     );
-    expect(qGroupedUpstreams(perTarget)).toBe("count by (spec, service, endpoint_id) (rpc_endpoint_overall_health)");
+    expect(qGroupedUpstreams(perTarget)).toBe(
+      'count by (spec, service, endpoint_id) (label_replace(smartrouter_csm_provider_blocked, "endpoint_id", "$1", "provider_address", "(.*)"))',
+    );
   });
 
   it("the per-spec readers are the grouped ones by spec", () => {
     expect(qPerSpecLatencyQuantile(0.5, "1h", "ETH1")).toBe(qGroupedLatencyQuantile(0.5, ["spec"], "1h", "ETH1"));
     expect(qPerSpecHealth("ETH1")).toBe(qGroupedHealth(["spec"], "ETH1"));
+  });
+});
+
+// A rate needs two samples in its range, and the store scrapes every 15 seconds:
+// a range of one 15-second step holds one.
+describe("short drawing steps", () => {
+  const ref = { endpointId: "eth-lava", spec: "ETH1" };
+
+  it("rateRange: the step itself, never less than a minute", () => {
+    expect(MIN_RATE_RANGE_SEC).toBe(60);
+    expect(rateRange("15s")).toBe("1m");
+    expect(rateRange("30s")).toBe("1m");
+    expect(rateRange("1m")).toBe("1m");
+    expect(rateRange("5m")).toBe("5m");
+    expect(rateRange("1h")).toBe("1h");
+  });
+
+  it("no series builder reads less than a minute at a short step", () => {
+    for (const step of ["15s", "30s"]) {
+      const exprs = [
+        qClientRpsSeriesExpr(step, "ETH1"),
+        qAvailabilitySeriesExpr(step, "ETH1"),
+        qErrorRateSeriesExpr(step, "ETH1"),
+        qErrorCountSeriesExpr(step, "ETH1"),
+        qRpsSeriesExpr(step, "ETH1"),
+        qLatencySeriesExpr(0.95, step, "ETH1"),
+        qPerSpecLatencySeriesExpr(0.95, step),
+        qPerSpecClientRpsSeriesExpr(step),
+        qPerUpstreamRpsExpr(step, "ETH1"),
+        qPerSpecRpsExpr(step),
+        qBackupShareExpr("ETH1", ["eth-lava"], step),
+        qEndpointLatencySeriesExpr(0.95, ref, step),
+        qUpstreamVolumeSeriesExpr(ref, step),
+        qUpstreamReadVolumeSeriesExpr(ref, step),
+        qUpstreamFailedSeriesExpr(ref, step),
+        qUpstreamNodeErrorSeriesExpr(ref, step),
+        qEndpointTipsSeriesExpr("ETH1", step),
+      ];
+      for (const e of exprs) expect(e, e).not.toMatch(/\[(15|30)s\]/);
+    }
+  });
+
+  it("a count reads m steps and one scrape, so a counter step lands in exactly m points at every phase", () => {
+    const windows = Object.keys(WINDOWS) as (keyof typeof WINDOWS)[];
+    const steps = new Set(windows.flatMap((w) => [WINDOWS[w].step, chartSampling(w).step, errorBuckets(w).step]));
+    for (const step of steps) {
+      const range = countRangeSec(step);
+      expect((range - 15) / durationSeconds(step), step).toBe(countPointsPerStep(step));
+      expect(range, step).toBeGreaterThanOrEqual(MIN_RATE_RANGE_SEC);
+    }
+    expect(["15s", "30s", "1m", "2m", "10m"].map((st) => countRangeSec(st))).toEqual([60, 75, 75, 135, 615]);
+    expect(["15s", "30s", "1m"].map((st) => countPointsPerStep(st))).toEqual([3, 2, 1]);
+  });
+
+  it("a point is the rate over its range times the step, so the points add up to the counter's delta", () => {
+    expect(qErrorCountSeriesExpr("15s")).toContain("(rate(smartrouter_requests_total[60s]) * 15)");
+    expect(qErrorCountSeriesExpr("30s")).toContain("(rate(smartrouter_requests_total[75s]) * 30)");
+    expect(qErrorCountSeriesExpr("10m")).toBe(
+      "round(clamp_min(sum((rate(smartrouter_requests_total[615s]) * 600)) - sum((rate(smartrouter_requests_success_total[615s]) * 600)), 0))",
+    );
+  });
+
+  it("rounds only where a point holds whole counts: below a minute each counter step is shared by several points", () => {
+    for (const step of ["15s", "30s"]) {
+      expect(qErrorCountSeriesExpr(step), step).not.toMatch(/^round\(/);
+      expect(qUpstreamFailedSeriesExpr(ref, step), step).not.toMatch(/^round\(/);
+      expect(qUpstreamNodeErrorSeriesExpr(ref, step), step).not.toMatch(/^round\(/);
+    }
+    for (const step of ["1m", "10m"]) {
+      expect(qErrorCountSeriesExpr(step), step).toMatch(/^round\(/);
+      expect(qUpstreamFailedSeriesExpr(ref, step), step).toMatch(/^round\(/);
+      expect(qUpstreamNodeErrorSeriesExpr(ref, step), step).toMatch(/^round\(/);
+    }
+  });
+
+  it("a single read (the error bar still filling) covers its own seconds and one scrape, never the bar before it", () => {
+    expect(countPointsPerStep("37s", true)).toBe(1);
+    expect(countRangeSec("37s", true)).toBe(52);
+    const failed = qUpstreamFailedSeriesExpr(ref, "37s", undefined, true);
+    expect(failed).toMatch(/^round\(/);
+    expect(failed).toContain('{spec="ETH1",provider_address="eth-lava"}[52s]) * 37)');
+    expect(qUpstreamNodeErrorSeriesExpr(ref, "37s", true)).toContain("[52s]) * 37)");
   });
 });

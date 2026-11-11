@@ -9,6 +9,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // deployment has accounts.
   const authEnabled = process.env.AUTH_MODE === "enabled";
   const grafanaDashboardUrl = normalizeGrafanaDashboardUrl(process.env.DASHBOARD_GRAFANA_DASHBOARD_URL);
+  const grafanaCustomerUsageDashboardUrl = normalizeGrafanaDashboardUrl(process.env.DASHBOARD_GRAFANA_CUSTOMER_USAGE_DASHBOARD_URL);
   // From this container's env, not the api's: the report button must still
   // render when the api is the thing that broke. The api has its own
   // INCIDENTS_ENABLED and refuses reports while it is off.
@@ -16,7 +17,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <AuthModeProvider enabled={authEnabled}>
       <FiltersProvider>
-        <Shell grafanaDashboardUrl={grafanaDashboardUrl} incidentsEnabled={incidentsEnabled}>{children}</Shell>
+        <Shell grafanaDashboardUrl={grafanaDashboardUrl} grafanaCustomerUsageDashboardUrl={grafanaCustomerUsageDashboardUrl} incidentsEnabled={incidentsEnabled}>{children}</Shell>
       </FiltersProvider>
     </AuthModeProvider>
   );

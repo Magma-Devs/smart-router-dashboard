@@ -2,6 +2,7 @@
   "name": "@sr/db",
   "version": "0.0.0",
   "private": true,
+  "files": ["dist", "migrations"],
   "type": "module",
   "exports": {
     ".": {
@@ -30,7 +31,7 @@
     "postgres": "^3.4.9"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.5.8",
+    "@electric-sql/pglite": "^0.5.14",
     "@types/node": "^26",
     "drizzle-kit": "^0.31.11",
     "typescript": "^6.0.3"

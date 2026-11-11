@@ -244,6 +244,12 @@ services:
       - AUTH_MODE=${AUTH_MODE:-disabled}
       - AUTH_SECRET=${AUTH_SECRET:-}
       - DATABASE_URL=${DATABASE_URL:-}
+      # The pool each api process holds and the name the database's TLS
+      # certificate must carry (see .env.example). Empty = unset = the api's
+      # defaults: 20 connections, 30 s idle, TLS as DATABASE_URL says.
+      - DB_POOL_MAX=${DB_POOL_MAX:-}
+      - DB_IDLE_TIMEOUT_S=${DB_IDLE_TIMEOUT_S:-}
+      - DB_TLS_SERVERNAME=${DB_TLS_SERVERNAME:-}
       - ADMIN_EMAIL=${ADMIN_EMAIL:-}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
       # Two-factor secrets are encrypted at rest with this, and the api refuses
@@ -315,10 +321,6 @@ services:
       # button links here (read at runtime via /api/config). Unset hides the
       # button; with the `logs` profile up, set it to http://localhost:3001.
       - DASHBOARD_GRAFANA_URL=${DASHBOARD_GRAFANA_URL:-}
-      # `true` draws the 0.28 screens (log-backed Errors + Transactions tabs,
-      # the chains drawer, ...); unset draws the 0.27 ones. Read per request
-      # by the root layout. See apps/web/src/lib/new-ui.ts.
-      - DASHBOARD_NEW_UI=${DASHBOARD_NEW_UI:-}
       # The "Report incident" button — read by the web itself, so it still
       # shows when the api is down. Set the same INCIDENTS_ENABLED as the api.
       - INCIDENTS_ENABLED=${INCIDENTS_ENABLED:-}

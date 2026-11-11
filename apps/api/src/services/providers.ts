@@ -231,7 +231,7 @@ interface Loaded {
   counts: Map<string, NodeCounts & { node: string; spec: string }>;
   unattributed: { requests: number; labels: string[] } | null;
   lat: { groups: Map<string, Map<number, number>>; sawMethod: boolean };
-  health: Map<string, number>;
+  seen: Set<string>;
   holdoffs: PromVectorSample[] | null;
   blocked: Map<string, boolean> | null;
   /** Per (node × chain); null past a day. */
@@ -460,12 +460,16 @@ export class ProvidersService {
     for (const [le, c] of from ?? []) into.set(le, (into.get(le) ?? 0) + c);
   }
 
-  /** Mean of the health gauge over the window, per (node × chain). */
-  private async health(window: MetricWindow): Promise<Map<string, number>> {
+  /**
+   * Every (node × chain) the chain tracker polled in the window - each
+   * configured upstream, backups and idle ones included, whatever the traffic.
+   * Only that it exists: an idle provider still belongs in the list.
+   */
+  private async seen(window: MetricWindow): Promise<Set<string>> {
     const rows = await this.read(
-      `avg by (endpoint_id, spec) (avg_over_time(${ENDPOINT_METRICS.overallHealth}[${countsRange(WINDOWS[window].rangeSeconds)}]))`,
+      `count by (endpoint_id, spec) (last_over_time(${ENDPOINT_METRICS.latestBlock}[${countsRange(WINDOWS[window].rangeSeconds)}]))`,
     );
-    return new Map(rows.map((s) => [key(s.metric.endpoint_id ?? "", s.metric.spec ?? ""), num(s)]));
+    return new Set(rows.map((s) => key(s.metric.endpoint_id ?? "", s.metric.spec ?? "")));
   }
 
   /**
@@ -644,28 +648,27 @@ export class ProvidersService {
     // One round, as the HeroPanel's reads (#249): every read goes out with the
     // family probes, and the probes only decide which answers count.
     const famP = this.families();
-    const [fam, { counts, unattributed }, lat, health, holdoffs, blocked, minutes] = await Promise.all([
+    const [fam, { counts, unattributed }, lat, seen, holdoffs, blocked, minutes] = await Promise.all([
       famP,
       this.nodeCounts(window, famP),
       this.buckets(window, false),
-      this.health(window),
+      this.seen(window),
       this.holdoffs(window, famP),
       this.blocked(famP),
       this.minutes(window, famP),
     ]);
-    return { fam, cfg: this.configIndex(), counts, unattributed, lat, health, holdoffs, blocked, minutes };
+    return { fam, cfg: this.configIndex(), counts, unattributed, lat, seen, holdoffs, blocked, minutes };
   }
 
   /** One row per company, blocked first, then by error rate. */
   private summaries(l: Loaded, rates: Map<string, Map<number, number>>): ProviderSummary[] {
-    const { fam, cfg, counts, lat, health, holdoffs, blocked, minutes } = l;
+    const { fam, cfg, counts, lat, seen, holdoffs, blocked, minutes } = l;
     interface Acc {
       summary: ProviderSummary;
       ok: number;
       nodeErrors: number | null;
       protocolErrors: number | null;
       buckets: Map<number, number>;
-      health: number[];
       down: number;
       traffic: number;
       limited: number;
@@ -691,7 +694,6 @@ export class ProvidersService {
             nodeErrorRate: null,
             p95Ms: null,
             rateLimitHits: fam.rateLimit ? 0 : null,
-            healthUptime: null,
             uptime: null,
             downMinutes: null,
             rateLimitedMinutes: null,
@@ -701,7 +703,6 @@ export class ProvidersService {
           nodeErrors: fam.nodeErrors ? 0 : null,
           protocolErrors: fam.protocolErrors ? 0 : null,
           buckets: new Map(),
-          health: [],
           down: 0,
           traffic: 0,
           limited: 0,
@@ -725,8 +726,6 @@ export class ProvidersService {
         acc.summary.chains.push({ spec: c.spec, role: cfg.role(c.node, c.spec) });
       }
       ProvidersService.mergeBuckets(acc.buckets, lat.groups.get(key(c.node, c.spec)));
-      const h = health.get(key(c.node, c.spec));
-      if (h !== undefined) acc.health.push(h);
       const m = minutes?.get(key(c.node, c.spec));
       if (m) {
         acc.down += m.down;
@@ -735,16 +734,15 @@ export class ProvidersService {
       }
       if (blocked?.get(key(c.node, c.spec))) acc.summary.blockedNow = true;
     }
-    // A provider with health or latency but no tries in the window (an idle
-    // backup) still belongs in the list — it is configured and polled.
-    for (const k of health.keys()) {
+    // A provider polled but with no tries in the window (an idle backup)
+    // still belongs in the list — it is configured and polled.
+    for (const k of seen) {
       const [node, spec] = k.split("\u0000") as [string, string];
       if (!looksLikeNodeName(node) || counts.has(k)) continue;
       const acc = accFor(node);
       if (!acc.summary.chains.some((ch) => ch.spec === spec)) {
         acc.summary.chains.push({ spec, role: cfg.role(node, spec) });
       }
-      acc.health.push(health.get(k)!);
     }
 
     for (const s of holdoffs ?? []) {
@@ -771,7 +769,6 @@ export class ProvidersService {
       s.nodeErrorRate = ratio(acc.nodeErrors, s.requests);
       s.protocolErrorRate = ratio(acc.protocolErrors, s.requests);
       s.p95Ms = histogramQuantile(0.95, acc.buckets);
-      s.healthUptime = acc.health.length ? acc.health.reduce((a, b) => a + b, 0) / acc.health.length : null;
       // Every chain's minute counts once, so a provider down on one chain of
       // ten is down for a tenth of its chain-minutes, not for none of them.
       s.uptime = minutes && acc.traffic > 0 ? 1 - acc.down / acc.traffic : null;
@@ -797,7 +794,7 @@ export class ProvidersService {
 
   /** One row per (node × chain), every provider's - the detail keeps one company's, the export all. */
   private chainRows(l: Loaded, upstreams: UpstreamMetrics[]): ProviderChainStats[] {
-    const { fam, cfg, counts, lat, health, holdoffs, blocked, minutes } = l;
+    const { fam, cfg, counts, lat, seen, holdoffs, blocked, minutes } = l;
     const minuteFields = (k: string) => {
       const m = minutes?.get(k);
       return {
@@ -877,14 +874,13 @@ export class ProvidersService {
         blockLag: up?.blockLag ?? null,
         behindSec: up?.behindSec ?? null,
         rateLimitHits: hits(c.node, c.spec),
-        healthUptime: health.get(k) ?? null,
         ...minuteFields(k),
         blockedNow: blocked ? (blocked.get(k) ?? false) : null,
         others: othersOn(c.spec, c.node),
       });
     }
     // Configured but idle on a chain: show it with zero tries, never drop it.
-    for (const k of health.keys()) {
+    for (const k of seen) {
       const [node, spec] = k.split("\u0000") as [string, string];
       if (!looksLikeNodeName(node) || counts.has(k)) continue;
       const up = upstreamByKey.get(k);
@@ -902,7 +898,6 @@ export class ProvidersService {
         blockLag: up?.blockLag ?? null,
         behindSec: up?.behindSec ?? null,
         rateLimitHits: hits(node, spec),
-        healthUptime: health.get(k) ?? null,
         ...minuteFields(k),
         blockedNow: blocked ? (blocked.get(k) ?? false) : null,
         others: othersOn(spec, node),

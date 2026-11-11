@@ -16,6 +16,8 @@ export default defineConfig({
       // with the client's answer cache on, a case would read the previous
       // case's answers. The cache's own tests pass an explicit TTL.
       PROMETHEUS_CACHE_TTL_MS: "0",
+      // Same for the metrics routes' snapshot; its tests pass an explicit TTL.
+      METRICS_SNAPSHOT_TTL_MS: "0",
     },
     setupFiles: ["./src/__tests__/vitest.setup.ts"],
   },

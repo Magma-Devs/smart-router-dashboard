@@ -119,6 +119,21 @@ export const IconSearch = svg(
     <line x1="21" y1="21" x2="16.65" y2="16.65" />
   </>,
 );
+/** A panel with its left side marked: the menu. The chevron says which way it goes. */
+export const IconMenuExpand = svg(
+  <>
+    <rect x="3" y="4" width="18" height="16" rx="2" />
+    <line x1="9" y1="4" x2="9" y2="20" />
+    <polyline points="13 10 15 12 13 14" />
+  </>,
+);
+export const IconMenuCollapse = svg(
+  <>
+    <rect x="3" y="4" width="18" height="16" rx="2" />
+    <line x1="9" y1="4" x2="9" y2="20" />
+    <polyline points="15 10 13 12 15 14" />
+  </>,
+);
 
 /* ── Chain brand logos ──────────────────────────────────────────────────
    Recognizable brand marks for the major chains. Each is self-colored.

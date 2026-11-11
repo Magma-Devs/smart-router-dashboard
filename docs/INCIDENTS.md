@@ -69,10 +69,11 @@ What the api sends, and what the IRM routes and templates may rely on:
 | `reporter` | `{name, email, phone, signed_in, role}` |
 | `dashboard_version` | the api's `APP_VERSION` |
 
-`title`, `message` and `reporter` are free text. A template that puts them in a
-phone call, an SMS or a Slack post repeats the reporter's words there — IRM's
-defaults read `payload.title` aloud on a call — so the integration's templates
-use `severity`, `chain` and `router_id`, which the api has validated.
+`title`, `message` and `reporter` are free text. The integration's templates
+(in `smart-router-infrastructure`) put the tenant and `title` in every
+notification's title, a call and an SMS included, and the whole `message` in
+the Slack post — escaped and in a code block, so a reporter's text is never a
+mention or a link there. The MAG ticket carries the whole report as text.
 
 ## Grouping and retries
 

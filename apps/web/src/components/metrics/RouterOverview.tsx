@@ -27,6 +27,7 @@ import { fmtComma, fmtNum } from "@/lib/format";
 import { errRateColor, uptimeColor } from "@/lib/colors";
 import { healthColor, healthLabel } from "@/lib/health";
 import { ChainDetail, type ChainDetailRow } from "./ChainDetail";
+import { LinkNotice } from "./LinkNotice";
 import { useState } from "react";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 
@@ -75,15 +76,33 @@ interface RoRow {
 
 const STATUS_RANK: Record<RoStatus, number> = { down: 0, up: 1, unknown: 2 };
 
-export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
+/** The open row and its picked tile, held in the page's URL (`?expand=&tile=`). */
+export interface RouterDrill {
+  row: string | null;
+  tile: string | null;
+}
+
+export function RouterOverview({ onChainClick, chainFilter, timeWindow, drill, linked, onDrill }: {
   onChainClick: (spec: string) => void;
   chainFilter: string | null;
   timeWindow: MetricWindow;
+  drill: RouterDrill;
+  /** The drill came from a link: a row the config no longer has is said. */
+  linked: boolean;
+  onDrill: (d: RouterDrill) => void;
 }) {
   const [net, setNet] = useState("all");
-  const [open, setOpen] = useState<string | null>(null);
+  const open = drill.row;
+  const setOpen = (row: string | null) => onDrill({ row, tile: null });
   const { scopeQ, withScope } = useFilters();
   const { data, isLoading, isValidating } = useApi<{ routers: RouterMetrics[] }>(`/api/metrics/routers-rollup?window=${timeWindow}${scopeQ}`);
+  // No rows at all (first load) vs. the previous window's rows still up while
+  // the next one loads (`keepPreviousData`): skeletons for the first, a dim
+  // table and the dot for the second.
+  const showSkeleton = isLoading && !data;
+  // A poll of the same window keeps its rows at full strength: only the dot says it's running.
+  const stale = isLoading && !!data;
+  const refreshing = isValidating || stale;
   const topo = useApi<{ routers: RouterTopology[] }>("/api/config/routers", 60000);
   // Instant gauges — no window in the key; polled on the default cadence.
   const tips = useApi<BlockHeights>(withScope("/api/metrics/block-heights"));
@@ -115,7 +134,7 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
       otherCount: Math.max(0, c.upstreamCount - 1),
       availPct, p95Ms: c.p95Ms, errPct, reqCount: c.requests, statusKind,
       tipBlock: tipBlock ?? c.latestBlock,
-      detail: { spec: c.spec, availPct, p95Ms: c.p95Ms, errPct, requests: c.requests, hasBackup: (nBackup ?? 0) > 0 },
+      detail: { spec: c.spec, routerId: t ? c.routerId : null, availPct, p95Ms: c.p95Ms, errPct, requests: c.requests },
       natural: 0,
       router: c.routerId.toLowerCase(),
       upstreams: c.upstreamCount,
@@ -143,6 +162,8 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
   const { sorted: sortedRouters, sort, onSort } = useSort<RoRow>(routers, { key: "natural", dir: "asc" });
 
   const srColor = uptimeColor;
+  // A link's row, judged once the rollup for this window has answered.
+  const rowGone = linked && open !== null && !!data && !isLoading && !base.some((r) => r.routerId === open);
   /* Labels + colours from the shared vocabulary (`lib/health.ts`), which took
      its wording from this table. */
   const statusMeta: Record<RoStatus, [string, string]> = {
@@ -152,16 +173,20 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
   };
 
   return (
+    <>
+    {rowGone && <LinkNotice>The router in this link, <strong className="gw-mono">{open}</strong>, is no longer in the config.</LinkNotice>}
     <div className="gw-card" style={{ padding: 0, overflow: "hidden", marginBottom: 14 }}>
       <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-2)", flex: 1, display: "inline-flex", alignItems: "center" }}>
           Routers · how each router performs<Tip text="**One row per router in the mounted values file** - not per chain. A chain can be served by several routers, and the config is the only place they are distinguishable: no metric series carries a router.\n\nA **shared** row means the collector reports no per-router target label, so the chain-level figures cover every router on that chain. Two such rows carry the same numbers; adding them up would count that traffic twice. Upstream counts are always the router's own.\n\n**Click a row** to expand its chain-health graphs over the selected window." />
         </div>
         {/* `keepPreviousData` means a window change re-fetches with the OLD
-            rows still on screen. The dot is the only thing that says so. */}
+            rows still on screen: `isLoading` is true for the new window while
+            `data` still holds the old one. The rows dim and the dot shows;
+            skeletons appear only when there are no rows at all. */}
         <span style={{ fontSize: 11, color: "var(--text-3)", display: "inline-flex", alignItems: "center", gap: 7 }}>
-          {isLoading ? <Skel w={62} h={9} /> : <>{routers.length} router{routers.length === 1 ? "" : "s"}</>}
-          <Refreshing show={!isLoading && isValidating} label="Refreshing routers" />
+          {showSkeleton ? <Skel w={62} h={9} /> : <>{routers.length} router{routers.length === 1 ? "" : "s"}</>}
+          <Refreshing show={refreshing} label="Refreshing routers" />
         </span>
         <div className="gw-segctl">
           {([["all", "All"], ["mainnet", "Mainnet"], ["testnet", "Testnet"]] as const).map(([f, lbl]) => (
@@ -185,14 +210,14 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
             <ThCol sortKey="status" sort={sort} onSort={onSort}>Status</ThCol>
           </tr>
         </thead>
-        <tbody>
-          {/* The rollup is the slowest read on the page — ~8 Prometheus queries per
-              router — so this table is the one that most needs to hold its shape
-              while it lands. */}
-          {isLoading && <SkelRows rows={4} cols={[
+        <tbody style={{ opacity: stale ? 0.55 : 1, transition: "opacity 0.2s" }}>
+          {/* The rollup is the slowest read on the page, so this table is the
+              one that most needs to hold its shape while it lands: one
+              skeleton row per column of the real table, only with no rows to
+              show — never beside rows from the previous window. */}
+          {showSkeleton && <SkelRows rows={4} cols={[
             { w: 150 }, { w: 56, align: "right" }, { w: 84, align: "right" }, { w: 64, align: "right" },
-            { w: 62, align: "right" }, { w: 56, align: "right" }, { w: 58, align: "right" }, { w: 36, align: "right" },
-            { w: 88 },
+            { w: 62, align: "right" }, { w: 56, align: "right" }, { w: 58, align: "right" }, { w: 88 },
           ]} />}
           {sortedRouters.map((r) => {
             const sm = statusMeta[r.statusKind];
@@ -252,7 +277,8 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
                   </span>
                 </td>
               </tr>
-              {isOpen && <tr><ChainDetail r={r.detail} onChainClick={onChainClick} win={timeWindow} /></tr>}
+              {isOpen && <tr><ChainDetail r={r.detail} onChainClick={onChainClick} win={timeWindow}
+                tile={drill.tile} onTile={(tile) => onDrill({ row: rowKey, tile })} /></tr>}
               </Fragment>
             );
           })}
@@ -263,5 +289,6 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
       </table>
       </div>
     </div>
+    </>
   );
 }

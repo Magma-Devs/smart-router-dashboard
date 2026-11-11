@@ -25,7 +25,7 @@ OUT OF SYNC`. Each line routes to one section below:
 | `chain-map: changed (N)` | name, family, interfaces or mainnet flag moved | §7 |
 | `explorers: gained / lost their explorer / explorer changed` | registry snapshot or overlay moved | §3 |
 | `no-explorer: NO explorer (N)` | new chains with nothing to link | §3 |
-| `no-runnable-defaults: NO runnable default (N)` | a (spec × iface) with no command that runs as-is | §4 |
+| `no-runnable-defaults: NO runnable default (N)` | a tier with no command that runs as-is (`SPEC/iface` = regular, `SPEC/iface/tier` = an add-on) | §4 |
 
 Whatever the lines say, §1 and §8 always apply.
 
@@ -167,9 +167,9 @@ The explorer generator prints `explorers N/M`, then `no explorer` and
 
 ## 4. New chains — runnable defaults
 
-The catalog generator prints `runnable N commands` and then every
-`(spec × iface)` with none; `no-runnable-defaults.generated.json` is the
-roll-call.
+The catalog generator prints `runnable N commands` and then every method
+list with none (`SPEC/iface` for a regular tier, `SPEC/iface/tier` for an
+add-on); `no-runnable-defaults.generated.json` is the roll-call.
 
 - **A new chain in a known family needs nothing** — hints are keyed by method
   name (`eth_*`, `chain_*`, cosmos REST paths), so it inherits them. Confirm

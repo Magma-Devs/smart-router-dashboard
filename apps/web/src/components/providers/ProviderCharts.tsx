@@ -14,9 +14,8 @@ import { useApi } from "@/hooks/use-api";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 import { fmtComma } from "@/lib/format";
 import { PMPanel } from "@/components/metrics/upstream/PMPanel";
-import {
-  barSpanWords, ChartRow, dayOf, fmtMs, gridTimes, hhmm, LegendLine, onGrid, PAD_R, PAD_X, timeTicks, type LegendRow,
-} from "@/components/metrics/upstream/PMBody";
+import { barSpanWords, dayOf, fmtMs, gridTimes, hhmm, onGrid, PAD_R, PAD_X, timeTicks } from "@/lib/chart-time";
+import { ChartRow, LegendLine, type LegendRow } from "@/components/gateway/ChartLegend";
 import type { ReportTarget } from "./report-target";
 
 const REFRESH_MS = 60_000;

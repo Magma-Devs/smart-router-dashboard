@@ -23,72 +23,20 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 import { chartSampling, WINDOWS, type ChartGrid, type MetricWindow, type TimePoint, type UpstreamDetail, type UpstreamMetrics, type UpstreamPeers } from "@sr/shared";
-import { ColumnChart, LineChart, niceScale, type ChartHover, type Layer, type Series, type XTick } from "@/components/gateway/charts";
+import { ColumnChart, LineChart, niceScale, type ChartHover, type Layer, type Series } from "@/components/gateway/charts";
 import { useApi } from "@/hooks/use-api";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 import { fmtComma } from "@/lib/format";
+import { barSpanWords, dayOf, fmtMs, gridTimes, hhmm, onGrid, PAD_R, PAD_X, timeTicks } from "@/lib/chart-time";
+import { ChartRow, LegendLine, type LegendRow } from "@/components/gateway/ChartLegend";
 import type { ErrorsJump } from "../ErrorsBreakdown";
 import { PMPanel } from "./PMPanel";
-
-/** Every chart's margins: on the left the widest axis labels' (a block
- *  height), on the right just room for the last tick - the legend sits under
- *  the chart. The four stack on one time axis, so they must share both, or
- *  the same moment lands at a different x in each. */
-export const PAD_X = 80;
-export const PAD_R = 16;
 
 /** The peers' colours; the selected upstream is always the brand colour. */
 const PEER_COLORS = ["#38bdf8", "#a78bfa", "#22c55e", "#eab308", "#ec4899", "#14b8a6", "#f97316", "#94a3b8"];
 
-/** Every point of a grid, unix seconds: the chart's time axis. */
-export function gridTimes(grid: ChartGrid | undefined): number[] {
-  if (!grid || grid.stepSec <= 0) return [];
-  const out: number[] = [];
-  for (let t = grid.start; t <= grid.end; t += grid.stepSec) out.push(t);
-  return out;
-}
-
-/** Series laid on a grid by time - NaN where one has no point there, which
- *  the chart draws as a gap. A point lands on its nearest slot. */
-export function onGrid(times: number[], grid: ChartGrid | undefined, series: TimePoint[][]): number[][] {
-  return series.map((s) => {
-    const out: number[] = new Array(times.length).fill(NaN);
-    if (!grid || !times.length) return out;
-    for (const p of s) {
-      if (p.v == null) continue;
-      const k = Math.round((p.t - grid.start) / grid.stepSec);
-      if (k >= 0 && k < out.length) out[k] = p.v;
-    }
-    return out;
-  });
-}
-
 const whenOf = (t: number | undefined) =>
   t ? new Date(t * 1000).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }) : "";
-export const dayOf = (ms: number) => new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-export const hhmm = (ms: number) => new Date(ms).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
-
-/** Tick spacings for a time axis: the clock's own, a minute to a week. */
-const TICK_STEPS = [60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600, 43200, 86400, 172800, 259200, 604800];
-
-/** Labels at round local times across [from, to] (unix seconds), seven at
- *  most: 00:00 · 06:00 · 12:00 · 18:00 across a day, a date a day across a
- *  week. The evenly spaced labels this replaced landed on 00:37 and 06:45. */
-export function timeTicks(dom: [number, number] | undefined): XTick[] | undefined {
-  if (!dom) return undefined;
-  const [from, to] = dom;
-  const span = to - from;
-  const step = TICK_STEPS.find((sec) => span / sec <= 7) ?? 604800;
-  const tz = -new Date(to * 1000).getTimezoneOffset() * 60;
-  const out: XTick[] = [];
-  for (let t = Math.ceil((from + tz) / step) * step - tz; t <= to; t += step) {
-    const d = new Date(t * 1000);
-    const midnight = d.getHours() === 0 && d.getMinutes() === 0;
-    out.push({ at: t, label: step >= 86400 || (span > 86400 && midnight) ? dayOf(t * 1000) : hhmm(t * 1000) });
-  }
-  return out;
-}
-
 
 /** The value at quantile q of some numbers (0 when there are none). */
 const quantile = (xs: number[], q: number) => {
@@ -96,63 +44,10 @@ const quantile = (xs: number[], q: number) => {
   return s.length ? s[Math.floor(q * (s.length - 1))]! : 0;
 };
 
-export const fmtMs = (v: number) => `${fmtComma(Math.round(v))} ms`;
 /** "the hour", "the 16 minutes", "the 150 seconds" - how long each point averages. */
 const spanWords = (sec: number) =>
   sec % 3600 === 0 ? (sec === 3600 ? "the hour" : `the ${sec / 3600} hours`) : sec % 60 === 0 ? `the ${sec / 60} minutes` : `the ${sec} seconds`;
 const fmtRps = (v: number) => (v === 0 ? "0" : v < 0.1 ? v.toFixed(3) : v < 10 ? v.toFixed(2) : fmtComma(Math.round(v)));
-/** "10 minutes", "an hour", "6 hours", "a day" - one bar's span. */
-export const barSpanWords = (sec: number) =>
-  sec >= 86400 ? (sec === 86400 ? "a day" : `${sec / 86400} days`) : sec >= 3600 ? (sec === 3600 ? "an hour" : `${sec / 3600} hours`) : `${sec / 60} minutes`;
-
-export interface LegendRow {
-  key: string;
-  name: string;
-  color: string;
-  /** A count beside the name (the errors legend); the line legends name their lines only. */
-  value?: string;
-  selected?: boolean;
-  /** A line for a line chart's series, a square for a bar chart's. */
-  mark?: "line" | "box";
-}
-
-/**
- * The legend under a chart, one line left to right: which line is which. The
- * values themselves are read on the chart, beside the dots under the pointer
- * (LineChart pointLabels), where the eye already is. It starts where the plot
- * starts, and pointing at a name brings its line forward.
- */
-export function LegendLine({ heading, rows, foot, onFocus }: {
-  heading?: string;
-  rows: LegendRow[];
-  foot?: ReactNode;
-  onFocus?: (key: string | null) => void;
-}) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", columnGap: 18, rowGap: 6, marginTop: 6, paddingLeft: PAD_X, paddingRight: PAD_R }}>
-      {heading && <span className="gw-mono" style={{ fontSize: 10, color: "var(--text-4)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{heading}</span>}
-      {rows.map((r) => (
-        <span key={r.key} onMouseEnter={onFocus ? () => onFocus(r.key) : undefined} onMouseLeave={onFocus ? () => onFocus(null) : undefined}
-          style={{ display: "inline-flex", alignItems: "center", gap: 7, minWidth: 0 }}>
-          <span style={{ width: r.mark === "box" ? 9 : 12, height: r.mark === "box" ? 9 : r.selected ? 3 : 2, borderRadius: r.mark === "box" ? 2 : 1, background: r.color, flexShrink: 0 }} />
-          <span className={r.mark === "box" ? undefined : "gw-mono"} style={{ fontSize: 11, color: r.selected ? "var(--text)" : "var(--text-2)", fontWeight: r.selected ? 600 : 400, whiteSpace: "nowrap" }}>{r.name}</span>
-          {r.value != null && <span className="gw-mono gw-tnum" style={{ fontSize: 12, fontWeight: 700, color: "var(--text)" }}>{r.value}</span>}
-        </span>
-      ))}
-      {foot && <span style={{ marginLeft: "auto", fontSize: 10.5, color: "var(--text-4)" }}>{foot}</span>}
-    </div>
-  );
-}
-
-/** A chart, and its legend on one line under it. */
-export function ChartRow({ height, chart, legend }: { height: number; chart: ReactNode; legend: ReactNode }) {
-  return (
-    <div>
-      <div style={{ height }}>{chart}</div>
-      {legend}
-    </div>
-  );
-}
 
 const empty = (text: string) => (
   <div style={{ height: 120, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "var(--text-4)" }}>{text}</div>
@@ -268,7 +163,7 @@ export function PMBody({ pm, detail, name, timeWindow, onOpenErrors }: {
   const barFrom = (i: number) => (errTimes[i]! - barSec) * 1000;
   const barTo = (i: number) => Math.min(errTimes[i]!, eot?.asOf ?? Infinity) * 1000;
   const barFilling = (i: number) => eot != null && errTimes[i]! > eot.asOf;
-  /* One time axis for all four: the window, ending when it was read. The
+  /* One time axis for all four: the window, ending at its newest point. The
      errors' first bar starts before it and the last is still filling, so
      both are cut at the edges - their tooltips give the whole bar. */
   const domEnd = grid?.end ?? eot?.asOf;

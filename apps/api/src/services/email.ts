@@ -53,10 +53,11 @@ let cachedClientRegion: string | null = null;
 
 function getClient(): SESv2Client | null {
   const region = process.env.AWS_REGION;
-  // AWS_REGION alone enables SES. Explicit keys are used when present (local
-  // dev, or a non-AWS host); when absent the SDK resolves credentials from the
-  // environment — an IRSA service account or an instance role — so production
-  // has no static keys to store, leak or rotate.
+  // AWS_REGION alone enables SES. Explicit keys are used when both are present:
+  // the fleet's managed deployments get a per-tenant pair, scoped to sending as
+  // the no-reply address through that tenant's configuration set; local dev
+  // and non-AWS hosts set one too. When absent the SDK resolves credentials
+  // from the environment — an IRSA service account or an instance role.
   if (!region) return null;
 
   if (cachedClient && cachedClientRegion === region) return cachedClient;

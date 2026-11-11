@@ -34,6 +34,20 @@ function mockPrometheus(): void {
         { metric: { provider_address: "eth-lava" }, values: [[1, "0.5"], [2, "0.25"]] },
       ]);
     }
+    // Traffic by provider: one chain's requests per second, per upstream.
+    if (new URL(url).pathname.endsWith("/query_range") && query.startsWith('sum by (provider_address) (rate(smartrouter_requests_total{spec="ETH1"}')) {
+      return matrix([
+        { metric: { provider_address: "eth-lava" }, values: [[1, "0.5"], [2, "0.25"]] },
+        { metric: { provider_address: "Cached" }, values: [[1, "2"], [2, "2"]] },
+      ]);
+    }
+    // Upstream timeline: failed tries and latest-block polls per upstream.
+    if (new URL(url).pathname.endsWith("/query_range") && query.startsWith("clamp_min(sum by (provider_address)")) {
+      return matrix([{ metric: { provider_address: "eth-lava" }, values: [[600, "0.5"], [1200, "0"]] }]);
+    }
+    if (new URL(url).pathname.endsWith("/query_range") && query.startsWith("sum by (endpoint_id) (increase(rpc_endpoint_fetch_latest_success")) {
+      return matrix([{ metric: { endpoint_id: "eth-lava" }, values: [[600, "0"], [1200, "1"]] }]);
+    }
     if (new URL(url).pathname.endsWith("/query_range") && query.startsWith("max by (endpoint_id) (max_over_time(rpc_endpoint_latest_block")) {
       return matrix([
         { metric: { endpoint_id: "eth-lava" }, values: [[1, "100"], [2, "101"]] },
@@ -45,7 +59,7 @@ function mockPrometheus(): void {
       result = []; // presence probes: every optional family is absent
     } else if (query.startsWith("count by (spec)")) {
       result = [{ metric: { spec: "ETH1" }, value: [1, "1"] }];
-    } else if (query.includes("== bool 0")) {
+    } else if (query.includes("== bool 1")) {
       result = []; // no chain is fully down
     } else if (query.includes("clamp_min") && query.includes("sum by (spec, provider_address)")) {
       result = [{ metric: { spec: "ETH1", provider_address: "eth-lava" }, value: [1, "3"] }];
@@ -78,8 +92,12 @@ function mockPrometheus(): void {
           value: [1, "0.9"],
         },
       ];
-    } else if (query.includes("rpc_endpoint_overall_health")) {
-      result = [{ metric: { spec: "ETH1", endpoint_id: "eth-lava" }, value: [1, "1"] }];
+    } else if (query.startsWith("1 - ") && query.includes("smartrouter_csm_provider_blocked")) {
+      // The health form of the blocked gauge: 1 while a provider is in rotation.
+      result = [{ metric: { spec: "ETH1" }, value: [1, "1"] }];
+    } else if (query.includes("smartrouter_csm_provider_blocked")) {
+      // The gauge itself, keyed by endpoint_id: 0 = serving.
+      result = [{ metric: { spec: "ETH1", endpoint_id: "eth-lava" }, value: [1, "0"] }];
     } else if (query.includes("deriv(rpc_endpoint_latest_block")) {
       result = [{ metric: { spec: "ETH1" }, value: [1, "0.1"] }]; // 0.1 blocks/sec
     } else if (query.includes("changes(rpc_endpoint_latest_block")) {
@@ -272,6 +290,21 @@ describe("api routes", () => {
     expect(body.backupShare).toBeNull();
   });
 
+  it("GET /api/metrics/upstream-mix requires spec; one series per upstream, biggest first", async () => {
+    const missing = await app.inject({ method: "GET", url: "/api/metrics/upstream-mix?window=1d" });
+    expect(missing.statusCode).toBe(400);
+
+    const res = await app.inject({ method: "GET", url: "/api/metrics/upstream-mix?spec=ETH1&window=1d" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      spec: "ETH1",
+      upstreams: [
+        { upstream: "Cached", points: [{ t: 1, v: 2 }, { t: 2, v: 2 }] },
+        { upstream: "eth-lava", points: [{ t: 1, v: 0.5 }, { t: 2, v: 0.25 }] },
+      ],
+    });
+  });
+
   it("GET /api/metrics/upstream-detail requires endpointId + spec; errors stay empty until emitted", async () => {
     const missing = await app.inject({ method: "GET", url: "/api/metrics/upstream-detail?spec=ETH1&window=1d" });
     expect(missing.statusCode).toBe(400);
@@ -310,6 +343,36 @@ describe("api routes", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("GET /api/metrics/upstream-timeline requires spec; a row per upstream, a cell per stretch of the clock", async () => {
+    const missing = await app.inject({ method: "GET", url: "/api/metrics/upstream-timeline?window=30m" });
+    expect(missing.statusCode).toBe(400);
+
+    // The clock at 1800 s: half an hour in 10-minute bars, ending at 600, 1200 and 1800.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(1_800_000);
+    let res;
+    try {
+      res = await app.inject({ method: "GET", url: "/api/metrics/upstream-timeline?spec=ETH1&window=30m" });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.grid).toEqual({ start: 600, end: 1800, stepSec: 600 });
+    expect(body.asOf).toBe(1800);
+    expect(body.spec).toBe("ETH1");
+    expect(body.available).toBe(true);
+    // The relay cache counts in the chain's tries and gets no row.
+    expect(body.upstreams.map((u: { upstream: string }) => u.upstream)).toEqual(["eth-lava"]);
+    const cells = body.upstreams[0].cells;
+    expect(cells).toHaveLength(3);
+    // Scraped but neither tried nor polled: unknown. A poll that answered: operational.
+    expect(cells[0].state).toBe("unknown");
+    expect(cells[1]).toMatchObject({ t: 1200, state: "operational", pollsOk: 1 });
+    // Bars the store didn't return are gaps, never a health.
+    expect(cells[2].state).toBeNull();
   });
 
   it("GET /api/metrics/upstream-peers requires spec; one latency and one tip series per upstream", async () => {

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "../app.js";
 import { buildErrorRows, ErrorRequestsService } from "../services/error-requests.js";
-import { readRange } from "../services/read-range.js";
+import { LOG_READ_BUDGET_BYTES, readRange, readStart, UNSIZED_READ_SPAN_MS } from "../services/read-range.js";
 import type { RouterTopology } from "@sr/shared";
 import { CANCELLED_NOTE, METHOD_REDACTED, methodOf, onChain, ownRow, parseRouterLine, requestOf, scrubUrls, UpstreamIndex, type RouterLine, type UpstreamInfo } from "../services/router-log.js";
 import type { LokiClient, LokiLine } from "../services/loki-client.js";
@@ -199,6 +199,7 @@ describe("requests that hit an error, from the router's log lines", () => {
       exhausted: false,
       totalMs: 243,
       error: null,
+      errorCode: null, // the old lines name no request-level code
     });
   });
 
@@ -277,6 +278,7 @@ describe("requests that hit an error, from the router's log lines", () => {
       exhausted: true,
       totalMs: 30272,
       error: "failed relay, insufficient results ErrMsg: " + TLS_TIMEOUT,
+      errorCode: null,
     });
   });
 
@@ -367,12 +369,14 @@ describe("ErrorRequestsService", () => {
       "direct RPC relay failed in goroutine", "[StateMachine] policy.Decide", "failed relay, insufficient results",
       "failed getting responses from RPC endpoints", "failed processing responses from RPC endpoints"];
     const loki = {
+      async labelValues() { return null; }, async volume() { return 0; },
       async queryRange(query: string, startMs: number, endMs: number, limit: number) {
         queries.push(query);
         const asked = /`"GUID":"\(([^)]*)\)"`/.exec(query)?.[1]?.split("|");
         if (asked) return lines.filter((l) => asked.some((g) => l.line.includes(`"GUID":"${g}"`)));
-        const one = /\|= `"GUID":"([^"]+)"`/.exec(query)?.[1];
-        if (one) return lines.filter((l) => l.line.includes(`"GUID":"${one}"`));
+        // A look-up: the request with that ID, or whose relay_end carries it as a hash or a caller's id.
+        const one = /\|~ `"\(GUID\|tx_hash\|request_id\)":"([^"]+)"`/.exec(query)?.[1]?.replace(/\\(.)/g, "$1");
+        if (one) return lines.filter((l) => ["GUID", "tx_hash", "request_id"].some((k) => l.line.includes(`"${k}":"${one}"`)));
         if (query.includes('|= `"event":"relay_end"`')) return []; // these routers write none
         const names = [...query.matchAll(/`([^`]*)`/g)][2]?.[1]?.split("|");
         return lines
@@ -454,7 +458,7 @@ describe("ErrorRequestsService", () => {
     const { loki, queries } = lokiStub(LINES);
     const svc = new ErrorRequestsService(loki, '{service="router"}', configSvc);
     expect((await svc.lookup("15972212763463815960", RANGE)).row).toMatchObject({ method: "getSlot", result: "recovered", retried: true });
-    expect(queries.at(-1)).toBe('{service="router"} |= `"GUID":"15972212763463815960"`');
+    expect(queries.at(-1)).toBe('{service="router"} |= `15972212763463815960` |~ `"(GUID|tx_hash|request_id)":"15972212763463815960"`');
     // Nothing failed on the way: answered, not "recovered".
     expect((await svc.lookup("13101775707732352358", RANGE)).row).toMatchObject({ method: "getSlot", result: "ok", retried: false });
     expect(await svc.lookup("999", RANGE)).toEqual({ available: true, row: null });
@@ -481,6 +485,7 @@ describe("ErrorRequestsService", () => {
     const { loki } = lokiStub(many);
     // The second batch holds the 50 oldest: 700000..700049.
     const late = {
+      async labelValues() { return null; }, async volume() { return 0; },
       queryRange: (query: string, ...rest: [number, number, number, "forward" | "backward"]) =>
         query.includes('"GUID":"(') && query.includes("|700000)") ? Promise.resolve(null) : loki.queryRange(query, ...rest),
     } as unknown as LokiClient;
@@ -492,7 +497,7 @@ describe("ErrorRequestsService", () => {
 
   it("no log store, or one that does not answer, is 'not available' - never 'no errors'", async () => {
     expect((await new ErrorRequestsService(null, '{service="router"}').report(RANGE)).available).toBe(false);
-    const down = { async queryRange() { return null; } } as unknown as LokiClient;
+    const down = { async queryRange() { return null; }, async labelValues() { return null; }, async volume() { return 0; } } as unknown as LokiClient;
     expect((await new ErrorRequestsService(down, '{service="router"}').report(RANGE)).available).toBe(false);
     const { loki } = lokiStub([]);
     expect(await new ErrorRequestsService(loki, '{service="router"}').report(RANGE)).toEqual({ available: true, rows: [], more: false, nextBefore: null, range: RANGE });
@@ -517,6 +522,127 @@ describe("readRange", () => {
   });
 });
 
+describe("readStart", () => {
+  const HOUR = 3_600_000;
+  /** A Loki whose logs weigh `perHour(t)` bytes an hour at time t, weighed to the minute. */
+  const sized = (perHour: (tMs: number) => number | null) => {
+    const asked: [number, number][] = [];
+    const loki = {
+      async labelValues() { return null; }, async volume(_s: string, a: number, b: number) {
+        asked.push([a, b]);
+        let bytes = 0;
+        for (let t = a; t < b; t += 60_000) {
+          const rate = perHour(t);
+          if (rate === null) return null;
+          bytes += (rate * Math.min(60_000, b - t)) / HOUR;
+        }
+        return bytes;
+      },
+    } as unknown as LokiClient;
+    return { loki, asked };
+  };
+  const B = LOG_READ_BUDGET_BYTES;
+
+  it("a stretch within the budget is read whole", async () => {
+    const { loki, asked } = sized(() => B / 24);
+    expect(await readStart(loki, SEL, { startMs: 0, endMs: 24 * HOUR }, 24 * HOUR)).toBe(0);
+    expect(asked).toEqual([[0, 24 * HOUR]]);
+  });
+
+  it("a heavier one is read from its newest part, sized to the budget", async () => {
+    // Four budgets a day: the newest six hours.
+    const { loki } = sized(() => B / 6);
+    expect(await readStart(loki, SEL, { startMs: 0, endMs: 24 * HOUR }, 24 * HOUR)).toBeCloseTo(18 * HOUR, 0);
+    // Read on from `before`: the stretch left is what is weighed.
+    expect(await readStart(loki, SEL, { startMs: 0, endMs: 24 * HOUR }, 12 * HOUR)).toBeCloseTo(6 * HOUR, 0);
+  });
+
+  it("a part sized from a quiet average is weighed again: the newest hours can be far heavier", async () => {
+    // Quiet for 13 days, then three times as busy - as the largest tenant grew.
+    const { loki } = sized((t) => (t < 13 * 24 * HOUR ? B / 4 : (3 * B) / 4));
+    const end = 14 * 24 * HOUR;
+    const start = await readStart(loki, SEL, { startMs: 0, endMs: end }, end);
+    const { loki: weigh } = sized((t) => (t < 13 * 24 * HOUR ? B / 4 : (3 * B) / 4));
+    expect(await weigh.volume(SEL, start, end)).toBeLessThanOrEqual(B * 1.05);
+    expect(end - start).toBeGreaterThan(HOUR);
+  });
+
+  it("however heavy, a read covers a minute", async () => {
+    const { loki } = sized(() => 1e15);
+    expect(await readStart(loki, SEL, { startMs: 0, endMs: HOUR }, HOUR)).toBe(HOUR - 60_000);
+  });
+
+  it("without a weight from Loki, a read covers half an hour", async () => {
+    const { loki } = sized(() => null);
+    expect(await readStart(loki, SEL, { startMs: 0, endMs: 24 * HOUR }, 24 * HOUR)).toBe(24 * HOUR - UNSIZED_READ_SPAN_MS);
+    expect(await readStart(loki, SEL, { startMs: 0, endMs: 10 * 60_000 }, 10 * 60_000)).toBe(0);
+  });
+
+  it("a minute or less is not weighed at all", async () => {
+    const { loki, asked } = sized(() => 1e15);
+    expect(await readStart(loki, SEL, { startMs: 0, endMs: 60_000 }, 60_000)).toBe(0);
+    expect(asked).toHaveLength(0);
+  });
+});
+
+describe("a range too heavy for one read", () => {
+  // A failed request every ten minutes over a day, on a deployment whose day
+  // weighs four budgets: the first read covers the newest six hours.
+  const HOUR = 3_600_000;
+  const lines = Array.from({ length: 144 }, (_, i) => {
+    const t = i * 600_000 + 1000;
+    const GUID = String(5000 + i);
+    return [
+      at(t, { GUID, path: "/", body: '{"jsonrpc":"2.0","id":1,"method":"eth_call"}', message: RECEIVED }),
+      at(t + 1, { GUID, endpoint: "ETH1jsonrpc", error: "no pairings available", message: "failed getting responses from RPC endpoints" }),
+    ];
+  }).flat();
+  const reads: [number, number][] = [];
+  const loki = {
+    async labelValues() { return null; }, async volume(_s: string, a: number, b: number) { return ((b - a) / (24 * HOUR)) * 4 * LOG_READ_BUDGET_BYTES; },
+    async queryRange(query: string, startMs: number, endMs: number, limit: number) {
+      if (!query.includes('"GUID":"(')) reads.push([startMs, endMs]);
+      const asked = /`"GUID":"\(([^)]*)\)"`/.exec(query)?.[1]?.split("|");
+      return lines
+        .filter((l) => (asked ? asked.some((g) => l.line.includes(`"GUID":"${g}"`)) : l.tsMs >= startMs && l.tsMs < endMs && l.line.includes("failed getting")))
+        // These routers write no relay_end.
+        .filter(() => asked || !query.includes('"event":"relay_end"'))
+        .sort((a, b) => b.tsMs - a.tsMs)
+        .slice(0, limit);
+    },
+  } as unknown as LokiClient;
+
+  it("is read in parts, newest first, and every request comes back once - by Load older", async () => {
+    reads.length = 0;
+    const svc = new ErrorRequestsService(loki, SEL);
+    const range = { startMs: 0, endMs: 24 * HOUR };
+    const first = await svc.report(range);
+    expect(first.more).toBe(true);
+    expect(first.rows).toHaveLength(36);
+    expect(reads[0]).toEqual([18 * HOUR, 24 * HOUR]);
+    // The range itself comes back unchanged: older reads pin it.
+    expect(first.range).toEqual(range);
+    const seen = new Set(first.rows.map((r) => r.guid));
+    let before = first.nextBefore!;
+    for (let n = 0; n < 10 && before != null; n++) {
+      const r = await svc.report(range, undefined, undefined, before);
+      for (const row of r.rows) seen.add(row.guid);
+      if (!r.more) break;
+      before = r.nextBefore!;
+    }
+    expect(seen.size).toBe(144);
+    // No read covered more than the budget's six hours.
+    for (const [a, b] of reads) expect(b - a).toBeLessThanOrEqual(6 * HOUR + 1);
+  });
+
+  it("an empty part still says where to read on", async () => {
+    const quiet = { ...loki, async queryRange() { return []; } } as unknown as LokiClient;
+    const r = await new ErrorRequestsService(quiet, SEL).report({ startMs: 0, endMs: 24 * HOUR });
+    expect(r).toMatchObject({ available: true, rows: [], more: true });
+    expect(r.nextBefore).toBeCloseTo(18 * HOUR, 0);
+  });
+});
+
 describe("GET /api/error-requests", () => {
   let app: FastifyInstance;
   const ns = (ls: LokiLine[]) => ls.map((l) => [String(BigInt(Math.round(l.tsMs * 1000)) * 1000n), l.line]);
@@ -524,12 +650,13 @@ describe("GET /api/error-requests", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", async (input: URL | string) => {
       const url = new URL(input.toString());
+      if (url.pathname.endsWith("/loki/api/v1/index/stats")) return Response.json({ streams: 0, chunks: 0, bytes: 0, entries: 0 });
       if (!url.pathname.endsWith("/loki/api/v1/query_range")) {
         return Response.json({ status: "success", data: { resultType: "vector", result: [] } });
       }
       const q = url.searchParams.get("query") ?? "";
       // Every line of the request asked for - by the list's batch or a look-up by ID.
-      const lines = q.includes('`"GUID":"(') || q.includes('|= `"GUID":"')
+      const lines = q.includes('`"GUID":"(') || q.includes('"(GUID|tx_hash|request_id)":"')
         ? RATE_LIMITED_THEN_OK
         : RATE_LIMITED_THEN_OK.filter((l) => l.line.includes("could not send relay") || l.line.includes("policy.Decide"));
       return Response.json({ status: "success", data: { resultType: "streams", result: [{ stream: { service: "router" }, values: ns(lines) }] } });
@@ -554,6 +681,8 @@ describe("GET /api/error-requests", () => {
     app = await buildApp();
     const bad = await app.inject({ method: "GET", url: "/api/requests/not%20an%20id" });
     expect(bad.statusCode).toBe(400);
+    expect((await app.inject({ method: "GET", url: "/api/requests/acme-req-0192?window=1d" })).statusCode).toBe(200);
+    expect((await app.inject({ method: "GET", url: "/api/requests/a%60b?window=1d" })).statusCode).toBe(400);
     const res = await app.inject({ method: "GET", url: "/api/requests/15972212763463815960?window=1d" });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ available: true, row: { guid: "15972212763463815960", method: "getSlot", resolvedBy: "sol-publicnode" } });
@@ -582,6 +711,7 @@ describe("GET /api/error-requests/count", () => {
     queries.length = 0;
     vi.stubGlobal("fetch", async (input: URL | string) => {
       const url = new URL(input.toString());
+      if (url.pathname.endsWith("/loki/api/v1/index/stats")) return Response.json({ streams: 0, chunks: 0, bytes: 0, entries: 0 });
       if (!url.pathname.endsWith("/loki/api/v1/query")) {
         return Response.json({ status: "success", data: { resultType: "streams", result: [] } });
       }
@@ -684,12 +814,48 @@ describe("a request no upstream answered", () => {
     const node = (name: string) => ({ name, endpoints: [{ interface: "jsonrpc" }] });
     const cfg = { getRouters: () => [{ id: "eth", spec: "ETH1", nodes: [node("eth-publicnode"), node("eth-tenderly")] }] } as unknown as ConfigurationService;
     const loki = {
+      async labelValues() { return null; }, async volume() { return 0; },
       async queryRange(query: string, startMs: number, endMs: number) {
         return NO_ANSWER.filter((l) => l.tsMs >= startMs && l.tsMs < endMs && (query.includes("GUID") || /failed getting|direct RPC/.test(l.line)));
       },
     } as unknown as LokiClient;
     const r = await new ErrorRequestsService(loki, SEL, cfg).report({ startMs: 0, endMs: 100_000 });
     expect(r.rows.map((x) => [x.guid, x.result])).toEqual([["303", "failed"]]);
+  });
+});
+
+describe("a write the router could not settle", () => {
+  // As the Transactions tab's fixture: both upstreams failed, then the router
+  // wrote that it can't tell whether the write went through.
+  const UNSETTLED = [
+    at(1000, { GUID: "404", path: "/", body: '{"jsonrpc":"2.0","id":1,"method":"eth_sendRawTransaction","params":["0x00"]}', message: RECEIVED }),
+    at(1001, { GUID: "404", validAddresses: "eth-mevblocker,eth-tenderly", chosenProviders: "eth-mevblocker,eth-tenderly", stateful: "1", message: "Choosing providers" }),
+    at(11_000, { GUID: "404", endpoint: "eth-mevblocker", error: "context deadline exceeded", message: "direct RPC relay failed in goroutine" }),
+    at(11_001, { GUID: "404", endpoint: "eth-tenderly", error: "connection refused", message: "direct RPC relay failed in goroutine" }),
+    at(11_002, { GUID: "404", endpoint: "ETH1jsonrpc", error: "failed relay, insufficient results", message: "failed getting responses from RPC endpoints" }),
+    at(11_003, { GUID: "404", level: "warning", write_outcome: "unknown", endpoint: "ETH1jsonrpc", message: "write outcome unknown" }),
+  ];
+
+  it("is its own result, as on the Transactions tab - not a router error", () => {
+    const [r] = rowsOf(UNSETTLED);
+    expect(r).toMatchObject({ guid: "404", result: "write-unknown", resolvedBy: null, error: "failed relay, insufficient results", spec: "ETH1" });
+    // Without the line it is the router error it looks like.
+    expect(rowsOf(UNSETTLED.slice(0, -1))[0]).toMatchObject({ result: "failed" });
+  });
+
+  it("is read back with the line that settles it", async () => {
+    const cfg = { getRouters: () => [{ id: "eth", spec: "ETH1", nodes: [nodeOf("eth-mevblocker"), nodeOf("eth-tenderly")] }] } as unknown as ConfigurationService;
+    const queries: string[] = [];
+    const loki = {
+      async queryRange(query: string, startMs: number, endMs: number) {
+        queries.push(query);
+        return UNSETTLED.filter((l) => l.tsMs >= startMs && l.tsMs < endMs && (query.includes("GUID") || /failed getting|direct RPC/.test(l.line)));
+      },
+      async labelValues() { return null; }, async volume() { return 0; },
+    } as unknown as LokiClient;
+    const r = await new ErrorRequestsService(loki, SEL, cfg).report({ startMs: 0, endMs: 100_000 });
+    expect(queries.at(-1)).toContain("write outcome unknown");
+    expect(r.rows.map((x) => [x.guid, x.result])).toEqual([["404", "write-unknown"]]);
   });
 });
 
@@ -711,6 +877,7 @@ describe("reading on with Load older", () => {
   it("lists a request whose lines sit between a kept request's first and last - one per read", async () => {
     const cfg = { getRouters: () => [{ id: "eth", spec: "ETH1", nodes: [nodeOf("eth-publicnode"), nodeOf("eth-tenderly")] }] } as unknown as ConfigurationService;
     const loki = {
+      async labelValues() { return null; }, async volume() { return 0; },
       async queryRange(query: string, startMs: number, endMs: number, limit: number) {
         const asked = /`"GUID":"\(([^)]*)\)"`/.exec(query)?.[1]?.split("|");
         if (asked) return lines.filter((l) => asked.some((g) => l.line.includes(`"GUID":"${g}"`)));
@@ -758,6 +925,13 @@ describe("which chain a request was on", () => {
     expect(onChain(row!, "BASE") && onChain(row!, "ETH1")).toBe(true);
   });
 
+  it("the router's stream settles it: the log agent labels it with the router's chain", () => {
+    const labelled = failedAt("9", "publicnode").map((l) => ({ ...l, labels: { chain: "eth1" } }));
+    const [row] = buildErrorRows(parse(labelled), index);
+    expect(row).toMatchObject({ spec: "ETH1" });
+    expect(row!.specs).toBeUndefined();
+  });
+
   it("a chain_id on a line is the chain, whatever the names say", () => {
     const lines = [...failedAt("9", "publicnode"), at(5, { GUID: "9", provider: "publicnode", chain_id: "ETH1", error_name: "X", message: "received node error reply from provider" })];
     expect(buildErrorRows(parse(lines), index)[0]).toMatchObject({ spec: "ETH1" });
@@ -765,9 +939,12 @@ describe("which chain a request was on", () => {
 });
 
 describe("the Failed requests count", () => {
-  const counter = (value: number | null) => {
+  const counter = (value: number | null, bytes: number | null = 0) => {
     const queries: string[] = [];
-    const loki = { async count(q: string) { queries.push(q); return value; } } as unknown as LokiClient;
+    const loki = {
+      async count(q: string) { queries.push(q); return value; },
+      async labelValues() { return null; }, async volume() { return bytes; },
+    } as unknown as LokiClient;
     return { loki, queries };
   };
   const cfg = {
@@ -777,6 +954,19 @@ describe("the Failed requests count", () => {
       { id: "btc", spec: "BTC", nodes: [nodeOf("c")] },
     ],
   } as unknown as ConfigurationService;
+  /** A metrics store holding the recorded counts: their age, how far back they reach, and the failures any read asks for. */
+  const store = ({ ageSec = 30, historySec = 40 * 86400, failures = 7 as number | null } = {}) => {
+    const queries: string[] = [];
+    const prom = {
+      async scalar(q: string) {
+        queries.push(q);
+        if (q.startsWith("time() - max(timestamp(")) return ageSec;
+        if (q.startsWith("time() - min(min_over_time(")) return historySec;
+        return failures;
+      },
+    };
+    return { prom, queries, counts: () => queries.filter((q) => q.startsWith("sum(sum_over_time(")) };
+  };
 
   it("a router alone on its chain is counted by that chain; one sharing it can't be told apart, and says so", async () => {
     const { loki, queries } = counter(2);
@@ -796,10 +986,14 @@ describe("the Failed requests count", () => {
   it("one read in flight per window and chain, and a failed read is kept too: a down Loki isn't asked on every poll", async () => {
     let calls = 0;
     let settle: (v: number | null) => void = () => {};
-    const loki = { count: () => { calls += 1; return new Promise<number | null>((r) => { settle = r; }); } } as unknown as LokiClient;
+    const loki = {
+      count: () => { calls += 1; return new Promise<number | null>((r) => { settle = r; }); },
+      async labelValues() { return null; }, async volume() { return 0; },
+    } as unknown as LokiClient;
     const svc = new ErrorRequestsService(loki, SEL, cfg);
     const first = svc.failedCount("1h");
     const second = svc.failedCount("1h");
+    await vi.waitFor(() => expect(calls).toBe(1));
     settle(null);
     const down = { available: false, reason: "unreachable", value: null };
     expect(await first).toEqual(down);
@@ -807,12 +1001,90 @@ describe("the Failed requests count", () => {
     expect(await svc.failedCount("1h")).toEqual(down);
     expect(calls).toBe(1);
   });
+
+  it("from the lines, a window heavier than one read may scan isn't counted - it says so, and Loki is not asked for it", async () => {
+    // 14 days of the largest tenant's router lines: about 800 GB.
+    const { loki, queries } = counter(5, 800e9);
+    expect(await new ErrorRequestsService(loki, SEL, cfg).failedCount("14d")).toEqual({ available: false, reason: "too-large", value: null });
+    expect(queries).toHaveLength(0);
+  });
+
+  it("from the lines, a Loki that can't say what the window weighs is not answering", async () => {
+    const { loki, queries } = counter(5, null);
+    expect(await new ErrorRequestsService(loki, SEL, cfg).failedCount("1h")).toEqual({ available: false, reason: "unreachable", value: null });
+    expect(queries).toHaveLength(0);
+  });
+
+  it("with fresh recorded counts, any window reads them instead of the logs", async () => {
+    const { loki, queries } = counter(5);
+    const { prom, counts } = store({ failures: 7 });
+    const svc = new ErrorRequestsService(loki, SEL, cfg, undefined, prom);
+    expect(await svc.failedCount("30d", "ETH1")).toEqual({ available: true, value: 7 });
+    expect(counts()).toEqual(['sum(sum_over_time(smartrouter_final_failures:count1m{chain="eth1"}[2592000s])) or vector(0)']);
+    // Every deployment's count: no matcher at all.
+    expect(await svc.failedCount("5m")).toEqual({ available: true, value: 7 });
+    expect(counts()[1]).toBe("sum(sum_over_time(smartrouter_final_failures:count1m{}[300s])) or vector(0)");
+    expect(queries).toHaveLength(0);
+  });
+
+  it("a router is counted on its own even on a shared chain - unless another router's id ends in its", async () => {
+    const { loki } = counter(5);
+    const { prom, counts } = store({ failures: 3 });
+    const svc = new ErrorRequestsService(loki, SEL, cfg, undefined, prom);
+    expect(await svc.failedCount("1h", undefined, "eth-a")).toEqual({ available: true, value: 3 });
+    expect(counts()[0]).toContain('{chain="eth1", service_name=~".+-eth-a"}');
+    const twins = {
+      getRouters: () => [
+        { id: "eth-a", spec: "ETH1", nodes: [nodeOf("a")] },
+        { id: "archive-eth-a", spec: "ETH1", nodes: [nodeOf("b")] },
+      ],
+    } as unknown as ConfigurationService;
+    const shared = new ErrorRequestsService(loki, SEL, twins, undefined, prom);
+    expect(await shared.failedCount("1h", undefined, "eth-a")).toEqual({ available: false, reason: "shared-chain", value: null });
+    expect(await shared.failedCount("1h", undefined, "archive-eth-a")).toEqual({ available: true, value: 3 });
+  });
+
+  it("recorded counts that start inside the window say where", async () => {
+    const { loki } = counter(5);
+    const { prom } = store({ historySec: 10 * 86400, failures: 4 });
+    const svc = new ErrorRequestsService(loki, SEL, cfg, undefined, prom);
+    const r = await svc.failedCount("30d");
+    expect(r).toMatchObject({ available: true, value: 4 });
+    expect(Date.now() - Date.parse(r.since!)).toBeGreaterThan(10 * 86400 * 1000 - 60_000);
+    // Within the hour the history is read to, a window is covered.
+    expect((await svc.failedCount("7d")).since).toBeUndefined();
+  });
+
+  it("stale recorded counts - a stopped ruler - fall back to the lines", async () => {
+    const { loki, queries } = counter(5);
+    const { prom, counts } = store({ ageSec: 900 });
+    expect(await new ErrorRequestsService(loki, SEL, cfg, undefined, prom).failedCount("1h")).toEqual({ available: true, value: 5 });
+    expect(counts()).toHaveLength(0);
+    expect(queries).toHaveLength(1);
+  });
+
+  it("a store that doesn't answer the count is not answering - never a zero", async () => {
+    const { loki } = counter(5);
+    const { prom } = store({ failures: null });
+    expect(await new ErrorRequestsService(loki, SEL, cfg, undefined, prom).failedCount("1d")).toEqual({ available: false, reason: "unreachable", value: null });
+  });
+
+  it("looks at the recorded counts' age and history once a minute, whatever is counted", async () => {
+    const { loki } = counter(5);
+    const { prom, queries } = store();
+    const svc = new ErrorRequestsService(loki, SEL, cfg, undefined, prom);
+    await svc.failedCount("1h");
+    await svc.failedCount("1d", "BTC");
+    await svc.failedCount("7d", undefined, "btc");
+    expect(queries.filter((q) => q.startsWith("time() - "))).toHaveLength(2);
+  });
 });
 
 describe("a bar's requests", () => {
   it("an upstream narrows the read to its name, and keeps the requests whose try at it failed", async () => {
     const queries: string[] = [];
     const loki = {
+      async labelValues() { return null; }, async volume() { return 0; },
       async queryRange(query: string) {
         queries.push(query);
         return PRUNED_THEN_OK;
@@ -868,6 +1140,7 @@ describe("a request no upstream could be chosen for", () => {
   ];
   /** A Loki stub that applies the query's own line filters, as regexes. */
   const realLoki = (lines: LokiLine[]) => ({
+    async labelValues() { return null; }, async volume() { return 0; },
     async queryRange(query: string, startMs: number, endMs: number, limit: number) {
       const filters = [...query.matchAll(/(\|~|!~|\|=) (`[^`]*`|"[^"]*")/g)].map(([, op, q]) => ({ op, re: op === "|=" ? null : new RegExp(q!.slice(1, -1)), text: q!.slice(1, -1) }));
       return lines
@@ -910,7 +1183,7 @@ describe("a router with a bar's upstream", () => {
 
 describe("the range a read covers", () => {
   it("comes back with the read, so older reads can ask for the same times", async () => {
-    const loki = { async queryRange() { return []; } } as unknown as LokiClient;
+    const loki = { async queryRange() { return []; }, async labelValues() { return null; }, async volume() { return 0; } } as unknown as LokiClient;
     const r = await new ErrorRequestsService(loki, SEL).report({ startMs: 1000, endMs: 5000 }, undefined, undefined, 3000);
     expect(r.range).toEqual({ startMs: 1000, endMs: 5000 });
   });

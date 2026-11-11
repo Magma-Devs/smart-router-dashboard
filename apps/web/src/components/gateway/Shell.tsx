@@ -7,9 +7,8 @@ import { signOut } from "next-auth/react";
 import { buildChainMetaByIndex } from "@sr/shared";
 import { NAV_SECTIONS, visibleNavSections } from "./nav";
 import { useAuthMode } from "./auth-mode";
-import { useNewUi } from "./new-ui";
 import { CHAIN_DRAWER_PATH, ChainDrawer, ChainDrawerProvider, useChainDrawer } from "./ChainDrawer";
-import { IconMoon, IconSun, type IconProps } from "./icons";
+import { IconMenuCollapse, IconMenuExpand, IconMoon, IconSun, type IconProps } from "./icons";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 import { DeploymentHealthBadge, useDeploymentPulse } from "./DeploymentHealth";
 import { fmtNum } from "@/lib/format";
@@ -43,73 +42,29 @@ export function ThemeToggle() {
   );
 }
 
-/**
- * The sidebar folds to its icons. Beside a page's own list - the chains on
- * Metrics, the providers on Providers - it folds on its own, so the two lists
- * don't take a third of the screen; opening it there lasts for that visit.
- * Elsewhere it is the user's choice, remembered (`sr:sidebar`).
- */
-const SIDEBAR_KEY = "sr:sidebar";
-/** Pages that put their own list beside the sidebar, besides Metrics' chains drawer. */
-const PAGE_LIST_PATHS = ["/providers"];
-/** The saved choice, read from the browser's storage; the server draws the menu open. */
-const sidebarListeners = new Set<() => void>();
-const readSidebarSaved = (): boolean => {
-  try { return localStorage.getItem(SIDEBAR_KEY) === "collapsed"; } catch { return false; /* storage blocked: stay open */ }
-};
-const subscribeSidebarSaved = (onChange: () => void) => {
-  sidebarListeners.add(onChange);
-  return () => { sidebarListeners.delete(onChange); };
-};
-const saveSidebar = (collapsed: boolean): void => {
-  try { localStorage.setItem(SIDEBAR_KEY, collapsed ? "collapsed" : "expanded"); } catch { /* storage blocked */ }
-  for (const l of sidebarListeners) l();
-};
-
-function useSidebarCollapsed(listPage: string | null): { collapsed: boolean; animate: boolean; toggle: () => void } {
-  const saved = useSyncExternalStore(subscribeSidebarSaved, readSidebarSaved, () => false);
-  const [openBesideList, setOpenBesideList] = useState(false);
-  // Another page forgets an opened menu: the next visit to a list page folds again.
-  const [lastPage, setLastPage] = useState(listPage);
-  if (lastPage !== listPage) {
-    setLastPage(listPage);
-    setOpenBesideList(false);
-  }
-  // No animation for the state a page loads in: restoring it must not shrink
-  // the menu in front of the reader (and a background tab freezes it midway).
-  // From the first frame on, every change animates, a page change included.
-  const [animate, setAnimate] = useState(false);
-  useEffect(() => {
-    const frame = requestAnimationFrame(() => setAnimate(true));
-    return () => cancelAnimationFrame(frame);
-  }, []);
-  const toggle = () => {
-    if (listPage) { setOpenBesideList((o) => !o); return; }
-    saveSidebar(!saved);
-  };
-  return { collapsed: listPage ? !openBesideList : saved, animate, toggle };
-}
-
-function Sidebar({ grafanaDashboardUrl }: { grafanaDashboardUrl?: string | null }) {
+function Sidebar({ grafanaDashboardUrl, grafanaCustomerUsageDashboardUrl }: {
+  grafanaDashboardUrl?: string | null;
+  grafanaCustomerUsageDashboardUrl?: string | null;
+}) {
   const pathname = usePathname();
-  const newUi = useNewUi();
-  const sections = visibleNavSections(useAuthMode(), grafanaDashboardUrl, newUi);
-  const drawerOpen = useChainDrawer().visible;
-  const pageList = newUi ? PAGE_LIST_PATHS.find((p) => pathname === p || pathname.startsWith(`${p}/`)) : undefined;
-  const listPage = drawerOpen ? CHAIN_DRAWER_PATH : pageList ?? null;
-  const { collapsed, animate, toggle: toggleCollapsed } = useSidebarCollapsed(listPage);
+  const sections = visibleNavSections(useAuthMode(), grafanaDashboardUrl, grafanaCustomerUsageDashboardUrl);
+  const { visible: drawerOpen, listPage, menuCollapsed: compact, setMenuCollapsed } = useChainDrawer();
   const { setChain, setRouterId, setRouter } = useFilters();
   // Home or Metrics while on Metrics: back to every chain, as the drawer's
-  // first row does. Navigating would land on the same page with the chain kept.
+  // first row does, with the menu folded again. Navigating would land on the
+  // same page with the chain kept.
   const toAllChains = drawerOpen ? (e: React.MouseEvent) => {
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     e.preventDefault();
     setRouterId(null);
     setRouter(null);
     setChain(null);
+    setMenuCollapsed(true);
   } : undefined;
   return (
-    <aside className={`gw-side${collapsed ? " gw-side--compact" : ""}${animate ? " gw-side--animate" : ""}`}>
+    // Beside a page's own list (chains, providers) the menu folds to its icons, each naming itself
+    // on hover, so the page doesn't carry two lists side by side.
+    <aside className={`gw-side${compact ? " gw-side--compact" : ""}`}>
       {/* The brand is the way home, as it is on every product: `/` redirects to
           whatever the default surface is (Metrics), so home stays defined in one
           place rather than being restated here. */}
@@ -118,7 +73,7 @@ function Sidebar({ grafanaDashboardUrl }: { grafanaDashboardUrl?: string | null 
         className="gw-side__brand"
         style={{ textDecoration: "none", color: "inherit" }}
         onClick={toAllChains}
-        title={collapsed ? "Smart Router" : undefined}
+        title={compact ? "Smart Router" : undefined}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
@@ -134,6 +89,21 @@ function Sidebar({ grafanaDashboardUrl }: { grafanaDashboardUrl?: string | null 
         </div>
       </Link>
       <nav className="gw-side__nav">
+        {listPage && (
+          <button
+            type="button"
+            className="gw-nav-item gw-side__toggle"
+            onClick={() => setMenuCollapsed(!compact)}
+            aria-label={compact ? "Expand menu" : "Collapse menu"}
+            aria-expanded={!compact}
+            title={compact ? "Expand menu" : undefined}
+          >
+            {compact
+              ? <IconMenuExpand size={16} className="ic" strokeWidth={1.75} />
+              : <IconMenuCollapse size={16} className="ic" strokeWidth={1.75} />}
+            <span>Collapse menu</span>
+          </button>
+        )}
         {sections.map((section, i) => (
           <div key={i}>
             {section.label && <div className="gw-side__section-label">{section.label}</div>}
@@ -142,13 +112,13 @@ function Sidebar({ grafanaDashboardUrl }: { grafanaDashboardUrl?: string | null 
               if (item.external) {
                 return (
                   <a
-                    key={item.href}
+                    key={item.label}
                     href={item.href}
                     className="gw-nav-item"
                     target="_blank"
                     rel="noopener noreferrer"
                     aria-label={`${item.label} (opens in a new tab)`}
-                    title={collapsed ? item.label : undefined}
+                    title={compact ? item.label : undefined}
                   >
                     <Icon size={16} className="ic" strokeWidth={1.75} />
                     <span>{item.label}</span>
@@ -162,8 +132,9 @@ function Sidebar({ grafanaDashboardUrl }: { grafanaDashboardUrl?: string | null 
                   href={item.href}
                   className={`gw-nav-item${active ? " active" : ""}`}
                   onClick={item.href === CHAIN_DRAWER_PATH ? toAllChains : undefined}
-                  title={collapsed ? item.label : undefined}
-                  aria-label={item.label}
+                  // The label is hidden while folded, and a hidden label names nothing.
+                  aria-label={compact ? item.label : undefined}
+                  title={compact ? item.label : undefined}
                 >
                   <Icon
                     size={16}
@@ -178,21 +149,6 @@ function Sidebar({ grafanaDashboardUrl }: { grafanaDashboardUrl?: string | null 
           </div>
         ))}
       </nav>
-      <button
-        type="button"
-        className="gw-nav-item gw-side__toggle"
-        onClick={toggleCollapsed}
-        aria-label={collapsed ? "Expand menu" : "Collapse menu"}
-        aria-expanded={!collapsed}
-        title={collapsed ? "Expand menu" : undefined}
-      >
-        <svg className="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-          <rect x="3" y="4" width="18" height="16" rx="2" />
-          <line x1="9" y1="4" x2="9" y2="20" />
-          <polyline points={collapsed ? "13 10 15 12 13 14" : "15 10 13 12 15 14"} />
-        </svg>
-        <span>Collapse menu</span>
-      </button>
       <SidebarUser />
     </aside>
   );
@@ -328,22 +284,21 @@ function Topbar({ here, sub, incidentsEnabled }: { here: string; sub: string | n
   );
 }
 
-export function Shell({ children, grafanaDashboardUrl, incidentsEnabled = false }: {
+export function Shell({ children, grafanaDashboardUrl, grafanaCustomerUsageDashboardUrl, incidentsEnabled = false }: {
   children: React.ReactNode;
   grafanaDashboardUrl?: string | null;
+  grafanaCustomerUsageDashboardUrl?: string | null;
   incidentsEnabled?: boolean;
 }) {
   const pathname = usePathname();
   const { chain } = useFilters();
-  const newUi = useNewUi();
 
   const here =
     NAV_SECTIONS.flatMap((s) => s.items).find(
       (i) => pathname === i.href || pathname.startsWith(`${i.href}/`),
     )?.label ?? "Overview";
-  // Metrics on one chain: the chain is the last crumb (with the chains drawer,
-  // DASHBOARD_NEW_UI; the 0.27 page names it in its own banner).
-  const sub = newUi && pathname === CHAIN_DRAWER_PATH && chain ? buildChainMetaByIndex(chain).name : null;
+  // Metrics on one chain: the chain is the last crumb (the chains drawer picks it).
+  const sub = pathname === CHAIN_DRAWER_PATH && chain ? buildChainMetaByIndex(chain).name : null;
 
   return (
     // Outside the chrome, not inside it: a blocked dashboard should not render a
@@ -353,11 +308,8 @@ export function Shell({ children, grafanaDashboardUrl, incidentsEnabled = false 
     <TwoFactorGate>
       <ChainDrawerProvider>
         <div className="gw-app">
-          <Sidebar grafanaDashboardUrl={grafanaDashboardUrl} />
+          <Sidebar grafanaDashboardUrl={grafanaDashboardUrl} grafanaCustomerUsageDashboardUrl={grafanaCustomerUsageDashboardUrl} />
           <ChainDrawerSlot />
-          {/* A page's own list beside the sidebar (Providers), put here
-              through a portal so it sits where the chains list does. */}
-          <div id={PAGE_DRAWER_SLOT_ID} style={{ display: "contents" }} />
           <div className="gw-main">
             <Topbar here={here} sub={sub} incidentsEnabled={incidentsEnabled} />
             <div className="fade-in" key={pathname}>
@@ -370,9 +322,17 @@ export function Shell({ children, grafanaDashboardUrl, incidentsEnabled = false 
   );
 }
 
-/** Where a page's own column beside the sidebar goes (see ProvidersView). */
+/** Where a list page other than Metrics puts its list beside the sidebar
+ *  (the Providers page, through a portal: its list shares the page's reads). */
 export const PAGE_DRAWER_SLOT_ID = "gw-page-drawer";
 
 function ChainDrawerSlot() {
-  return useChainDrawer().visible ? <ChainDrawer /> : null;
+  // The slot is always drawn, empty off its page: a page reads it at render,
+  // and one drawn in the same commit as the page would not be there yet.
+  return (
+    <>
+      {useChainDrawer().visible && <ChainDrawer />}
+      <div id={PAGE_DRAWER_SLOT_ID} style={{ display: "contents" }} />
+    </>
+  );
 }

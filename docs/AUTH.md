@@ -359,7 +359,7 @@ message instead.
 | Setting | Effect |
 |---|---|
 | `AWS_REGION` | **The switch.** Unset ⇒ nothing is sent and the caller is told. A `warn` line names the recipient and subject; the body, which carries a live link, is logged only under `NODE_ENV=development` |
-| `AWS_ACCESS_KEY_ID` / `SECRET` | Optional. Absent ⇒ resolved from the environment (IRSA, instance role), so production stores no static keys |
+| `AWS_ACCESS_KEY_ID` / `SECRET` | Optional. Both set ⇒ the send is signed with this pair; the fleet's managed deployments get one per tenant, scoped to sending as the no-reply address through that tenant's configuration set. Absent ⇒ resolved from the environment (IRSA, instance role) |
 | `EMAIL_FROM` | Sender; an unmonitored no-reply |
 | `EMAIL_REPLY_TO` | A monitored inbox, so a reply to a reset reaches somebody |
 | `EMAIL_CONFIGURATION_SET` | Keeps each environment's bounce reputation separate on a shared SES identity |
@@ -584,6 +584,9 @@ exercising the real flow.
 | `AUTH_MODE` | api + web | `disabled` (default) / `enabled` — must match on both |
 | `AUTH_SECRET` | api + web | HS256 signing secret, must match. `openssl rand -base64 32` |
 | `DATABASE_URL` | api | Empty in both compose files. `make up-auth` / `make dev-auth` supply `postgres://sr:dev@postgres:5432/sr_dashboard`; only read when `AUTH_MODE=enabled` |
+| `DB_POOL_MAX` | api | Connections each api process holds to Postgres (default `20`). Every authenticated request takes one for the session join, so it bounds a backend's concurrency and, summed over a deployment's backends, what the instance must admit. Refused unless a whole number ≥ 1 |
+| `DB_IDLE_TIMEOUT_S` | api | Seconds an idle pooled connection is kept before it is closed (default `30`); the next request pays for a new one. `0` keeps idle connections for the life of the process. Refused unless a whole number ≥ 0 |
+| `DB_TLS_SERVERNAME` | api | The name the server's TLS certificate must carry when `DATABASE_URL` names a local proxy instead of the database (the fleet's cloudflared sidecar on `127.0.0.1`, the TLS session ending on RDS). Set, TLS is on and the certificate must match this name whatever the URL's `sslmode` says; unset, the URL decides. Refused unless a DNS name — no scheme, port or IP address |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | api | **development-only** admin seed; ignored (with a warning) when `NODE_ENV=production` |
 | `INTERNAL_AUTH_SECRET` | api + web | Proves a caller is our own web tier, so the forwarded browser IP / User-Agent are honoured and the per-IP limit keys on the person. **Required under `AUTH_MODE=enabled`** — the api refuses to boot without it, because unset it fails silently: every session and access event records the api's own address |
 | `TRUST_PROXY` | api | How far to believe `X-Forwarded-For`. Hop count (default `1`), a comma list of proxy IPs/CIDRs, or `false` |

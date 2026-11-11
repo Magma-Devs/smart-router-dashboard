@@ -9,7 +9,7 @@
  * The event's prose (`error`, an attempt's `message`) is shown, never matched:
  * a failure is its `outcome` and `error_code`.
  */
-import type { RelayAttempt } from "@sr/shared";
+import type { CallFacts, RelayAttempt } from "@sr/shared";
 import { CANCELLED_NOTE, METHOD_REDACTED, scrubUrls, str, type RouterLine } from "./router-log.js";
 
 /** The line filter that selects the event. */
@@ -71,6 +71,7 @@ interface EventAttempt {
   upstream?: unknown;
   outcome?: unknown;
   error_code?: unknown;
+  node_code?: unknown;
   message?: unknown;
   retryable?: unknown;
   batch?: unknown;
@@ -129,6 +130,7 @@ export function attemptsOf(l: RouterLine): RelayAttempt[] {
     if (a.stale_fallback === true) note = `Sent as a fallback, no other upstream available: ${behindHead(skipOf(upstream))}.`;
     else if (shown === "cancelled") note = CANCELLED_NOTE;
     const message = str(a.message);
+    const nodeCode = num(a.node_code);
     return {
       upstream,
       batch: num(a.batch) ?? lastBatch + 1,
@@ -140,6 +142,7 @@ export function attemptsOf(l: RouterLine): RelayAttempt[] {
       note,
       atMs: Math.round(sentMs ?? 0),
       endMs: sentMs !== null && tookMs !== null ? Math.round(sentMs + tookMs) : null,
+      ...(nodeCode !== null && Number.isInteger(nodeCode) ? { nodeCode } : {}),
     };
   });
 
@@ -162,6 +165,38 @@ export function attemptsOf(l: RouterLine): RelayAttempt[] {
 
   // Batch order, a batch's passed-over upstreams before its sends; stable within each.
   return [...passedOver, ...sent].sort((a, b) => a.batch - b.batch || Number(b.outcome === "skipped") - Number(a.outcome === "skipped"));
+}
+
+/** A caller's id or project, as the router wrote it: a string, capped as the router caps it. */
+const callerText = (v: unknown): string | undefined => {
+  const s = str(v).trim();
+  return s ? (s.length > 128 ? s.slice(0, 128) : s) : undefined;
+};
+
+/** A count the router wrote: a whole number, 0 or more. */
+const whole = (v: unknown): number | undefined => {
+  const n = num(v);
+  return n !== null && Number.isInteger(n) && n >= 0 ? n : undefined;
+};
+
+/**
+ * What the event says about the call itself: the caller's project and ids,
+ * the request's and the reply's size, the block the request names and the
+ * one the router had. Each only when the event carries it - a router writes
+ * none of them before it knows them, and none at all before it learned to.
+ */
+export function callFactsOf(l: RouterLine): CallFacts {
+  const facts: CallFacts = {
+    customer: callerText(l.f.customer),
+    requestId: callerText(l.f.request_id),
+    taskId: callerText(l.f.task_id),
+    txId: callerText(l.f.tx_id),
+    requestBytes: whole(l.f.request_bytes),
+    replyBytes: whole(l.f.reply_bytes),
+    requestedBlock: whole(l.f.requested_block),
+    seenBlock: whole(l.f.seen_block),
+  };
+  return Object.fromEntries(Object.entries(facts).filter(([, v]) => v !== undefined)) as CallFacts;
 }
 
 /** The first try a node answered with an error, as the event wrote it; null when none did. */

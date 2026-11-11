@@ -7,7 +7,6 @@ import { useApi } from "@/hooks/use-api";
 import { useChainFilter, useChainOptions } from "@/hooks/use-chain-options";
 import { useRouterFilter, useRouterOptions, type RouterOptionRow } from "@/hooks/use-router-options";
 import { useFilters } from "./FiltersProvider";
-import { useNewUi } from "./new-ui";
 import { ChainBadge } from "./ChainBadge";
 import { IconSearch } from "./icons";
 import { HEALTH_COLOR, HEALTH_LABEL, HEALTH_UNKNOWN_HINT } from "@/lib/health";
@@ -16,7 +15,9 @@ import { fmtNum } from "@/lib/format";
 import { byAttention, chainHref, type DrawerChain } from "@/lib/chain-drawer";
 
 /* The chains drawer: a second column beside the sidebar on the Metrics page,
- * one row per chain with its health, requests and error rate, problems first.
+ * which folds the sidebar to its icons so the page doesn't carry two lists
+ * side by side (the sidebar's "Expand menu" opens it again, for that visit).
+ * One row per chain with its health, requests and error rate, problems first.
  * Picking a row IS the page's chain filter (`useChainFilter`), so every tab
  * follows it, and the page writes it into its URL (`useScopeInUrl`). A chain
  * that two or more routers serve lists them under it once picked - the only
@@ -25,21 +26,47 @@ import { byAttention, chainHref, type DrawerChain } from "@/lib/chain-drawer";
 
 /** The page the drawer belongs to. */
 export const CHAIN_DRAWER_PATH = "/metrics";
+/** The pages that put a list of their own beside the sidebar, which folds there:
+ *  Metrics its chains, Providers its providers (in the shell's page slot). */
+export const LIST_PAGE_PATHS = [CHAIN_DRAWER_PATH, "/providers"] as const;
 
-/** On its page, inside the Shell, under DASHBOARD_NEW_UI; the standalone page has no drawer. */
-const ChainDrawerContext = createContext(false);
+export interface ChainDrawerState {
+  /** On its page, inside the Shell (then the page drops its chain and router
+   *  dropdowns); the standalone page has no drawer. */
+  visible: boolean;
+  /** A page with its own list beside the sidebar (`LIST_PAGE_PATHS`): the menu folds there. */
+  listPage: boolean;
+  /** The sidebar is folded to its icons beside the list. Always false off a list page. */
+  menuCollapsed: boolean;
+  setMenuCollapsed: (collapsed: boolean) => void;
+}
+
+const ChainDrawerContext = createContext<ChainDrawerState>({
+  visible: false, listPage: false, menuCollapsed: false, setMenuCollapsed: () => {},
+});
 
 export function ChainDrawerProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  // Without the flag the page is 0.27's, which picks its chain from a dropdown.
-  const newUi = useNewUi();
-  const onPage = newUi && (pathname === CHAIN_DRAWER_PATH || pathname.startsWith(`${CHAIN_DRAWER_PATH}/`));
-  return <ChainDrawerContext.Provider value={onPage}>{children}</ChainDrawerContext.Provider>;
+  const under = (path: string) => pathname === path || pathname.startsWith(`${path}/`);
+  const onPage = under(CHAIN_DRAWER_PATH);
+  const listPage = LIST_PAGE_PATHS.find(under) ?? null;
+  // Folded each time a list page is reached, one from the other included;
+  // opening it lasts for that visit.
+  const [collapsed, setCollapsed] = useState(true);
+  const [wasOn, setWasOn] = useState(listPage);
+  if (wasOn !== listPage) {
+    setWasOn(listPage);
+    if (listPage) setCollapsed(true);
+  }
+  const value = useMemo(
+    () => ({ visible: onPage, listPage: listPage !== null, menuCollapsed: listPage !== null && collapsed, setMenuCollapsed: setCollapsed }),
+    [onPage, listPage, collapsed],
+  );
+  return <ChainDrawerContext.Provider value={value}>{children}</ChainDrawerContext.Provider>;
 }
 
-/** Whether the chains drawer is on screen (then the page drops its chain and router dropdowns). */
-export function useChainDrawer(): { visible: boolean } {
-  return { visible: useContext(ChainDrawerContext) };
+export function useChainDrawer(): ChainDrawerState {
+  return useContext(ChainDrawerContext);
 }
 
 export function ChainDrawer() {
@@ -175,7 +202,7 @@ export function ChainDrawer() {
         ))}
         {q && shown.length === 0 && <div className="gw-chains__empty">No chain matches &ldquo;{query}&rdquo;.</div>}
       </nav>
-      <div className="gw-chains__foot">Last {WINDOWS[timeWindow].label} · problems first</div>
+      <div className="gw-chains__foot">Last {WINDOWS[timeWindow].label}</div>
     </aside>
   );
 }

@@ -16,6 +16,11 @@
         "name": "Routescan",
         "url": "https://ethereum.routescan.io",
         "standard": "EIP3091"
+      },
+      {
+        "name": "Codex Scan",
+        "url": "https://scan.codex.io/eth",
+        "standard": "EIP3091"
       }
     ],
     "9": [
@@ -554,11 +559,6 @@
     ],
     "4663": [
       {
-        "name": "robinscan",
-        "url": "https://robinscan.io",
-        "standard": "EIP3091"
-      },
-      {
         "name": "blockscout",
         "url": "https://robinhoodchain.blockscout.com",
         "standard": "EIP3091"
@@ -642,6 +642,11 @@
       {
         "name": "basescout",
         "url": "https://base.blockscout.com",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "Codex Scan",
+        "url": "https://scan.codex.io/base",
         "standard": "EIP3091"
       }
     ],
@@ -894,11 +899,6 @@
         "name": "Blockscout",
         "url": "https://explorer.linea.build",
         "standard": "EIP3091"
-      },
-      {
-        "name": "L2scan",
-        "url": "https://linea.l2scan.co",
-        "standard": "EIP3091"
       }
     ],
     "60808": [
@@ -1062,6 +1062,30 @@
         "standard": "EIP3091"
       }
     ],
+    "737373": [
+      {
+        "name": "bokutoscan",
+        "url": "https://bokuto.katanascan.com",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "bokuto explorer",
+        "url": "https://explorer-bokuto.katanarpc.com",
+        "standard": "EIP3091"
+      }
+    ],
+    "747474": [
+      {
+        "name": "katanascan",
+        "url": "https://katanascan.com",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "katana explorer",
+        "url": "https://explorer.katanarpc.com",
+        "standard": "EIP3091"
+      }
+    ],
     "763373": [
       {
         "name": "Ink Sepolia Explorer",
@@ -1092,8 +1116,8 @@
     ],
     "5042002": [
       {
-        "name": "Arcscan",
-        "url": "https://testnet.arcscan.app",
+        "name": "Arc Explorer",
+        "url": "https://explorer.testnet.arc.io",
         "standard": "EIP3091"
       }
     ],

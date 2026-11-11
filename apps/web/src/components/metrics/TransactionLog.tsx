@@ -4,37 +4,46 @@
  * chain and method, every upstream it went to and what each answered, whose
  * reply went back, how long that took, and how it ended. Live data:
  * /api/transactions, which rebuilds each transaction from the router's own
- * log lines in Loki - Prometheus holds totals, never one request. Two filters
- * narrow the rows: the method and the error type. The tab follows the page's
+ * log lines in Loki - Prometheus holds totals, never one request. Five filters
+ * narrow the rows: the result, the customer, the method, the error type and
+ * an upstream it went to. A transaction's hash links to the chain's explorer
+ * where its transaction page is known. The tab follows the page's
  * window or exact times picked here - the cards too, since they count the
- * list - and "Load older" reads on past one read's cap. The chips and
+ * list - and "Load older" reads on past one read's cap. Between the cards and
+ * the list, the window's transactions over time (TransactionsChart). The chips and
  * details are shared with the Errors tab's request list (request-log.tsx).
  * Value and finality are not here yet: the logs cut long transactions short,
  * and finality needs the chain. */
 
-import { Fragment, useMemo, useState } from "react";
-import { WINDOWS, type MetricWindow, type TransactionLookup, type TransactionsReport, type TxLogRow } from "@sr/shared";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { WINDOWS, explainRouterError, type MetricWindow, type TransactionLookup, type TransactionsReport, type TxLogRow } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { useLogReads } from "@/hooks/use-log-reads";
 import { useRouterFilter } from "@/hooks/use-router-options";
 import { Refreshing, SkelLine, SkelRows, SkelValue } from "@/components/gateway/Skel";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { Tip } from "@/components/gateway/Tip";
-import { CopyButton } from "@/components/gateway/CopyButton";
 import { TT } from "@/lib/tooltips";
-import { errorDocsUrl } from "@/lib/error-docs";
 import { fmtComma, fmtPct } from "@/lib/format";
+import { linkRequest, requestFromUrl } from "@/lib/request-in-url";
 import {
   AppGot,
   appGot,
-  AttemptList,
-  DetailLine,
-  detailText,
+  customerOptions,
+  hasCustomer,
+  LOOKUP_REFUSED,
+  MatchesNote,
+  TxHash,
   errorTypeOptions,
+  FilterSelect,
+  NewRowsStrip,
+  useHeldRows,
+  WhenCell,
+  stickyListHeader,
+  useListHeadHeight,
   filterSelectStyle,
   Flow,
   fmtTook,
-  fmtWhen,
   hasErrorType,
   IdSearch,
   LOG_SKEL_COLS,
@@ -46,6 +55,7 @@ import {
   ReadingStrip,
   TimeRangeControl,
   chainWords,
+  chainsTitle,
   onRowKey,
   rangeIsLive,
   unreadableWords,
@@ -53,9 +63,14 @@ import {
   type ExactRange,
   ResponseSource,
 } from "./request-log";
+import { TransactionsChart, TX_RESULT } from "./TransactionsChart";
+import { RequestBreakdown, type BreakdownProps, type FinalAnswer } from "./request-breakdown";
 
 const PER_PAGE = 25;
 const ALL = "all";
+
+/** The filter row's dropdowns: capped, so a long name can't push the row onto two lines. */
+const narrowSelect: React.CSSProperties = { ...filterSelectStyle, maxWidth: 200 };
 
 /** The cards' numbers over the rows loaded so far - every read appended, each
  *  transaction once. `unknown` counts in the total but not in the rate: its
@@ -65,43 +80,45 @@ function summarize(rows: TxLogRow[]) {
   const accepted = count("accepted");
   const rejected = count("rejected");
   const failed = count("failed");
-  const decided = accepted + rejected + failed;
-  return { total: rows.length, accepted, rejected, failed, successRate: decided > 0 ? accepted / decided : null };
+  const failedOnChain = count("failed-on-chain");
+  const decided = accepted + rejected + failed + failedOnChain;
+  return { total: rows.length, accepted, rejected, failed, failedOnChain, successRate: decided > 0 ? accepted / decided : null };
 }
 
-const OUTCOME: Record<TxLogRow["outcome"], { label: string; color: string }> = {
-  accepted: { label: "Accepted", color: "var(--ok)" },
-  rejected: { label: "Rejected", color: "var(--err)" },
-  failed: { label: "Router error", color: "var(--err)" },
-  unknown: { label: "Unknown", color: "var(--text-4)" },
-};
+/** The list's results, as the chart above it draws them. */
+const OUTCOME: Record<TxLogRow["outcome"], { label: string; color: string }> = TX_RESULT;
+const OUTCOME_ORDER: TxLogRow["outcome"][] = ["accepted", "rejected", "failed-on-chain", "failed", "unknown"];
 
 /** Every upstream's answer in full, when a row is opened. A rejection is the
  *  answering upstream's own error, so it shows on that upstream's line. */
+/** The response's status for a transaction: the word, its colour, and a detail where the code doesn't carry one. */
+export function txStatusOf(r: TxLogRow): BreakdownProps["status"] {
+  switch (r.outcome) {
+    case "accepted": return { label: "Accepted", color: "var(--ok)" };
+    case "rejected": return { label: "Rejected", color: "var(--err)" };
+    case "failed-on-chain": return { label: "Failed on chain", color: "var(--err)" };
+    case "failed": return { label: "Error", color: "var(--err)", detail: null };
+    case "unknown": return { label: "Unknown", color: "var(--text-3)", detail: "Outcome not confirmed" };
+  }
+}
+
+/** An opened row: the transaction, every provider it went to, and the response to the client, in plain words. */
 function Details({ row }: { row: TxLogRow }) {
+  const replied = row.attempts.find((a) => a.replied);
+  const final: FinalAnswer =
+    row.outcome === "failed" ? { from: "router", code: row.error?.code ?? null }
+      : replied ? { from: "provider", attempt: replied, code: row.error?.code ?? null }
+        : null;
+  const known = row.error ? explainRouterError(row.error.code) : null;
+  const extra: { label: string; value: React.ReactNode }[] = [];
+  if (row.outcome === "failed-on-chain" && row.txError) extra.push({ label: "Chain error", value: <span className="gw-mono" style={{ wordBreak: "break-word" }}>{row.txError}</span> });
+  if (row.note) extra.push({ label: "Note", value: row.note });
+  if (row.txHash) extra.push({ label: "Hash", value: <TxHash hash={row.txHash} spec={row.spec} full /> });
+  if (row.outcome === "unknown" && !known) extra.push({ label: "Next step", value: "Check the chain before sending it again." });
   return (
-    <div style={{ display: "grid", gap: 10, padding: "4px 4px 8px" }}>
-      <AttemptList attempts={row.attempts} />
-      {row.note && (
-        <DetailLine>
-          <div style={{ fontSize: 12, color: "var(--text-3)", lineHeight: 1.5 }}>
-            <span style={{ color: "var(--text-2)" }}>Why the result is unknown: </span>{row.note}
-          </div>
-        </DetailLine>
-      )}
-      {row.outcome === "failed" && row.error && (
-        <DetailLine at={row.replyMs != null ? `+${fmtComma(row.replyMs)} ms` : ""}>
-          <div style={{ fontSize: 12, color: "var(--err)" }}>
-            Router error returned to the client ·{" "}
-            <a className="gw-mono" href={errorDocsUrl(row.error.code)} target="_blank" rel="noopener noreferrer" style={{ color: "var(--text-3)" }}>{row.error.code}</a>
-          </div>
-          <div className="gw-mono" style={detailText}>{row.error.message}</div>
-        </DetailLine>
-      )}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11.5, color: "var(--text-4)" }}>
-        Request ID <span className="gw-mono" style={{ color: "var(--text-3)" }}>{row.guid}</span> <CopyButton text={row.guid} />
-      </div>
-    </div>
+    <RequestBreakdown spec={row.spec} chain={chainWords(row)} chainTitle={chainsTitle(row)} method={row.method === "unknown" ? "method not in the logs" : row.method}
+      time={row.time} guid={row.guid} tookMs={row.replyMs} facts={row} attempts={row.attempts}
+      final={final} status={txStatusOf(row)} isWrite extra={extra} />
   );
 }
 
@@ -112,28 +129,21 @@ function TxLookupPanel({ id, rangeQ, rangeWords, onClose }: { id: string; rangeQ
   const row = data?.row ?? null;
   const o = row ? OUTCOME[row.outcome] : null;
   return (
-    <LookupFrame id={id} onClose={onClose}
+    <LookupFrame id={id} found={row?.guid} onClose={onClose}
       tag={o && <span className="gw-tag" style={{ fontSize: 10, color: o.color, borderColor: "currentColor" }}>{o.label}</span>}>
       {isLoading ? (
         <SkelLine w="50%" />
       ) : error && !data ? (
-        <div style={{ color: "var(--text-4)" }}>Couldn&apos;t look this up: it isn&apos;t an ID the router writes (letters, digits, - and _), or the API didn&apos;t answer.</div>
+        <div style={{ color: "var(--text-4)" }}>{LOOKUP_REFUSED}</div>
       ) : data && !data.available ? (
         <div style={{ color: "var(--text-4)" }}>{unreadableWords(data.reason)}</div>
       ) : data?.found && !row ? (
         <div style={{ color: "var(--text-4)" }}>This request is in the router&apos;s logs, but it isn&apos;t a transaction - look it up on the Errors tab.</div>
       ) : !row ? (
-        <NotFound rangeWords={rangeWords} wide={wide} onWiden={() => setWide(true)} />
+        <NotFound id={id} rangeWords={rangeWords} wide={wide} onWiden={() => setWide(true)} />
       ) : (
         <div style={{ display: "grid", gap: 8 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--text-2)", flexWrap: "wrap" }}>
-            <span className="gw-mono gw-tnum">{fmtWhen(row.time)}</span>
-            {row.spec ? <><ChainBadge spec={row.spec} size={14} /><span>{chainWords(row)}</span></> : row.specs && <span>{chainWords(row)}</span>}
-            <span className="gw-mono" style={{ color: "var(--text-3)" }}>{row.method === "unknown" ? "method not in the logs" : row.method}</span>
-            <span style={{ color: "var(--text-4)" }}>responded in {fmtTook(row.replyMs)}</span>
-          </div>
-          <Flow attempts={row.attempts} replyColor={OUTCOME[row.outcome].color} />
-          <AppGot text={appGot({ result: row.outcome, attempts: row.attempts, error: row.error?.message ?? null })} />
+          <MatchesNote matches={data?.matches} />
           <Details row={row} />
         </div>
       )}
@@ -141,29 +151,71 @@ function TxLookupPanel({ id, rangeQ, rangeWords, onClose }: { id: string; rangeQ
   );
 }
 
+/** How much of the window the reads on screen cover, in words: "12 minutes", "3 hours". */
+function readSpan(endMs: number | undefined, fromMs: number | null): string {
+  if (endMs == null || fromMs == null) return "part";
+  const min = Math.max(1, Math.round((endMs - fromMs) / 60_000));
+  return min < 120 ? `${min} minute${min === 1 ? "" : "s"}` : `${Math.round(min / 60)} hours`;
+}
+
 export function TransactionLog({ chainFilter, win }: { chainFilter: string | null; win: MetricWindow }) {
+  const [outcome, setOutcome] = useState<TxLogRow["outcome"] | typeof ALL>(ALL);
+  const [customer, setCustomer] = useState(ALL);
   const [method, setMethod] = useState(ALL);
   const [errType, setErrType] = useState(ALL);
+  const [upstream, setUpstream] = useState(ALL);
   const [open, setOpen] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const [range, setRange] = useState<ExactRange | null>(null);
   // A picked range that has closed can't change: read it once, don't poll it.
   const [live, setLive] = useState(true);
-  const [lookupId, setLookupId] = useState<string | null>(null);
+  // A request named in the URL opens looked up.
+  const [lookupId, setLookupId] = useState<string | null>(requestFromUrl);
+  // Back / Forward: the look-up follows the URL.
+  useEffect(() => {
+    const onPop = () => setLookupId(requestFromUrl());
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+  // The URL names the request last opened or found that is still in view.
+  const find = (id: string | null) => { setLookupId(id); linkRequest(id ?? open); };
+  const toggleRow = (guid: string) => { const next = open === guid ? null : guid; setOpen(next); linkRequest(next ?? lookupId); };
 
   const specQ = chainFilter ? `&spec=${encodeURIComponent(chainFilter)}` : "";
   // Rows are matched to a config router by the upstreams they went to.
   const { routerIdQ } = useRouterFilter();
+
+  // Another chain or router is another list: what was open on the last one closes.
+  const scopeKey = `${chainFilter ?? ""}|${routerIdQ}`;
+  const [shownScope, setShownScope] = useState(scopeKey);
+  if (shownScope !== scopeKey) { setShownScope(scopeKey); setOpen(null); setLookupId(null); setPage(0); }
+  useEffect(() => { if (!open && !lookupId) linkRequest(null); }, [scopeKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const rangeQ = range ? `from=${Math.round(range.from)}&to=${Math.round(range.to)}` : `window=${win}`;
-  const log = useLogReads<TxLogRow, TransactionsReport>(`/api/transactions?${rangeQ}${specQ}${routerIdQ}`, live ? 15_000 : 0);
+  const log = useLogReads<TxLogRow, TransactionsReport>(`/api/transactions?${rangeQ}${specQ}${routerIdQ}`, live);
   const data = log.head;
   const isLoading = log.first.isLoading;
-  const allRows = log.rows;
+  const held = useHeldRows(log.rows, open);
+  const [headRef, headVar] = useListHeadHeight();
+  const allRows = held.rows;
   const sum = useMemo(() => summarize(allRows), [allRows]);
   const when = range ? "in the times you picked" : `in the last ${WINDOWS[win].label}`;
   const methods = useMemo(() => [...new Set(allRows.map((r) => r.method))].sort(), [allRows]);
   const errTypes = useMemo(() => errorTypeOptions(allRows), [allRows]);
-  const rows = allRows.filter((r) => (method === ALL || r.method === method) && (errType === ALL || hasErrorType(r, errType)));
+  // The upstreams the transactions went to, each with its count of transactions.
+  const upstreams = useMemo(() => {
+    const n = new Map<string, number>();
+    for (const r of allRows) for (const u of new Set(r.attempts.map((a) => a.upstream))) n.set(u, (n.get(u) ?? 0) + 1);
+    return [...n].sort(([a], [b]) => (a < b ? -1 : 1)).map(([name, count]) => ({ name, count }));
+  }, [allRows]);
+  // The result options count within the other filters, so a number is what picking it would list.
+  const customers = useMemo(() => customerOptions(allRows), [allRows]);
+  const byOthers = allRows.filter((r) =>
+    (customer === ALL || hasCustomer(r, customer)) &&
+    (method === ALL || r.method === method) &&
+    (errType === ALL || hasErrorType(r, errType)) &&
+    (upstream === ALL || r.attempts.some((a) => a.upstream === upstream)));
+  const rows = outcome === ALL ? byOthers : byOthers.filter((r) => r.outcome === outcome);
+  const reset = <T,>(set: (v: T) => void) => (v: T) => { set(v); setPage(0); };
   const pageCount = Math.max(1, Math.ceil(rows.length / PER_PAGE));
   const curPage = Math.min(page, pageCount - 1);
   const pageRows = rows.slice(curPage * PER_PAGE, (curPage + 1) * PER_PAGE);
@@ -202,12 +254,15 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
   }
 
   const kpis: { label: string; tipKey: string; value: string; sub: React.ReactNode }[] = [
-    { label: "Transactions", tipKey: "txTotal", value: fmtComma(sum.total) + (log.more ? "+" : ""),
-      sub: log.more ? <>the latest {fmtComma(sum.total)} {when} - load older ones below</> : <>sent through the router {when}</> },
+    { label: "Transactions", tipKey: "txTotal", value: fmtComma(sum.total),
+      // Not the whole window yet: say how much of it the count covers, never a bare "0+".
+      sub: log.more
+        ? <>in the newest {readSpan(data?.range?.endMs, log.readFrom)} of the window - load older ones below</>
+        : <>sent through the router {when}</> },
     { label: "Success rate", tipKey: "txSuccessRate", value: fmtPct(sum.successRate, 1),
       sub: <>{fmtComma(sum.accepted)} accepted by an upstream</> },
-    { label: "Failed", tipKey: "txFailed", value: fmtComma(sum.rejected + sum.failed),
-      sub: <>{fmtComma(sum.rejected)} rejected by the node · {fmtComma(sum.failed)} router error{sum.failed === 1 ? "" : "s"}</> },
+    { label: "Failed", tipKey: "txFailed", value: fmtComma(sum.rejected + sum.failed + sum.failedOnChain),
+      sub: <>{fmtComma(sum.rejected)} rejected by the node{sum.failedOnChain ? <> · {fmtComma(sum.failedOnChain)} failed on chain</> : null} · {fmtComma(sum.failed)} router error{sum.failed === 1 ? "" : "s"}</> },
   ];
 
   return (
@@ -230,38 +285,57 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
         ))}
       </div>
 
-      <div className="gw-card" style={{ padding: 0, overflow: "hidden" }}>
-        <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+      <TransactionsChart win={win} specQ={specQ} routerIdQ={routerIdQ} exactRange={range !== null} />
+
+      <div className="gw-card gw-log-card" style={{ padding: 0, overflow: "clip", ...headVar }}>
+        <div ref={headRef} style={stickyListHeader}>
           <span style={{ display: "inline-flex", alignItems: "center", fontSize: 12, fontWeight: 600, color: "var(--text-2)" }}>
             Transactions<Tip text={TT.txLog!} />
             {data && <span style={{ fontWeight: 400, color: "var(--text-4)", marginLeft: 8 }}>{fmtComma(rows.length)}{rows.length !== allRows.length ? ` of ${fmtComma(allRows.length)}` : ""}</span>}
             <span style={{ marginLeft: 8, display: "inline-flex" }}><Refreshing show={log.refreshing} label="Reading newer transactions" /></span>
           </span>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <IdSearch onFind={setLookupId} />
-            <select aria-label="Method" value={method} onChange={(e) => { setMethod(e.target.value); setPage(0); }} style={filterSelectStyle} disabled={!methods.length}>
+          {/* Narrowing it down, and finding one transaction. */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <FilterSelect aria-label="Result" value={outcome} onChange={(e) => reset(setOutcome)(e.target.value as TxLogRow["outcome"] | typeof ALL)} style={narrowSelect} disabled={!allRows.length && outcome === ALL}>
+              <option value={ALL}>All results</option>
+              {/* No counts before the first read lands: a 0 there would be a claim. */}
+              {OUTCOME_ORDER.map((o) => <option key={o} value={o}>{OUTCOME[o].label}{data ? ` (${fmtComma(byOthers.filter((r) => r.outcome === o).length)})` : ""}</option>)}
+            </FilterSelect>
+            <FilterSelect aria-label="Customer" value={customer} onChange={(e) => reset(setCustomer)(e.target.value)} style={narrowSelect} disabled={!customers.length && customer === ALL}>
+              <option value={ALL}>All customers</option>
+              {customers.map((c) => <option key={c.key} value={c.key}>{c.label} ({fmtComma(c.count)})</option>)}
+            </FilterSelect>
+            <FilterSelect aria-label="Method" value={method} onChange={(e) => reset(setMethod)(e.target.value)} style={narrowSelect} disabled={!methods.length}>
               <option value={ALL}>All methods</option>
               {methods.map((m) => <option key={m} value={m}>{m === "unknown" ? "method not in the logs" : m}</option>)}
-            </select>
-            <select aria-label="Error type" value={errType} onChange={(e) => { setErrType(e.target.value); setPage(0); }} style={filterSelectStyle} disabled={!errTypes.length}>
+            </FilterSelect>
+            <FilterSelect aria-label="Error type" value={errType} onChange={(e) => reset(setErrType)(e.target.value)} style={narrowSelect} disabled={!errTypes.length}>
               <option value={ALL}>All error types</option>
               {errTypes.map((t) => <option key={t.key} value={t.key}>{t.label} ({fmtComma(t.count)})</option>)}
-            </select>
+            </FilterSelect>
+            <FilterSelect aria-label="Upstream" value={upstream} onChange={(e) => reset(setUpstream)(e.target.value)} style={narrowSelect} disabled={!upstreams.length && upstream === ALL}>
+              <option value={ALL}>All upstreams</option>
+              {upstream !== ALL && !upstreams.some((u) => u.name === upstream) && <option value={upstream}>{upstream}</option>}
+              {upstreams.map((u) => <option key={u.name} value={u.name}>{u.name} ({fmtComma(u.count)})</option>)}
+            </FilterSelect>
+            <span style={{ flex: 1 }} />
+            <IdSearch onFind={find} />
           </div>
         </div>
         {lookupId && (
           <TxLookupPanel key={lookupId + rangeQ} id={lookupId} rangeQ={rangeQ} rangeWords={range ? "of the times you picked" : `of the last ${WINDOWS[win].label}`}
-            onClose={() => setLookupId(null)} />
+            onClose={() => find(null)} />
         )}
         <ReadingStrip show={isLoading} rangeWords={when} />
         <UnreadStrip count={log.unread} noun="transaction" bound={!!chainFilter || !!routerIdQ} covers="the list and the numbers above" />
-        {log.more && (
+        {log.more && allRows.length > 0 && (
           <LogStrip>
             The latest {fmtComma(allRows.length)} transactions {when} - the numbers above cover these. Load older ones at the bottom.
           </LogStrip>
         )}
+        <NewRowsStrip count={held.newCount} noun="transaction" onShow={held.showNew} />
         {/* Below 860px the columns would overlap: scroll sideways instead. */}
-        <div style={{ overflowX: "auto" }}>
+        <div className="gw-log-scroll">
           <table className="gw-table" style={{ tableLayout: "fixed", width: "100%", minWidth: 860 }}>
             <colgroup>
               <col style={{ width: 150 }} />
@@ -272,7 +346,7 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
             </colgroup>
             <thead>
               <tr>
-                <th>Time sent</th>
+                <th>Time · customer</th>
                 <th>Chain · method</th>
                 <th>Sent to</th>
                 <th>Result</th>
@@ -284,19 +358,23 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
               {pageRows.map((r) => {
                 const o = OUTCOME[r.outcome];
                 const isOpen = open === r.guid;
-                const toggle = () => setOpen(isOpen ? null : r.guid);
+                const toggle = () => toggleRow(r.guid);
                 return (
                   <Fragment key={r.guid}>
                     <tr tabIndex={0} aria-expanded={isOpen} style={{ cursor: "pointer" }} onClick={toggle} onKeyDown={onRowKey(toggle)}>
-                      <td style={{ verticalAlign: "top" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{fmtWhen(r.time)}</span></td>
                       <td style={{ maxWidth: 0, verticalAlign: "top" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-                          {r.spec && <ChainBadge spec={r.spec} size={16} />}
+                        <WhenCell time={r.time} customer={r.customer} />
+                      </td>
+                      <td style={{ maxWidth: 0, verticalAlign: "top" }}>
+                        {/* The icon sits on the chain's line, not halfway down the cell. */}
+                        <div style={{ display: "flex", alignItems: "flex-start", gap: 8, minWidth: 0 }}>
+                          {r.spec && <span style={{ display: "flex", flexShrink: 0, marginTop: 1 }}><ChainBadge spec={r.spec} size={16} /></span>}
                           <div style={{ minWidth: 0 }}>
-                            <div style={{ fontSize: 12 }}>{chainWords(r)}</div>
+                            <div style={{ fontSize: 12 }} title={chainsTitle(r)}>{chainWords(r)}</div>
                             {r.method === "unknown"
                               ? <div style={{ fontSize: 10.5, color: "var(--text-4)", fontStyle: "italic" }}>method not in the logs</div>
                               : <div className="gw-mono" title={r.method} style={{ fontSize: 10.5, color: "var(--text-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.method}</div>}
+                            {r.txHash && <div style={{ marginTop: 3 }}><TxHash hash={r.txHash} spec={r.spec} /></div>}
                           </div>
                         </div>
                       </td>
@@ -307,7 +385,7 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
                       <td style={{ verticalAlign: "top" }} title={r.note ?? undefined}>
                         <span className="gw-tag" style={{ fontSize: 10, color: o.color, borderColor: "currentColor" }}>{o.label}</span>
                         {r.answeredBy && r.outcome !== "failed" && (
-                          <ResponseSource label={r.outcome === "accepted" ? "served by" : "returned by"} name={r.answeredBy} />
+                          <ResponseSource label={r.outcome === "accepted" || r.outcome === "failed-on-chain" ? "served by" : "returned by"} name={r.answeredBy} />
                         )}
                       </td>
                       <td style={{ textAlign: "right", verticalAlign: "top" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{fmtTook(r.replyMs)}</span></td>
@@ -325,7 +403,8 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
                 <tr><td colSpan={5} style={{ padding: "20px 12px", textAlign: "center", color: "var(--text-4)", fontSize: 12.5 }}>
                   {allRows.length ? "No transactions match these filters."
                     : log.unread ? `None of the transactions found ${when} came back from the logs in time.`
-                    : `No transactions ${when}. The tab reads the router's info lines: a router logging at warn writes none.`}
+                    : log.more ? "No transactions in the part of this period read so far. Older ones may be: load them below."
+                    : `No transactions ${when}. Before smart-router v1.6.1, a router logs them only at info level: one logging at warn shows none.`}
                 </td></tr>
               )}
             </tbody>

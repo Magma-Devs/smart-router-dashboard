@@ -7,21 +7,24 @@
  * smart-router #543 or later also ends each request in one `relay_end` event,
  * which is an interface (relay-end.ts): a request with one is read from it alone.
  */
-import type { RelayAttempt, RouterTopology } from "@sr/shared";
+import { guidMintedSecond, WINDOWS, type RelayAttempt, type RouterTopology } from "@sr/shared";
 import type { LokiClient, LokiLine } from "./loki-client.js";
+import type { ReadRange } from "./read-range.js";
 
 export interface RouterLine {
   tsMs: number;
   message: string;
   guid: string;
   f: Record<string, unknown>;
+  /** The spec of the router that wrote it: its stream's `chain` label (the spec lower-cased), where the log agent sets one. */
+  streamSpec?: string;
 }
 
 export function str(v: unknown): string {
   return typeof v === "string" ? v : "";
 }
 
-export function parseRouterLine({ tsMs, line }: LokiLine): RouterLine | null {
+export function parseRouterLine({ tsMs, line, labels }: LokiLine): RouterLine | null {
   let f: Record<string, unknown>;
   try {
     f = JSON.parse(line) as Record<string, unknown>;
@@ -30,7 +33,9 @@ export function parseRouterLine({ tsMs, line }: LokiLine): RouterLine | null {
   }
   const message = str(f.message);
   const guid = str(f.GUID);
-  return message && guid ? { tsMs, message, guid, f } : null;
+  if (!message || !guid) return null;
+  const chain = labels?.chain?.trim();
+  return chain ? { tsMs, message, guid, f, streamSpec: chain.toUpperCase() } : { tsMs, message, guid, f };
 }
 
 export const parseAll = (lines: LokiLine[]): RouterLine[] =>
@@ -124,6 +129,14 @@ export function scrubUrls(message: string): string {
  *  plain token - nothing that could reach into the LogQL around it. */
 export const REQUEST_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
+/**
+ * What a look-up takes: a request ID, a transaction hash (an EVM 0x hash is
+ * 66 characters, a base58 Solana signature up to 88) or the caller's own
+ * request id (up to 128). Plain characters only: none a JSON string escapes,
+ * none that ends a LogQL raw string, so the value matches the line as written.
+ */
+export const LOOKUP_ID = /^[A-Za-z0-9_.:+=@-]{1,128}$/;
+
 /** A request value spliced into a LogQL pattern (a chain's spec) must be a
  *  plain token: LogQL raw strings are backtick-quoted and can't escape one,
  *  so a backtick would end the string and let the rest run as LogQL. */
@@ -133,16 +146,79 @@ export const LABEL_TOKEN = /^[A-Za-z0-9_-]{1,64}$/;
  *  LogQL string; one that can't is left out of the query, not spliced in. */
 export const inRawString = (s: string) => !s.includes("`");
 
-/** Every line of one request, by its ID, in a range - for a look-up. Null when Loki didn't answer. */
+/**
+ * Every line of the requests a look-up names, in a range: the request with
+ * that ID, and on a router that writes them, every request whose `relay_end`
+ * carries it as its transaction hash or as the caller's request id. Null when
+ * Loki didn't answer.
+ */
 export async function linesOfRequest(
   loki: LokiClient,
   selector: string,
-  guid: string,
+  id: string,
   fromMs: number,
   toMs: number,
 ): Promise<RouterLine[] | null> {
-  const found = await loki.queryRange(`${selector} |= \`"GUID":"${guid}"\``, fromMs, toMs, 1000, "forward");
-  return found === null ? null : parseAll(found).filter((l) => l.guid === guid);
+  const found = await loki.queryRange(
+    `${selector} |= \`${id}\` |~ \`"(GUID|tx_hash|request_id)":"${escapeRe(id)}"\``,
+    fromMs,
+    toMs,
+    1000,
+    "forward",
+  );
+  if (found === null) return null;
+  const lines = parseAll(found);
+  // The requests the value names: by their ID, or by a hash or caller id on their relay_end.
+  const named = new Set(lines.filter((l) => l.guid === id || str(l.f.tx_hash) === id || str(l.f.request_id) === id).map((l) => l.guid));
+  return lines.filter((l) => named.has(l.guid));
+}
+
+/** A request's lines come after its GUID's second; the minute before is for a log store's clock behind the router's. */
+export const MINTED_BEFORE_MS = 60_000;
+
+/**
+ * How long after its GUID's second a request's lines can come: until its
+ * deadline, the router's processing budget - what REQUEST_SPAN_MS and
+ * REPLY_SPAN_MS reason from. At the default 30 s the longest budget is 3
+ * minutes (six times it, for a write, a hanging call or a call of 100 CU or
+ * more; the largest spec `timeout_ms` is 180 s too), so 5 minutes leaves 2
+ * for the truncated second and log shipping. A hanging call on a slow chain
+ * can run longer (BTC's adds two 10-minute blocks): its relay_end is past
+ * the span, so `linesOfLookup` reads the range for it.
+ */
+export const MINTED_SPAN_MS = 5 * 60_000;
+
+/** The widest range a read may ask for (read-range.ts). */
+const WIDEST_MS = WINDOWS["30d"].rangeSeconds * 1000;
+
+/** The event a v1.6.1 router ends every request with (relay-end.ts's isRelayEnd, which imports this file). */
+const isEnd = (l: RouterLine) => l.f.event === "relay_end";
+
+/**
+ * Every line of the requests a look-up names (`linesOfRequest`). A request
+ * ID that carries its second (guidMintedSecond) is read there first,
+ * whatever the range, and that read answers once it holds the request's
+ * relay_end. Otherwise the range is read as before, except a 30-day one:
+ * the second already says where the request is. A random GUID decodes to a
+ * plausible second about 0.06% of the time, so a miss still reads the range.
+ * A transaction hash or a caller's request id never decodes and reads the
+ * range. Null when Loki didn't answer.
+ */
+export async function linesOfLookup(
+  loki: LokiClient,
+  selector: string,
+  id: string,
+  range: ReadRange,
+  nowMs: number = Date.now(),
+): Promise<RouterLine[] | null> {
+  const sec = guidMintedSecond(id, nowMs / 1000);
+  if (sec === null) return linesOfRequest(loki, selector, id, range.startMs, range.endMs);
+  const minted = await linesOfRequest(loki, selector, id, sec * 1000 - MINTED_BEFORE_MS, sec * 1000 + MINTED_SPAN_MS);
+  if (minted === null || minted.some(isEnd) || range.endMs - range.startMs >= WIDEST_MS) return minted;
+  const ranged = await linesOfRequest(loki, selector, id, range.startMs, range.endMs);
+  // Still running, or longer than the span: the range's lines, else what its minutes hold.
+  if (ranged === null || ranged.length > 0) return ranged;
+  return minted;
 }
 
 /** Array#findLast, which this repo's compile target doesn't have yet. */
@@ -417,8 +493,9 @@ export const listenerPattern = (spec: string) => `"endpoint":"${escapeRe(spec)}(
 
 /**
  * A request's chain: the one its lines name (`chain_id`, or the listener on
- * the line that ends it), else the only chain serving every upstream it used.
- * `specs` lists the candidates when several do.
+ * the line that ends it), else its router's - the `chain` label the log agent
+ * puts on a router's stream - else the only chain serving every upstream it
+ * used. `specs` lists the candidates when several do.
  */
 export function chainOf(ordered: RouterLine[], names: string[], index: UpstreamIndex): { spec: string | null; specs?: string[] } {
   const named = str(ordered.find((l) => str(l.f.chain_id))?.f.chain_id);
@@ -427,6 +504,9 @@ export function chainOf(ordered: RouterLine[], names: string[], index: UpstreamI
   const end = ordered.find((l) => END_LINES.has(l.message) && str(l.f.endpoint));
   const listened = end ? LISTENER.exec(str(end.f.endpoint))?.[1] : undefined;
   if (listened) return { spec: listened };
+  // A router serves one chain, and its stream carries it: a request still in flight names it too.
+  const labelled = ordered.find((l) => l.streamSpec)?.streamSpec;
+  if (labelled) return { spec: labelled };
   const chains = index.chainsOf(names);
   if (chains.length === 1) return { spec: chains[0]! };
   return chains.length > 1 ? { spec: null, specs: chains } : { spec: null };
@@ -472,7 +552,10 @@ export interface GuidLines {
  * Every line of these requests whose message matches one of `messages`, from
  * `fromMs` to `toMs` (now by default). The GUIDs go out in batches; a batch
  * Loki didn't answer leaves its GUIDs in `unread` while the others' lines are
- * kept. Null only when no batch answered.
+ * kept. Null only when no batch answered. Every batch may return a full
+ * batch's lines, `perGuid` per request on average: a request with many tries
+ * fits beside light ones however few GUIDs its batch holds, so a poll that
+ * reads three requests reads them as whole as a read of a hundred.
  */
 export async function linesForGuids(
   loki: LokiClient,
@@ -494,7 +577,7 @@ export async function linesForGuids(
         `${selector} |~ \`"GUID":"(${batch.join("|")})"\` |~ \`${pattern}\``,
         fromMs,
         toMs,
-        batch.length * perGuid,
+        GUID_BATCH * perGuid,
         "forward",
       ),
     ),

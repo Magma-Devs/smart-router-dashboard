@@ -1,4 +1,4 @@
-import { ENDPOINT_METRICS, selector, type HealthState } from "@sr/shared";
+import { ENDPOINT_METRICS, qProviderBlockedByEndpoint, selector, type HealthState } from "@sr/shared";
 import type { ConfigurationService } from "./configuration.js";
 import type { PrometheusClient, PromVectorSample } from "./prometheus-client.js";
 
@@ -38,7 +38,7 @@ export async function readUpstreamHealth(
   // One hour smooths sparse block arrivals; zero/missing rates use the
   // conservative fallback, rather than dividing by zero or assuming a fast chain.
   const [gauges, rates] = await Promise.all([
-    prom.query(`${ENDPOINT_METRICS.overallHealth}${sel}`),
+    prom.query(qProviderBlockedByEndpoint(spec)),
     prom.query(`max by (spec) (deriv(${ENDPOINT_METRICS.latestBlock}${sel}[1h]))`),
   ]);
   const windows = new Map<string, number>();
@@ -113,11 +113,12 @@ export async function readUpstreamHealth(
     const signal = signals.get(key) ?? { rowKey, iface, ok: 0, failed: 0 };
     const value = Number(sample.value[1]);
     if (kind === "gauge") {
+      // The blocked gauge is 1 while the router sends the provider no traffic.
       const measured = !Number.isFinite(value)
         ? "unknown"
         : value >= 1
-          ? "operational"
-          : "unhealthy";
+          ? "unhealthy"
+          : "operational";
       if (!signal.gauge || rank[measured] > rank[signal.gauge]) signal.gauge = measured;
     } else if (Number.isFinite(value) && value > 0) {
       // Do not round increase() before deciding whether a poll happened.
@@ -147,7 +148,7 @@ export async function readUpstreamHealth(
       merge(
         signal.rowKey,
         "unhealthy",
-        "The router's live health check reports this upstream unhealthy.",
+        "The router has blocked this upstream: none of its urls is in rotation.",
       );
     } else if (signal.failed > 0 && signal.ok === 0) {
       merge(
@@ -160,16 +161,17 @@ export async function readUpstreamHealth(
         signal.rowKey,
         "operational",
         signal.gauge === "operational"
-          ? "The router's live health check reports this upstream operational."
+          ? `In rotation at the router, with successful block polls in the last ${minutes} minutes.`
           : `Successful block polls reported in the last ${minutes} minutes.`,
       );
     } else if (signal.gauge === "operational") {
-      // The router resets this gauge to 1 during epoch updates. Once poll
-      // evidence expires, it must not turn a dead endpoint back to green.
+      // "In rotation" is the router's default for a provider it has not taken
+      // out; a url nobody polls or routes to reads so however broken it is.
+      // Once poll evidence expires, it must not turn a dead endpoint green.
       merge(
         signal.rowKey,
         "unknown",
-        `No block-poll outcome reported in the last ${minutes} minutes; the live health gauge alone cannot confirm recovery. Check the router and Prometheus scrape.`,
+        `In rotation at the router, but no block-poll outcome reported in the last ${minutes} minutes; being in rotation alone cannot confirm recovery. Check the router and Prometheus scrape.`,
       );
     } else {
       merge(signal.rowKey, "unknown", missing);

@@ -15,8 +15,8 @@ const hrefs = (authEnabled: boolean) =>
   visibleNavSections(authEnabled).flatMap((s) => s.items.map((i) => i.href));
 
 describe("visibleNavSections", () => {
-  it("offers everything when the deployment has accounts (on the 0.28 screens, which have every page)", () => {
-    expect(visibleNavSections(true, null, true)).toEqual(NAV_SECTIONS);
+  it("offers everything when the deployment has accounts", () => {
+    expect(visibleNavSections(true)).toEqual(NAV_SECTIONS);
   });
 
   it("drops Team when it does not", () => {

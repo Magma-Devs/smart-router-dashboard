@@ -1,6 +1,9 @@
 import { beforeAll, describe, expect, it } from "vitest";
+import noRunnable from "../../../../scripts/data/no-runnable-defaults.generated.json";
+import generated from "../chain-methods.generated.json";
 import {
   catalogReady,
+  defaultCommand,
   groupByInternalPath,
   headCommands,
   httpVariantOf,
@@ -41,6 +44,7 @@ describe("runnable defaults", () => {
       ["XLM", "rest"],
       ["TON", "rest"],
       ["VECHAIN", "rest"],
+      ["POLYMESH", "rest"],
       ["TEZOS", "rest"],
       ["STACKS", "rest"],
       ["ARWEAVE", "rest"],
@@ -142,6 +146,40 @@ describe("runnable defaults", () => {
     expect(byName("/getConsensusBlock")?.ready).toBe(true);
   });
 
+  it("claims nothing for Moralis, whose arguments are all query parameters", () => {
+    // `/dateToBlock` was the "ready" default, and it takes `chain` and `date`
+    // as required query parameters. Without an API key no hint can be fired,
+    // so the surface is a written-down gap instead.
+    const cfg = getInterfaceConfig("MORALIS", "rest", [])!;
+    expect(headCommands(cfg.regular)).toEqual([]);
+    expect(cfg.regular.find((c) => c.label === "/dateToBlock")?.ready).toBeUndefined();
+  });
+
+  it("sends Polymesh's Sidecar routes with the query and the arguments they need", () => {
+    // `/blocks` and `/accounts/compare` look complete, but Sidecar answers 400
+    // without `?range=` / `?addresses=`. Both were "ready" and both failed.
+    const cfg = getInterfaceConfig("POLYMESH", "rest", []);
+    const byName = (name: string) => cfg?.regular.find((c) => c.label === name);
+    expect(byName("/blocks")?.params).toBe("/blocks?range=1-2");
+    expect(byName("/accounts/compare")?.params).toMatch(/^\/accounts\/compare\?addresses=\w+,\w+$/);
+    // Every GET with a path template ships a filled-in example.
+    for (const cmd of cfg!.regular.filter((c) => c.method === "GET" && /\{/.test(c.label))) {
+      expect(cmd.params, cmd.label).not.toMatch(/\{[^}"]+\}/);
+    }
+    // A metadata version is `v14`; a bare `14` answers 500.
+    expect(byName("/runtime/metadata/{metadataVersion}")?.params).toMatch(/\/v\d+$/);
+    // Block traces need an unsafe RPC the node refuses: no ready mark, no "needs params".
+    const traces = byName("/experimental/blocks/{blockId}/traces");
+    expect(traces?.ready).toBeUndefined();
+    expect(traces?.needsInput).toBeUndefined();
+    expect(traces?.desc).toMatch(/unsafe/);
+    // The account examples are a mainnet stash, so the testnet keeps its placeholders.
+    const testnet = getInterfaceConfig("POLYMESHT", "rest", []);
+    const stakingInfo = testnet?.regular.find((c) => c.label === "/accounts/{accountId}/staking-info");
+    expect(stakingInfo?.needsInput).toBe(true);
+    expect(testnet?.regular.find((c) => c.label === "/blocks")?.params).toBe("/blocks?range=1-2");
+  });
+
   it("keeps endpoints that were checked and still cannot be sent out of the head", () => {
     const vechain = getInterfaceConfig("VECHAIN", "rest", []);
     // A WebSocket upgrade — a plain GET answers 400.
@@ -161,6 +199,80 @@ describe("runnable defaults", () => {
     const evm = FAMILY_METHODS.evm.jsonrpc!;
     expect(evm.regular.find((c) => c.method === "eth_blockNumber")?.ready).toBe(true);
     expect(evm.regular.find((c) => c.method === "eth_getTransactionByHash")?.needsInput).toBe(true);
+  });
+
+  it("sends Starknet a block id as the bare tag", () => {
+    // Juno and Pathfinder both answer `[{"block_id":"latest"}]` with "Invalid
+    // block id" — two "ready" commands failed on every node.
+    const cfg = getInterfaceConfig("STRK", "jsonrpc", ["trace"])!;
+    for (const cmd of [...cfg.regular, ...cfg.trace!]) {
+      expect(cmd.params, cmd.method).not.toContain('{"block_id"');
+    }
+    expect(cfg.regular.find((c) => c.method === "starknet_getBlockWithTxs")?.params).toBe('["latest"]');
+    expect(FAMILY_METHODS.starknet.jsonrpc!.regular
+      .find((c) => c.method === "starknet_getBlockWithTxs")?.params).toBe('["latest"]');
+    // The Trace tier gets a command that runs as-is.
+    expect(cfg.trace!.find((c) => c.method === "starknet_traceBlockTransactions")?.ready).toBe(true);
+  });
+});
+
+describe("defaultCommand", () => {
+  it("opens a tier on its first command that runs as-is", () => {
+    // The EVM debug tier leads with debug_traceTransaction, which wants a hash.
+    const eth = getInterfaceConfig("ETH1", "jsonrpc", ["archive", "debug", "trace"])!;
+    expect(eth.debug![0]?.method).toBe("debug_traceTransaction");
+    expect(defaultCommand(eth.debug!)?.method).toBe("debug_traceCall");
+    expect(defaultCommand(eth.trace!)?.method).toBe("trace_call");
+    expect(defaultCommand(getInterfaceConfig("STRK", "jsonrpc", ["trace"])!.trace!)?.method)
+      .toBe("starknet_traceBlockTransactions");
+  });
+
+  it("opens on one call's answer, not a whole block or store", () => {
+    // A block's trace is 2.3 MB on Ethereum and the beacon fork-choice dump
+    // 45 MB: past the direct leg's body cap, and a stall in the browser.
+    const eth = getInterfaceConfig("ETH1", "jsonrpc", ["debug", "trace"])!;
+    for (const tier of [eth.debug!, eth.trace!]) {
+      expect(defaultCommand(tier)?.params).not.toMatch(/^\["latest"/);
+    }
+    const beacon = getInterfaceConfig("ETHBEACON", "rest", ["debug"])!.debug!;
+    expect(defaultCommand(beacon)?.label).toBe("/eth/v2/debug/beacon/heads");
+    expect(beacon.find((c) => c.label === "/eth/v1/debug/fork_choice")?.desc).toMatch(/MB/);
+  });
+
+  it("keeps a tier's first command when it already runs", () => {
+    const eth = getInterfaceConfig("ETH1", "jsonrpc", ["archive"])!;
+    expect(defaultCommand(eth.regular)).toBe(eth.regular[0]);
+    expect(defaultCommand(eth.archive!)).toBe(eth.archive![0]);
+  });
+
+  it("falls back to the tier's first command when nothing in it is ready", () => {
+    const needs = { method: "a", label: "a", params: '["0x..."]', needsInput: true };
+    const unverified = { method: "b", label: "b", params: "[]" };
+    const ready = { method: "c", label: "c", params: "[]", ready: true };
+    expect(defaultCommand([needs, unverified, ready])).toBe(ready);
+    expect(defaultCommand([needs, unverified])).toBe(needs);
+    expect(defaultCommand([])).toBeNull();
+  });
+
+  it("opens every tier on a runnable command, but the roll-call's gaps", () => {
+    // Every chain, interface and add-on in the catalog, filtered the way the
+    // drawer filters a plain-HTTP transport. A tier with nothing runnable has
+    // to be written down in the roll-call the drift check diffs.
+    const gaps = new Set<string>(noRunnable);
+    const notRunnable: string[] = [];
+    for (const [spec, entry] of Object.entries(generated as Record<string, unknown>)) {
+      if (typeof entry === "string") continue;
+      for (const iface of Object.keys(entry as object)) {
+        const cfg = getInterfaceConfig(spec, iface, ["archive", "debug", "trace"]);
+        for (const tier of TIER_ORDER) {
+          const list = cfg?.[tier]?.filter((c) => !/(un)?subscribe$/i.test(c.method));
+          if (!list?.length) continue;
+          const id = tier === "regular" ? `${spec}/${iface}` : `${spec}/${iface}/${tier}`;
+          if (!defaultCommand(list)?.ready && !gaps.has(id)) notRunnable.push(id);
+        }
+      }
+    }
+    expect(notRunnable).toEqual([]);
   });
 });
 
@@ -506,6 +618,38 @@ describe("generated lava-specs catalog", () => {
     expect(cfg?.debug?.some((c) => c.method === "debug_traceTransaction")).toBe(true);
     expect(cfg?.trace?.length).toBeGreaterThan(0);
     expect(cfg?.trace?.some((c) => c.method === "trace_block")).toBe(true);
+  });
+
+  it("offers the Blockbook tier only where an upstream declares the blockbook add-on", () => {
+    const tiersFor = (spec: string, addons: string[]) => {
+      const cfg = getInterfaceConfig(spec, "jsonrpc", addons);
+      return [...new Set(listMethods(cfg!).map((m) => m.tier))];
+    };
+    // bb_* sit in BTC's `blockbook` add-on collection. A router with no node
+    // url declaring that add-on answers every one of them "No Providers For
+    // Addon", so the tier is not offered.
+    expect(tiersFor("BTC", [])).not.toContain("blockbook");
+    expect(tiersFor("BTC", ["blockbook"])).toContain("blockbook");
+    // Inherited by every spec that imports BTC, directly (Litecoin) or through
+    // another import (Pepecoin imports DOGE). Case-insensitive, like the rest.
+    expect(tiersFor("LTC", ["Blockbook"])).toContain("blockbook");
+    expect(tiersFor("PEP", ["blockbook"])).toContain("blockbook");
+    // A spec with no such collection offers nothing, whatever the config says.
+    expect(tiersFor("ETH1", ["blockbook"])).not.toContain("blockbook");
+  });
+
+  it("opens the Blockbook tier on the call the spec's add-on verification makes", () => {
+    const bb = getInterfaceConfig("BTC", "jsonrpc", ["blockbook"])!.blockbook!;
+    expect(bb).toHaveLength(15);
+    // `bb_getBlockHash ["0"]` is what every node passes to be admitted to the
+    // add-on, so it is the one command that runs as-is on any router serving it.
+    const first = defaultCommand(bb);
+    expect(first?.method).toBe("bb_getBlockHash");
+    expect(first?.params).toBe('["0"]');
+    expect(first?.ready).toBe(true);
+    // Every other bb_* method takes an argument no static value fits.
+    expect(bb.filter((c) => c.ready).map((c) => c.method)).toEqual(["bb_getBlockHash"]);
+    expect(bb.filter((c) => c.needsInput)).toHaveLength(14);
   });
 
   it("ETH1 archive tier is synthesised from the archive extension when offered", () => {

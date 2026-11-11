@@ -27,6 +27,7 @@ import {
   type DirectTarget,
 } from "./direct-request";
 import {
+  defaultCommand,
   headCommands,
   httpVariantOf,
   ifaceCanFire,
@@ -298,6 +299,16 @@ function parseKey(
   return { tier: tier as Tier, index };
 }
 
+type FlatMethod = ReturnType<typeof listMethods>[number];
+
+/** The row a tier opens on (see `defaultCommand`), chosen from the rows the
+ *  current transport offers. Undefined when the tier offers none. */
+function defaultRowFor(flat: FlatMethod[], tier: Tier): FlatMethod | undefined {
+  const rows = flat.filter((m) => m.tier === tier);
+  const cmd = defaultCommand(rows.map((m) => m.command));
+  return rows.find((m) => m.command === cmd);
+}
+
 function defaultParamsFor(command: AddonCommand, iface: CatalogInterface): string {
   if (paramsKindFor(iface) === "graphql") return formatGraphQL(command.params);
   if (paramsKindFor(iface) === "json") {
@@ -567,7 +578,11 @@ export function TryMeDrawer({
     () => TIER_ORDER.filter((t) => (cfg[t]?.length ?? 0) > 0),
     [cfg],
   );
-  const first = flat[0];
+  /** What the drawer opens on: the first tier's default, not its first row. */
+  const first = useMemo(
+    () => (flat[0] ? defaultRowFor(flat, flat[0].tier) : undefined),
+    [flat],
+  );
 
   const canFire = ifaceCanFire(iface);
   /** Whether the api can dial this row's upstream on the transport currently
@@ -761,24 +776,23 @@ export function TryMeDrawer({
   };
 
   /* Switching transport re-filters the method list (subscriptions are offered
-     over a socket only), so a selection can go stale. Snap to the first method
-     the new transport does offer. */
+     over a socket only), so a selection can go stale. Snap to the default of
+     the tier it was in, or of the first tier the new transport offers. */
   useEffect(() => {
     if (flat.length === 0) return;
     if (flat.some((m) => keyOf(m.tier, m.index) === selKey)) return;
-    const next = flat[0]!;
+    const next = defaultRowFor(flat, selectedTier) ?? defaultRowFor(flat, flat[0]!.tier)!;
     setSelectedTier(next.tier);
     setSelKey(keyOf(next.tier, next.index));
     setParamsText(defaultParamsFor(next.command, iface));
-  }, [flat, selKey, iface]);
+  }, [flat, selKey, selectedTier, iface]);
 
   const handleTierChange = (tier: Tier) => {
     setSelectedTier(tier);
-    // Snap selection to the first method in the newly-selected tier so
-    // the command dropdown lands on a real value rather than ""/empty.
-    if ((cfg[tier]?.length ?? 0) > 0) {
-      handleSelect(keyOf(tier, 0));
-    }
+    // Snap to the tier's default so the command dropdown lands on a request
+    // that runs as-is, rather than on whatever the catalog lists first.
+    const row = defaultRowFor(flat, tier);
+    if (row) handleSelect(keyOf(row.tier, row.index));
   };
 
   /** Every command the transport can offer, in the picker's row shape. Read
