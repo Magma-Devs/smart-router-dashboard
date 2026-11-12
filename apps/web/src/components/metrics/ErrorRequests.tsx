@@ -111,6 +111,20 @@ export function openingResult(reachedCount: number, fromBar: boolean): typeof AL
   return reachedCount > 0 && !fromBar ? REACHED : ALL;
 }
 
+/**
+ * The line above a list none of whose requests reached the client. Under a
+ * filter it speaks for the filtered requests only. It calls the requests
+ * recovered only when they were: one with no end in the logs may still be
+ * running, or its client may have gone.
+ */
+export function nothingReachedWords(rows: readonly Pick<ErrorRequestRow, "result">[], filtered: boolean, period: string): string {
+  const head = filtered ? `None of these requests reached the client ${period}.` : `No error reached the client ${period}.`;
+  const noEnd = rows.filter((r) => r.result === "unknown").length;
+  if (!noEnd) return `${head} The requests below hit an error on the way and were recovered.`;
+  if (noEnd === rows.length) return `${head} The requests below hit an error on the way, and the logs show no end for them.`;
+  return `${head} The requests below hit an error on the way: ${fmtComma(noEnd)} with no end in the logs, the rest recovered.`;
+}
+
 /** Did this upstream's own attempt fail - no response, or an error response?
  *  What the upstream filter keeps, and what its bar on the Upstreams tab
  *  counts: a request it took part in and answered fine isn't its error. */
@@ -341,9 +355,10 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
   const rows = narrowed.filter(inResult);
   const byResult = (k: ErrorRequestRow["result"]) => narrowed.filter((r) => r.result === k).length;
   const kinds = byDropdowns.filter(inResult).map(retryKinds);
-  /* Nothing reached the client, and nobody has filtered: the list says so
-     above the recovered requests it then shows. */
+  /* Nothing reached the client, and nobody has picked a result: the list
+     says so above the requests it then shows. */
   const allRecovered = !!head && picked === AUTO && reachedCount === 0 && narrowed.length > 0;
+  const dropdowns = retry !== ALL || errType !== ALL || customer !== ALL || method !== ALL || upstream !== ALL;
 
   const pageCount = Math.max(1, Math.ceil(rows.length / PER_PAGE));
   const curPage = Math.min(page, pageCount - 1);
@@ -455,7 +470,7 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
       {allRecovered && (
         <div style={{ padding: "9px 16px", fontSize: 12, color: "var(--text-2)", borderTop: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--ok)", flexShrink: 0 }} />
-          No error reached the client{range ? " in this period" : ` in the last ${WINDOWS[win].label}`}. The requests below hit an error on the way and were recovered.
+          {nothingReachedWords(narrowed, dropdowns, range ? "in this period" : `in the last ${WINDOWS[win].label}`)}
         </div>
       )}
       <NewRowsStrip count={held.newCount} noun="request" onShow={held.showNew} />
