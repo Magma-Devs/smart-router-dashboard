@@ -609,7 +609,8 @@ const CAUSE_HINT: Partial<Record<ErrorGroup["cause"], string>> = {
 
 /** "Data not held at blockfrost on Cardano" - a group in one line. */
 function groupTitle(g: ErrorGroup): string {
-  const who = g.cause === "request" ? ", caused by the request" : g.cause === "provider" ? ` at ${g.provider === "Cached" ? "the cache" : g.provider}` : g.cause === "none" ? "" : " at every provider";
+  // "Every provider failed" says who already.
+  const who = g.cause === "request" ? ", caused by the request" : g.cause === "provider" ? ` at ${g.provider === "Cached" ? "the cache" : g.provider}` : g.cause === "every-provider" ? " at every provider" : "";
   const on = g.spec ? ` on ${buildChainMetaByIndex(g.spec).name}` : "";
   return `${g.errorLabel.charAt(0).toUpperCase()}${g.errorLabel.slice(1)}${who}${on}`;
 }
