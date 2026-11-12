@@ -76,9 +76,12 @@ TOKEN=srdash_audit_…            # minted by an admin over the API, shown once
 CURSOR_FILE=.audit-cursor
 after=$(cat "$CURSOR_FILE" 2>/dev/null)
 page=$(curl -sf -H "Authorization: Bearer $TOKEN" \
-  "https://dash.example.com/api/audit/events?per_page=500${after:+&after=$after}")
+  "https://dash.example.com/api/audit/events?per_page=500${after:+&after=$after}") || exit 1
 jq -c '.items[]' <<<"$page" >> events.ndjson
-jq -r '.cursor // empty' <<<"$page" > "$CURSOR_FILE"
+# A page with nothing new has no cursor: keep the stored one, or the next
+# run starts again from the first event.
+next=$(jq -r '.cursor // empty' <<<"$page")
+if [ -n "$next" ]; then printf '%s\n' "$next" > "$CURSOR_FILE"; fi
 ```
 
 **The resume is gap-free and duplicate-free.** A row is served only once its
