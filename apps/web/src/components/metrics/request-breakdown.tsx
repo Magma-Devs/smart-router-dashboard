@@ -233,7 +233,10 @@ export function RequestBreakdown(p: BreakdownProps) {
   const facts = p.facts;
   // A block number links to the chain's explorer where the catalog has a proven block page, as the Routers table's heights do.
   const block = (n: number) => (p.spec ? <ExplorerBlockLink spec={p.spec} block={n}>{fmtComma(n)}</ExplorerBlockLink> : fmtComma(n));
-  const providers = new Set(p.attempts.map((a) => a.upstream)).size;
+  // The cache is not a provider: "2 providers" for one provider and a cache hit read as two.
+  const providers = new Set(p.attempts.filter((a) => !isCache(a.upstream)).map((a) => a.upstream)).size;
+  const cache = p.attempts.some((a) => isCache(a.upstream));
+  const tried = [providers ? `${providers} ${providers === 1 ? "provider" : "providers"}` : null, cache ? "the cache" : null].filter(Boolean).join(" and ");
   const blockAhead = finalCode && facts.requestedBlock != null && facts.seenBlock != null && facts.requestedBlock > facts.seenBlock;
   const steps = stepsOf(p.attempts);
   return (
@@ -277,7 +280,7 @@ export function RequestBreakdown(p: BreakdownProps) {
       <div style={{ display: "flex", flexWrap: "wrap", gap: 24, alignItems: "flex-start" }}>
         {/* Flow: the request, each send and what every provider answered, then what went back. */}
         <div style={{ flex: "2 1 560px", minWidth: 0 }}>
-          <Section title="What happened" aside={p.attempts.length ? `${providers} ${providers === 1 ? "provider" : "providers"}` : "no provider logged"}>
+          <Section title="What happened" aside={tried || "no provider logged"}>
             <div>
               <Step n={1} title={<>Request from the client: <span className="gw-mono">{p.method}</span>{facts.requestBytes != null && <span className="gw-mono gw-tnum" style={{ color: "var(--text-3)", fontWeight: 400 }}> · {fmtBytes(facts.requestBytes)}</span>}</>} />
               {steps.map((s, i) => (
