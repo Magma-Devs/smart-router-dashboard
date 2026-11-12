@@ -148,12 +148,12 @@ describe("/overview", () => {
     expect(ROUTES.some((route) => route.includes("overview"))).toBe(false);
   });
 
-  it("is not named anywhere in the web's source, outside the api's own path", () => {
+  it("is not named anywhere in the web's source, the api path included", () => {
     const named = sources().flatMap((file) =>
       readFileSync(file, "utf8")
         .split("\n")
         .map((text, i) => ({ text, at: `${relative(SRC, file)}:${i + 1}` }))
-        .filter(({ text }) => /(?<!\/api\/metrics)\/overview\b/.test(text))
+        .filter(({ text }) => /\/overview\b/.test(text))
         .map(({ at }) => at),
     );
     expect(named).toEqual([]);

@@ -302,7 +302,7 @@ check("Create an account through the install");
   // "nothing else in the dashboard is reachable until it exists"
   const guarded = await Promise.all([
     call("GET", "/api/team/members"),
-    call("GET", "/api/metrics/overview"),
+    call("GET", "/api/metrics/pulse"),
     call("GET", "/api/account/sessions"),
   ]);
   ok(

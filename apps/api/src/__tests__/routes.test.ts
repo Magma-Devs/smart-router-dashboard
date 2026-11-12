@@ -252,25 +252,11 @@ describe("api routes", () => {
     expect(typeof body.lastUpdated).toBe("string");
   });
 
-  it("GET /api/metrics/overview → KPIs + series + gated CU/cap + prior errors", async () => {
+  // MAG-5269: the Overview page was the route's last caller; with the page
+  // gone the route is removed, and the path answers as any unknown one does.
+  it("GET /api/metrics/overview → 404, the route is gone", async () => {
     const res = await app.inject({ method: "GET", url: "/api/metrics/overview?window=1d" });
-    expect(res.statusCode).toBe(200);
-    const body = res.json();
-    expect(body.totalRequests).toHaveProperty("value");
-    expect(body.totalRequests).toHaveProperty("prior");
-    // errors.prior is prior ERRORS (derived), not prior requests.
-    expect(body.errors).toEqual({ value: 3, prior: 3 });
-    // Failed over every request (availability 0.97), not over the 1234
-    // answered client requests the latency histogram counts.
-    expect(body.errorRate).toBeCloseTo(0.03);
-    expect(Array.isArray(body.throughput)).toBe(true);
-    expect(Array.isArray(body.activeRoutes)).toBe(true);
-    expect(Array.isArray(body.latencyDistribution)).toBe(true);
-    expect(Array.isArray(body.perUpstreamSeries)).toBe(true);
-    expect(body.errorLayers).toEqual([{ layer: "unclassified", count: 3 }]);
-    // Quota/cap are never invented — always null on this build.
-    expect(body.computeUnits.limit).toBeNull();
-    expect(body.rpsCap).toBeNull();
+    expect(res.statusCode).toBe(404);
   });
 
   it("GET /api/metrics/chain-series requires spec; returns the switcher bundle", async () => {

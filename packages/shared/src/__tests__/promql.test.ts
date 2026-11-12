@@ -28,9 +28,7 @@ import {
   qRpsSeriesExpr,
   qLatencySeriesExpr,
   qPerSpecLatencySeriesExpr,
-  qPerSpecLatencyQuantile,
   qPerSpecHealth,
-  qPerSpecClientRpsSeriesExpr,
   qGroupedClientRequests,
   qGroupedAvailability,
   qGroupedLatencyQuantile,
@@ -66,7 +64,6 @@ import {
   qConsistencyCaught,
   qMethodLatencyQuantile,
   qCsm,
-  qLatencyDistribution,
   qPresence,
   qEndpointLatencyByEndpointSeriesExpr,
   qEndpointTipsSeriesExpr,
@@ -531,11 +528,6 @@ describe("health / lag / score / gauge builders", () => {
       expect(q).toContain(m);
     }
   });
-  it("latency distribution groups increase by le", () => {
-    expect(qLatencyDistribution("1d", "ETH1")).toBe(
-      'sum by (le) (increase(smartrouter_end_to_end_latency_milliseconds_bucket{spec="ETH1"}[86400s]))',
-    );
-  });
   it("presence probes count the metric by name", () => {
     expect(qPresence("smartrouter_retries_total")).toBe(
       'count({__name__="smartrouter_retries_total"})',
@@ -800,27 +792,9 @@ describe("range reads end on a step boundary", () => {
 });
 
 describe("grouped per-chain reads (MAG-4294)", () => {
-  it("qPerSpecLatencyQuantile keeps the chain on every bucket", () => {
-    expect(qPerSpecLatencyQuantile(0.5, "1h")).toBe(
-      "histogram_quantile(0.5, sum by (spec, le) (rate(smartrouter_end_to_end_latency_milliseconds_bucket[3600s])))",
-    );
-    expect(qPerSpecLatencyQuantile(0.95, "1h", "ETH1")).toBe(
-      'histogram_quantile(0.95, sum by (spec, le) (rate(smartrouter_end_to_end_latency_milliseconds_bucket{spec="ETH1"}[3600s])))',
-    );
-  });
-
   it("qPerSpecHealth reads the spec-labelled blocked gauge, one row per chain", () => {
     expect(qPerSpecHealth()).toBe("1 - min by (spec) (smartrouter_csm_provider_blocked)");
     expect(qPerSpecHealth("ETH1")).toBe('1 - min by (spec) (smartrouter_csm_provider_blocked{spec="ETH1"})');
-  });
-
-  it("qPerSpecClientRpsSeriesExpr is the client-scoped rate, one matrix row per chain", () => {
-    expect(qPerSpecClientRpsSeriesExpr("5m")).toBe(
-      "sum by (spec) (rate(smartrouter_end_to_end_latency_milliseconds_count[5m]))",
-    );
-    expect(qPerSpecClientRpsSeriesExpr("30s", "ETH1")).toBe(
-      'sum by (spec) (rate(smartrouter_end_to_end_latency_milliseconds_count{spec="ETH1"}[1m]))',
-    );
   });
 });
 
@@ -857,8 +831,7 @@ describe("grouped chain-level reads (MAG-4295)", () => {
     );
   });
 
-  it("the per-spec readers are the grouped ones by spec", () => {
-    expect(qPerSpecLatencyQuantile(0.5, "1h", "ETH1")).toBe(qGroupedLatencyQuantile(0.5, ["spec"], "1h", "ETH1"));
+  it("the per-spec health reader is the grouped one by spec", () => {
     expect(qPerSpecHealth("ETH1")).toBe(qGroupedHealth(["spec"], "ETH1"));
   });
 });
@@ -887,7 +860,6 @@ describe("short drawing steps", () => {
         qRpsSeriesExpr(step, "ETH1"),
         qLatencySeriesExpr(0.95, step, "ETH1"),
         qPerSpecLatencySeriesExpr(0.95, step),
-        qPerSpecClientRpsSeriesExpr(step),
         qPerUpstreamRpsExpr(step, "ETH1"),
         qPerSpecRpsExpr(step),
         qBackupShareExpr("ETH1", ["eth-lava"], step),

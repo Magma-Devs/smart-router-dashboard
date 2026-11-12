@@ -178,7 +178,7 @@ groups:
       - record: spec_router_le:smartrouter_end_to_end_latency_milliseconds_bucket:rate2m15s
         expr: sum by (cluster, chain, spec, router, le) (rate(smartrouter_end_to_end_latency_milliseconds_bucket[2m15s]))
       # Per provider: the upstream roster's volume and availability, the
-      # overview's per-upstream RPS.
+      # Traffic by provider chart's per-upstream RPS.
       - record: spec_router_provider:smartrouter_requests_total:rate2m15s
         expr: sum by (cluster, chain, spec, router, provider_address) (rate(smartrouter_requests_total[2m15s]))
       - record: spec_router_provider:smartrouter_requests_success_total:rate2m15s

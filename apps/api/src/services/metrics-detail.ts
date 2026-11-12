@@ -355,7 +355,7 @@ export class MetricsDetailService {
 
   /**
    * Which upstream took one chain's traffic: requests per second per upstream,
-   * the relay cache's included, biggest first. One range read - the Overview's
+   * the relay cache's included, biggest first. One range read - the
    * per-upstream read (`qPerUpstreamRpsExpr`, recorded series on long windows)
    * scoped to the chain. Its own route rather than part of the chain-series
    * bundle: the card shows whenever a chain is picked, and the bundle's other

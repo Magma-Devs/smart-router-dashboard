@@ -1,8 +1,8 @@
 "use client";
 
 /* ChainTrafficByProvider — which upstream took one chain's traffic over the
- * window: the Overview's "Requests per chain", cut by upstream instead of by
- * chain. Shown on the Metrics tab once a chain (or a router) is picked.
+ * window, stacked by upstream. Shown on the Metrics tab once a chain (or a
+ * router) is picked.
  * Live data: /api/metrics/upstream-mix, one range read - not the expanded
  * row's chain-series bundle, whose other reads only an open row needs.
  * Honest-state notes:
@@ -22,7 +22,7 @@ import { Skel } from "@/components/gateway/Skel";
 import { roFmtTime } from "@/components/metrics/InteractiveChart";
 import { fmtDayTime } from "@/lib/datetime";
 
-/** The Overview's upstream colours, in the same order. */
+/** One colour per upstream, biggest first. */
 const PALETTE = ["#60a5fa", "#22c55e", "#f59e0b", "#a78bfa", "#f472b6", "#2dd4bf"];
 const OTHER_COLOR = "#64748b";
 const CACHE_COLOR = "#94a3b8";

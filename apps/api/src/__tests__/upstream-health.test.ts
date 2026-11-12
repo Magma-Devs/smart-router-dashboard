@@ -146,12 +146,13 @@ async function healthHttp(
   await app.register(metricRoutes);
   try {
     const roster = await app.inject(`/api/metrics/upstreams?window=7d${params}`);
-    const overview = await app.inject(`/api/metrics/overview?window=1h${params}`);
+    // The topbar's counts: no window, the same filters as the roster.
+    const pulse = await app.inject(`/api/metrics/pulse${params.replace(/^&/, "?")}`);
     expect(roster.statusCode).toBe(200);
-    expect(overview.statusCode).toBe(200);
+    expect(pulse.statusCode).toBe(200);
     return {
       rows: roster.json().upstreams as import("@sr/shared").UpstreamMetrics[],
-      overview: overview.json() as import("@sr/shared").OverviewData,
+      pulse: pulse.json() as import("@sr/shared").DeploymentPulse,
     };
   } finally {
     await app.close();
@@ -160,18 +161,18 @@ async function healthHttp(
 
 describe("MAG-4226 review: configured upstream liveness", () => {
   it("keeps every configured endpoint visible with a reason before the first scrape", async () => {
-    const { rows, overview } = await healthHttp([], [], []);
+    const { rows, pulse } = await healthHttp([], [], []);
     expect(rows).toHaveLength(4);
     expect(
       rows.every(
         (row) => row.health === "unknown" && row.healthReason?.includes("check the router"),
       ),
     ).toBe(true);
-    expect(overview.upstreamHealthCounts).toEqual({ unhealthy: 0, unknown: 4 });
+    expect(pulse.upstreamHealthCounts).toEqual({ unhealthy: 0, unknown: 4 });
   });
 
   it("failed recent block polls override a provider the router still routes to, with no traffic", async () => {
-    const { rows, overview } = await healthHttp(
+    const { rows, pulse } = await healthHttp(
       [sample("0")],
       [],
       [sample("2")],
@@ -183,7 +184,7 @@ describe("MAG-4226 review: configured upstream liveness", () => {
     expect(row.requests).toBe(0);
     expect(row.uptime).toBeNull();
     expect(rows).toHaveLength(2);
-    expect(overview.upstreamHealthCounts).toEqual({ unhealthy: 1, unknown: 1 });
+    expect(pulse.upstreamHealthCounts).toEqual({ unhealthy: 1, unknown: 1 });
   });
 
   it("does not label zero polls as failure, and positive successes establish health", async () => {
@@ -258,7 +259,7 @@ describe("MAG-4226 review: configured upstream liveness", () => {
   });
 
   it("isolates the same vendor name on different chains and filters both counts and rows", async () => {
-    const { rows, overview } = await healthHttp(
+    const { rows, pulse } = await healthHttp(
       [sample("1"), sample("0", "SOLANA")],
       [sample("1", "SOLANA")],
       [],
@@ -267,7 +268,7 @@ describe("MAG-4226 review: configured upstream liveness", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].spec).toBe("SOLANA");
     expect(rows[0].health).toBe("operational");
-    expect(overview.upstreamHealthCounts).toEqual({ unhealthy: 0, unknown: 0 });
+    expect(pulse.upstreamHealthCounts).toEqual({ unhealthy: 0, unknown: 0 });
   });
 
   it("uses four bounded current-health queries, without traffic, QoS or histograms", async () => {
@@ -348,12 +349,10 @@ describe("MAG-4226 slow-chain windows", () => {
         const rows = (
           await app.inject(`/api/metrics/upstreams?spec=${spec}&routerId=slow&window=5m`)
         ).json().upstreams;
-        const overview = (
-          await app.inject(`/api/metrics/overview?spec=${spec}&routerId=slow&window=7d`)
-        ).json();
+        const pulse = (await app.inject(`/api/metrics/pulse?spec=${spec}&routerId=slow`)).json();
         expect(rows[0].health).toBe("unhealthy");
         expect(rows[0].healthReason).toContain("30 minutes");
-        expect(overview.upstreamHealthCounts).toEqual({ unhealthy: 1, unknown: 0 });
+        expect(pulse.upstreamHealthCounts).toEqual({ unhealthy: 1, unknown: 0 });
         expect(
           queries.find(
             (q) => q.includes("rpc_endpoint_fetch_latest_fails") && q.includes("apiInterface"),

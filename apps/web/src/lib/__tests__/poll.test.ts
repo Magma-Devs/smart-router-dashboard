@@ -35,10 +35,10 @@ describe("pollMsFor", () => {
 
 describe("pollMsForKey", () => {
   it("holds a metrics read over a window to that window's cadence", () => {
-    expect(pollMsForKey("/api/metrics/overview?window=7d", 15 * S)).toBe(15 * MIN);
+    expect(pollMsForKey("/api/metrics/dashboard-summary?window=7d", 15 * S)).toBe(15 * MIN);
     expect(pollMsForKey("/api/metrics/chain-series?spec=ETH1&window=3h&router=eth-prod", 15 * S)).toBe(MIN);
     expect(pollMsForKey("/api/metrics/upstreams?window=1d", 15 * S)).toBe(5 * MIN);
-    expect(pollMsForKey("/api/metrics/overview?window=30m", 15 * S)).toBe(15 * S);
+    expect(pollMsForKey("/api/metrics/dashboard-summary?window=30m", 15 * S)).toBe(15 * S);
   });
 
   it("keeps the caller's interval when it is the longer one", () => {
@@ -47,13 +47,13 @@ describe("pollMsForKey", () => {
   });
 
   it("never makes a key that doesn't poll start polling", () => {
-    expect(pollMsForKey("/api/metrics/overview?window=7d", 0)).toBe(0);
+    expect(pollMsForKey("/api/metrics/dashboard-summary?window=7d", 0)).toBe(0);
   });
 
   it("reads a window as the api does: the 24h alias, and the default for one it doesn't know", () => {
-    expect(pollMsForKey("/api/metrics/overview?window=24h", 15 * S)).toBe(5 * MIN);
-    expect(pollMsForKey("/api/metrics/overview?window=2w", 15 * S)).toBe(15 * S);
-    expect(pollMsForKey("/api/metrics/overview?window=", 15 * S)).toBe(15 * S);
+    expect(pollMsForKey("/api/metrics/dashboard-summary?window=24h", 15 * S)).toBe(5 * MIN);
+    expect(pollMsForKey("/api/metrics/dashboard-summary?window=2w", 15 * S)).toBe(15 * S);
+    expect(pollMsForKey("/api/metrics/dashboard-summary?window=", 15 * S)).toBe(15 * S);
   });
 
   it("leaves metrics reads without a window at the caller's interval", () => {

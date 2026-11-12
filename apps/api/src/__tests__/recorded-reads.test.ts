@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { RECORDED, recordedReadsPolicy, setRecordedReads } from "@sr/shared";
 import { buildApp } from "../app.js";
 import { MetricsService } from "../services/metrics.js";
+import { MetricsDetailService } from "../services/metrics-detail.js";
 import type { PrometheusClient, PromVectorSample } from "../services/prometheus-client.js";
 
 /** A store that answers the freshness probe with a given age and everything else empty. */
@@ -163,7 +164,7 @@ describe("services under the policy", () => {
   // The raw family on its own, not inside a recorded name.
   const RAW_HISTOGRAM = /(?<![:a-z_])smartrouter_end_to_end_latency_milliseconds_bucket(?![:a-z_])/;
 
-  it("the hero summary, the routers table and the overview read recorded series at 1d and raw at 1h", async () => {
+  it("the hero summary, the routers table and the chain series read recorded series at 1d and raw at 1h", async () => {
     setRecordedReads({ from: "3h", available: true, historySeconds: 2_592_000 });
     // A day: the KPIs, the grouped per-chain reads and the chart series (the
     // chart floor is 12h) all read recorded series.
@@ -172,7 +173,7 @@ describe("services under the policy", () => {
       const svc = new MetricsService(prom);
       await svc.dashboardSummary(window);
       await svc.chains(window);
-      await svc.overview(window);
+      await new MetricsDetailService(prom).chainSeries("ETH1", window);
       const histogramReads = queries.filter((q) => q.includes("latency_milliseconds_bucket"));
       expect(histogramReads.length).toBeGreaterThan(0);
       for (const q of histogramReads) {

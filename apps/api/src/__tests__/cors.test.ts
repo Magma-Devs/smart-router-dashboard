@@ -64,7 +64,7 @@ describe("CORS preflight", () => {
   });
 
   it("still allows the reads", async () => {
-    const res = await preflight("/api/metrics/overview", "GET");
+    const res = await preflight("/api/metrics/pulse", "GET");
     const allowed = String(res.headers["access-control-allow-methods"] ?? "");
     expect(allowed).toContain("GET");
     expect(res.headers["access-control-allow-origin"]).toBe(ORIGIN);

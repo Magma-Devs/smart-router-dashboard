@@ -43,7 +43,6 @@ function recordingProm() {
 async function everyChart(prom: PrometheusClient, w: MetricWindow): Promise<void> {
   const metrics = new MetricsService(prom);
   const detail = new MetricsDetailService(prom);
-  await metrics.overview(w);
   await metrics.traffic(w);
   await metrics.rpsSeries(undefined, w);
   await detail.chainSeries("ETH1", w);

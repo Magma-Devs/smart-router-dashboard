@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { WINDOWS } from "@sr/shared/constants";
-import { rateRange } from "@sr/shared";
 import { MetricsService } from "../services/metrics.js";
 import { MetricsDetailService } from "../services/metrics-detail.js";
+import { MetricsDashboardService } from "../services/metrics-dashboard.js";
 import type { ConfigurationService } from "../services/configuration.js";
 import type {
   PrometheusClient,
@@ -57,17 +56,17 @@ function capturingProm(answers: FakeAnswers = {}) {
 describe("MetricsService query construction (bug regressions)", () => {
   it("latency KPI priors use an offset — deltas were permanently 0 before", async () => {
     const { prom, queries } = capturingProm();
-    await new MetricsService(prom).overview("1d");
+    await new MetricsService(prom).dashboardSummary("1d");
     const latencyPriors = queries.filter(
       (q) => q.includes("histogram_quantile") && q.includes("offset 86400s"),
     );
-    // p50, p95, p99 priors must all be offset by one window length.
-    expect(latencyPriors.length).toBeGreaterThanOrEqual(3);
+    // The hero p95's prior is offset by one window length.
+    expect(latencyPriors).toHaveLength(1);
   });
 
   it("prior errors come from the derived error count, offset by the window", async () => {
     const { prom, queries } = capturingProm();
-    await new MetricsService(prom).overview("1h");
+    await new MetricsDashboardService(prom).dashboard("1h");
     // round(clamp_min(total − success)) — whole errors, offset one window back.
     expect(
       queries.some((q) => q.includes("clamp_min(") && q.includes("offset 3600s")),
@@ -162,9 +161,9 @@ function allChainQuantiles(queries: string[], range: string): string[] {
 // With no chain selected, a quantile grouped `by (spec, le)` came back as one
 // series per chain and scalar() kept the first: the hero p95 was whichever
 // chain Prometheus listed first, and "—" when that chain had no traffic in the
-// window, while all chains together had a p95. (The per-chain panel reads
-// `by (spec, le)` on purpose, through `query()`, and joins on the label — see
-// the grouped-reads cases below.)
+// window, while all chains together had a p95. (The per-chain reads — the
+// chains rollup, the dashboard's per-chain lines — group `by (spec, le)` on
+// purpose and key each answer on the label.)
 describe("MetricsService · latency with no chain selected reads all chains as one", () => {
   it("hero p95 and its prior group by le only", async () => {
     const { prom, scalars } = capturingProm();
@@ -175,80 +174,19 @@ describe("MetricsService · latency with no chain selected reads all chains as o
     for (const q of kpi) expect(groupings(q)).toEqual(["le"]);
   });
 
-  it("overview p50/p95/p99, their priors and the latency chart group by le only", async () => {
+  it("the dashboard's p95, its prior and its p50/p95/p99 chart group by le only", async () => {
     const { prom, scalars, ranges } = capturingProm();
-    await new MetricsService(prom).overview("1d");
-    // 1d: the KPIs read [86400s], the chart's series one [10m] step each.
+    await new MetricsDashboardService(prom).dashboard("1d");
+    // 1d: the KPI reads [86400s], the chart's series one [10m] step each.
     const kpis = allChainQuantiles(scalars, "86400s");
-    expect(kpis).toHaveLength(6);
+    expect(kpis).toHaveLength(2);
     for (const q of kpis) expect(groupings(q)).toEqual(["le"]);
-    // The chart plots the first series of each percentile, so it had the same bug.
+    // The chart plots the first series of each percentile, so it had the same
+    // bug. Its per-chain lines group by (spec, le) on purpose, one line each.
     const chart = allChainQuantiles(ranges, "10m");
-    expect(chart).toHaveLength(3);
-    for (const q of chart) expect(groupings(q)).toEqual(["le"]);
-  });
-});
-
-// MAG-4294: the overview read three series per chain for its per-chain panels,
-// and the trend a second time for `perChainSeries` — about 200 reads on a
-// 40-chain deployment, enough for the store to reject part of each burst and
-// the rows to render empty. It reads one grouped series each and joins on the
-// spec label.
-describe("MetricsService.overview · per-chain panels read grouped series (MAG-4294)", () => {
-  const perSpecP50 = "histogram_quantile(0.5, sum by (spec, le) (rate(smartrouter_end_to_end_latency_milliseconds_bucket";
-  const perSpecHealth = "1 - min by (spec) (smartrouter_csm_provider_blocked";
-  const perSpecTrend = "sum by (spec) (rate(smartrouter_end_to_end_latency_milliseconds_count";
-  const row = (spec: string, v: string): PromVectorSample => ({ metric: { spec }, value: [1, v] });
-
-  it("costs the same number of reads for one chain as for three", async () => {
-    const one = capturingProm({ specs: ["ETH1"] });
-    await new MetricsService(one.prom).overview("1h");
-    const three = capturingProm({ specs: ["ETH1", "SOLANA", "APT1"] });
-    await new MetricsService(three.prom).overview("1h");
-    expect(three.queries).toHaveLength(one.queries.length);
-    // Without a chain filter no read names a single chain.
-    expect(three.queries.every((q) => !q.includes('{spec="'))).toBe(true);
-    expect(three.queries.filter((q) => q.startsWith(perSpecP50))).toHaveLength(1);
-    expect(three.queries.filter((q) => q.startsWith(perSpecHealth))).toHaveLength(1);
-    expect(three.ranges.filter((q) => q.startsWith(perSpecTrend))).toHaveLength(1);
-  });
-
-  it("joins the grouped rows onto each chain; a chain without a row keeps its nulls", async () => {
-    const { prom } = capturingProm({
-      specs: ["APT1", "ETH1", "SOLANA"],
-      vector: (expr) => {
-        // A NaN quantile is a chain with buckets but no samples in the window.
-        if (expr.startsWith(perSpecP50)) return [row("ETH1", "42"), row("SOLANA", "NaN")];
-        if (expr.startsWith(perSpecHealth)) return [row("ETH1", "0"), row("SOLANA", "1")];
-        return undefined;
-      },
-      matrix: (expr) =>
-        expr.startsWith(perSpecTrend) ? [{ metric: { spec: "ETH1" }, values: [[1, "3"], [2, "4"]] }] : undefined,
-    });
-    const data = await new MetricsService(prom).overview("1h");
-    const by = Object.fromEntries(data.perChainLatency.map((c) => [c.spec, c]));
-    expect(by.ETH1).toMatchObject({ p50Ms: 42, degraded: true, trend: [{ t: 1, v: 3 }, { t: 2, v: 4 }] });
-    expect(by.SOLANA).toMatchObject({ p50Ms: null, degraded: false, trend: [] });
-    expect(by.APT1).toMatchObject({ p50Ms: null, degraded: false, trend: [] });
-    expect(data.perChainLatency.map((c) => c.spec)).toEqual(["APT1", "ETH1", "SOLANA"]);
-    // perChainSeries is the same matrix, not a second read of it.
-    const series = Object.fromEntries(data.perChainSeries.map((c) => [c.spec, c.points]));
-    expect(series.ETH1).toEqual(by.ETH1!.trend);
-    expect(series.SOLANA).toEqual([]);
-  });
-
-  it("a chain filter scopes the grouped reads to that chain", async () => {
-    const { prom, queries, ranges } = capturingProm({ specs: ["ETH1", "SOLANA"] });
-    const data = await new MetricsService(prom).overview("1h", "ETH1");
-    expect(queries.find((q) => q.startsWith(perSpecP50))).toContain('{spec="ETH1"}[3600s]');
-    expect(queries.find((q) => q.startsWith(perSpecHealth))).toBe(
-      '1 - min by (spec) (smartrouter_csm_provider_blocked{spec="ETH1"})',
-    );
-    expect(ranges.find((q) => q.startsWith(perSpecTrend))).toBe(
-      // Never a rate over less than a minute: a 30-second range misses series whose scrapes don't land twice in it.
-      `sum by (spec) (rate(smartrouter_end_to_end_latency_milliseconds_count{spec="ETH1"}[${rateRange(WINDOWS["1h"].step)}]))`,
-    );
-    expect(data.perChainLatency.map((c) => c.spec)).toEqual(["ETH1"]);
+    expect(chart.filter((q) => groupings(q).join() === "le")).toHaveLength(3);
+    expect(chart.filter((q) => groupings(q).join() === "spec, le")).toHaveLength(3);
+    expect(chart).toHaveLength(6);
   });
 });
 

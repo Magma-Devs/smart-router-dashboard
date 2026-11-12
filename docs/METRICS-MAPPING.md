@@ -49,13 +49,13 @@ is window-scoped, and failure-only traffic keeps its diagnostics available.
 A QoS availability score is an optimizer score, not a percentage of time up.
 There is no explicit disabled-state signal, so the UI does not invent one.
 
-`/api/metrics/overview` includes `upstreamHealthCounts: { unhealthy, unknown }`
+`/api/metrics/pulse` includes `upstreamHealthCounts: { unhealthy, unknown }`
 using the same four health reads as the roster (gauge, chain rate, success
 and failure events). Chains sharing a window are grouped into PromQL union
 branches; query count is independent of the number of endpoints or chains. The optional
 `spec` and `routerId` filter these counts; `router` scopes all Prometheus
-queries. Headers consume this existing overview call every 30 seconds and
-make no additional roster/histogram/QoS request. They show **Checking health…**
+queries. Headers read the pulse every 30 seconds and make no roster,
+histogram or QoS request. They show **Checking health…**
 until the selected scope answers, a warning on fetch errors, and warning
 counts for missing upstream health. Background refresh retains the same
 scope's last measurement; changing scope does not reuse another scope's data.
@@ -184,7 +184,6 @@ client requests) against the live router:
 | Classified error pivots (code / category / retryability) | `smartrouter_errors_total` `{chain_id, error_category ∈ internal\|external, error_name, retryable}` — ⚠ `chain_id`, not `spec`; NO provider label |
 | P50/P95/P99 latency | `qLatencyQuantile(q, spec, window)` = `histogram_quantile(q, sum by (le) (rate(…_bucket[$w])))` - grouped by `le` only, so with no chain it is every chain as one distribution, one series for `scalar()`. Per-chain lines: `qPerSpecLatencySeriesExpr(q, step)`; the overall line: `qLatencySeriesExpr(q, step, spec)` |
 | **Per-method P95** | `qMethodLatencyQuantile(q, window, spec)` — the histogram's method label is named **`function`** (the "no method label" note in the design doc was wrong) |
-| Latency distribution (buckets) | `qLatencyDistribution` = `sum by (le) (increase(…_bucket[$w]))` |
 | RPS (client-scoped) | `qClientRps` / `qClientRpsSeriesExpr(step, spec)` = `sum(rate(…latency_milliseconds_count[step]))` |
 | Per-chain / per-provider RPS stacks | `qPerSpecRpsExpr` / `qPerProviderRpsExpr` |
 | Availability / error-rate series | `qAvailabilitySeriesExpr` (also `clamp_max(…, 1)`) / `qErrorRateSeriesExpr` / `qErrorCountSeriesExpr` |
@@ -212,7 +211,6 @@ client requests) against the live router:
 |---|---|
 | `/api/metrics/specs` | `count by (spec) (smartrouter_requests_total)` |
 | `/api/metrics/dashboard-summary` | `qRequestsTotal` + `qAvailability` + `qLatencyQuantile(0.95)` + stale-caught, each **twice** (current + `offset $range` prior); `count by (endpoint_id) (label_replace(smartrouter_csm_provider_blocked, …))`; `smartrouter_overall_health`; retries/cache KPIs only when `qPresence` says the family exists. No cache on this build ⇒ the documented derived "effective read p95" reduces to the node read p95 (the overall router histogram). |
-| `/api/metrics/overview` | KPI pairs (requests, 5m-rate RPS, availability, p50/95/99) + `qErrorCount` (both windows); `query_range` series for throughput / errors / p50/p95/p99; `qLatencyDistribution`; per-provider stack `sum by (provider_address) (rate(requests_total[step]))`; per-chain p50 / health / trend as one grouped read each — `histogram_quantile(0.5, sum by (spec, le) (rate(…_bucket[$w])))`, `1 - min by (spec) (smartrouter_csm_provider_blocked)`, `sum by (spec) (rate(…_latency_milliseconds_count[step]))` (that matrix also feeds `perChainSeries`) — joined on `spec`; active routes `sum by (endpoint_id, spec) (increase(rpc_endpoint_total_relays_serviced[$w]))` |
 | `/api/metrics/pulse` | `smartrouter_overall_health` (under a chain filter: `1 - min by (spec) (smartrouter_csm_provider_blocked{spec})`), `qClientRps`, and the four reads of `readUpstreamHealth` — six reads, no window |
 | `/api/metrics/dashboard` | `qRpsSeriesExpr`, `qErrorCountSeriesExpr`, `qErrorRateSeriesExpr`, `qAvailabilitySeriesExpr`, `qLatencySeriesExpr(q)`; per-chain `qPerSpecRpsExpr`, per-spec success ratio, per-spec `qPerSpecLatencySeriesExpr(q)` (`sum by (spec, le)` - the one latency query that keeps a series per chain); `qPerProviderRpsExpr`; per-provider p95 `histogram_quantile(0.95, sum by (endpoint_id, le) (rate(rpc_endpoint_…_bucket[step])))`; chain list from `count by (spec)` + `1 - min by (spec) (smartrouter_csm_provider_blocked)` |
 | `/api/metrics/chains` | seven grouped reads, one row per chain, joined on `spec`: `qGroupedClientRequests`, `qGroupedAvailability` (the error rate is `1 −` that ratio, not a second read), `qGroupedLatencyQuantile(0.95)`, `qGroupedQos`, `qGroupedHealth`, `qGroupedLatestBlock`, `qGroupedUpstreams` (`count by (spec, endpoint_id)` — the row count per chain) |

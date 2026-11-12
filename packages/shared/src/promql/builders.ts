@@ -606,26 +606,9 @@ export function qGroupedUpstreams(g: GroupBy): string {
   return `count by (${by(g)}, endpoint_id) (${qProviderBlockedByEndpoint()})`;
 }
 
-/** A quantile per chain over the window — `qGroupedLatencyQuantile` by spec. */
-export function qPerSpecLatencyQuantile(
-  quantile: number,
-  window: MetricWindow = DEFAULT_WINDOW,
-  spec?: string,
-): string {
-  return qGroupedLatencyQuantile(quantile, ["spec"], window, spec);
-}
-
 /** Health per chain from the blocked gauge — `qGroupedHealth` by spec. */
 export function qPerSpecHealth(spec?: string): string {
   return qGroupedHealth(["spec"], spec);
-}
-
-/** Client RPS series per chain (histogram _count) — one matrix row per spec. */
-export function qPerSpecClientRpsSeriesExpr(step: string, spec?: string, window?: MetricWindow): string {
-  if (recordedSeriesFor(window)) {
-    return `sum by (spec) (${aot(`${RECORDED.clientRequests}${selector({ spec })}`, step)})`;
-  }
-  return `sum by (spec) (rate(${ROUTER_METRICS.latencyCount}${selector({ spec })}[${rateRange(step)}]))`;
 }
 
 /** Per-upstream RPS series (stacked upstream-mix charts). */
@@ -1077,17 +1060,6 @@ export function qConsistencyCaught(
 /** The four csm_* gauges in one instant query. */
 export function qCsm(): string {
   return `{__name__=~"${ROUTER_METRICS.csmBlockedProviders}|${ROUTER_METRICS.csmBlockedBackupProviders}|${ROUTER_METRICS.csmReportedProviders}|${ROUTER_METRICS.csmStickySessions}"}`;
-}
-
-/** Latency histogram bucket distribution over the window (per le). */
-export function qLatencyDistribution(
-  window: MetricWindow = DEFAULT_WINDOW,
-  spec?: string,
-): string {
-  if (recordedReadsFor(window)) {
-    return `sum by (le) (${sot(`${RECORDED.latencyBucket}${selector({ spec })}`, rangeFor(window))}) * ${K}`;
-  }
-  return `sum by (le) (increase(${ROUTER_METRICS.latencyBucket}${selector({ spec })}[${rangeFor(window)}]))`;
 }
 
 /** Presence probe: non-empty result ⇒ the family is registered/emitted. */

@@ -105,7 +105,6 @@ describe("GET /api/metrics/routers", () => {
 
 describe("?router= scoping", () => {
   const SCOPED_ROUTES = [
-    "/api/metrics/overview",
     "/api/metrics/pulse",
     "/api/metrics/dashboard",
     "/api/metrics/dashboard-summary",
@@ -152,7 +151,7 @@ describe("?router= scoping", () => {
 
     const res = await app.inject({
       method: "GET",
-      url: `/api/metrics/overview?router=${encodeURIComponent('x" or spec="ETH1')}`,
+      url: `/api/metrics/dashboard-summary?router=${encodeURIComponent('x" or spec="ETH1')}`,
     });
     // Reads cluster-wide rather than becoming a different query — and the
     // injection attempt reaches Prometheus nowhere.
@@ -260,8 +259,8 @@ describe("METRICS_SCOPE_LABEL / METRICS_SCOPE_VALUE (deployment scope)", () => {
   });
 
   const ROUTES = [
-    "/api/metrics/overview",
     "/api/metrics/pulse",
+    "/api/metrics/dashboard-summary",
     "/api/metrics/dashboard",
     "/api/metrics/chains",
     "/api/metrics/routers-rollup",
@@ -491,7 +490,7 @@ describe("ROUTER_SCOPE_LABEL left unset (MAG-4303)", () => {
   it("settles the label before a `?router=` read, so the first scoped request is already right", async () => {
     mockPrometheus([], [], 1, { service: ["eth-router"] });
     app = await buildApp();
-    const res = await app.inject({ method: "GET", url: "/api/metrics/overview?router=eth-router" });
+    const res = await app.inject({ method: "GET", url: "/api/metrics/pulse?router=eth-router" });
     expect(res.statusCode).toBe(200);
     const scopedReads = metricQueries();
     expect(scopedReads.length).toBeGreaterThan(0);

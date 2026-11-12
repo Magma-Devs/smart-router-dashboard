@@ -15,15 +15,12 @@ import {
   qClientRps,
   qClientRpsSeriesExpr,
   qConsistencyCaught,
-  qErrorCount,
-  qErrorCountSeriesExpr,
   qErrorsBy,
   qEndpointRelaysBySpec,
   qEndpointLatencyQuantileBySpec,
   qUpstreamRelays,
   qUpstreamSuccesses,
   qReadRequestsByMethod,
-  qPerUpstreamRpsExpr,
   qGroupedAvailability,
   qGroupedClientRequests,
   qGroupedHealth,
@@ -31,19 +28,15 @@ import {
   qGroupedLatestBlock,
   qGroupedQos,
   qGroupedUpstreams,
-  qLatencyDistribution,
   qLatencyQuantile,
-  qLatencySeriesExpr,
   qRetriesTotal,
   qBestTipBySpec,
   qBlockRateBySpec,
   qEndpointPolls,
   qOptimizerScoresByEndpoint,
   qMethodLatencyQuantile,
-  qPerSpecClientRpsSeriesExpr,
   qPerSpecHealth,
   qProviderBlockedByEndpoint,
-  qPerSpecLatencyQuantile,
   qPresence,
   qRequestsBy,
   qRouterTipChanges,
@@ -158,16 +151,6 @@ const GROUPED_LABELS: ReadonlySet<string> = new Set(["spec", "le", "endpoint_id"
 
 /** Map key for one group's label values (`["ETH1"]`, `["ETH1", "eth-router"]`). */
 const groupKey = (values: readonly string[]): string => values.join("\u0000");
-
-/** Instant vector → `spec` label → finite value. Rows without either are dropped. */
-function valuesBySpec(rows: PromVectorSample[]): Map<string, number> {
-  const out = new Map<string, number>();
-  for (const row of rows) {
-    const n = Number(row.value[1]);
-    if (row.metric.spec && Number.isFinite(n)) out.set(row.metric.spec, n);
-  }
-  return out;
-}
 
 export class MetricsService {
   constructor(
@@ -306,169 +289,6 @@ export class MetricsService {
     };
   }
 
-  async overview(
-    window: MetricWindow,
-    spec?: string,
-    routerId?: string,
-  ): Promise<import("@sr/shared").OverviewData> {
-    const win = WINDOWS[window];
-    const sel = selector({ spec });
-    const { start, end } = alignedBounds(win.rangeSeconds, stepSeconds(window), Date.now() / 1000);
-    const r = rangeFor(window);
-
-    // KPI value + its prior-window counterpart (offset PromQL range).
-    const kpi = async (cur: string, prior: string): Promise<Kpi> => {
-      const [value, p] = await Promise.all([this.prom.scalar(cur), this.prom.scalar(prior)]);
-      return { value, prior: p };
-    };
-    const range = (expr: string) => this.prom.queryRange(expr, start, end, win.step);
-
-    // One round of reads: nothing here depends on an earlier answer. The
-    // per-chain panels read one grouped series each and join on the spec
-    // label below, so the cost of this call does not grow with the number of
-    // chains (it used to be three reads per chain, plus the trend a second
-    // time for `perChainSeries`, after a round that waited for `listSpecs()`).
-    const [
-      totalRequests,
-      throughputRps,
-      successRate,
-      p50,
-      p95,
-      p99,
-      healthGauge,
-      throughput,
-      errorsSeries,
-      latP50,
-      latencySeries,
-      latP99,
-      errorsNow,
-      errorsPrior,
-      distRows,
-      provMatrix,
-      specs,
-      upstreamHealth,
-      perSpecP50,
-      perSpecHealth,
-      perSpecTrend,
-      activeRoutes,
-    ] = await Promise.all([
-      // Client-scoped requests + RPS (histogram _count) — relay-scoped
-      // requests_total stays only where the per-provider lens is the point.
-      kpi(qClientRequestsTotal(spec, window), qClientRequestsTotal(spec, window, r)),
-      kpi(qClientRps(spec), `sum(rate(${ROUTER_METRICS.latencyCount}${sel}[5m] offset ${r}))`),
-      kpi(qAvailability(spec, window), qAvailability(spec, window, r)),
-      kpi(qLatencyQuantile(0.5, spec, window), qLatencyQuantile(0.5, spec, window, r)),
-      kpi(qLatencyQuantile(0.95, spec, window), qLatencyQuantile(0.95, spec, window, r)),
-      kpi(qLatencyQuantile(0.99, spec, window), qLatencyQuantile(0.99, spec, window, r)),
-      this.prom.scalar(ROUTER_METRICS.overallHealth),
-      range(qClientRpsSeriesExpr(win.step, spec, window)),
-      range(qErrorCountSeriesExpr(win.step, spec, window)),
-      // Latency series per percentile for the p50/p95/p99 chart toggle.
-      range(qLatencySeriesExpr(0.5, win.step, spec, window)),
-      range(qLatencySeriesExpr(0.95, win.step, spec, window)),
-      range(qLatencySeriesExpr(0.99, win.step, spec, window)),
-      // Errors = total − success over the window, for BOTH windows (the prior
-      // KPI must be prior ERRORS, not prior requests).
-      this.prom.scalar(qErrorCount(spec, window)),
-      this.prom.scalar(qErrorCount(spec, window, r)),
-      // Latency histogram distribution (per-bucket counts over the window).
-      this.prom.query(qLatencyDistribution(window, spec)),
-      // Per-provider throughput stack (real: provider_address label).
-      range(qPerUpstreamRpsExpr(win.step, spec, window)),
-      spec ? Promise.resolve([spec]) : this.listSpecs(),
-      readUpstreamHealth(this.prom, this.configSvc, spec, routerId),
-      // Per-chain p50, health and throughput trend — grouped, one read each.
-      this.prom.query(qPerSpecLatencyQuantile(0.5, window, spec)),
-      this.prom.query(qPerSpecHealth(spec)),
-      range(qPerSpecClientRpsSeriesExpr(win.step, spec, window)),
-      this.activeRoutes(window),
-    ]);
-
-    // The window's success ratio is the same read as the KPI's current value.
-    const uptime = successRate.value;
-    // 1 − success/total, the ratio `qErrorRate` gives per chain; null with no
-    // requests. Not errors over `totalRequests`: that counts only the requests
-    // the router answered (the latency histogram skips failures), from other
-    // counters than the errors.
-    const errorRate = uptime !== null ? 1 - uptime : null;
-
-    const latencyDistribution = distRows
-      .map((s) => ({ le: s.metric.le ?? "", count: Number(s.value[1]) || 0 }))
-      .filter((b) => b.le !== "")
-      .sort((a, b) => Number(a.le) - Number(b.le));
-
-    const perUpstreamSeries = provMatrix
-      .filter((m) => m.metric.provider_address)
-      .map((m) => ({
-        upstream: m.metric.provider_address ?? "",
-        points: toPoints(m.values),
-      }));
-
-    // Error layers: until node/protocol error counters fire there is exactly
-    // one honest layer — "unclassified" (= derived total − success).
-    const errorLayers =
-      errorsNow !== null && errorsNow > 0
-        ? [{ layer: "unclassified", count: errorsNow }]
-        : [];
-
-    // Join the grouped reads onto the chains `listSpecs()` names. A chain no
-    // grouped row covers keeps the nulls the per-chain reads gave it.
-    const p50BySpec = valuesBySpec(perSpecP50);
-    const healthBySpec = valuesBySpec(perSpecHealth);
-    const trendBySpec = new Map<string, [number, string][]>();
-    for (const row of perSpecTrend) if (row.metric.spec) trendBySpec.set(row.metric.spec, row.values);
-    const perChainLatency = specs.map((s) => {
-      const meta = buildChainMetaByIndex(s);
-      const h = healthBySpec.get(s) ?? null;
-      return {
-        spec: s,
-        name: meta.name,
-        color: meta.color,
-        p50Ms: p50BySpec.get(s) ?? null,
-        trend: toPoints(trendBySpec.get(s)),
-        degraded: h !== null && h < 1,
-      };
-    });
-    // The same matrix as the trend above — not a second read of it.
-    const perChainSeries = specs.map((s) => {
-      const meta = buildChainMetaByIndex(s);
-      return { spec: s, name: meta.name, color: meta.color, points: toPoints(trendBySpec.get(s)) };
-    });
-
-    return {
-      totalRequests,
-      throughputRps,
-      errors: { value: errorsNow, prior: errorsPrior },
-      errorRate,
-      uptime,
-      successRate,
-      p50Ms: p50,
-      p95Ms: p95,
-      p99Ms: p99,
-      health: health(healthGauge),
-      upstreamHealthCounts: {
-        unhealthy: [...upstreamHealth.values()].filter((row) => row.health === "unhealthy").length,
-        unknown: [...upstreamHealth.values()].filter((row) => row.health === "unknown").length,
-      },
-      computeUnits: { used: null, limit: null, resetsAt: null },
-      rpsCap: null,
-      throughput: toPoints(throughput[0]?.values),
-      errorsSeries: toPoints(errorsSeries[0]?.values),
-      latencySeries: {
-        p50: toPoints(latP50[0]?.values),
-        p95: toPoints(latencySeries[0]?.values),
-        p99: toPoints(latP99[0]?.values),
-      },
-      latencyDistribution,
-      perUpstreamSeries,
-      errorLayers,
-      perChainLatency,
-      activeRoutes,
-      perChainSeries,
-      lastUpdated: new Date().toISOString(),
-    };
-  }
-
   /**
    * The topbar's three fields in six reads: the router's health gauge, the
    * current client RPS, and the upstream health roll-up (four reads of its
@@ -489,28 +309,6 @@ export class MetricsService {
       throughputRps,
       lastUpdated: new Date().toISOString(),
     };
-  }
-
-  /** Active routes ranked by requests over the window (per backing endpoint). */
-  private async activeRoutes(window: MetricWindow): Promise<import("@sr/shared").ActiveRoute[]> {
-    const rows = await this.prom.query(
-      qEndpointRelaysBySpec(window),
-    );
-    const parsed = rows
-      .map((s) => ({
-        endpointId: s.metric.endpoint_id ?? "",
-        spec: s.metric.spec ?? "",
-        requests: Math.round(Number(s.value[1]) || 0),
-      }))
-      .filter((x) => x.endpointId)
-      .sort((a, b) => b.requests - a.requests)
-      .slice(0, 8);
-    const max = parsed[0]?.requests || 1;
-    return parsed.map((x) => ({
-      ...x,
-      color: buildChainMetaByIndex(x.spec).color,
-      share: x.requests / max,
-    }));
   }
 
   /**

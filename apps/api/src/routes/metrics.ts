@@ -88,7 +88,7 @@ const windowQuerySchema = {
     routerId: {
       type: "string" as const,
       description:
-        "Restrict to the upstreams ONE config router declares — an id from GET /api/config/routers. A different axis from `router`: this filters rows against the mounted values file, it does not narrow the PromQL. Read by /api/metrics/upstreams and overview health counts (optional)",
+        "Restrict to the upstreams ONE config router declares — an id from GET /api/config/routers. A different axis from `router`: this filters rows against the mounted values file, it does not narrow the PromQL. Read by /api/metrics/upstreams and the pulse's health counts (optional)",
     },
   },
 };
@@ -190,7 +190,7 @@ export async function metricRoutes(app: FastifyInstance, opts: MetricRoutesOptio
   }, async () => app.recordedReads());
 
   // The topbar's health badge + live RPS, on every page: six reads, no
-  // window. Takes the same two router axes as the overview it replaces there.
+  // window. Takes both router axes, as the upstream roster does.
   app.get<{ Querystring: WindowQuery }>("/api/metrics/pulse", {
     schema: {
       tags: ["Metrics"],
@@ -208,14 +208,6 @@ export async function metricRoutes(app: FastifyInstance, opts: MetricRoutesOptio
     const { spec, router, routerId } = request.query;
     return snapshot(reply, "pulse", null, ["pulse", spec ?? null, scopeKey(router), routerId ?? null], () =>
       app.scoped(router).metrics.pulse(spec, routerId));
-  });
-
-  // Rich Overview/Dashboard payload (KPIs + deltas + series + per-chain).
-  app.get<{ Querystring: WindowQuery }>("/api/metrics/overview", tag("Rich Overview/Dashboard payload (KPIs, deltas, series, per-chain)"), async (request, reply) => {
-    const { spec, router, routerId } = request.query;
-    const window = parseWindow(request.query.window);
-    return snapshot(reply, "live", window, ["overview", window, spec ?? null, scopeKey(router), routerId ?? null], () =>
-      app.scoped(router).metrics.overview(window, spec, routerId));
   });
 
   // Dashboard page payload (Overview + Metrics tabs). The chains multiselect
