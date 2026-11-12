@@ -5,6 +5,33 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Security
+
+- **Every version is pinned, and a new one must be a week old** (MAG-5218).
+  Builds already installed from the lockfile. What a dependency update could
+  bring in was not gated: a Dependabot PR or a `pnpm install` took the newest
+  release on the day it shipped, and Actions and base images followed
+  movable tags.
+  - npm: the 54 direct dependencies and every `pnpm.overrides` target are
+    exact versions. pnpm 10.8.0 → 10.34.9, pinned by its sha512 in
+    `packageManager`. `pnpm-workspace.yaml` adds `minimumReleaseAge` (7
+    days), `trustPolicy: no-downgrade`, `blockExoticSubdeps` and
+    `saveExact`. Three locked packages under 7 days old went back to their
+    previous releases (cookie 2.0.1, fast-json-stringify 7.3.0,
+    `@isaacs/nonrecursive-glob-match` 1.0.3). next-auth 5.0.0-beta.32 is
+    exempt from the trust check by exact version: the only next-auth build
+    ever published with provenance is an experimental one, so every release
+    since trips it.
+  - CI: all 17 actions are pinned to commit SHAs, runners to `ubuntu-24.04`,
+    and Node to 24.22.3 through `.nvmrc`, which CI now reads. 24.22.3 is the
+    2026-11-10 security release that the images already ran. buildx v0.38.1
+    and BuildKit v0.34.2 are pinned by digest.
+  - Images: `node:24.22.3-alpine`, Postgres, Prometheus (`latest` →
+    v3.16.0), Grafana, Loki, Promtail and the SES mock are pinned by version
+    tag plus digest. The digests are the ones today's builds pulled.
+  - Dependabot waits 7 days after a release (security updates excepted) and
+    now also updates the Dockerfiles and compose files.
+
 ## [0.60.1]
 
 ### Fixed
