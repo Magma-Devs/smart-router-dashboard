@@ -75,8 +75,14 @@ function isScopedMetric(name: string, opts: ScopeOptions): boolean {
 }
 
 /** Keywords followed by a parenthesised list of LABEL names - `sum by
- *  (cache_tier)`, `on (endpoint_id)`. A name in there is never a metric. */
+ *  (cache_tier)`, `on (endpoint_id)`. A name in there is never a metric.
+ *  PromQL keywords are case-insensitive, so names are matched lower-cased. */
 const LABEL_LIST_KEYWORDS: ReadonlySet<string> = new Set(["by", "without", "on", "ignoring", "group_left", "group_right"]);
+
+/** Keywords that sit between two operands - `a and {...}`, `a > bool {...}`,
+ *  `a * on (x) group_left {...}`. A `{` after one opens the right operand's
+ *  nameless selector, never a selector of the keyword's own. */
+const OPERATOR_KEYWORDS: ReadonlySet<string> = new Set(["and", "or", "unless", "atan2", "bool", "group_left", "group_right"]);
 
 const IDENT_START = /[a-zA-Z_:]/;
 const IDENT_CHAR = /[a-zA-Z0-9_:]/;
@@ -147,6 +153,15 @@ export function applyScope(expr: string, scope?: MetricScope | null, opts: Scope
       continue;
     }
 
+    // A comment runs to the end of the line and is copied as written: a
+    // quote or a brace in it opens nothing.
+    if (ch === "#") {
+      const end = lineEnd(expr, i);
+      out += expr.slice(i, end);
+      i = end;
+      continue;
+    }
+
     // Identifier: a metric name takes the scope, a function/keyword doesn't.
     if (IDENT_START.test(ch)) {
       let j = i;
@@ -155,11 +170,12 @@ export function applyScope(expr: string, scope?: MetricScope | null, opts: Scope
       out += name;
       i = j;
 
-      let k = i;
-      while (k < expr.length && expr[k] === " ") k++;
-      const braced = expr[k] === "{";
+      // PromQL reads `metric\n{...}` and `metric # note\n{...}` as one
+      // selector, so the look-ahead skips every blank and comment.
+      const k = skipBlank(expr, i);
+      const keyword = name.toLowerCase();
 
-      if (LABEL_LIST_KEYWORDS.has(name) && expr[k] === "(") {
+      if (LABEL_LIST_KEYWORDS.has(keyword) && expr[k] === "(") {
         // A list of label names, copied as written: `cache_tier` in
         // `sum by (cache_tier)` is a label, not a `cache_*` metric.
         const end = closingOf(expr, k, "(", ")");
@@ -168,6 +184,10 @@ export function applyScope(expr: string, scope?: MetricScope | null, opts: Scope
         continue;
       }
 
+      // `and {...}` - the brace branch below scopes that nameless selector.
+      if (OPERATOR_KEYWORDS.has(keyword)) continue;
+
+      const braced = expr[k] === "{";
       if (isScopedMetric(name, opts)) {
         if (braced) {
           // Merge into the selector the builder already emitted.
@@ -187,9 +207,8 @@ export function applyScope(expr: string, scope?: MetricScope | null, opts: Scope
         continue;
       }
       // The rest of the matcher list, copied as written: the names in it are
-      // labels. `cache_tier="primary"` read as a `cache_*` metric under the
-      // deployment scope became `cache_tier{zone="a"}="primary"`, which the
-      // store refuses.
+      // labels, so `cache_tier="primary"` stays a matcher under the
+      // deployment scope rather than reading as a `cache_*` metric.
       const end = closingOf(expr, i - 1, "{", "}");
       out += expr.slice(i, end);
       i = end;
@@ -199,7 +218,7 @@ export function applyScope(expr: string, scope?: MetricScope | null, opts: Scope
     // A selector with no metric name in front — `{__name__="…"}`. Every other
     // PromQL construct groups with parens, so any `{` reaching here starts one
     // (a metric's own `{` is consumed by the identifier branch above, scoped
-    // or not).
+    // or not; one after `and` / `bool` / `group_left` reaches here).
     if (ch === "{") {
       out += "{";
       i++;
@@ -219,14 +238,19 @@ export function applyScope(expr: string, scope?: MetricScope | null, opts: Scope
 
 /**
  * The index just past the bracket that closes the one at `open` (`{` or
- * `(`), skipping string literals, so a `}` or `)` inside a quoted value
- * doesn't end the group. The end of the expression when it never closes.
+ * `(`), skipping string literals and comments, so a `}` or `)` inside a
+ * quoted value or a `#` note doesn't end the group. The end of the
+ * expression when it never closes.
  */
 function closingOf(expr: string, open: number, opener: string, closer: string): number {
   let depth = 0;
   let i = open;
   while (i < expr.length) {
     const c = expr[i]!;
+    if (c === "#") {
+      i = lineEnd(expr, i);
+      continue;
+    }
     if (c === '"' || c === "'" || c === "`") {
       i++;
       while (i < expr.length && expr[i] !== c) {
@@ -243,9 +267,25 @@ function closingOf(expr: string, open: number, opener: string, closer: string): 
   return expr.length;
 }
 
-/** Whether the next non-space character closes the brace group (`{}`). */
+/** Whether the next character past blanks and comments closes the brace group (`{}`). */
 function nextIsBraceClose(expr: string, from: number): boolean {
+  return expr[skipBlank(expr, from)] === "}";
+}
+
+/** The index of the line break that ends the comment at `from`, or the end of the expression. */
+function lineEnd(expr: string, from: number): number {
+  const nl = expr.indexOf("\n", from);
+  return nl === -1 ? expr.length : nl;
+}
+
+/** The index of the next character that is not PromQL whitespace (space, tab, CR, LF) or in a `#` comment. */
+function skipBlank(expr: string, from: number): number {
   let k = from;
-  while (k < expr.length && expr[k] === " ") k++;
-  return expr[k] === "}";
+  while (k < expr.length) {
+    const c = expr[k]!;
+    if (c === " " || c === "\t" || c === "\n" || c === "\r") k++;
+    else if (c === "#") k = lineEnd(expr, k);
+    else break;
+  }
+  return k;
 }

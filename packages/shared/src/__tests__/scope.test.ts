@@ -146,6 +146,51 @@ describe("applyScope", () => {
     );
   });
 
+  it("reads blanks and keyword case the way PromQL does", () => {
+    // Tabs, line breaks and comments separate tokens like spaces do, and
+    // keywords are case-insensitive. Read any other way, `by\n(cache_tier)`
+    // is no label list and `cache_tier` takes the scope as a cache metric.
+    const ZONE: MetricScope = { label: "zone", value: "eu-west" };
+    const Z = 'zone="eu-west"';
+    const zoned = (q: string) => applyScope(q, ZONE, { cache: true });
+    expect(zoned("sum by\n(cache_tier) (cache_total_hits)")).toBe(`sum by\n(cache_tier) (cache_total_hits{${Z}})`);
+    expect(zoned("sum(cache_total_hits) without\t(cache_tier)")).toBe(`sum(cache_total_hits{${Z}}) without\t(cache_tier)`);
+    expect(zoned("sum by # tiers\n(cache_tier) (cache_total_hits)")).toBe(`sum by # tiers\n(cache_tier) (cache_total_hits{${Z}})`);
+    expect(zoned("sum BY (cache_tier) (cache_total_hits) / On (cache_tier) Group_Right (spec) cache_total_hits")).toBe(
+      `sum BY (cache_tier) (cache_total_hits{${Z}}) / On (cache_tier) Group_Right (spec) cache_total_hits{${Z}}`,
+    );
+    // A metric and its selector across a line break or a comment are one selector.
+    expect(zoned('cache_total_hits\r\n{cache_tier="primary"}')).toBe(`cache_total_hits\r\n{${Z},cache_tier="primary"}`);
+    expect(applyScope('smartrouter_x # per tier\n{cache_tier="primary"}', SCOPE)).toBe(
+      `smartrouter_x # per tier\n{${M},cache_tier="primary"}`,
+    );
+    expect(applyScope("smartrouter_x{\t}", SCOPE)).toBe(`smartrouter_x{${M}\t}`);
+  });
+
+  it("copies a comment as written - a quote or a brace in it opens nothing", () => {
+    expect(applyScope("vector(0) # it's\n+ count(smartrouter_overall_health)", SCOPE)).toBe(
+      `vector(0) # it's\n+ count(smartrouter_overall_health{${M}})`,
+    );
+    expect(applyScope("vector(0) # x{\n+ count(smartrouter_overall_health) # }", SCOPE)).toBe(
+      `vector(0) # x{\n+ count(smartrouter_overall_health{${M}}) # }`,
+    );
+    // Nor does a `}` or `)` in a comment inside a matcher list or a label list end it.
+    const ZONE: MetricScope = { label: "zone", value: "eu-west" };
+    expect(applyScope('smartrouter_x{spec="a" # }\n, cache_tier="p"} + smartrouter_y', ZONE, { cache: true })).toBe(
+      'smartrouter_x{zone="eu-west",spec="a" # }\n, cache_tier="p"} + smartrouter_y{zone="eu-west"}',
+    );
+    expect(applyScope("sum by (spec # )\n, cache_tier) (cache_total_hits)", ZONE, { cache: true })).toBe(
+      'sum by (spec # )\n, cache_tier) (cache_total_hits{zone="eu-west"})',
+    );
+  });
+
+  it("scopes the nameless selector after and / or / unless / atan2 / bool / group_left / group_right", () => {
+    // The `{` there opens the right operand, not a selector of the keyword's own.
+    for (const op of ["and", "or", "unless", "atan2", "> bool", "* on (spec) group_left", "* ignoring (spec) group_right", "AND"]) {
+      expect(applyScope(`up ${op} {__name__="smartrouter_x"}`, SCOPE)).toBe(`up ${op} {${M},__name__="smartrouter_x"}`);
+    }
+  });
+
   it("leaves an unscoped metric's own selector alone", () => {
     // The `{` after a metric the scope skips is that metric's selector, not
     // a nameless `{__name__=…}` one — the trap a stacked scope walks into.
