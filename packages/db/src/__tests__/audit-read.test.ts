@@ -66,6 +66,20 @@ describe("cursor codec", () => {
     expect(decodeAuditCursor(wrong)).toBeNull();
   });
 
+  /**
+   * Shape-valid but past the largest `xid8`: Postgres would refuse the cast
+   * inside the query, turning a bad cursor into a 500.
+   */
+  it("rejects a position past the largest transaction id", () => {
+    const at = (xact: string) =>
+      Buffer.from(JSON.stringify({ seq: 1, xact, order: "asc", fingerprint: "x" })).toString(
+        "base64url",
+      );
+    expect(decodeAuditCursor(at("18446744073709551615"))).not.toBeNull();
+    expect(decodeAuditCursor(at("18446744073709551616"))).toBeNull();
+    expect(decodeAuditCursor(at("99999999999999999999"))).toBeNull();
+  });
+
   it("ignores page size but notices every real filter", () => {
     const base = { actions: ["signin.failed"] } as const;
     expect(auditFilterFingerprint({ ...base, limit: 10 })).toBe(

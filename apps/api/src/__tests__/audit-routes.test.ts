@@ -2,7 +2,13 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { SignJWT } from "jose";
 import { createTestDb, enrolledTwoFactor, type TestDb } from "@sr/db/testing";
-import { createAuditWriter, users, type User } from "@sr/db";
+import {
+  auditFilterFingerprint,
+  createAuditWriter,
+  encodeAuditCursor,
+  users,
+  type User,
+} from "@sr/db";
 import { AUDIT_ACTIONS, type AuditEventsResponse } from "@sr/shared";
 import type { Role } from "@sr/shared";
 import { buildApp } from "../app.js";
@@ -298,6 +304,25 @@ describe("GET /api/audit/events", () => {
     app = await buildAuthedApp();
     const { token } = await signedIn();
     expect((await get(token, "?after=not-a-cursor")).statusCode).toBe(400);
+  });
+
+  /**
+   * Shape-valid and carrying the right fingerprint — only the number is
+   * impossible. Without a bound, Postgres refuses the `xid8` cast inside the
+   * query and the caller's mistake comes back as a 500.
+   */
+  it("refuses a cursor past the largest transaction id rather than failing the read", async () => {
+    app = await buildAuthedApp();
+    await seedEvents();
+    const { token } = await signedIn();
+    const forged = encodeAuditCursor({
+      seq: 1,
+      xact: "99999999999999999999",
+      order: "asc",
+      fingerprint: auditFilterFingerprint({ order: "asc" }),
+    });
+    const res = await get(token, `?after=${forged}`);
+    expect(res.statusCode).toBe(400);
   });
 
   it("refuses a cursor whose filters have moved", async () => {

@@ -116,6 +116,11 @@ export function encodeAuditCursor(cursor: AuditCursor): string {
   return Buffer.from(JSON.stringify(cursor), "utf8").toString("base64url");
 }
 
+/** The largest `xid8`. A position past it is not one Postgres can compare
+ *  against, so the cast would fail inside the query: a 500 for what is only
+ *  a bad cursor. */
+const XID8_MAX = 18_446_744_073_709_551_615n;
+
 /** `null` for anything that isn't one of ours — the caller answers 400. */
 export function decodeAuditCursor(raw: string): AuditCursor | null {
   try {
@@ -124,6 +129,7 @@ export function decodeAuditCursor(raw: string): AuditCursor | null {
     const c = parsed as Record<string, unknown>;
     if (typeof c.seq !== "number" || !Number.isSafeInteger(c.seq) || c.seq < 0) return null;
     if (typeof c.xact !== "string" || !/^\d{1,20}$/.test(c.xact)) return null;
+    if (BigInt(c.xact) > XID8_MAX) return null;
     if (c.order !== "asc" && c.order !== "desc") return null;
     if (typeof c.fingerprint !== "string" || c.fingerprint.length === 0) return null;
     return { seq: c.seq, xact: c.xact, order: c.order, fingerprint: c.fingerprint };
