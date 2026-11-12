@@ -223,3 +223,91 @@ describe("coveredSpan - the times the grouped view says it covers", () => {
     expect(groupBuckets([{ time: span.fromMs }, { time: span.toMs }], span.fromMs, span.toMs, 4)).toEqual([1, 0, 0, 1]);
   });
 });
+
+describe("groupErrors - every request lands in exactly one group (mixed fixtures)", () => {
+  /** A seeded generator, so a failure names a case that comes back. */
+  const rng = (seed: number) => () => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const RESULTS: ErrorRequestRow["result"][] = ["ok", "recovered", "error-reply", "failed", "write-unknown", "unknown"];
+  const OUTCOMES: RelayAttempt["outcome"][] = ["ok", "failed", "failed", "skipped", "cancelled", "no-result"];
+  const UPSTREAMS = ["lava", "tatum", "blockdaemon", "Cached"];
+  const CODES = [null, null, "UNKNOWN_ERROR", "NODE_SERVER_ERROR", "NODE_RATE_LIMITED", "CHAIN_NONCE_TOO_LOW", "CHAIN_STATE_PRUNED", "USER_INVALID_PARAMS", "CHAIN_SOMETHING_NEW"];
+  const hex = (next: () => number, n: number) => Array.from({ length: n }, () => "0123456789abcdef"[Math.floor(next() * 16)]).join("");
+  const MESSAGES = [
+    (next: () => number) => `transaction 0x${hex(next, 64)} already known`,
+    (next: () => number) => `block ${Math.floor(next() * 1e6)} not found`,
+    () => "HTTP 429",
+    () => "HTTP 503",
+    () => 'http request failed: Post "https://node.example.com": context deadline exceeded',
+    () => null,
+  ];
+
+  function fixtures(seed: number, count: number): ErrorRequestRow[] {
+    const next = rng(seed);
+    const pick = <T,>(xs: readonly T[]) => xs[Math.floor(next() * xs.length)]!;
+    return Array.from({ length: count }, (_, i) => {
+      const attempts = Array.from({ length: Math.floor(next() * 5) }, (_, k) =>
+        attempt(pick(UPSTREAMS), { batch: k, outcome: pick(OUTCOMES), code: pick(CODES), message: pick(MESSAGES)(next) }));
+      const back = attempts.length && next() < 0.6 ? attempts[Math.floor(next() * attempts.length)] : undefined;
+      if (back) back.replied = true;
+      return row({
+        guid: `s${seed}-${i}`,
+        time: 1_700_000_000_000 + Math.floor(next() * 3_600_000),
+        spec: pick(["ETH1", "SOLANA", null]),
+        method: pick(["eth_call", "eth_sendRawTransaction", "getBlock", "unknown"]),
+        result: pick(RESULTS),
+        attempts,
+        errorCode: pick([null, "NODE_GATEWAY_TIMEOUT", "UNKNOWN_ERROR", "USER_INVALID_PARAMS"]),
+        error: pick([null, "insufficient results", `no upstream for 0x${hex(next, 40)}`]),
+      });
+    });
+  }
+
+  for (const seed of [1, 2, 3, 42, 2026]) {
+    it(`seed ${seed}: each request once, in the group its own key names, with the group's figures its own`, () => {
+      const rows = fixtures(seed, 400);
+      const groups = groupErrors(rows);
+
+      // Exactly once: every GUID in, each in one group, nothing added.
+      const placed = groups.flatMap((g) => g.rows.map((r) => r.guid));
+      expect(placed).toHaveLength(rows.length);
+      expect(new Set(placed)).toEqual(new Set(rows.map((r) => r.guid)));
+      expect(groups.reduce((n, g) => n + g.count, 0)).toBe(rows.length);
+      expect(new Set(groups.map((g) => g.key)).size).toBe(groups.length);
+
+      for (const g of groups) {
+        expect(g.count).toBe(g.rows.length);
+        expect(g.methods.reduce((n, m) => n + m.count, 0)).toBe(g.count);
+        expect(g.firstMs).toBe(Math.min(...g.rows.map((r) => r.time)));
+        expect(g.lastMs).toBe(Math.max(...g.rows.map((r) => r.time)));
+        expect(g.rows.map((r) => r.time)).toEqual([...g.rows.map((r) => r.time)].sort((a, b) => b - a));
+        for (const r of g.rows) {
+          const d = decidingError(r);
+          expect([r.spec, d.key, d.cause, d.provider]).toEqual([g.spec, g.errorKey, g.cause, g.provider]);
+          expect(["error-reply", "failed", "write-unknown"].includes(r.result)).toBe(g.reached);
+          expect(r.result === "unknown").toBe(g.noEnd);
+        }
+      }
+
+      // Pinned first, then the biggest.
+      const order = groups.map((g) => [Number(g.pinned), g.count] as const);
+      for (let k = 1; k < order.length; k++) {
+        const [pa, ca] = order[k - 1]!;
+        const [pb, cb] = order[k]!;
+        expect(pa > pb || (pa === pb && ca >= cb)).toBe(true);
+      }
+
+      // The bars cover the span the view states: each group's add up to its count.
+      const span = coveredSpan(rows.map((r) => r.time), { startMs: 1_700_000_000_000, endMs: 1_700_003_600_000 }, null)!;
+      for (const g of groups) expect(groupBuckets(g.rows, span.fromMs, span.toMs, 24).reduce((a, b) => a + b, 0)).toBe(g.count);
+
+      // The same requests in another order make the same groups.
+      const again = groupErrors([...rows].reverse());
+      expect(new Map(again.map((g) => [g.key, g.count]))).toEqual(new Map(groups.map((g) => [g.key, g.count])));
+    });
+  }
+});
