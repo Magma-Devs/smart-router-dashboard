@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.60.1]
+
 ### Fixed
 
 - **Three Dependabot alerts** (MAG-5214). All three packages are transitive.
