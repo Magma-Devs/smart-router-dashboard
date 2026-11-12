@@ -14,7 +14,7 @@
 import { useState } from "react";
 import type { ErrorsReport, MetricWindow, RetriesReport } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
-import { fmtComma, fmtNum, fmtPct } from "@/lib/format";
+import { fmtComma, fmtPct } from "@/lib/format";
 import { TT } from "@/lib/tooltips";
 import { ALL, ErrorRequests, useErrorList } from "./ErrorRequests";
 import type { ExactRange } from "./request-log";
@@ -77,17 +77,23 @@ export function ErrorsBreakdown({ chainFilter, win, focus = null, onFocus }: {
   const failedNote = logs && logFailed > (c?.failed ?? 0)
     ? <span style={{ color: "var(--warn)" }}>{fmtComma(logFailed - (c?.failed ?? 0))}{logs.more ? "+" : ""} more in the list below that the retry counter misses: only one attempt returned</span>
     : null;
+  /* What the client saw first, then what the router did about the rest: the
+     order someone debugging asks in. One number format on all four. */
+  const count = (v: number | null | undefined) => (v == null ? "—" : fmtComma(v));
   const kpis: { label: string; tipKey: string; value: string; color: string; sub: React.ReactNode; loading: boolean }[] = [
-    { label: "Failed attempts", tipKey: "failedTries", value: fmtComma(total), color: total ? "var(--text)" : "var(--ok)", loading: isLoading,
-      sub: <>&nbsp;</> },
-    { label: "Retried requests", tipKey: "retriedRequests", value: fmtNum(c?.retried), color: emitted ? "var(--text)" : "var(--text-4)", loading: counts.isLoading,
+    { label: "Still failed", tipKey: "retryFailed", value: count(c?.failed), loading: counts.isLoading,
+      // A zero here is not an all-clear, so it isn't green: the card counts
+      // retried requests only, and a provider's error reply goes back to the
+      // client without a retry - the list below shows those.
+      color: c?.failed ? "var(--err)" : emitted || failedNote ? "var(--text)" : "var(--text-4)",
+      sub: failedNote ?? (emitted ? (c?.failed ? <>returned to the client as an error after all retries</> : <>of the retried requests. Provider errors returned as they are: in the list</>) : <>&nbsp;</>) },
+    { label: "Recovered", tipKey: "retryRecovered", value: count(c?.recovered), color: emitted ? "var(--ok)" : "var(--text-4)", loading: counts.isLoading,
+      sub: emitted && c?.recoveryRate != null ? <>{fmtPct(c.recoveryRate, 1)} of retried requests received a response</> : <>&nbsp;</> },
+    { label: "Retried requests", tipKey: "retriedRequests", value: count(c?.retried), color: emitted ? "var(--text)" : "var(--text-4)", loading: counts.isLoading,
       sub: !emitted ? "no retries recorded yet"
         : <>{fmtPct(c?.retryRate)} of all requests</> },
-    { label: "Recovered", tipKey: "retryRecovered", value: fmtNum(c?.recovered), color: emitted ? "var(--ok)" : "var(--text-4)", loading: counts.isLoading,
-      sub: emitted && c?.recoveryRate != null ? <>{fmtPct(c.recoveryRate, 1)} of retried requests received a response</> : <>&nbsp;</> },
-    { label: "Still failed", tipKey: "retryFailed", value: fmtNum(c?.failed), loading: counts.isLoading,
-      color: c?.failed ? "var(--err)" : failedNote ? "var(--text)" : emitted ? "var(--ok)" : "var(--text-4)",
-      sub: failedNote ?? (emitted ? <>failed after all retries</> : <>&nbsp;</>) },
+    { label: "Failed attempts", tipKey: "failedTries", value: fmtComma(total), color: total ? "var(--text)" : "var(--ok)", loading: isLoading,
+      sub: <>attempts at a provider, not requests</> },
   ];
 
   return (

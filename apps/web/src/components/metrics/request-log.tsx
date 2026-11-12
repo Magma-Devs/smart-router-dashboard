@@ -18,6 +18,16 @@ import { useGrafanaUrl } from "@/hooks/use-grafana-url";
 import { fmtComma } from "@/lib/format";
 import { requestLogsHref } from "@/lib/grafana-logs";
 
+/** The router's name for a reply that came from its cache rather than a
+ *  provider. Printed as it is, "served by Cached" reads like a provider
+ *  called Cached. */
+const CACHED = "Cached";
+/** A try's source as a name on its own: a provider's name, or "Cache". */
+export const providerName = (upstream: string) => (upstream === CACHED ? "Cache" : upstream);
+/** The same inside a sentence: "the cache". */
+export const providerInWords = (upstream: string) => (upstream === CACHED ? "the cache" : upstream);
+export const isCache = (upstream: string) => upstream === CACHED;
+
 /** The router's error code in plain words: NODE_RATE_LIMITED → "rate limited". */
 export function codeWords(code: string): string {
   return code.replace(/^(PROTOCOL|NODE|CHAIN|USER)_/, "").toLowerCase().replace(/_/g, " ");
@@ -120,7 +130,7 @@ function Step({ a, replyColor, quiet = false }: { a: RelayAttempt; replyColor?: 
   return (
     <span title={[a.replied ? "Its response was returned to the client." : null, a.note, a.message].filter(Boolean).join("\n\n") || undefined} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "3px 8px", borderRadius: 6, background: "var(--bg-2)", border: `1px solid ${a.replied ? appColor : "var(--line)"}`, fontSize: 11.5, lineHeight: 1.4, maxWidth: "100%" }}>
       <span style={{ color: markColor, fontWeight: 700 }}>{mark}</span>
-      <span className="gw-mono" style={{ color: a.outcome === "ok" || a.outcome === "failed" ? "var(--text)" : "var(--text-3)", whiteSpace: "nowrap" }}>{a.upstream}</span>
+      <span className="gw-mono" style={{ color: a.outcome === "ok" || a.outcome === "failed" ? "var(--text)" : "var(--text-3)", whiteSpace: "nowrap" }}>{providerName(a.upstream)}</span>
       {note && <span style={{ color: a.outcome === "failed" ? "var(--text-2)" : "var(--text-4)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>· {note}</span>}
       {a.replied && (
         <span style={{ color: appColor, fontWeight: 600, fontSize: 10.5, whiteSpace: "nowrap", paddingLeft: 7, marginLeft: 1, borderLeft: "1px solid var(--line-2)" }}>→ client</span>

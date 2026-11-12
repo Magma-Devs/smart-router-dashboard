@@ -5,6 +5,29 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.62.0]
+
+### Changed
+
+- **The Errors list opens on what reached the client.** A new "Reached the
+  client" filter (Provider error, Router error and Outcome unknown together)
+  is picked when the list opens and any such request exists. When none
+  does, the list says "No error reached the client" above the recovered
+  requests. It used to open on everything, mostly recovered requests.
+- **The Errors cards start with what failed, in one number format.** Order:
+  Still failed, Recovered, Retried requests, Failed attempts. All four use
+  full numbers (3,516, not 3.5K next to 1,305). A zero on Still failed is no
+  longer green: the card counts retried requests only.
+- **The cache is named as the cache.** A reply from the router's cache read
+  "served by Cached", like a provider's name. Rows now say "Cache", and an
+  opened request says "The answer came from the cache".
+- **The top bar speaks for the chain you are on, in one word for providers.**
+  On a chain's page the health badge counts that chain's providers, not the
+  whole deployment's. It says "3 providers unhealthy · 10 providers with no
+  health data" where it said "upstreams" and "unknown".
+- **The empty Transactions list says only that.** "No transactions in the
+  last hour.", with the note about older routers as a smaller second line.
+
 ## [0.61.0]
 
 ### Changed

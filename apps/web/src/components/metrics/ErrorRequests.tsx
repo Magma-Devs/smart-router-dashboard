@@ -89,6 +89,15 @@ export const RESULT: Record<ErrorRequestRow["result"], { label: string; color: s
   unknown: { label: "No end logged", color: "var(--text-4)", hint: "No end logged: the request may still be in flight, or the client disconnected." },
 };
 const RESULT_ORDER: ErrorRequestRow["result"][] = ["recovered", "error-reply", "failed", "write-unknown", "unknown"];
+/** The list's opening filter, before anyone picks one: the requests whose
+ *  error reached the client when there are any, else every request. Someone
+ *  debugging asks first what the client saw, and a list that opens on
+ *  hundreds of recovered requests buries it. */
+const AUTO = "auto";
+/** The pill for every result the client received as an error or without a clear end. */
+const REACHED = "reached";
+const REACHED_CLIENT: ReadonlySet<ErrorRequestRow["result"]> = new Set(["error-reply", "failed", "write-unknown"]);
+type ResultPick = ErrorRequestRow["result"] | typeof ALL | typeof REACHED;
 /** Rare results: a pill only while the list holds one. */
 const RARE: ReadonlySet<ErrorRequestRow["result"]> = new Set(["write-unknown", "unknown"]);
 
@@ -259,7 +268,7 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
   /** The list's reads, held by the tab (`useErrorList`). */
   list: ErrorList;
 }) {
-  const [result, setResult] = useState<ErrorRequestRow["result"] | typeof ALL>(ALL);
+  const [picked, setResult] = useState<ResultPick | typeof AUTO>(AUTO);
   const [retry, setRetry] = useState<RetryFilter>(ALL);
   const [errType, setErrType] = useState(ALL);
   const [customer, setCustomer] = useState(ALL);
@@ -314,9 +323,15 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
     const k = retryKinds(r);
     return retry === "retryable" ? k.retryable : k.notRetryable;
   });
-  const rows = result === ALL ? narrowed : narrowed.filter((r) => r.result === result);
+  const reachedCount = narrowed.filter((r) => REACHED_CLIENT.has(r.result)).length;
+  const result: ResultPick = picked === AUTO ? (reachedCount > 0 ? REACHED : ALL) : picked;
+  const inResult = (r: ErrorRequestRow) => result === ALL || (result === REACHED ? REACHED_CLIENT.has(r.result) : r.result === result);
+  const rows = narrowed.filter(inResult);
   const byResult = (k: ErrorRequestRow["result"]) => narrowed.filter((r) => r.result === k).length;
-  const kinds = (result === ALL ? byDropdowns : byDropdowns.filter((r) => r.result === result)).map(retryKinds);
+  const kinds = byDropdowns.filter(inResult).map(retryKinds);
+  /* Nothing reached the client, and nobody has filtered: the list says so
+     above the recovered requests it then shows. */
+  const allRecovered = !!head && picked === AUTO && reachedCount === 0 && narrowed.length > 0;
 
   const pageCount = Math.max(1, Math.ceil(rows.length / PER_PAGE));
   const curPage = Math.min(page, pageCount - 1);
@@ -332,7 +347,7 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
      the ones it sends by itself when it starts and to check its upstreams -
      and this list leaves those out: no client sent them. An empty list here has
      to say so, or it reads as the bar being wrong. */
-  const onBar = onBarRange && upstream !== ALL && result === ALL && retry === ALL && errType === ALL && customer === ALL && method === ALL;
+  const onBar = onBarRange && upstream !== ALL && (result === ALL || picked === AUTO) && retry === ALL && errType === ALL && customer === ALL && method === ALL;
   useEffect(() => {
     if (jumpKey) listRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
   }, [jumpKey]);
@@ -371,6 +386,8 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
             options={[
               // No counts before the first read lands: a 0 there would be a claim.
               { key: ALL, label: "All", count: head ? narrowed.length : undefined },
+              { key: REACHED, label: "Reached the client", count: head ? reachedCount : undefined, color: reachedCount ? "var(--err)" : "var(--ok)",
+                title: "Reached the client: the client received an error, or a write whose outcome is unknown. Provider error, Router error and Outcome unknown together." },
               ...RESULT_ORDER.filter((k) => !RARE.has(k) || byResult(k) > 0)
                 .map((k) => ({ key: k, label: RESULT[k].label, count: head ? byResult(k) : undefined, color: RESULT[k].color, title: RESULT[k].hint })),
             ]}
@@ -423,6 +440,12 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
           onClose={() => find(null)} />
       )}
 
+      {allRecovered && (
+        <div style={{ padding: "9px 16px", fontSize: 12, color: "var(--text-2)", borderTop: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--ok)", flexShrink: 0 }} />
+          No error reached the client{range ? " in this period" : ` in the last ${WINDOWS[win].label}`}. The requests below hit an error on the way and were recovered.
+        </div>
+      )}
       <NewRowsStrip count={held.newCount} noun="request" onShow={held.showNew} />
       {/* Below 860px the columns would overlap: scroll sideways instead. */}
       <div className="gw-log-scroll">
