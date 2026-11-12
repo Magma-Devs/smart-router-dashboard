@@ -5,7 +5,26 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
-## [0.60.3]
+## [0.60.4]
+
+### Added
+
+- **A provider stuck on a block is marked on the Latest block chart.** An
+  arrow and "<provider> stuck from 15:01" sit at the point its line went
+  flat. "Stuck" is the rule of our own "a provider is stuck on the same
+  block" alert: the same block for the chain's quiet time (5 minutes for
+  most chains, up to 3 hours for Bitcoin-type chains) plus 5 minutes, while
+  the chain moved on.
+- **Click a name in a chart's legend to hide or show its line.** It applies
+  to the volume, latency and latest block charts together, and each axis
+  refits to the lines still shown.
+
+### Changed
+
+- **The latency chart no longer cuts a line at the top.** The axis fits every
+  line shown. When one provider's peak is over five times the selected
+  provider's, a note under the chart names it; hiding it from the legend
+  brings the others back into view.
 
 ### Fixed
 
@@ -16,12 +35,11 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   requests drew a flat latency line for half an hour while the volume chart
   read 0 requests a second. Now a latency point shows only where the
   provider answered requests in that point's own few minutes. Where it
-  served none, that part of its line turns into a dotted grey bridge
-  between the points either side, and pointing at it reads "No requests".
-  The rest of the line is drawn as before. Before the first request or
-  after the last, the dotted line runs along the bottom instead, so one
-  answer doesn't read as that latency all day. A gap still means no data
-  was collected.
+  served none, that part of its line is dotted grey, and pointing at it
+  reads "No requests". A short pause joins the points either side, so the
+  rest of the line is drawn as before; a long one, or one before the first
+  request or after the last, runs along the bottom, so one answer doesn't
+  read as that latency all day. A gap still means no data was collected.
 
 ## [0.60.2]
 

@@ -144,6 +144,17 @@ export interface Series {
   idle?: boolean[];
 }
 
+/** A note pinned to one point of one series - "lava stuck from 12:40": a
+ *  small arrow pointing at the point, and the words beside it. */
+export interface ChartMarker {
+  /** The series it belongs to (its index in `series`) and the point. */
+  si: number;
+  i: number;
+  label: string;
+  /** The arrow's and the words' colour; the warning colour by default. */
+  color?: string;
+}
+
 /** What a point with nothing to measure reads as on hover (Series.idle). */
 const IDLE_LABEL = "No requests";
 
@@ -203,6 +214,7 @@ export function LineChart({
   onHoverAt,
   hoverBox = true,
   pointLabels = false,
+  markers,
 }: {
   series: Series[];
   height?: number;
@@ -242,6 +254,8 @@ export function LineChart({
   /** The values at the crosshair as labels beside each series' dot, and its
    *  time in a pill above it - read where you are looking, not in a legend. */
   pointLabels?: boolean;
+  /** Notes pinned to points of the lines (ChartMarker). */
+  markers?: ChartMarker[];
 }) {
   const [ref, w, oh] = useChartDims(600, height || 200);
   const h = height || oh;
@@ -318,12 +332,14 @@ export function LineChart({
      requests looks different. Before the first measured point or after the
      last there is nothing to join: drawn at the last point's height, a
      provider that answered once all day would read as that latency all day,
-     so those run along the floor (a little above it, off the axis line).
+     so those run along the floor (a little above it, off the axis line), and
+     so does a stretch longer than a tenth of the chart.
      A neighbour off the chart (a peer far above the axis) gives no height to
      aim at either: the bridge runs flat from the side that is on it, and with
      neither on it there is nothing to draw - the line itself is off it.
      `yAt` is where the stretch passes each idle point, for the hover. */
   const idleFloor = baseY - 3;
+  const idleBridgeMax = Math.max(2, Math.round(n / 10));
   const idleOf = (s: Series): { segs: [number, number, number, number][]; yAt: Map<number, number> } => {
     const segs: [number, number, number, number][] = [];
     const yAt = new Map<number, number>();
@@ -336,7 +352,10 @@ export function LineChart({
       let j = i;
       while (j + 1 < n && idle[j + 1]) j++;
       const vp = val(i - 1), vn = val(j + 1);
-      const between = vp != null && vn != null;
+      // A bridge is for a pause in a line. Across a long silence (over a
+      // tenth of the chart) a line from one point to the next would read as
+      // a trend nobody measured, so that runs along the floor too.
+      const between = vp != null && vn != null && j - i + 1 <= idleBridgeMax;
       if (between && !onChart(vp) && !onChart(vn)) {
         for (let k = i; k <= j; k++) yAt.set(k, padY + 8);
         i = j;
@@ -451,6 +470,23 @@ export function LineChart({
               return <circle cx={cx(lastI)} cy={cy(s.values[lastI]!)} r="3" fill={s.color || "var(--brand)"} stroke="var(--surface)" strokeWidth="1.5" />;
             })()}
         </g>
+        {markers?.map((m, k) => {
+          const v = series[m.si]?.values?.[m.i];
+          if (v == null || !Number.isFinite(v)) return null;
+          const x = cx(m.i), y = Math.min(Math.max(cy(v), padY), padY + iH);
+          const color = m.color || "var(--warn)";
+          // Above the point; under it when the point is at the top of the plot.
+          const up = y - 16 >= padY;
+          const tipY = up ? y - 4 : y + 4, baseY2 = up ? y - 11 : y + 11;
+          const fits = x + 8 + m.label.length * 5.8 <= padX + iW;
+          return (
+            <g key={"m" + k} pointerEvents="none" opacity={series[m.si]?.opacity ?? 1}>
+              <path d={`M ${x - 4} ${baseY2} L ${x + 4} ${baseY2} L ${x} ${tipY} Z`} fill={color} />
+              <text x={fits ? x + 8 : x - 8} y={up ? y - 8 : y + 15} textAnchor={fits ? "start" : "end"} fontSize="10" fontWeight="600"
+                fill={color} stroke="var(--surface)" strokeWidth="3" paintOrder="stroke" fontFamily="var(--font-mono)">{m.label}</text>
+            </g>
+          );
+        })}
         {hover && shownI != null && (
           <g pointerEvents="none">
             <line x1={cx(shownI)} x2={cx(shownI)} y1={padY} y2={padY + iH} stroke="var(--text-3)" strokeWidth="1" strokeDasharray="3 3" opacity="0.7" />

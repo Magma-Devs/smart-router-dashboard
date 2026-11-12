@@ -22,8 +22,8 @@
  * neither was something an operator could act on here. */
 
 import { useMemo, useState, type ReactNode } from "react";
-import { chartSampling, WINDOWS, type ChartGrid, type MetricWindow, type TimePoint, type UpstreamDetail, type UpstreamMetrics, type UpstreamPeers } from "@sr/shared";
-import { ColumnChart, LineChart, niceScale, type ChartHover, type Layer, type Series } from "@/components/gateway/charts";
+import { chartSampling, stuckAfterSec, stuckStretches, WINDOWS, type ChartGrid, type MetricWindow, type TimePoint, type UpstreamDetail, type UpstreamMetrics, type UpstreamPeers } from "@sr/shared";
+import { ColumnChart, LineChart, niceScale, type ChartHover, type ChartMarker, type Layer, type Series } from "@/components/gateway/charts";
 import { useApi } from "@/hooks/use-api";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 import { fmtComma } from "@/lib/format";
@@ -63,10 +63,11 @@ function onGrid(times: number[], grid: ChartGrid | undefined, series: TimePoint[
 const whenOf = (t: number | undefined) =>
   t ? new Date(t * 1000).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }) : "";
 
-/** The value at quantile q of some numbers (0 when there are none). */
-const quantile = (xs: number[], q: number) => {
-  const s = [...xs].sort((a, b) => a - b);
-  return s.length ? s[Math.floor(q * (s.length - 1))]! : 0;
+/** "10 minutes", "3 hours 5 minutes" - a length of time in words. */
+const durWords = (sec: number) => {
+  const h = Math.floor(sec / 3600), m = Math.round((sec % 3600) / 60);
+  const hw = h ? `${h} hour${h === 1 ? "" : "s"}` : "", mw = m ? `${m} minute${m === 1 ? "" : "s"}` : "";
+  return [hw, mw].filter(Boolean).join(" ") || `${sec} seconds`;
 };
 
 const fmtMs = (v: number) => `${fmtComma(Math.round(v))} ms`;
@@ -84,6 +85,8 @@ interface LegendRow {
   selected?: boolean;
   /** A line for a line chart's series, a square for a bar chart's. */
   mark?: "line" | "box";
+  /** Its line is hidden (the name was clicked): drawn struck through. */
+  hidden?: boolean;
 }
 
 /**
@@ -92,18 +95,25 @@ interface LegendRow {
  * (LineChart pointLabels), where the eye already is. It starts where the plot
  * starts, and pointing at a name brings its line forward.
  */
-function LegendLine({ heading, rows, foot, onFocus }: {
+function LegendLine({ heading, rows, foot, onFocus, onToggle }: {
   heading?: string;
   rows: LegendRow[];
   foot?: ReactNode;
   onFocus?: (key: string | null) => void;
+  /** Clicking a name hides or shows its line, and the axis fits what is left. */
+  onToggle?: (key: string) => void;
 }) {
   return (
     <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", columnGap: 18, rowGap: 6, marginTop: 6, paddingLeft: PAD_X, paddingRight: PAD_R }}>
       {heading && <span className="gw-mono" style={{ fontSize: 10, color: "var(--text-4)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{heading}</span>}
       {rows.map((r) => (
         <span key={r.key} onMouseEnter={onFocus ? () => onFocus(r.key) : undefined} onMouseLeave={onFocus ? () => onFocus(null) : undefined}
-          style={{ display: "inline-flex", alignItems: "center", gap: 7, minWidth: 0 }}>
+          {...(onToggle ? {
+            role: "button", tabIndex: 0, "aria-pressed": !r.hidden, title: r.hidden ? `Show ${r.name}` : `Hide ${r.name}`,
+            onClick: () => onToggle(r.key),
+            onKeyDown: (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(r.key); } },
+          } : {})}
+          style={{ display: "inline-flex", alignItems: "center", gap: 7, minWidth: 0, cursor: onToggle ? "pointer" : undefined, opacity: r.hidden ? 0.45 : 1, textDecoration: r.hidden ? "line-through" : undefined }}>
           <span style={{ width: r.mark === "box" ? 9 : 12, height: r.mark === "box" ? 9 : r.selected ? 3 : 2, borderRadius: r.mark === "box" ? 2 : 1, background: r.color, flexShrink: 0 }} />
           <span className={r.mark === "box" ? undefined : "gw-mono"} style={{ fontSize: 11, color: r.selected ? "var(--text)" : "var(--text-2)", fontWeight: r.selected ? 600 : 400, whiteSpace: "nowrap" }}>{r.name}</span>
           {r.value != null && <span className="gw-mono gw-tnum" style={{ fontSize: 12, fontWeight: 700, color: "var(--text)" }}>{r.value}</span>}
@@ -156,6 +166,15 @@ export function PMBody({ pm, detail, name, timeWindow, onOpenErrors }: {
      whichever chart it is on - and the upstream a legend row points at. */
   const [hovT, setHovT] = useState<number | null>(null);
   const [focusUp, setFocusUp] = useState<string | null>(null);
+  /* Lines hidden from the legend (a name clicked), on all three line charts:
+     each axis fits the lines still shown, so hiding a peer with one huge
+     spike brings the rest back into view - as a click on a Grafana legend. */
+  const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
+  const toggleHidden = (key: string) => setHidden((h) => {
+    const next = new Set(h);
+    if (!next.delete(key)) next.add(key);
+    return next;
+  });
 
   /* The selected upstream last, so its bold line is drawn on top of the rest. */
   const ordered = useMemo(() => {
@@ -171,8 +190,11 @@ export function PMBody({ pm, detail, name, timeWindow, onOpenErrors }: {
   const times = useMemo(() => gridTimes(grid), [grid]);
   const colorOf = (u: string, i: number) => (u === name ? "var(--brand)" : PEER_COLORS[i % PEER_COLORS.length]!);
   /* A line pointed at in a legend comes forward; the others fade. */
-  const lineOf = (u: string, i: number, values: number[], curve: Series["curve"] = "smooth", idle?: boolean[]): Series => {
+  const lineOf = (u: string, i: number, all: number[], curve: Series["curve"] = "smooth", idleAll?: boolean[]): Series => {
     const faded = focusUp != null && focusUp !== u;
+    // A hidden line keeps its place in the list (the hover's rows follow it) with nothing to draw.
+    const values = hidden.has(u) ? all.map(() => NaN) : all;
+    const idle = hidden.has(u) ? undefined : idleAll;
     return u === name
       ? { values, color: colorOf(u, i), width: 2.6, opacity: faded ? 0.25 : 1, fill: false, curve, idle }
       : { values, color: colorOf(u, i), width: focusUp === u ? 2.2 : 1.4, opacity: faded ? 0.2 : focusUp === u ? 1 : 0.8, fill: false, curve, idle };
@@ -184,7 +206,9 @@ export function PMBody({ pm, detail, name, timeWindow, onOpenErrors }: {
   /* The legend's rows: this upstream first, then its peers - names only. */
   const ix = ordered.map((u, i) => ({ u, i }));
   const nameRows: LegendRow[] = [...ix.filter((x) => x.u.upstream === name), ...ix.filter((x) => x.u.upstream !== name)]
-    .map(({ u, i }) => ({ key: u.upstream, name: u.upstream, color: colorOf(u.upstream, i), selected: u.upstream === name }));
+    .map(({ u, i }) => ({ key: u.upstream, name: u.upstream, color: colorOf(u.upstream, i), selected: u.upstream === name, hidden: hidden.has(u.upstream) }));
+  /** The values of the lines still shown - what an axis fits. */
+  const shownOf = (rows: number[][]) => rows.flatMap((vals, i) => (hidden.has(ordered[i]!.upstream) ? [] : vals.filter(Number.isFinite)));
   const hoverOf = (fmt: (v: number) => string, sub?: ChartHover["sub"]): ChartHover => ({
     title: (i) => whenOf(times[i]),
     rows: ordered.map((u) => ({ name: u.upstream, bold: u.upstream === name })),
@@ -193,20 +217,22 @@ export function PMBody({ pm, detail, name, timeWindow, onOpenErrors }: {
   });
   const averages = spanWords(chartSampling(timeWindow).lookbackSec);
 
-  /* latency - p95 per upstream. The axis fits all of this upstream's line
-     and the bulk of every upstream's points, not a peer's outlier: one stuck
-     at eight seconds for an hour would otherwise flatten every other line
-     against the floor. A peer that runs off the top is named under the
-     chart, and the hover still reads its real value. */
+  /* latency - p95 per upstream. The axis fits every line shown, so none is
+     cut at the top. A peer with one huge spike then sets the scale and
+     flattens the rest: the note under the chart names it, and a click on its
+     name in the legend hides it and refits the axis. */
   const lat = useMemo(() => onGrid(times, grid, ordered.map((u) => u.latencyP95)), [times, grid, ordered]);
   const latAll = lat.flat().filter(Number.isFinite);
+  const latShown = shownOf(lat);
+  const latTop = niceScale(0, Math.max(latShown.length ? Math.max(...latShown) : 0, 1) * 1.05).hi;
   const selIdx = ordered.findIndex((u) => u.upstream === name);
-  const selLat = selIdx >= 0 ? lat[selIdx]!.filter(Number.isFinite) : [];
-  const latFit = Math.max(selLat.length ? Math.max(...selLat) : 0, quantile(latAll, 0.75), 1) * 1.1;
-  const latTop = niceScale(0, latFit).hi;
-  const latOver = ordered
-    .map((u, i) => ({ name: u.upstream, max: Math.max(-Infinity, ...lat[i]!.filter(Number.isFinite)) }))
-    .filter((x) => x.max > latTop);
+  const selMax = selIdx >= 0 && !hidden.has(name) ? Math.max(0, ...lat[selIdx]!.filter(Number.isFinite)) : 0;
+  /* Peers whose peak is over five times this upstream's: they set the scale. */
+  const latTall = selMax > 0
+    ? ordered
+      .map((u, i) => ({ name: u.upstream, max: Math.max(0, ...lat[i]!.filter(Number.isFinite)) }))
+      .filter((x) => x.name !== name && !hidden.has(x.name) && x.max > selMax * 5)
+    : [];
 
   /* request volume - req/s per upstream, from zero */
   const rps = useMemo(() => onGrid(times, grid, ordered.map((u) => u.rps)), [times, grid, ordered]);
@@ -220,7 +246,8 @@ export function PMBody({ pm, detail, name, timeWindow, onOpenErrors }: {
     ordered[i]!.upstream === CACHED_ROW ? [] : vals.map((v, k) => !Number.isFinite(v) && Number.isFinite(rps[i]![k]!))), [lat, rps, ordered]);
   const anyIdle = latIdle.some((row) => row.some(Boolean));
   const rpsAll = rps.flat().filter(Number.isFinite);
-  const rpsHi = rpsAll.length ? Math.max(...rpsAll) : 0;
+  const rpsShown = shownOf(rps);
+  const rpsHi = rpsShown.length ? Math.max(...rpsShown) : 0;
 
   /* latest block - the tip per upstream, straight segments (a height jumps;
      a smoothed curve would dip before the jump), on a tight axis: heights are
@@ -228,8 +255,9 @@ export function PMBody({ pm, detail, name, timeWindow, onOpenErrors }: {
      on the others. */
   const tips = useMemo(() => onGrid(times, grid, ordered.map((u) => u.latestBlock)), [times, grid, ordered]);
   const tipAll = tips.flat().filter(Number.isFinite);
-  const tipHi = tipAll.length ? Math.max(...tipAll) : 0;
-  const tipLo = tipAll.length ? Math.min(...tipAll) : 0;
+  const tipShown = shownOf(tips);
+  const tipHi = tipShown.length ? Math.max(...tipShown) : 0;
+  const tipLo = tipShown.length ? Math.min(...tipShown) : 0;
   const tipPad = Math.max(1, (tipHi - tipLo) * 0.08);
   /* A tip's label adds how far behind the highest tip at that point it is. */
   const behindAt = (si: number, i: number) => {
@@ -238,6 +266,20 @@ export function PMBody({ pm, detail, name, timeWindow, onOpenErrors }: {
     const b = v != null && Number.isFinite(v) && Number.isFinite(best) ? best - v : 0;
     return b > 0 ? `${fmtComma(b)} behind` : null;
   };
+
+  /* Where a provider sat on one block long enough for the fleet's "stuck on
+     the same block" alert (stuckAfterSec: the chain's quiet window, then five
+     minutes) while the chain moved on: an arrow at the point it stopped. The
+     chain's own tip is the highest any provider reported at each point. */
+  const stuckMarks: ChartMarker[] = useMemo(() => {
+    if (!grid || !spec) return [];
+    const best = times.map((_, k) => Math.max(-Infinity, ...tips.map((t) => (Number.isFinite(t[k]!) ? t[k]! : -Infinity))));
+    return ordered.flatMap((u, si) =>
+      stuckStretches(tips[si]!, best, grid.stepSec, stuckAfterSec(spec)).map((st) => ({
+        si, i: st.from, label: `${u.upstream} stuck from ${hhmm(times[st.from]! * 1000)}`,
+      })));
+  }, [grid, spec, times, tips, ordered]);
+  const shownStuck = stuckMarks.filter((m) => !hidden.has(ordered[m.si]!.upstream));
 
   /* errors over time - failed attempts and node errors per bar, on the clock.
      A bar at t covers the stepSec before it; the last one, still filling,
@@ -307,21 +349,21 @@ export function PMBody({ pm, detail, name, timeWindow, onOpenErrors }: {
             chart={<LineChart series={ordered.map((u, i) => lineOf(u.upstream, i, rps[i]!))} id={"pmv" + pid} padY={16}
               yDomain={[0, rpsHi > 0 ? rpsHi * 1.1 : 0.01]} niceY yFmt={fmtRps} xs={times} maxGap={maxGap}
               hover={hoverOf((v) => `${fmtRps(v)} rps`)} hoverBox={false} pointLabels {...shared} />}
-            legend={<LegendLine rows={nameRows} onFocus={setFocusUp} />} />
+            legend={<LegendLine rows={nameRows} onFocus={setFocusUp} onToggle={toggleHidden} />} />
         ) : peersEmpty("rps", `No upstream on ${chainLabel} served a request in this window.`)}
       </PMPanel>
 
       <PMPanel full title="Latency · p95"
-        tip={`The time 95% of requests finished within, each point over ${averages} before it.\n\n- **Dotted grey line**: that upstream served no requests then, so there is no latency to show. Between two points it joins them; before the first or after the last it runs along the bottom\n- **A gap**: no data was collected then`}>
+        tip={`The time 95% of requests finished within, each point over ${averages} before it.\n\n- **Dotted grey line**: that upstream served no requests then, so there is no latency to show. A short pause joins the points either side; a long one runs along the bottom\n- **A gap**: no data was collected then`}>
         {latAll.length ? (
           <>
             <ChartRow height={220}
               chart={<LineChart series={ordered.map((u, i) => lineOf(u.upstream, i, lat[i]!, "smooth", latIdle[i]))} id={"pml" + pid} padY={16}
                 yDomain={[0, latTop]} niceY yFmt={fmtMs} xs={times} maxGap={maxGap} hover={hoverOf(fmtMs)} hoverBox={false} pointLabels {...shared} />}
-              legend={<LegendLine rows={nameRows} onFocus={setFocusUp} foot={anyIdle ? <NoRequestsKey /> : undefined} />} />
-            {latOver.length > 0 && (
-              <div style={{ marginTop: 6, fontSize: 11, color: "var(--text-4)" }}>
-                ↑ Off the top of the chart: {latOver.map((x) => `${x.name} (up to ${fmtMs(x.max)})`).join(", ")} - point at it to read each value.
+              legend={<LegendLine rows={nameRows} onFocus={setFocusUp} onToggle={toggleHidden} foot={anyIdle ? <NoRequestsKey /> : undefined} />} />
+            {latTall.length > 0 && (
+              <div style={{ marginTop: 6, paddingLeft: PAD_X, fontSize: 11, color: "var(--text-4)" }}>
+                {latTall.map((x) => `${x.name} peaks at ${fmtMs(x.max)}`).join(", ")} and sets the scale. Click a name to hide it.
               </div>
             )}
           </>
@@ -329,13 +371,14 @@ export function PMBody({ pm, detail, name, timeWindow, onOpenErrors }: {
       </PMPanel>
 
       <PMPanel full title="Latest block"
-        tip={`The block each upstream reports.\n\n- **Climbing together**: in sync\n- **Flat**: stopped syncing\n- **Below the others**: behind - point at the chart to see how many blocks, against the highest tip at that moment`}>
+        tip={`The block each upstream reports.\n\n- **Climbing together**: in sync\n- **Flat**: stopped syncing\n- **Below the others**: behind - point at the chart to see how many blocks, against the highest tip at that moment\n- **▼ stuck**: it stayed on one block for ${durWords(stuckAfterSec(spec))} or more while the chain moved on - the point where our "stuck on the same block" alert starts counting`}>
         {tipAll.length ? (
           <ChartRow height={220}
             chart={<LineChart series={ordered.map((u, i) => lineOf(u.upstream, i, tips[i]!, "linear"))} id={"pmb" + pid} padY={16}
               yDomain={[tipLo - tipPad, tipHi + tipPad]} niceY yFmt={(v) => fmtComma(Math.round(v))} xs={times} maxGap={maxGap}
-              hover={hoverOf((v) => fmtComma(Math.round(v)), behindAt)} hoverBox={false} pointLabels {...shared} />}
-            legend={<LegendLine rows={nameRows} onFocus={setFocusUp} />} />
+              hover={hoverOf((v) => fmtComma(Math.round(v)), behindAt)} hoverBox={false} pointLabels markers={shownStuck} {...shared} />}
+            legend={<LegendLine rows={nameRows} onFocus={setFocusUp} onToggle={toggleHidden}
+              foot={stuckMarks.length ? <span style={{ color: "var(--warn)" }}>▼ Stuck on one block for {durWords(stuckAfterSec(spec))} or more</span> : undefined} />} />
         ) : peersEmpty("latestBlock", `No upstream on ${chainLabel} reported a block in this window.`)}
       </PMPanel>
     </div>
