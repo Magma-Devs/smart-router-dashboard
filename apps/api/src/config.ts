@@ -360,6 +360,56 @@ export function deploymentMode(): "managed" | "onprem" {
   return config.deploymentMode;
 }
 
+/** A Dex broker's two halves: where its keys are, and the audience to pin. */
+export interface DexSettings {
+  issuer: string;
+  clientId: string;
+}
+
+export type DexConfig =
+  | { state: "off" }
+  | { state: "on"; settings: DexSettings }
+  | { state: "invalid"; problem: string };
+
+/**
+ * The Dex broker the Google and GitHub buttons may go through instead of
+ * talking to each provider directly (MAG-5238): `DEX_ISSUER` + `DEX_CLIENT_ID`.
+ * Read from the live environment, like `publicWebOrigin()`, so a test can
+ * set it per case.
+ *
+ * Both halves or neither. An issuer without a client id leaves no audience to
+ * pin, and a client id without an issuer leaves nowhere to fetch the signing
+ * keys from. Half a configuration, or an issuer that is not an https URL, is
+ * reported as `invalid` and verifies nothing: refusing every Dex token is the
+ * safe way to fail, and the boot logs the problem so it is not silent.
+ *
+ * The issuer is kept exactly as written. A token's `iss` is compared to it
+ * byte for byte, as OpenID Connect requires, so normalising a trailing slash
+ * here would only make the comparison disagree with Dex.
+ */
+export function readDexConfig(source: NodeJS.ProcessEnv = process.env): DexConfig {
+  const issuer = source.DEX_ISSUER?.trim() ?? "";
+  const clientId = source.DEX_CLIENT_ID?.trim() ?? "";
+  if (!issuer && !clientId) return { state: "off" };
+  if (!issuer) return { state: "invalid", problem: "DEX_CLIENT_ID is set without DEX_ISSUER" };
+  if (!clientId) return { state: "invalid", problem: "DEX_ISSUER is set without DEX_CLIENT_ID" };
+
+  let url: URL;
+  try {
+    url = new URL(issuer);
+  } catch {
+    return { state: "invalid", problem: "DEX_ISSUER is not a URL" };
+  }
+  // Plain http only for a broker on this machine: anywhere else the keys that
+  // decide who signs in would travel unauthenticated.
+  const secure = url.protocol === "https:" || (url.protocol === "http:" && LOOPBACK_HOSTS.has(url.hostname));
+  if (!secure) return { state: "invalid", problem: "DEX_ISSUER must be an https URL" };
+  if (url.search || url.hash || url.username || url.password) {
+    return { state: "invalid", problem: "DEX_ISSUER must not carry a query, fragment or credentials" };
+  }
+  return { state: "on", settings: { issuer, clientId } };
+}
+
 /**
  * The deployment scope: a `label="value"` matcher EVERY metrics query carries,
  * from `METRICS_SCOPE_LABEL` + `METRICS_SCOPE_VALUE`. For one dashboard per

@@ -10,6 +10,7 @@ import { forwardedClientHeaders } from "@/lib/forwarded-client";
 /** Re-exported: tests pin the address arithmetic through this module. */
 export { clientIpFrom } from "@/lib/forwarded-client";
 import { INVITE_HANDOFF_COOKIE } from "@/lib/invite-handoff";
+import { dexConnectorOf, readDexClient, readProviderRoutes } from "@/lib/sign-in-routes";
 import {
   TWO_FACTOR_HANDOFF_COOKIE,
   TWO_FACTOR_HANDOFF_MAX_AGE_SECONDS,
@@ -76,6 +77,9 @@ interface SignInResponse {
   /** Absent when the api answered `twoFactorRequired` — a verified password
    *  opens no session, so there is nothing to address. */
   sessionId?: string;
+  /** With a challenge after a provider sign-in: which provider the token
+   *  proved. The one thing the web cannot know itself after a Dex sign-in. */
+  provider?: string;
 }
 
 
@@ -203,12 +207,17 @@ class AccountLocked extends CredentialsSignin {
   code = "locked";
 }
 
-/** A provider is offered only when BOTH halves of its credential pair are
- *  set — this is what makes the login page's badges conditional. */
-export const oauthProviderFlags = {
-  google: !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET),
-  github: !!(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET),
-} as const;
+/**
+ * How each provider's button is reached, or null when it is not offered:
+ * through the Dex broker when `DEX_ISSUER` + `DEX_CLIENT_ID` are set and the
+ * provider is in `DEX_CONNECTORS`, otherwise directly when BOTH halves of its
+ * own credential pair are set. This is what makes the login page's badges
+ * conditional — see `lib/sign-in-routes.ts`.
+ */
+export const oauthProviderFlags = readProviderRoutes(process.env);
+
+/** The broker's public client, when this deployment signs in through Dex. */
+const dexClient = readDexClient(process.env);
 
 
 /**
@@ -224,7 +233,7 @@ export function issuedAt(token: { iat?: unknown } | null | undefined): number {
 }
 
 const providers: NextAuthConfig["providers"] = [];
-if (oauthProviderFlags.google) {
+if (oauthProviderFlags.google === "direct") {
   providers.push(
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID,
@@ -232,7 +241,7 @@ if (oauthProviderFlags.google) {
     }),
   );
 }
-if (oauthProviderFlags.github) {
+if (oauthProviderFlags.github === "direct") {
   providers.push(
     GitHub({
       clientId: process.env.GITHUB_CLIENT_ID,
@@ -241,6 +250,29 @@ if (oauthProviderFlags.github) {
       authorization: { params: { scope: "read:user user:email" } },
     }),
   );
+}
+/**
+ * The Dex broker (MAG-5238): one OpenID Connect client in front of Google and
+ * GitHub, so every tenant's dashboard shares the single redirect address those
+ * providers know — Dex's — instead of each hostname being registered with them.
+ *
+ * A public client: no secret, which leaves PKCE as what binds the code to the
+ * browser that started the flow, with `state` and `nonce` beside it. Dex only
+ * accepts a redirect it has on file for this client id, exactly. The
+ * `federated:id` scope is what puts the real provider and its user id in the
+ * ID token; without it the api cannot tell whose account this is and refuses.
+ */
+if (dexClient && (oauthProviderFlags.google === "dex" || oauthProviderFlags.github === "dex")) {
+  providers.push({
+    id: "dex",
+    name: "Dex",
+    type: "oidc",
+    issuer: dexClient.issuer,
+    clientId: dexClient.clientId,
+    client: { token_endpoint_auth_method: "none" },
+    checks: ["pkce", "state", "nonce"],
+    authorization: { params: { scope: "openid email profile federated:id" } },
+  });
 }
 providers.push(
   Credentials({
@@ -386,16 +418,19 @@ export const authConfig = {
     },
   },
   callbacks: {
-    async signIn({ user, account }) {
+    async signIn({ user, account, profile }) {
       // OAuth sign-ins: forward the provider's token to the api so it can
       // independently verify and upsert the user. Strict-fail paths that
       // don't produce a usable token — letting them through would create
       // a session not backed by a DB row.
       if (!account) return true;
       const provider = account.provider;
-      if (provider !== "google" && provider !== "github") return true;
+      if (provider !== "google" && provider !== "github" && provider !== "dex") return true;
 
-      const token = provider === "google" ? account.id_token : account.access_token;
+      // Google and Dex hand over an ID token the api checks against the
+      // issuer's keys; GitHub has none, so its access token goes instead and
+      // the api asks GitHub who it belongs to.
+      const token = provider === "github" ? account.access_token : account.id_token;
       if (!token) return false;
 
       // This callback gets no `request`, so reach for the ambient one. Imported
@@ -467,10 +502,19 @@ export const authConfig = {
         // and send the browser to the code screen. Returning a path denies this
         // sign-in, which is right — nothing is signed in until the code is.
         if (body.twoFactorRequired && body.challenge) {
+          // Through Dex the route says only "dex"; the api names the provider
+          // the token proved, and the token's own claims are the fallback.
+          const factor =
+            body.provider === "google" || body.provider === "github"
+              ? body.provider
+              : provider === "dex"
+                ? dexConnectorOf(profile)
+                : provider;
+          if (!factor) return false;
           const parked = await parkTwoFactorHandoff(
             body.challenge,
             body.email ?? user.email ?? "",
-            provider,
+            factor,
           );
           return parked ? "/login?step=code" : false;
         }

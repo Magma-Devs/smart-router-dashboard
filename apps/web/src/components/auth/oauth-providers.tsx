@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import type { ProviderId, ProviderRoutes } from "@/lib/sign-in-routes";
 
 /**
  * The OAuth providers this deployment offers, and how they are drawn.
@@ -8,13 +9,11 @@ import type { ReactNode } from "react";
  * exist, so a provider the invitation page forgets to offer is a provider
  * nobody can ever sign in with. One list means the two screens cannot drift.
  */
-export interface ProviderFlags {
-  google: boolean;
-  github: boolean;
-}
+export type ProviderFlags = ProviderRoutes;
 
-/** Shown only for providers whose id/secret pair is set. */
-export const PROVIDER_META: Array<{ id: keyof ProviderFlags; label: string; icon: ReactNode }> = [
+/** Shown only for providers the deployment routes somewhere — directly, or
+ *  through the Dex broker (`lib/sign-in-routes.ts`). */
+export const PROVIDER_META: Array<{ id: ProviderId; label: string; icon: ReactNode }> = [
   {
     id: "google",
     label: "Google",
@@ -40,5 +39,5 @@ export const PROVIDER_META: Array<{ id: keyof ProviderFlags; label: string; icon
 
 /** The enabled subset, in a stable order. */
 export function enabledProviders(flags: ProviderFlags) {
-  return PROVIDER_META.filter((p) => flags[p.id]);
+  return PROVIDER_META.filter((p) => flags[p.id] !== null);
 }

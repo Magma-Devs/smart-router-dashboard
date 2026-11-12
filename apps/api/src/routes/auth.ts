@@ -11,7 +11,12 @@ import {
   type OAuthProvider,
 } from "../services/users.js";
 import { validatePassword, verifyPasswordOrDecoy } from "../services/password.js";
-import { verifyOAuthToken } from "../services/oauth.js";
+import {
+  SIGN_IN_ROUTES,
+  SIGN_IN_ROUTE_LABEL,
+  verifySignInToken,
+  type SignInRoute,
+} from "../services/sign-in-token.js";
 import { createSession, revokeSession, type ClientContext } from "../services/sessions.js";
 import { normalizeIp, parseClient } from "../services/client-context.js";
 import {
@@ -116,19 +121,14 @@ interface InviteAcceptBody {
   /** Redeeming with a social account: which provider, and its token. Every
    *  provider the deployment offers, not just Google — with OAuth sign-in now
    *  link-only, redemption is the ONLY way a social account comes to exist,
-   *  so a provider missing here is a provider nobody can ever sign in with. */
-  oauthProvider?: OAuthProvider;
+   *  so a provider missing here is a provider nobody can ever sign in with.
+   *  `dex` is the broker: the token itself says whether Google or GitHub
+   *  stood behind it. */
+  oauthProvider?: SignInRoute;
   oauthToken?: string;
   name?: string;
 }
 
-const OAUTH_PROVIDERS = ["google", "github"] as const;
-
-/** For error copy, so a failed GitHub redemption doesn't say "Google". */
-const PROVIDER_LABEL: Record<OAuthProvider, string> = {
-  google: "Google",
-  github: "GitHub",
-};
 
 interface ResetBody {
   token: string;
@@ -534,7 +534,7 @@ export async function authRoutes(app: FastifyInstance) {
           properties: {
             token: { type: "string" as const, minLength: 1 },
             password: { type: "string" as const, minLength: 1 },
-            oauthProvider: { type: "string" as const, enum: [...OAUTH_PROVIDERS] },
+            oauthProvider: { type: "string" as const, enum: [...SIGN_IN_ROUTES] },
             oauthToken: { type: "string" as const, minLength: 1 },
             name: { type: "string" as const },
           },
@@ -549,6 +549,9 @@ export async function authRoutes(app: FastifyInstance) {
 
       let verifiedEmail: string | undefined;
       let provider: { column: ReturnType<typeof providerKey>; id: string } | undefined;
+      /** The provider the token proved, which for a Dex token is only known
+       *  once it is verified. What the session records and the column linked. */
+      let signedInWith: OAuthProvider | undefined;
       const oauthProvider = body.oauthToken ? body.oauthProvider : undefined;
 
       if (body.oauthToken && !oauthProvider) {
@@ -561,15 +564,17 @@ export async function authRoutes(app: FastifyInstance) {
 
       if (oauthProvider && body.oauthToken) {
         try {
-          const profile = await verifyOAuthToken(oauthProvider, body.oauthToken);
-          if (!profile.email) throw new Error("no verified email");
-          verifiedEmail = profile.email;
-          provider = { column: providerKey(oauthProvider), id: profile.providerId };
-        } catch {
+          const verified = await verifySignInToken(oauthProvider, body.oauthToken);
+          if (!verified.profile.email) throw new Error("no verified email");
+          verifiedEmail = verified.profile.email;
+          signedInWith = verified.provider;
+          provider = { column: providerKey(verified.provider), id: verified.profile.providerId };
+        } catch (err) {
+          request.log.warn({ route: oauthProvider, err: (err as Error).message }, "invite oauth verification failed");
           return reply.code(401).send({
             statusCode: 401,
             error: "Unauthorized",
-            message: `${PROVIDER_LABEL[oauthProvider]} sign-in could not be verified.`,
+            message: `${SIGN_IN_ROUTE_LABEL[oauthProvider]} sign-in could not be verified.`,
           });
         }
       } else if (body.password) {
@@ -623,10 +628,10 @@ export async function authRoutes(app: FastifyInstance) {
       // minted here would be one nobody ever presents, exactly the stray row
       // `/auth/setup` stopped creating.
       const session =
-        provider && oauthProvider
+        provider && signedInWith
           ? await createSession(db, {
               userId: result.user.id,
-              authMethod: oauthProvider,
+              authMethod: signedInWith,
               client,
             })
           : null;
@@ -1093,12 +1098,12 @@ export async function authRoutes(app: FastifyInstance) {
       config: { rateLimit: strictLimit },
       schema: {
         tags: ["Auth"],
-        summary: "Verify a Google or GitHub token server-side and open a session — or, for an account with an authenticator, return a challenge for its code",
+        summary: "Verify a Google or GitHub token (direct, or through the Dex broker) server-side and open a session — or, for an account with an authenticator, return a challenge for its code",
         params: {
           type: "object" as const,
           required: ["provider"],
           properties: {
-            provider: { type: "string" as const, enum: ["google", "github"] },
+            provider: { type: "string" as const, enum: [...SIGN_IN_ROUTES] },
           },
         },
         body: {
@@ -1113,18 +1118,23 @@ export async function authRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const db = dbOr503(reply);
       if (!db) return reply;
-      const provider = (request.params as { provider: OAuthProvider }).provider;
+      const route = (request.params as { provider: SignInRoute }).provider;
       const { token } = request.body as OAuthBody;
       const client = resolveClientContext(request, internalSecret);
 
+      // `provider` is what the token proved, not what the URL said: through
+      // Dex the route is `dex` and the token names Google or GitHub. Everything
+      // below — the column it links, the challenge's first factor, the
+      // session's auth method — reads the same as a direct sign-in.
+      let provider: OAuthProvider;
       let profile;
       try {
-        profile = await verifyOAuthToken(provider, token);
+        ({ provider, profile } = await verifySignInToken(route, token));
       } catch (err) {
-        request.log.warn({ provider, err: (err as Error).message }, "oauth verification failed");
+        request.log.warn({ provider: route, err: (err as Error).message }, "oauth verification failed");
         return reply
           .code(401)
-          .send({ statusCode: 401, error: "Unauthorized", message: `${provider} token verification failed` });
+          .send({ statusCode: 401, error: "Unauthorized", message: `${route} token verification failed` });
       }
 
       let user;
@@ -1163,6 +1173,9 @@ export async function authRoutes(app: FastifyInstance) {
           challenge: challenge.token,
           expiresAt: challenge.expiresAt.toISOString(),
           email: user.email,
+          // Which provider this was, for the code screen: after a Dex sign-in
+          // the web only knows it went through the broker.
+          provider,
         };
       }
 

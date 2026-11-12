@@ -5,6 +5,7 @@ import { signIn } from "next-auth/react";
 import { TOTP_DIGITS } from "@sr/shared";
 import { apiUrl } from "@/lib/api-client";
 import { enabledProviders, type ProviderFlags } from "./oauth-providers";
+import { signInTarget } from "@/lib/sign-in-routes";
 
 /**
  * Sign-in: email and password, then — for an account with an authenticator —
@@ -329,7 +330,10 @@ export function LoginForm({
                   type="button"
                   className="gw-btn gw-btn--ghost"
                   style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
-                  onClick={() => void signIn(p.id, { redirectTo: "/overview" })}
+                  onClick={() => {
+                    const target = signInTarget(p.id, providers);
+                    void signIn(target.provider, { redirectTo: "/overview" }, target.params);
+                  }}
                 >
                   {p.icon}
                   Continue with {p.label}
