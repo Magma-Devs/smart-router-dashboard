@@ -575,7 +575,10 @@ boot. Set `job` for a scrape config that names jobs per router.
   builders: every vector selector gains the matcher. It is a small PromQL
   walker, not a regex — the naive version corrupts metric names quoted inside
   `{__name__="…"}` (the presence probes) and selectors that already carry
-  labels. `cache_*` is deliberately left cluster-wide: the relay cache is a
+  labels. Names inside a matcher list or a `by` / `without` / `on` /
+  `ignoring` / `group_left` / `group_right` list are labels and are copied as
+  written: `cache_tier` read as a `cache_*` metric broke the cache query
+  under a deployment scope. `cache_*` is deliberately left cluster-wide: the relay cache is a
   separate sidecar shared by every router, so it carries no router's label
   and scoping it would report a zeroed cache rather than an unattributable
   one.

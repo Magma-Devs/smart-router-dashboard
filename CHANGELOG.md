@@ -5,6 +5,18 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.60.3]
+
+### Fixed
+
+- **The cache card reads again on a deployment with a metrics scope.** With
+  `METRICS_SCOPE_LABEL` / `METRICS_SCOPE_VALUE` set, the scope was also
+  spliced into the label `cache_tier`, because its name starts like a cache
+  metric. The store refused the query (400), so the hero's cache offload
+  figure came back empty. Label names inside a selector, and in `by`,
+  `without`, `on`, `ignoring`, `group_left` and `group_right` lists, are now
+  left as written.
+
 ## [0.60.2]
 
 ### Security

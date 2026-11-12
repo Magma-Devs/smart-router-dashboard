@@ -74,6 +74,10 @@ function isScopedMetric(name: string, opts: ScopeOptions): boolean {
   return SCOPED_METRIC_NAMES.has(name) || SCOPED_PREFIXES.some((p) => name.startsWith(p)) || isRecordedMetric(name);
 }
 
+/** Keywords followed by a parenthesised list of LABEL names - `sum by
+ *  (cache_tier)`, `on (endpoint_id)`. A name in there is never a metric. */
+const LABEL_LIST_KEYWORDS: ReadonlySet<string> = new Set(["by", "without", "on", "ignoring", "group_left", "group_right"]);
+
 const IDENT_START = /[a-zA-Z_:]/;
 const IDENT_CHAR = /[a-zA-Z0-9_:]/;
 
@@ -155,6 +159,15 @@ export function applyScope(expr: string, scope?: MetricScope | null, opts: Scope
       while (k < expr.length && expr[k] === " ") k++;
       const braced = expr[k] === "{";
 
+      if (LABEL_LIST_KEYWORDS.has(name) && expr[k] === "(") {
+        // A list of label names, copied as written: `cache_tier` in
+        // `sum by (cache_tier)` is a label, not a `cache_*` metric.
+        const end = closingOf(expr, k, "(", ")");
+        out += expr.slice(i, end);
+        i = end;
+        continue;
+      }
+
       if (isScopedMetric(name, opts)) {
         if (braced) {
           // Merge into the selector the builder already emitted.
@@ -162,6 +175,7 @@ export function applyScope(expr: string, scope?: MetricScope | null, opts: Scope
           i = k + 1;
         } else {
           out += `{${matcher}}`;
+          continue;
         }
       } else if (braced) {
         // An unscoped metric's own selector (`cache_total_hits{zone="a"}`
@@ -169,7 +183,16 @@ export function applyScope(expr: string, scope?: MetricScope | null, opts: Scope
         // branch below cannot mistake it for a nameless selector.
         out += expr.slice(i, k + 1);
         i = k + 1;
+      } else {
+        continue;
       }
+      // The rest of the matcher list, copied as written: the names in it are
+      // labels. `cache_tier="primary"` read as a `cache_*` metric under the
+      // deployment scope became `cache_tier{zone="a"}="primary"`, which the
+      // store refuses.
+      const end = closingOf(expr, i - 1, "{", "}");
+      out += expr.slice(i, end);
+      i = end;
       continue;
     }
 
@@ -181,6 +204,9 @@ export function applyScope(expr: string, scope?: MetricScope | null, opts: Scope
       out += "{";
       i++;
       out += matcher + (nextIsBraceClose(expr, i) ? "" : ",");
+      const end = closingOf(expr, i - 1, "{", "}");
+      out += expr.slice(i, end);
+      i = end;
       continue;
     }
 
@@ -189,6 +215,32 @@ export function applyScope(expr: string, scope?: MetricScope | null, opts: Scope
   }
 
   return out;
+}
+
+/**
+ * The index just past the bracket that closes the one at `open` (`{` or
+ * `(`), skipping string literals, so a `}` or `)` inside a quoted value
+ * doesn't end the group. The end of the expression when it never closes.
+ */
+function closingOf(expr: string, open: number, opener: string, closer: string): number {
+  let depth = 0;
+  let i = open;
+  while (i < expr.length) {
+    const c = expr[i]!;
+    if (c === '"' || c === "'" || c === "`") {
+      i++;
+      while (i < expr.length && expr[i] !== c) {
+        if (expr[i] === "\\" && c !== "`") i++;
+        i++;
+      }
+      i++;
+      continue;
+    }
+    if (c === opener) depth++;
+    else if (c === closer && --depth === 0) return i + 1;
+    i++;
+  }
+  return expr.length;
 }
 
 /** Whether the next non-space character closes the brace group (`{}`). */
