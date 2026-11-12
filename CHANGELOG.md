@@ -5,6 +5,16 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.63.2]
+
+### Removed
+
+- **Account:** the "Leaving?" card (MAG-5273). It said that accounts are never
+  deleted, that nobody can remove their own, and that another administrator
+  removes you from Team. Removal is unchanged: an administrator removes a
+  member on the Team page, and the api still refuses a removal of yourself.
+  The Account page screenshot in `docs/AUTH.md` is retaken without the card.
+
 ## [0.63.1]
 
 ### Fixed
