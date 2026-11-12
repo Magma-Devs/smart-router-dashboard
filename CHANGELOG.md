@@ -26,6 +26,10 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   line with "Show them".
 - An error with no router code keeps its HTTP status apart (429 and 503
   are two errors), in the error-type filter too.
+- **"The request" follows the error catalogue.** A code is the request's
+  when any healthy provider would give the same answer: the request's own
+  and the chain's rules. A provider-side `CHAIN_` code (state pruned, block
+  not found, data not available) stays with the provider that gave it.
 
 ## [0.62.0]
 
