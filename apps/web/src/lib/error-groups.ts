@@ -9,10 +9,13 @@
  * whose answer went back to the client, else the last failed try, else the
  * request's own code (a write the router couldn't settle names one with no
  * failed try). Who caused it:
- *  - the client's request, when the router's code says so (USER_* / CHAIN_*,
- *    or a code the catalogue files under "request": invalid params, nonce
- *    too low, already known). One group whichever provider answered: a bad
- *    request is bad at every provider;
+ *  - the client's request, when the router's code says so: a code the
+ *    catalogue files under the request or the chain's rules (invalid params,
+ *    nonce too low, already known), or a USER_* code it doesn't file under a
+ *    provider. One group whichever provider answered: a bad request is bad at
+ *    every provider. A CHAIN_* code can be a provider's (state pruned, block
+ *    not found: data that provider doesn't hold), so the prefix alone never
+ *    makes one the request's;
  *  - every provider, when two or more failed the request: the same error at
  *    each, or different ones ("Every provider failed"), which is pinned to
  *    the top - nothing came back that the client could use;
@@ -57,11 +60,16 @@ export interface ErrorGroup {
   rows: ErrorRequestRow[];
 }
 
-/** Codes about the client's own request rather than a provider. */
+/** Codes about the client's own request rather than a provider: the same
+ *  answer from any healthy, up-to-date provider (the catalogue's `request`
+ *  and `chain`). An uncatalogued or undetermined code is the request's only
+ *  when it is a USER_ one. */
 function isRequestCode(code: string | null | undefined): boolean {
   if (!code) return false;
-  if (/^(USER|CHAIN)_/.test(code)) return true;
-  return explainRouterError(code)?.source === "request";
+  const source = explainRouterError(code)?.source;
+  if (source === "request" || source === "chain") return true;
+  if (source === "provider" || source === "router") return false;
+  return code.startsWith("USER_");
 }
 
 /** The error that decided a request, and who caused it. */

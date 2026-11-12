@@ -100,6 +100,24 @@ describe("groupErrors - who caused it", () => {
     expect(groups[0]).toMatchObject({ cause: "request", count: 3 });
   });
 
+  it("keeps a provider's CHAIN_ code at that provider: data a node doesn't hold is the provider's, not the request's", () => {
+    for (const code of ["CHAIN_STATE_PRUNED", "CHAIN_BLOCK_NOT_FOUND", "CHAIN_DATA_NOT_AVAILABLE", "CHAIN_SOLANA_MISSING_LONG_TERM"]) {
+      expect(decidingError(row({ attempts: [attempt("tatum", { replied: true, code })] }))).toMatchObject({ cause: "provider", provider: "tatum" });
+    }
+    const pruned = (p: string) => [attempt(p, { replied: true, code: "CHAIN_STATE_PRUNED" })];
+    const groups = groupErrors([row({ attempts: pruned("tatum") }), row({ attempts: pruned("tatum") }), row({ attempts: pruned("blockdaemon") })]);
+    expect(groups.map((g) => [g.provider, g.count])).toEqual([["tatum", 2], ["blockdaemon", 1]]);
+  });
+
+  it("reads who caused a code from the catalogue, the USER_ prefix only where it says nothing", () => {
+    const cause = (code: string) => decidingError(row({ attempts: [attempt("tatum", { replied: true, code })] })).cause;
+    expect(cause("NODE_ABORTED")).toBe("request"); // the chain's: any provider says the same
+    expect(cause("USER_PARSE_ERROR")).toBe("request"); // undetermined, but the router calls it the user's
+    expect(cause("CHAIN_TX_UNDERPRICED")).toBe("provider"); // undetermined: kept at the provider
+    expect(cause("USER_SOMETHING_NEW")).toBe("request");
+    expect(cause("CHAIN_SOMETHING_NEW")).toBe("provider");
+  });
+
   it("pins 'every provider failed' above bigger groups", () => {
     const big = Array.from({ length: 4 }, () => row({ attempts: [attempt("lava", { replied: true, code: "NODE_SERVER_ERROR" })] }));
     const all = row({ result: "failed", attempts: [attempt("a", { code: "NODE_TIMEOUT" }), attempt("b", { message: "HTTP 503" })] });
