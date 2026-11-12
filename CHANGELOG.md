@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.60.2]
+
 ### Security
 
 - **Every version is pinned, and a new one must be a week old** (MAG-5218).
