@@ -247,7 +247,11 @@ a.gw-side__brand:hover { opacity: 0.82; }
 .gw-banner { background: rgba(239,68,68,0.07); border-bottom: 1px solid rgba(239,68,68,0.2); padding: 10px 28px; display: flex; align-items: center; gap: 14px; font-size: 13px; color: var(--text); }
 .gw-banner__msg strong { color: var(--err); font-weight: 600; }
 
-/* ── Modals ── */
+/* ── Modals ──
+   Backdrops (.gw-modal-bg, .gw-sheet-bg) are rendered by DialogLayer, portaled
+   to <body>, where `inset: 0` is the viewport. The panel takes focus when
+   nothing in it has, so it draws no focus ring of its own. */
+.gw-modal:focus, .gw-sheet:focus { outline: none; }
 .gw-modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.55); backdrop-filter: blur(4px); z-index: 50; display: flex; align-items: center; justify-content: center; padding: 24px; }
 .gw-modal { background: var(--surface); border: 1px solid var(--line-2); border-radius: 14px; max-width: 540px; width: 100%; box-shadow: 0 30px 80px rgba(0,0,0,0.55); max-height: 90vh; overflow-y: auto; }
 .gw-modal--wide { max-width: 1000px; }
@@ -303,7 +307,11 @@ table.gw-table tbody tr.gw-logrow-detail:hover > td { background: var(--bg-2); p
 .dot--warn { background: var(--warn); }
 .dot--err  { background: var(--err); }
 
-/* ── Animations ── */
+/* ── Animations ──
+   `both` keeps the last keyframe applied, and an animated `transform: none`
+   computes to an identity matrix. A .fade-in element is therefore a stacking
+   context and the containing block of any `position: fixed` element inside it,
+   which is why dialogs render through DialogLayer instead of in place. */
 .fade-in { animation: fadeIn 220ms ease both; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
 

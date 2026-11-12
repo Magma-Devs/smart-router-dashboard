@@ -1,10 +1,11 @@
 "use client";
 
-import { createPortal } from "react-dom";
+import { useId } from "react";
+import { DialogLayer } from "./DialogLayer";
 
 /* Ported from the design prototype (page-providers.jsx SideSheet + the
    gw-sheet__head/title/sub/body/foot/steps structure of its call sites,
-   incl. SheetStepBar). */
+   incl. SheetStepBar). Rendered through DialogLayer, in both variants. */
 
 export interface SideSheetSteps {
   /** Step labels, in order (SheetStepBar `steps`). */
@@ -19,8 +20,7 @@ export interface SideSheetProps {
   title: React.ReactNode;
   sub?: React.ReactNode;
   wide?: boolean;
-  /** Render as a centered, dimmed modal (portaled to <body>) instead of a
-   *  right-edge sheet. */
+  /** Render as a centered modal instead of a right-edge sheet. */
   center?: boolean;
   footer?: React.ReactNode;
   steps?: SideSheetSteps;
@@ -28,40 +28,41 @@ export interface SideSheetProps {
 }
 
 export function SideSheet({ open, onClose, title, sub, wide, center, footer, steps, children }: SideSheetProps) {
+  const titleId = useId();
   if (!open) return null;
-  const sheet = (
-    <div className={"gw-sheet-bg" + (center ? " gw-sheet-bg--center" : "")} onClick={onClose}>
-      <div className={"gw-sheet" + (wide ? " gw-sheet--wide" : "") + (center ? " gw-sheet--center" : "")} onClick={(e) => e.stopPropagation()}>
-        <div className="gw-sheet__head">
-          <div>
-            <p className="gw-sheet__title">{title}</p>
-            {sub && <p className="gw-sheet__sub">{sub}</p>}
-          </div>
-          <button className="gw-btn gw-btn--ghost" style={{ padding: 5 }} onClick={onClose}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-          </button>
+  return (
+    <DialogLayer
+      backdropClassName={"gw-sheet-bg" + (center ? " gw-sheet-bg--center" : "")}
+      panelClassName={"gw-sheet" + (wide ? " gw-sheet--wide" : "") + (center ? " gw-sheet--center" : "")}
+      onDismiss={onClose}
+      labelledBy={titleId}
+    >
+      <div className="gw-sheet__head">
+        <div>
+          <p className="gw-sheet__title" id={titleId}>{title}</p>
+          {sub && <p className="gw-sheet__sub">{sub}</p>}
         </div>
-
-        {steps && (
-          <div className="gw-sheet__steps">
-            {steps.labels.map((s, i) => {
-              const idx = i + 1, isDone = steps.current > idx, isActive = steps.current === idx;
-              return (
-                <div key={i} className={"gw-sheet__step" + (isActive ? " active" : "") + (isDone ? " done" : "")}>
-                  <span className="gw-sheet__step-num">{isDone ? "✓" : idx}</span>{s}
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        <div className="gw-sheet__body">{children}</div>
-
-        {footer && <div className="gw-sheet__foot">{footer}</div>}
+        <button className="gw-btn gw-btn--ghost" style={{ padding: 5 }} onClick={onClose} aria-label="Close">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
       </div>
-    </div>
+
+      {steps && (
+        <div className="gw-sheet__steps">
+          {steps.labels.map((s, i) => {
+            const idx = i + 1, isDone = steps.current > idx, isActive = steps.current === idx;
+            return (
+              <div key={i} className={"gw-sheet__step" + (isActive ? " active" : "") + (isDone ? " done" : "")}>
+                <span className="gw-sheet__step-num">{isDone ? "✓" : idx}</span>{s}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="gw-sheet__body">{children}</div>
+
+      {footer && <div className="gw-sheet__foot">{footer}</div>}
+    </DialogLayer>
   );
-  // Centered modals portal to <body> to escape the page's transform ancestor
-  // (fade-in), which otherwise breaks position:fixed centering.
-  return center ? createPortal(sheet, document.body) : sheet;
 }

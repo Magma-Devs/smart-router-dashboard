@@ -21,6 +21,7 @@ import { ApiError, apiPost } from "@/lib/api-client";
 import { useApi } from "@/hooks/use-api";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { CopyButton } from "@/components/gateway/CopyButton";
+import { useDialogLayer } from "@/components/gateway/DialogLayer";
 import { HealthTag } from "@/components/gateway/HealthTag";
 import { initialTargetFor, pinCarrierFor, pinRefusalFor, pinRefusalHintFor, type UpstreamTier } from "./pin-support";
 import {
@@ -673,6 +674,7 @@ export function TryMeDrawer({
   const [visible, setVisible] = useState(false);
   const [mounted, setMounted] = useState(false);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
 
   const close = useCallback(() => {
     setVisible(false);
@@ -684,25 +686,14 @@ export function TryMeDrawer({
     requestAnimationFrame(() => setVisible(true));
   }, []);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [close]);
+  // Escape, the scroll lock, the focus trap and giving focus back on close:
+  // the same layer behaviour as every other dialog. Active from the render
+  // that draws the panel.
+  useDialogLayer(panelRef, { active: mounted, onEscape: close });
 
   useEffect(() => {
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, []);
-
-  useEffect(() => {
-    closeButtonRef.current?.focus();
-  }, []);
+    if (mounted) closeButtonRef.current?.focus();
+  }, [mounted]);
 
   const selected = useMemo(() => {
     const parsed = parseKey(selKey);
@@ -1133,11 +1124,14 @@ export function TryMeDrawer({
         }}
       />
       <div
+        ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-label={`Try ${chain.name} ${spec}`}
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
         style={{
+          outline: "none",
           position: "fixed",
           top: 0,
           right: 0,

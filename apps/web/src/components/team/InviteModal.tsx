@@ -79,7 +79,7 @@ export function InviteModal({
     <Modal
       open={open}
       onClose={close}
-      closeOnBackdrop={!result}
+      dismissible={!result}
       title={result ? "Invitation created" : "Invite teammate"}
       footer={
         result ? (
