@@ -429,7 +429,7 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
                   {allRows.length ? "No transactions match these filters."
                     : log.unread ? `None of the transactions found ${when} came back from the logs in time.`
                     : log.more ? "No transactions in the part of this period read so far. Older ones may be: load them below."
-                    : `No transactions ${when}. Before smart-router v1.6.1, a router logs them only at info level: one logging at warn shows none.`}
+                    : <>No transactions {when}.<div style={{ marginTop: 6, fontSize: 11 }}>Expected some? A router older than v1.6.1 records transactions only at the info log level.</div></>}
                 </td></tr>
               )}
             </tbody>

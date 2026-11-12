@@ -8,7 +8,7 @@ export function upstreamMetricColor(health: HealthState, color: string): string 
 export function upstreamHealthNotice(health: HealthState, reason?: string): string | null {
   if (health === "operational") return null;
   const status =
-    health === "unhealthy" ? "This upstream is unhealthy." : "Current upstream health is unknown.";
+    health === "unhealthy" ? "This provider is unhealthy." : "This provider's current health is unknown.";
   const evidence =
     reason ??
     (health === "unknown"
@@ -31,8 +31,10 @@ export function deploymentHealthSummary(
   const unhealthy = counts?.unhealthy ?? 0;
   const unknown = counts?.unknown ?? 0;
   const parts = [label];
-  if (unhealthy) parts.push(`${unhealthy} upstream${unhealthy === 1 ? "" : "s"} unhealthy`);
-  if (unknown) parts.push(`${unknown} upstream${unknown === 1 ? "" : "s"} unknown`);
+  // "Provider" is the one word for it across the pages (the Errors and
+  // Transactions tabs say it too); "upstream" and "node" were the other two.
+  if (unhealthy) parts.push(`${unhealthy} provider${unhealthy === 1 ? "" : "s"} unhealthy`);
+  if (unknown) parts.push(`${unknown} provider${unknown === 1 ? "" : "s"} with no health data`);
   return {
     label: parts.join(" · "),
     color:

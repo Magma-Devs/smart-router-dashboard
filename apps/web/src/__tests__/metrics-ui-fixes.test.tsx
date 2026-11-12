@@ -159,6 +159,15 @@ describe("log rows", () => {
     expect(unnamed).not.toContain("stellar.expert");
   });
 
+  it("doesn't count the cache among a request's providers", () => {
+    const tri = (upstream: string, outcome: "ok" | "failed", replied = false) =>
+      ({ upstream, batch: 0, outcome, replied, code: null, retryable: null, message: null, note: null, atMs: 0, endMs: null });
+    const html = (attempts: BreakdownProps["attempts"]) => renderToStaticMarkup(createElement(RequestBreakdown, breakdown({}, { attempts })));
+    expect(html([tri("eth-tenderly", "failed"), tri("Cached", "ok", true)])).toContain("1 provider and the cache");
+    expect(html([tri("Cached", "ok", true)])).toContain("the cache");
+    expect(html([tri("eth-tenderly", "failed"), tri("eth-publicnode", "ok", true)])).toContain("2 providers");
+  });
+
   it("says why a row has no customer", () => {
     expect(renderToStaticMarkup(createElement(WhenCell, { time: 0 }))).toContain("no project-id header");
   });
