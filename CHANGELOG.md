@@ -5,6 +5,31 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.64.0]
+
+### Changed
+
+- **Every date and time follows the reader's time zone, in one format**
+  (MAG-5271). The browser's zone, on a 24-hour clock: `Nov 12, 2026` for a
+  date, `14:22:07` for a time, `Nov 12, 2026, 14:22:07 GMT+2` for one
+  instant in full. Each time on screen is a `<time>` carrying the instant in
+  ISO 8601 UTC, and its tooltip gives it in full, local and UTC.
+  - **The audit log** was in UTC. Its rows, detail sheet and notes (an
+    invitation's expiry) are now on the reader's clock, the Time column
+    names the zone (`Time (GMT+2)`), and the From and To filters are days on
+    that clock.
+  - **Team and Account** followed the browser's locale: a date read
+    `11/12/2026` in one browser and `12.11.2026` in another, and the
+    Account page's Started time was on a 12-hour clock in en-US. They use
+    the shared formats; "Last active" and the sessions stay relative, with
+    the timestamp on hover.
+  - **The Transactions and Errors lists** name the zone under their Time
+    column; an opened row gives the instant in full. The router charts label
+    a 3- and 7-day axis `Nov 12, 14:22` (was `Thu 14:22`), and their
+    tooltip gives the date and time on every window.
+  - The CSV exports and every API response stay ISO 8601 UTC: they are data
+    for other tools, not display.
+
 ## [0.63.2]
 
 ### Removed
