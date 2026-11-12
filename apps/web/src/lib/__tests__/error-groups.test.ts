@@ -124,6 +124,15 @@ describe("groupErrors - one error reads as one, whatever ids it carries", () => 
     expect(groupsOf("request 3f2b8c1e-9d4a-4b7e-8c2f-1a2b3c4d5e6f timed out", "request 7a1c0e2d-1b3f-4e5a-9c8d-6f5e4d3c2b1a timed out")).toHaveLength(1);
   });
 
+  it("names the group without one request's hash, so the error's own words show", () => {
+    const groups = groupsOf(
+      "tx 4F3A9C0E7D1B2A4C6E8F0A1B3C5D7E9F1A2B3C4D5E6F7A8B9C0D1E2F3A4B5C6D already exists in cache",
+      "tx 0D1E2F3A4B5C6D7E8F9A0B1C2D3E4F5A6B7C8D9E0F1A2B3C4D5E6F7A8B9C0D1E already exists in cache",
+    );
+    expect(groups[0]!.errorLabel).toBe("tx … already exists in cache");
+    expect(groupsOf("nonce too low: next nonce 7, tx nonce 6")[0]!.errorLabel).toBe("nonce too low: next nonce 7, tx nonce 6");
+  });
+
   it("keeps different errors apart", () => {
     expect(groupsOf("header not found", "missing trie node", "HTTP 429", "HTTP 503", "getTransactionReceipt failed")).toHaveLength(5);
   });

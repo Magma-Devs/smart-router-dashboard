@@ -53,16 +53,29 @@ export function errorLabel(a: RelayAttempt): string {
   return code ? codeWords(code) : clip(errorWords(a));
 }
 
-/** An error message with what changes from one request to the next blanked,
- *  so one error reads as one: hashes and addresses (0x…, and long runs of
- *  letters and digits - hex, base58, bech32), ids, and numbers. An HTTP
- *  status keeps its number: a 429 and a 503 are different errors. */
-export function blankIds(m: string): string {
+/** An error message with its hashes, addresses and ids blanked - 0x…, and
+ *  long runs of letters and digits (hex, base58, bech32) - since they differ
+ *  from one request to the next. Its numbers are kept. */
+export function blankHashes(m: string): string {
   return m
     .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, "…")
     .replace(/0x[0-9a-f]+/gi, "0x…")
-    .replace(/[0-9A-Za-z]{16,}/g, (run) => (/\d/.test(run) ? "…" : run))
-    .replace(/(?<!HTTP )\d+/g, "#");
+    .replace(/[0-9A-Za-z]{16,}/g, (run) => (/\d/.test(run) ? "…" : run));
+}
+
+/** An error message with what changes from one request to the next blanked,
+ *  so one error reads as one: hashes and ids (`blankHashes`), and numbers. An
+ *  HTTP status keeps its number: a 429 and a 503 are different errors. */
+export function blankIds(m: string): string {
+  return blankHashes(m).replace(/(?<!HTTP )\d+/g, "#");
+}
+
+/** What to call one error that many requests got: `errorLabel`, with the
+ *  message's hashes and ids blanked - one request's hash named the whole
+ *  group, and pushed the error's own words out of sight. */
+export function sharedErrorLabel(a: RelayAttempt): string {
+  const code = realCode(a);
+  return code ? codeWords(code) : clip(blankHashes(errorWords(a)));
 }
 
 /** The error-type filter's key and label. Without a code, the message with

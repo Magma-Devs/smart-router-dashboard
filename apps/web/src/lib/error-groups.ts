@@ -27,7 +27,7 @@
  * cover (`coveredSpan`).
  */
 import { explainRouterError, type ErrorRequestRow } from "@sr/shared";
-import { blankIds, codeWords, errorLabel, errorType, isCache } from "@/components/metrics/request-log";
+import { blankHashes, blankIds, codeWords, errorType, isCache, sharedErrorLabel } from "@/components/metrics/request-log";
 
 /** The results a client received as an error, or with no clear outcome. */
 const REACHED: ReadonlySet<ErrorRequestRow["result"]> = new Set(["error-reply", "failed", "write-unknown"]);
@@ -82,8 +82,9 @@ export function decidingError(r: ErrorRequestRow): { key: string; label: string;
   if (decider) {
     const t = errorType(decider);
     // The error in the list's own words: the code's, or the node's message
-    // without the request it wraps ('http request failed: Post "…": ').
-    const label = errorLabel(decider);
+    // without the request it wraps ('http request failed: Post "…": ') and
+    // with one request's hashes blanked.
+    const label = sharedErrorLabel(decider);
     if (isRequestCode(decider.code)) return { key: t.key, label, cause: "request", provider: null, providerCount: 0 };
     const providers = new Set(failed.map((a) => a.upstream));
     if (providers.size >= 2) {
@@ -97,7 +98,7 @@ export function decidingError(r: ErrorRequestRow): { key: string; label: string;
     return { key: r.errorCode, label: codeWords(r.errorCode), cause: isRequestCode(r.errorCode) ? "request" : "none", provider: null, providerCount: 0 };
   }
   const words = r.error ?? "no error recorded";
-  return { key: "err:" + blankIds(words), label: words.slice(0, 64), cause: "none", provider: null, providerCount: 0 };
+  return { key: "err:" + blankIds(words), label: blankHashes(words).slice(0, 64), cause: "none", provider: null, providerCount: 0 };
 }
 
 /** The rows as groups: pinned first, then the most requests; ties go to the newest. */
