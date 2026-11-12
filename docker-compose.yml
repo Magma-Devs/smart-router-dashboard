@@ -269,6 +269,11 @@ services:
       - TOTP_ENCRYPTION_KEY=${TOTP_ENCRYPTION_KEY:-}
       # Needed api-side to validate the `aud` claim of Google ID tokens.
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      # A Dex broker in front of Google and GitHub (docs/AUTH.md → "Through a
+      # Dex broker"): the api verifies its ID tokens against the issuer's keys,
+      # audience pinned to the client id. Must match the web's below.
+      - DEX_ISSUER=${DEX_ISSUER:-}
+      - DEX_CLIENT_ID=${DEX_CLIENT_ID:-}
       # First-run setup (docs/AUTH.md → "First run"). Unset ⇒ the api mints a
       # token at boot on an install that still needs one and logs it once at
       # `warn`; set SETUP_TOKEN_FILE to a mounted path to have it written there
@@ -357,6 +362,11 @@ services:
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
       - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID:-}
       - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET:-}
+      # Or through a Dex broker: the listed providers' buttons go to Dex
+      # (a public client — no secret), winning over their direct pair.
+      - DEX_ISSUER=${DEX_ISSUER:-}
+      - DEX_CLIENT_ID=${DEX_CLIENT_ID:-}
+      - DEX_CONNECTORS=${DEX_CONNECTORS:-}
     ports:
       - "3000:3000"
     depends_on:

@@ -2,7 +2,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
-import { config, readIncidentSettings } from "./config.js";
+import { config, readIncidentSettings, readDexConfig } from "./config.js";
 import { errorHandlerPlugin } from "./plugins/error-handler.js";
 import { swaggerPlugin } from "./plugins/swagger.js";
 import { prometheusPlugin } from "./plugins/prometheus.js";
@@ -84,6 +84,13 @@ export async function buildApp(): Promise<FastifyInstance> {
   // can flip it per-app-instance.
   const authMode = process.env.AUTH_MODE ?? config.auth.mode;
   if (authMode === "enabled") {
+    // Half a Dex configuration verifies nothing, which is the safe failure —
+    // but a silent one: every brokered sign-in would answer 401 with no hint
+    // why. Say so once, at boot, where an operator reading the logs looks.
+    const dex = readDexConfig();
+    if (dex.state === "invalid") {
+      app.log.warn({ problem: dex.problem }, "Dex sign-in is off: its configuration is incomplete");
+    }
     await app.register(dbPlugin);
     await app.register(authPlugin);
     await app.register(authRoutes);

@@ -5,6 +5,27 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Added
+
+- **Google and GitHub sign-in through a Dex broker** (MAG-5238). With
+  `DEX_ISSUER` + `DEX_CLIENT_ID` set, the two buttons go to a shared Dex
+  instead of straight to the provider, so a new dashboard hostname is
+  registered in the broker's own configuration, never in Google's console.
+  - Web: an OpenID Connect provider `dex`, a public client with PKCE, `state`
+    and `nonce`, asking for `federated:id`; each button passes Dex's
+    `connector_id` so no Dex page shows. `DEX_CONNECTORS` picks the buttons;
+    a provider listed there wins over its direct pair.
+  - Api: `POST /auth/oauth/dex` and `oauthProvider: "dex"` on
+    `/auth/invite/accept` verify Dex's ID token against the issuer's published
+    keys (RS256 only, exact issuer, audience and `azp` pinned to the client id,
+    at most 10 minutes old) and map `federated_claims` onto the existing
+    `google_id` / `github_id` columns — no migration. Link-only sign-in,
+    invitation address matching, the two-factor challenge and the must-enrol
+    gate are unchanged, and sessions and audit rows name Google or GitHub.
+  - The challenge response after a provider sign-in also names the provider.
+  - Direct Google and GitHub sign-in stay as they are for deployments that
+    run their own OAuth clients.
+
 ## [0.60.3]
 
 ### Changed

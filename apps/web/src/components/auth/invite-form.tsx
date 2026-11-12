@@ -5,6 +5,7 @@ import { signIn, signOut } from "next-auth/react";
 import { apiUrl } from "@/lib/api-client";
 import { ROLE_DESCRIPTIONS, ROLE_LABELS, type Role } from "@sr/shared";
 import { enabledProviders, type ProviderFlags } from "./oauth-providers";
+import { signInTarget, type ProviderId } from "@/lib/sign-in-routes";
 
 /**
  * Accepting an invitation.
@@ -57,7 +58,7 @@ export function InviteForm({
    * `signIn(provider)` cannot work — it links to an existing account and never
    * creates one, so on an invitee it can only answer 403.
    */
-  async function onOAuth(provider: string) {
+  async function onOAuth(provider: ProviderId) {
     setBusy(true);
     setError(null);
     try {
@@ -67,7 +68,8 @@ export function InviteForm({
         body: JSON.stringify({ token }),
       });
       if (!parked.ok) throw new Error("handoff refused");
-      await signIn(provider, { callbackUrl: "/overview" });
+      const target = signInTarget(provider, providers);
+      await signIn(target.provider, { callbackUrl: "/overview" }, target.params);
     } catch {
       setError("Could not start that sign-in. Please try again, or set a password below.");
       setBusy(false);

@@ -225,7 +225,9 @@ facts also arrive at different moments: the browser has the invitation token
 from the start, and a verified identity exists only after the provider
 redirects back.
 
-**Every provider the deployment offers goes through this**, not just Google.
+**Every provider the deployment offers goes through this**, not just Google —
+and through the Dex broker too, where the web posts `oauthProvider: "dex"` and
+the api links whichever provider the token proves.
 Redemption is the only way a social account comes to exist, so a provider the
 invitation page fails to offer is one nobody can ever sign in with — the
 sign-in and invitation screens share a single provider list
@@ -610,6 +612,101 @@ Three things to know here, because they change what `AUTH_MODE=enabled` means:
   and GitHub are offered by decision (2026-09-24) — removing a person from
   Team still ends every session they have, whatever they signed in with.
   Discord is not offered; its `discord_id` column is unwritten.
+- **Google / GitHub through a Dex broker** — the same two buttons, sent
+  to a shared [Dex](https://dexidp.io) instead of straight to the
+  provider, when `DEX_ISSUER` + `DEX_CLIENT_ID` are set. Same accounts,
+  same columns, same two-factor step; only the token the api checks
+  changes. See [Through a Dex broker](#through-a-dex-broker-mag-5238).
+
+### Through a Dex broker (MAG-5238)
+
+Google allows no wildcard in a client's redirect URIs and has no API to add
+one, so with the providers wired straight in, every new dashboard hostname is
+a manual edit in Google's console. A broker removes that: Google and GitHub
+know one address, the broker's, and each dashboard is a client of the broker,
+registered in the broker's own configuration.
+
+```
+Login page ── "Continue with GitHub" ──▶ signIn("dex", …, { connector_id: "github" })
+                                              │
+   Dex  ◀── authorization request (PKCE, state, nonce,
+   │         scope "openid email profile federated:id")
+   │
+   └─ connector_id=github: straight on to GitHub, no Dex page ──▶ GitHub
+                                                                   │
+   Dex  ◀────────────────────────────────── code ─────────────────┘
+   │  issues its own ID token: federated_claims { connector_id: "github", user_id: "5512345" }
+   ▼
+Auth.js /api/auth/callback/dex ── signIn() → POST api /auth/oauth/dex { token }
+                                                 │ verifySignInToken("dex", token)
+                                                 │   → { provider: "github", profile }
+                                                 ▼
+                     the direct path from here on: link-only upsert, two-factor
+                     challenge for an enrolled account, session as "github"
+```
+
+**What the api checks** (`apps/api/src/services/dex.ts`), before the token is
+anybody:
+
+| Check | Refuses |
+|---|---|
+| Signature against the keys at the issuer's discovery `jwks_uri`, **RS256 only** | a forged token, `none`, an HMAC token signed with a guessable secret, another algorithm under Dex's own key |
+| The discovery document names `DEX_ISSUER` exactly, and its `jwks_uri` is on the issuer's origin | a misrouted hostname vouching for itself; keys served from somewhere else |
+| `iss` = `DEX_ISSUER` byte for byte; `aud` contains `DEX_CLIENT_ID`; `azp`, when present, equals it | a token Dex issued to **another tenant's** dashboard |
+| `exp` in the future, and `iat` no more than **10 minutes** old | a token copied out of a log or a proxy. The web posts it within seconds; Dex's own lifetime defaults to a day, so the cap holds whatever the broker is set to |
+| `federated_claims.connector_id` is `google` or `github`, `user_id` non-empty | a token without the `federated:id` scope; a connector this dashboard has no column for |
+| For GitHub, `user_id` is numeric | Dex's `useLoginAsID`, which would stop matching every GitHub account linked before — and a login can be renamed and re-registered by somebody else |
+| The address counts only with `email_verified: true` | linking by, or redeeming an invitation with, an address the broker did not vouch for |
+
+What comes out is what the direct path produces: the real provider and its own
+user id — Google's `sub`, GitHub's numeric id — which are what `google_id` and
+`github_id` already hold. **No migration, and no difference between accounts**:
+one linked directly keeps signing in through Dex, and the other way round. The
+session, the two-factor challenge's first factor and the audit rows all name
+Google or GitHub, never the broker; the challenge response also names the
+provider, because after a Dex round-trip that is the one thing the web cannot
+know itself.
+
+**The client is public — no secret.** PKCE binds the code to the browser that
+started the flow, with `state` and `nonce` beside it, and Dex only redirects to
+the exact callback it has on file for that client id
+(`<origin>/api/auth/callback/dex`). A secret would add a per-dashboard
+credential to ship and rotate and protect nothing PKCE does not.
+
+**What the broker must be configured with** — the dashboard can't see any of
+this in a token, so it is a requirement on whoever runs Dex:
+
+- connector ids exactly `google` and `github`;
+- one static client per dashboard: `public: true`, its id in `DEX_CLIENT_ID`,
+  the one redirect URI above;
+- the GitHub connector with `useLoginAsID` off (the api refuses its tokens
+  otherwise) and **`preferredEmailDomain: invalid`** — see below.
+
+**Which GitHub address.** The direct path takes the account's **primary,
+verified** address from `/user/emails`. Dex's GitHub connector, by default,
+takes the profile's **public** address when one is set (`GET /user`'s `email`)
+and marks it verified without looking. GitHub's documentation does not say the
+public profile address has to be verified — the [users
+API](https://docs.github.com/en/rest/users/users) describes it only as "the
+publicly visible email address from your GitHub profile page", and the
+[emails API](https://docs.github.com/en/rest/users/emails) sets visibility
+for the *primary* address. So the broker's `email_verified` can't be taken on
+trust for that address, and an invitation must not be redeemable with it.
+Setting `preferredEmailDomain` makes Dex read `/user/emails` for every user and
+return a verified address in that domain, falling back to the **primary
+verified** one (`connector/github/github.go`, `userEmail`); `invalid` is a
+reserved name (RFC 2606) no deliverable — so no verified — address can be in,
+which leaves exactly the direct path's rule. A GitHub account with no verified
+primary address then cannot sign in through Dex at all, where directly it could
+still sign in to an already-linked account by its id.
+
+**Precedence.** Per provider, Dex first: a provider in `DEX_CONNECTORS` while
+Dex is configured goes through Dex; otherwise its own `*_CLIENT_ID` +
+`*_CLIENT_SECRET` pair sends it direct; otherwise it has no button
+(`apps/web/src/lib/sign-in-routes.ts`). Half a Dex configuration — or an issuer
+that is not https (plain http is allowed on localhost only) — counts as none:
+the web offers no Dex button, and the api refuses every Dex token and logs the
+problem once at boot.
 
 ## Bootstrap admin seed — development only
 
@@ -654,6 +751,9 @@ exercising the real flow.
 | `INTERNAL_API_BASE_URL` | web | server-side api URL for Auth.js callbacks (`http://api:8000` in compose) |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | web (+ id on api) | unset = no Google button. The api needs the id to pin the token audience |
 | `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | web | unset = no GitHub button |
+| `DEX_ISSUER` | api + web | The [Dex broker](#through-a-dex-broker-mag-5238)'s issuer URL, exactly as Dex writes it in `iss` (the fleet's: `https://auth.magmadevs.com`). https only, except on localhost. Needs `DEX_CLIENT_ID` beside it |
+| `DEX_CLIENT_ID` | api + web | This dashboard's client id at Dex (the fleet's: `sr-dashboard-<tenant>`). The api pins the token audience to it. No secret: the client is public |
+| `DEX_CONNECTORS` | web | Which buttons go through Dex: a comma list of `google`, `github`. Unset = both. A provider listed here wins over its direct pair |
 
 ## Running it
 
