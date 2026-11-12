@@ -52,6 +52,11 @@ describe("decidingError - the error that decided a request, and who caused it", 
     expect(decidingError(r)).toMatchObject({ cause: "provider", provider: "tatum" });
   });
 
+  it("names the error in the list's words, without the request a transport error wraps", () => {
+    const r = row({ attempts: [attempt("lava", { replied: true, message: 'http request failed: Post "http://node-a.example:8545": dial tcp 10.0.0.1:8545: connect: connection refused' })] });
+    expect(decidingError(r).label).toBe("dial tcp 10.0.0.1:8545: connect: connection refused");
+  });
+
   it("falls back to the request's own code, then to its error words", () => {
     expect(decidingError(row({ result: "write-unknown", errorCode: "NODE_GATEWAY_TIMEOUT" })))
       .toMatchObject({ key: "NODE_GATEWAY_TIMEOUT", label: "gateway timeout", cause: "none" });

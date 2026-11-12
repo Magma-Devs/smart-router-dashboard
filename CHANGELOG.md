@@ -30,6 +30,9 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   message's transaction hashes, addresses (0x…, long hex, base58, bech32)
   and ids are blanked like its numbers, so "already known" on fifty
   transactions is one group and one error type, not fifty.
+- A group without a router code is named in the list's words: "dial tcp …:
+  connection refused", not the first 64 characters of
+  `http request failed: Post "…"`, which cut off the error itself.
 - **"The request" follows the error catalogue.** A code is the request's
   when any healthy provider would give the same answer: the request's own
   and the chain's rules. A provider-side `CHAIN_` code (state pruned, block

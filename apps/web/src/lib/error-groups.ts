@@ -26,7 +26,7 @@
  * loaded - the newest 300 - and the view says which minutes they cover.
  */
 import { explainRouterError, type ErrorRequestRow } from "@sr/shared";
-import { blankIds, codeWords, errorType, isCache } from "@/components/metrics/request-log";
+import { blankIds, codeWords, errorLabel, errorType, isCache } from "@/components/metrics/request-log";
 
 /** The results a client received as an error, or with no clear outcome. */
 const REACHED: ReadonlySet<ErrorRequestRow["result"]> = new Set(["error-reply", "failed", "write-unknown"]);
@@ -78,7 +78,9 @@ export function decidingError(r: ErrorRequestRow): { key: string; label: string;
   const decider = failed.find((a) => a.replied) ?? failed[failed.length - 1];
   if (decider) {
     const t = errorType(decider);
-    const label = decider.code && decider.code !== "UNKNOWN_ERROR" ? t.label : (decider.message ?? t.label).slice(0, 64);
+    // The error in the list's own words: the code's, or the node's message
+    // without the request it wraps ('http request failed: Post "…": ').
+    const label = errorLabel(decider);
     if (isRequestCode(decider.code)) return { key: t.key, label, cause: "request", provider: null, providerCount: 0 };
     const providers = new Set(failed.map((a) => a.upstream));
     if (providers.size >= 2) {
