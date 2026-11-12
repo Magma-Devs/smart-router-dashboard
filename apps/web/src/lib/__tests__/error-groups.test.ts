@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ErrorRequestRow, RelayAttempt } from "@sr/shared";
-import { decidingError, groupBuckets, groupErrors } from "../error-groups";
+import { coveredSpan, decidingError, groupBuckets, groupErrors } from "../error-groups";
 
 const attempt = (upstream: string, over: Partial<RelayAttempt> = {}): RelayAttempt => ({
   upstream, batch: 0, outcome: "failed", replied: false, code: null, retryable: null, message: "server error", note: null,
@@ -190,5 +190,36 @@ describe("groupBuckets - a group's requests across the list's span", () => {
   it("puts a request outside the span in the nearest end, and a zero span in the last bucket", () => {
     expect(groupBuckets([{ time: -5 }, { time: 500 }], 0, 100, 2)).toEqual([1, 1]);
     expect(groupBuckets([{ time: 7 }], 7, 7, 3)).toEqual([0, 0, 1]);
+  });
+});
+
+describe("coveredSpan - the times the grouped view says it covers", () => {
+  const read = { startMs: 0, endMs: 10_000 };
+
+  it("is the whole of the times read once nothing older is left, wherever the requests fall", () => {
+    expect(coveredSpan([5_000, 6_000], read, null)).toEqual({ fromMs: 0, toMs: 10_000 });
+  });
+
+  it("starts where the reads on screen begin while older requests are left to load, and ends with the read", () => {
+    expect(coveredSpan([7_000, 9_000], read, 6_500)).toEqual({ fromMs: 6_500, toMs: 10_000 });
+  });
+
+  it("widens to a request whose lines straddle the read's lower end", () => {
+    expect(coveredSpan([6_000, 9_000], read, 6_500)).toEqual({ fromMs: 6_000, toMs: 10_000 });
+  });
+
+  it("is the times read even with one request, or none", () => {
+    expect(coveredSpan([9_999], read, 9_000)).toEqual({ fromMs: 9_000, toMs: 10_000 });
+    expect(coveredSpan([], read, null)).toEqual({ fromMs: 0, toMs: 10_000 });
+  });
+
+  it("falls back to the requests' own times without the times read, and to nothing without either", () => {
+    expect(coveredSpan([3_000, 1_000, Number.NaN], undefined, null)).toEqual({ fromMs: 1_000, toMs: 3_000 });
+    expect(coveredSpan([], undefined, null)).toBeNull();
+  });
+
+  it("gives bars that cover it end to end: its first moment in the first bar, its last in the last", () => {
+    const span = coveredSpan([2_500], read, 2_000)!;
+    expect(groupBuckets([{ time: span.fromMs }, { time: span.toMs }], span.fromMs, span.toMs, 4)).toEqual([1, 0, 0, 1]);
   });
 });

@@ -35,6 +35,11 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   `http request failed: Post "…"`, which cut off the error itself.
 - A request with no end in the logs is grouped apart and reads "No end
   logged", not "Recovered".
+- **The span the groups cover is the one the list read.** It runs from
+  where the loaded reads begin (the window's start once nothing older is
+  left) to the end of the read, with its date, and the bars share it. It
+  was the first to the last request shown, so under a filter, or with one
+  request ("the newest 1 second"), it understated what had been read.
 - **"The request" follows the error catalogue.** A code is the request's
   when any healthy provider would give the same answer: the request's own
   and the chain's rules. A provider-side `CHAIN_` code (state pruned, block
