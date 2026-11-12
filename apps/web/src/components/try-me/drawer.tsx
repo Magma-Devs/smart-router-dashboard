@@ -22,6 +22,7 @@ import { useApi } from "@/hooks/use-api";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { CopyButton } from "@/components/gateway/CopyButton";
 import { useDialogLayer } from "@/components/gateway/DialogLayer";
+import { Spinner } from "@/components/gateway/BusyButton";
 import { HealthTag } from "@/components/gateway/HealthTag";
 import { initialTargetFor, pinCarrierFor, pinRefusalFor, pinRefusalHintFor, type UpstreamTier } from "./pin-support";
 import {
@@ -338,34 +339,6 @@ function defaultParamsFor(command: AddonCommand, iface: CatalogInterface): strin
     }
   }
   return command.params;
-}
-
-function Spinner() {
-  return (
-    <svg
-      width="13"
-      height="13"
-      viewBox="0 0 13 13"
-      style={{ animation: "tryme-spin 0.7s linear infinite", display: "block" }}
-    >
-      <style>{`@keyframes tryme-spin{to{transform:rotate(360deg)}}`}</style>
-      <circle
-        cx="6.5"
-        cy="6.5"
-        r="5"
-        fill="none"
-        stroke="rgba(255,255,255,0.25)"
-        strokeWidth="1.8"
-      />
-      <path
-        d="M6.5 1.5 A5 5 0 0 1 11.5 6.5"
-        fill="none"
-        stroke="white"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
 }
 
 function Tabs({

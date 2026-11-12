@@ -6,6 +6,7 @@ import { jwtVerify, SignJWT } from "jose";
 import type { Role } from "@sr/shared";
 import { INTERNAL_API_BASE_URL } from "@/lib/internal-api";
 import { forwardedClientHeaders } from "@/lib/forwarded-client";
+import { HOME_PATH } from "@/lib/home-path";
 
 /** Re-exported: tests pin the address arithmetic through this module. */
 export { clientIpFrom } from "@/lib/forwarded-client";
@@ -529,16 +530,16 @@ export const authConfig = {
       const path = url.pathname;
       const signedIn = !!auth?.user;
 
-      // Already-signed-in users land on /metrics if they hit /login.
+      // Already-signed-in users land on the dashboard if they hit /login.
       if (path === "/login") {
-        return signedIn ? Response.redirect(new URL("/metrics", url)) : true;
+        return signedIn ? Response.redirect(new URL(HOME_PATH, url)) : true;
       }
       // First-run setup is reachable without a session — on a fresh install
       // there is nobody to be yet. The page itself refuses once an account
       // exists, and so does the api; the gate can't tell, because the edge
       // can't reach the database.
       if (path === "/setup") {
-        return signedIn ? Response.redirect(new URL("/overview", url)) : true;
+        return signedIn ? Response.redirect(new URL(HOME_PATH, url)) : true;
       }
       // Invitation redemption is public, signed in or not. An invitation creates
       // an account for somebody who has none, but a silent redirect would read

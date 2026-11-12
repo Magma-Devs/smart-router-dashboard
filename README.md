@@ -107,7 +107,6 @@ api checks. Without them everything works, only slower on long windows.
 
 ## Pages
 
-- **Overview** — KPI strip (requests, RPS, errors, success rate, latency) + chart grid, all live
 - **Upstreams** - the mounted config joined with live per-endpoint stats, carved three ways: **by chain** (who serves it - the default), by router (the endpoints each router publishes), or by upstream (what it serves)
 - **Metrics** - four tabs: Overview, Upstreams, Errors, Transactions. The Transactions tab and the Errors tab's request list read the router's logs from Loki (`LOKI_URL`; the `logs` profile runs one)
 - **Live test** — POST to the router from the dashboard's server, or from the browser with `ROUTER_RELAY_ENABLED=false` ([`docs/ROUTER-RELAY.md`](docs/ROUTER-RELAY.md)); full per-chain method catalog with archive/debug/trace/blockbook tiers
@@ -117,7 +116,7 @@ api checks. Without them everything works, only slower on long windows.
 
 Two modes via `AUTH_MODE` (full guide: [`docs/AUTH.md`](./docs/AUTH.md)):
 
-- **`disabled`** (default) — no login, no database. The dashboard opens straight on Overview. For private/self-hosted deployments.
+- **`disabled`** (default) — no login, no database. The dashboard opens straight on Metrics. For private/self-hosted deployments.
 - **`enabled`** — Auth.js v5 sign-in backed by Postgres (Drizzle), bcrypt credentials + optional Google/GitHub (each button appears only when its client id/secret pair is set), HS256 JWT shared between web and api. The first admin is created at `/setup` with the installer's setup token; everyone after that is invited.
 
 ```bash

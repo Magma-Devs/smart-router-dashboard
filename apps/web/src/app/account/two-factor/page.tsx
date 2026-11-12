@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { EnrolPanel } from "@/components/auth/enrol-panel";
 import { SignOutInstead } from "@/components/auth/two-factor-gate";
 import { useMe } from "@/hooks/use-me";
+import { HOME_PATH } from "@/lib/home-path";
 
 /**
  * Setting up an authenticator on purpose, rather than because the gate insisted.
@@ -32,7 +33,7 @@ export default function TwoFactorSetupPage() {
             lose your phone, an administrator can reset this for you — nobody can read your key
             back, so resetting is the only way.
           </p>
-          <button className="gw-btn gw-btn--primary" onClick={() => router.push("/overview")}>
+          <button className="gw-btn gw-btn--primary" onClick={() => router.push(HOME_PATH)}>
             Back to the dashboard
           </button>
         </div>
@@ -46,7 +47,7 @@ export default function TwoFactorSetupPage() {
         <EnrolPanel
           onEnrolled={() => {
             refresh();
-            router.push("/overview");
+            router.push(HOME_PATH);
           }}
         />
         <SignOutInstead />

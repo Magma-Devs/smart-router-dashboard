@@ -225,33 +225,10 @@ export interface Kpi {
   prior: number | null;
 }
 
-/** Per-chain latency row for the Overview "P50 latency" panel. */
-export interface ChainLatency {
-  spec: string;
-  name: string;
-  color: string;
-  p50Ms: number | null;
-  /** mini bar-chart series (recent latency buckets). */
-  trend: TimePoint[];
-  /** true when health gauge is 0 (the "degraded" tag). */
-  degraded: boolean;
-}
-
-/** One active-route row ("requests today" bars). */
-export interface ActiveRoute {
-  endpointId: string;
-  spec: string;
-  color: string;
-  requests: number;
-  /** fraction of the max route (for the bar width), 0..1. */
-  share: number;
-}
-
 /**
  * What the topbar shows on every page: the router's health, how many of its
  * upstreams are unhealthy or unreported, and the current client RPS. Six
- * reads, independent of the chain count — the full overview was read for
- * these three fields before.
+ * reads, independent of the chain count.
  */
 export interface DeploymentPulse {
   health: HealthState;
@@ -260,41 +237,6 @@ export interface DeploymentPulse {
   /** Client requests per second over the last 5 minutes; null with no traffic. */
   throughputRps: number | null;
   lastUpdated: string;
-}
-
-/** Everything the Overview + Dashboard screens need in one round-trip. */
-export interface OverviewData {
-  totalRequests: Kpi;
-  throughputRps: Kpi;
-  errors: Kpi;
-  /** 1 − success/total over the window (0..1); null with no requests. */
-  errorRate: number | null;
-  uptime: number | null;
-  successRate: Kpi;
-  p50Ms: Kpi;
-  p95Ms: Kpi;
-  p99Ms: Kpi;
-  health: HealthState;
-  /** Current upstream × chain status, independent of the history window. */
-  upstreamHealthCounts: { unhealthy: number; unknown: number };
-  /** Quota/cap are NOT emitted by the router — always null (gated in the UI). */
-  computeUnits: { used: number | null; limit: number | null; resetsAt: string | null };
-  rpsCap: number | null;
-  throughput: TimePoint[];
-  errorsSeries: TimePoint[];
-  /** Latency time-series per percentile (for the p50/p95/p99 chart toggle). */
-  latencySeries: { p50: TimePoint[]; p95: TimePoint[]; p99: TimePoint[] };
-  /** Histogram bucket counts over the window (read-latency distribution). */
-  latencyDistribution: { le: string; count: number }[];
-  /** Per-upstream throughput stack (real via the provider_address label). */
-  perUpstreamSeries: { upstream: string; points: TimePoint[] }[];
-  /** Error layers; a single "unclassified" layer until labelled counters fire. */
-  errorLayers: { layer: string; count: number }[];
-  perChainLatency: ChainLatency[];
-  activeRoutes: ActiveRoute[];
-  /** Per-chain throughput series for the stacked "requests per chain" chart. */
-  perChainSeries: { spec: string; name: string; color: string; points: TimePoint[] }[];
-  lastUpdated: string | null;
 }
 
 export interface ApiError {

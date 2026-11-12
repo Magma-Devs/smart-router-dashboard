@@ -11,7 +11,7 @@ import { WEB_URL } from "./support/env.js";
  *
  * A plain GET is enough: the compile is per-route, not per-visitor.
  */
-const WARM = ["/login", "/overview", "/team", "/account/two-factor"];
+const WARM = ["/login", "/metrics", "/team", "/account/two-factor"];
 
 export default async function globalSetup(): Promise<void> {
   await Promise.all(

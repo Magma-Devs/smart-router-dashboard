@@ -33,11 +33,9 @@ import {
   qGroupedAvailability,
   qGroupedClientRequests,
   qGroupedLatencyQuantile,
-  qLatencyDistribution,
   qLatencyQuantile,
   qLatencySeriesExpr,
   qMethodLatencyQuantile,
-  qPerSpecClientRpsSeriesExpr,
   qPerSpecLatencySeriesExpr,
   qPerSpecRpsExpr,
   qPerUpstreamRpsExpr,
@@ -95,7 +93,6 @@ const BUILDERS: Array<[string, (w: "1h" | "6h" | "1d") => string]> = [
   ["qUpstreamRequestsTotal", (w) => qUpstreamRequestsTotal(REF, w)],
   ["qUpstreamAvailability", (w) => qUpstreamAvailability(REF, w)],
   ["qUpstreamFailedCount", (w) => qUpstreamFailedCount(REF, w)],
-  ["qLatencyDistribution", (w) => qLatencyDistribution(w, "ETH1")],
 ];
 
 /** Chart-series builders: recorded from the chart floor (12h) up, raw below it even under the policy. */
@@ -107,7 +104,6 @@ const SERIES: Array<[string, (w: "1h" | "6h" | "1d") => string]> = [
   ["qClientRpsSeriesExpr", (w) => qClientRpsSeriesExpr("2m", "ETH1", w)],
   ["qLatencySeriesExpr", (w) => qLatencySeriesExpr(0.5, "2m", "ETH1", w)],
   ["qPerSpecLatencySeriesExpr", (w) => qPerSpecLatencySeriesExpr(0.95, "2m", w)],
-  ["qPerSpecClientRpsSeriesExpr", (w) => qPerSpecClientRpsSeriesExpr("2m", undefined, w)],
   ["qPerUpstreamRpsExpr", (w) => qPerUpstreamRpsExpr("2m", "ETH1", w)],
   ["qPerSpecRpsExpr", (w) => qPerSpecRpsExpr("2m", w)],
   ["qPerUpstreamFailedRpsExpr", (w) => qPerUpstreamFailedRpsExpr("2m", "ETH1", w)],

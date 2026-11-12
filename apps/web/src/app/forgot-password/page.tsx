@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { HOME_PATH } from "@/lib/home-path";
 import { ForgotForm } from "@/components/auth/forgot-form";
 
 export const metadata = { title: "Reset password · Smart Router Dashboard" };
@@ -14,6 +15,6 @@ export const dynamic = "force-dynamic";
  * explanation, which is the failure this ticket has hit repeatedly.
  */
 export default function ForgotPasswordPage() {
-  if (process.env.AUTH_MODE !== "enabled") redirect("/overview");
+  if (process.env.AUTH_MODE !== "enabled") redirect(HOME_PATH);
   return <ForgotForm />;
 }

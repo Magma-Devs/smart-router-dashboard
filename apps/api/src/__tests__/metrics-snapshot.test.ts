@@ -103,7 +103,7 @@ describe("snapshotTtlMs", () => {
 describe("the metrics routes' snapshot (MAG-4572)", () => {
   it("serves one read to every caller of a query until its TTL, whatever the parameter order", async () => {
     const api = await build(15_000);
-    const first = await get(api, "/api/metrics/overview?window=30m&spec=ETH1");
+    const first = await get(api, "/api/metrics/upstreams?window=30m&spec=ETH1");
     expect(first.statusCode).toBe(200);
     expect(first.headers.age).toBe("0");
     expect(first.headers["access-control-expose-headers"]).toBe("Age");
@@ -111,13 +111,13 @@ describe("the metrics routes' snapshot (MAG-4572)", () => {
     expect(cost).toBeGreaterThan(0);
 
     vi.setSystemTime(T0 + 14_000);
-    const again = await get(api, "/api/metrics/overview?spec=ETH1&unread=1&window=30m");
+    const again = await get(api, "/api/metrics/upstreams?spec=ETH1&unread=1&window=30m");
     expect(again.json()).toEqual(first.json());
     expect(again.headers.age).toBe("14");
     expect(reads()).toBe(cost);
 
     // Another chain is another answer.
-    await get(api, "/api/metrics/overview?window=30m&spec=BASE");
+    await get(api, "/api/metrics/upstreams?window=30m&spec=BASE");
     expect(reads()).toBeGreaterThan(cost);
   });
 
@@ -211,7 +211,6 @@ describe("the metrics routes' snapshot (MAG-4572)", () => {
       "/api/metrics/specs",
       "/api/metrics/dashboard-summary",
       "/api/metrics/pulse",
-      "/api/metrics/overview",
       "/api/metrics/dashboard",
       "/api/metrics/routers-rollup",
       "/api/metrics/chains",

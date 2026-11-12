@@ -52,14 +52,14 @@ describe("createIdleStore", () => {
   it("re-reads every polling key once on the first activity after a pause, and starts the clock over", () => {
     const listener = vi.fn();
     store.subscribe(listener);
-    store.watchPoll("/api/metrics/overview?window=30m");
+    store.watchPoll("/api/metrics/dashboard-summary?window=30m");
     store.watchPoll("/api/metrics/pulse");
     vi.advanceTimersByTime(61 * MIN);
     expect(store.phase()).toBe("paused");
 
     fire("pointermove");
     expect(refresh).toHaveBeenCalledTimes(1);
-    expect(refreshedKeys()).toEqual(["/api/metrics/overview?window=30m", "/api/metrics/pulse"]);
+    expect(refreshedKeys()).toEqual(["/api/metrics/dashboard-summary?window=30m", "/api/metrics/pulse"]);
     expect([store.phase(), store.phaseNow(), store.resumes(), listener.mock.calls.length]).toEqual(["active", "active", 1, 3]);
 
     // The rest of the same gesture is not another return.
@@ -130,7 +130,7 @@ describe("createIdleStore", () => {
   it("never slows or pauses an exempt page, and re-reads nothing there", () => {
     exempt = true;
     store.subscribe(() => {});
-    store.watchPoll("/api/metrics/overview?window=30m");
+    store.watchPoll("/api/metrics/dashboard-summary?window=30m");
     for (const after of [11 * MIN, 61 * MIN, 24 * 60 * MIN]) {
       vi.setSystemTime(T0 + after);
       vi.advanceTimersByTime(0);

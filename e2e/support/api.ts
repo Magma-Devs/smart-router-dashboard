@@ -205,15 +205,7 @@ export async function inviteMember(
   adminToken: string,
   member: { email: string; password: string; name: string; role?: string },
 ): Promise<SeededMember> {
-  const created = expectOk(
-    await apiCall<{ url?: string }>("POST", "/api/team/invites", {
-      token: adminToken,
-      body: { email: member.email, role: member.role ?? "requester" },
-    }),
-    `invite ${member.email}`,
-  );
-  const rawToken = created.url?.split("/invite/")[1];
-  if (!rawToken) throw new Error(`invite ${member.email}: on-prem returned no link`);
+  const rawToken = await createInvitation(adminToken, member.email, member.role);
 
   const redeemed = expectOk(
     await apiCall<{ user: { id: string } }>("POST", "/auth/invite/accept", {
@@ -228,4 +220,25 @@ export async function inviteMember(
     name: member.name,
     userId: redeemed.user.id,
   };
+}
+
+/**
+ * An invitation, not yet redeemed: the token from the link an on-prem admin
+ * copies, for a spec that redeems it on screen.
+ */
+export async function createInvitation(
+  adminToken: string,
+  email: string,
+  role = "requester",
+): Promise<string> {
+  const created = expectOk(
+    await apiCall<{ url?: string }>("POST", "/api/team/invites", {
+      token: adminToken,
+      body: { email, role },
+    }),
+    `invite ${email}`,
+  );
+  const rawToken = created.url?.split("/invite/")[1];
+  if (!rawToken) throw new Error(`invite ${email}: on-prem returned no link`);
+  return rawToken;
 }

@@ -35,6 +35,7 @@ let readyResolve: (() => void) | null = null;
 const readyPromise = new Promise<void>((resolve) => {
   readyResolve = resolve;
 });
+let ready = false;
 
 export function setAuthState(next: AuthState): void {
   state = next;
@@ -45,6 +46,15 @@ export function setAuthState(next: AuthState): void {
 /** Called by ApiTokenBridge once the session has settled (either way). */
 export function markAuthReady(): void {
   readyResolve?.();
+  if (ready) return;
+  ready = true;
+  for (const l of listeners) l();
+}
+
+/** The same moment as `authReady()`, for a render to read: false until the
+ *  session has been read once, then true for the rest of the page's life. */
+export function isAuthReady(): boolean {
+  return ready;
 }
 
 /** Resolves once the session has been read (token present or absent). */

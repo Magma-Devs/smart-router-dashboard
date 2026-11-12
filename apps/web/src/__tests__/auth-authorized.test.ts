@@ -42,7 +42,7 @@ describe("authorized()", () => {
   });
 
   it("still gates the dashboard", async () => {
-    expect(await gate("/overview", false)).toBe(false);
+    expect(await gate("/metrics", false)).toBe(false);
     expect(await gate("/team", false)).toBe(false);
   });
 });

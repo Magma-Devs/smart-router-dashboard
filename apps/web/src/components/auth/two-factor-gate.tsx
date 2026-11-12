@@ -1,8 +1,30 @@
 "use client";
 
+import { createContext, useContext } from "react";
 import { signOut } from "next-auth/react";
 import { useMe } from "@/hooks/use-me";
+import { gateView, type EnrolmentVerdict } from "@/lib/enrolment-gate";
 import { EnrolPanel } from "./enrol-panel";
+
+/**
+ * The server's answer to "must this person enrol", read by the layout before
+ * it rendered (`lib/enrolment-verdict.ts`). Defaults to `none`, which leaves
+ * the gate to the browser's own read: the right answer where accounts are off,
+ * since nobody can sign in there and so nothing would ever settle a wait.
+ */
+const EnrolmentVerdictContext = createContext<EnrolmentVerdict>({ state: "none" });
+
+export function EnrolmentVerdictProvider({
+  verdict,
+  children,
+}: {
+  verdict: EnrolmentVerdict;
+  children: React.ReactNode;
+}) {
+  return (
+    <EnrolmentVerdictContext.Provider value={verdict}>{children}</EnrolmentVerdictContext.Provider>
+  );
+}
 
 /**
  * The way out of a screen that otherwise has none. The gate replaces the whole
@@ -43,17 +65,26 @@ export function SignOutInstead() {
  * change or bounce somebody who has just finished. Rendering in place means the
  * dashboard appears underneath as soon as `refresh()` comes back clean.
  *
+ * It decides before the dashboard draws anything. The layout's server-side read
+ * of the account (`EnrolmentVerdictProvider`) answers on the first render, the
+ * browser's own read takes over once it lands, and with neither the gate draws
+ * an empty page rather than guess — `gateView` has the rules. Decided from the
+ * browser's read alone, the dashboard would be drawn for as long as that read
+ * takes and then replaced.
+ *
  * **This is not the enforcement.** The api refuses every request from an
  * unenrolled session; this is what the person sees instead of forty panels
  * failing. Hiding the UI is never the control.
  */
 export function TwoFactorGate({ children }: { children: React.ReactNode }) {
-  const { me, twoFactor, refresh } = useMe();
+  const verdict = useContext(EnrolmentVerdictContext);
+  const { twoFactor: live, settled, refresh } = useMe();
+  const { view, twoFactor } = gateView(live, verdict, settled);
 
-  // Nothing known yet — AUTH_MODE=disabled (where these routes are not even
-  // registered), or the first read is still in flight. Rendering the block on a
-  // guess would flash it at everyone on every cold load.
-  if (!twoFactor?.enrolmentRequired) return <>{children}</>;
+  if (view === "app") return <>{children}</>;
+  // The page's own background and nothing on it: no chrome to take away, and
+  // no enrolment screen shown to somebody who may not need it.
+  if (view === "wait") return <main aria-busy="true" style={{ minHeight: "100vh", background: "var(--bg)" }} />;
 
   return (
     <main
@@ -76,7 +107,7 @@ export function TwoFactorGate({ children }: { children: React.ReactNode }) {
             // and telling them "your organisation requires this" when what
             // actually happened is "an administrator cleared your phone" leaves
             // them wondering whether something is wrong.
-            me?.twoFactor?.graceEndsAt
+            twoFactor?.graceEndsAt
               ? "Your grace period has ended. Set up an authenticator app to get back into the dashboard."
               : "Everyone who uses this dashboard signs in with an authenticator app. Set one up to continue — it takes about a minute."
           }

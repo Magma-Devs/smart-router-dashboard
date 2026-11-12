@@ -2,7 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 import { useApi } from "@/hooks/use-api";
-import { getAuthState, getAuthVersion, subscribeAuth } from "@/lib/auth-store";
+import { getAuthState, getAuthVersion, isAuthReady, subscribeAuth } from "@/lib/auth-store";
 import { roleAtLeast, type Role } from "@sr/shared";
 
 export interface MeTwoFactor {
@@ -50,6 +50,9 @@ export function useMe(): {
   isAdmin: boolean;
   loading: boolean;
   twoFactor: MeTwoFactor | null;
+  /** The live read has answered or failed, or there is nobody to read for —
+   *  so a null `twoFactor` from here on is final until the next poll. */
+  settled: boolean;
   /** Re-read after enrolling, so the gate lifts without a page reload. */
   refresh: () => void;
 } {
@@ -64,12 +67,13 @@ export function useMe(): {
   // instead of the screen telling them what to do about it. The Sidebar had
   // subscribed for itself and so looked fine, which is what hid this.
   useSyncExternalStore(subscribeAuth, getAuthVersion, () => 0);
+  const authReady = useSyncExternalStore(subscribeAuth, isAuthReady, () => false);
 
   // The store is empty in AUTH_MODE=disabled, where these routes are not even
   // registered — asking would 404 on every page. It is also empty before the
   // session bridge has run, and asking then would race it.
   const bridged = getAuthState().user;
-  const { data: live, isLoading, mutate } = useApi<Me>(bridged ? "/api/account/me" : null);
+  const { data: live, error, isLoading, mutate } = useApi<Me>(bridged ? "/api/account/me" : null);
   // `useApi` keeps the previous key's data across a key change, including a
   // change to no key. Without this, a screen with nobody signed in would go on
   // answering for whoever was signed in last.
@@ -100,6 +104,9 @@ export function useMe(): {
     // would either strand somebody who has enrolled or wave through somebody
     // who has not.
     twoFactor: data?.twoFactor ?? null,
+    // Not from `isLoading`: on the render where the session first arrives the
+    // key has only just been set, and that is not yet a read in flight.
+    settled: authReady && (!bridged || data !== undefined || error !== undefined),
     refresh: () => void mutate(),
   };
 }

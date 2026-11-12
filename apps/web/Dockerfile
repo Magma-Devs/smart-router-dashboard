@@ -53,6 +53,6 @@ ENV HOSTNAME=0.0.0.0
 USER node
 EXPOSE 3000
 # /api/config always answers 200 regardless of AUTH_MODE (with auth enabled,
-# /overview 307s to /login, which busybox wget handles inconsistently).
+# /metrics 307s to /login, which busybox wget handles inconsistently).
 HEALTHCHECK --interval=30s --timeout=5s CMD wget -qO- http://127.0.0.1:3000/api/config || exit 1
 CMD ["node", "apps/web/server.js"]

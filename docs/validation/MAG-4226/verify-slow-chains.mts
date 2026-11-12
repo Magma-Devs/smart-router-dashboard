@@ -45,17 +45,17 @@ try {
     assert.equal(slowRows.length, 4);
     for (const row of slowRows)
       assert.equal(row.health, point.expected, `${point.name} ${row.spec}: ${row.healthReason}`);
-    const overview = await (await fetch(`${address}/api/metrics/overview?window=7d`)).json();
+    const pulse = await (await fetch(`${address}/api/metrics/pulse`)).json();
     assert.equal(
-      overview.upstreamHealthCounts.unhealthy,
+      pulse.upstreamHealthCounts.unhealthy,
       rows.filter((row: { health: string }) => row.health === "unhealthy").length,
     );
     assert.equal(
-      overview.upstreamHealthCounts.unknown,
+      pulse.upstreamHealthCounts.unknown,
       rows.filter((row: { health: string }) => row.health === "unknown").length,
     );
     const filtered = await (
-      await fetch(`${address}/api/metrics/overview?spec=BTC&routerId=BTC`)
+      await fetch(`${address}/api/metrics/pulse?spec=BTC&routerId=BTC`)
     ).json();
     assert.deepEqual(filtered.upstreamHealthCounts, {
       unhealthy: point.expected === "unhealthy" ? 1 : 0,
@@ -73,7 +73,7 @@ try {
       evaluation,
       expected: point.expected,
       slowRows,
-      counts: overview.upstreamHealthCounts,
+      counts: pulse.upstreamHealthCounts,
       fixedFiveMinuteFailures: old.data.result,
     });
   }

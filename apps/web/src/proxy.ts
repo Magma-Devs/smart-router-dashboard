@@ -6,7 +6,7 @@ import { authConfig } from "./auth.config";
  * AUTH_MODE=enabled it runs the Auth.js `authorized` callback on every
  * request not excluded by the matcher — unauthed users hitting app routes
  * get redirected to /login, signed-in users hitting /login bounce to
- * /overview. When AUTH_MODE=disabled (the default) it's a no-op and the
+ * HOME_PATH (/metrics). When AUTH_MODE=disabled (the default) it's a no-op and the
  * dashboard keeps its open, zero-login behaviour.
  */
 const authEnabled = process.env.AUTH_MODE === "enabled";

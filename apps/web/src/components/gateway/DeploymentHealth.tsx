@@ -43,8 +43,8 @@ export function DeploymentHealthBadge({
 
 /**
  * The topbar's pulse — health, upstream health counts, current RPS — polled
- * on every page. Its own six-read endpoint: the full overview it used to read
- * for these three fields costs dozens of reads a call (MAG-4296).
+ * on every page. Its own endpoint: six reads, whatever the chain count
+ * (MAG-4296).
  */
 export function useDeploymentPulse() {
   const { withScope, routerId, chain } = useFilters();

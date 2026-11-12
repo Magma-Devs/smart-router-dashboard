@@ -91,7 +91,7 @@ export async function signInThroughUi(page: Page, account: UiAccount): Promise<v
     await page.getByRole("button", { name: "Verify" }).click();
   }
 
-  await page.waitForURL(/\/overview/);
+  await page.waitForURL(/\/metrics$/);
 }
 
 /** A member with a working authenticator, seeded over HTTP. */
@@ -99,4 +99,35 @@ export async function enrolledMember(member: SeededMember): Promise<Required<See
   const session = await signInApi(member.email, member.password);
   const authenticator = await enrolAuthenticator(session.token);
   return { ...member, authenticator };
+}
+
+/**
+ * Record whether the dashboard's chrome is ever put on the page.
+ *
+ * Installed before the page loads, in every document it opens, and watching
+ * insertions rather than polling the page: the chrome the enrolment gate used
+ * to paint lasted only as long as the browser's own account read, which a
+ * locator check after the fact can never see. Every inserted element counts,
+ * including one already taken away again.
+ */
+export async function watchForDashboardChrome(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const w = window as unknown as { __e2eChromeSeen?: boolean };
+    w.__e2eChromeSeen = false;
+    new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of Array.from(record.addedNodes)) {
+          if (!(node instanceof Element)) continue;
+          if (node.matches(".gw-app") || node.querySelector(".gw-app")) w.__e2eChromeSeen = true;
+        }
+      }
+    }).observe(document, { childList: true, subtree: true });
+  });
+}
+
+/** Whether the current document has had the dashboard's chrome in it. */
+export async function dashboardChromeSeen(page: Page): Promise<boolean> {
+  return page.evaluate(
+    () => (window as unknown as { __e2eChromeSeen?: boolean }).__e2eChromeSeen === true,
+  );
 }

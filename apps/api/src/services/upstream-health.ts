@@ -25,7 +25,7 @@ const rank: Record<HealthState, number> = { operational: 0, unknown: 1, unhealth
 const missing =
   "No current health measurement or successful block polls reported; check the router and Prometheus scrape.";
 
-/** Four reads, independent of fleet size; shared by the roster and overview counts. */
+/** Four reads, independent of fleet size; shared by the roster and the pulse's counts. */
 export async function readUpstreamHealth(
   prom: PrometheusClient,
   config?: ConfigurationService,

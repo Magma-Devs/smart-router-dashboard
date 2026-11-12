@@ -220,10 +220,15 @@ a.gw-side__brand:hover { opacity: 0.82; }
 .gw-btn--danger { color: var(--err); border-color: var(--line-2); }
 .gw-btn--danger:hover { background: rgba(239,68,68,0.08); }
 .gw-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+/* Disabled because it is working, not because it cannot be used: kept near
+   full strength so the spinner and its label read. */
+.gw-btn[aria-busy="true"]:disabled { opacity: 0.85; cursor: progress; }
 
 /* ── Inputs ── */
 .gw-input { width: 100%; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--surface); color: var(--text); font-size: 13px; font-family: inherit; outline: none; transition: border-color 0.15s, box-shadow 0.15s; }
 .gw-input:focus { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(255,57,0,0.15); }
+/* Held while its form's request runs: what was typed is what is being sent. */
+.gw-input[readonly] { opacity: 0.6; cursor: default; }
 
 /* ── Tags / badges ── */
 .gw-tag { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 5px; font-size: 11px; font-weight: 500; background: var(--hover); color: var(--text-2); }
@@ -340,6 +345,12 @@ table.gw-table tbody tr.gw-logrow-detail:hover > td { background: var(--bg-2); p
    deliberately not a spinner: the data on screen is still valid. */
 .gw-refreshing { animation: gwBreathe 1.5s ease-in-out infinite; }
 @keyframes gwBreathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+/* The spinner inside a button whose request is running (`BusyButton.tsx`).
+   It keeps turning under reduced motion: it is the one sign that something
+   is still happening, and the label beside it changes too. */
+.gw-spin { animation: gwSpin 0.7s linear infinite; }
+@keyframes gwSpin { to { transform: rotate(360deg); } }
 
 @media (prefers-reduced-motion: reduce) {
   .gw-skel, .gw-refreshing { animation: none; }

@@ -1,12 +1,13 @@
 # Browser tests
 
-Playwright, against a running api and web. Four surfaces from MAG-2730 — the
-ones where the thing under test is what a person sees:
+Playwright, against a running api and web. The account flows where the thing
+under test is what a person sees:
 
 | Spec | What only a browser can show |
 |---|---|
 | `sign-in.spec.ts` | the code field appears after the password and not before; a wrong code costs the whole sign-in; one message for both steps |
 | `enrolment.spec.ts` | the QR is painted, not just delivered; the dashboard is shut behind the enrolment screen; the block lifts by re-reading the account, without a navigation |
+| `invitation.spec.ts` | redeeming an invitation on screen: the button spins and the fields hold from the click until the next page, through the gap between the api's answer and the sign-in |
 | `countdown.spec.ts` | the grace period is counted down in the header, and reads as a deadline in its last week |
 | `team-reset.spec.ts` | the reset is offered only where there is something to clear, names the person before it acts, and updates the row |
 
