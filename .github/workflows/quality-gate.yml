@@ -20,15 +20,15 @@ permissions:
 jobs:
   checks:
     name: Checks (typecheck + test)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 24
+          node-version-file: .nvmrc
 
       - name: Enable corepack and install dependencies
         run: |
@@ -56,7 +56,7 @@ jobs:
 
   spec-drift:
     name: Chain catalogs ↔ lava-specs drift
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Only meaningful when the base is `main`. A `pull_request` job runs against
     # head-merged-into-base, so on a stacked PR the base is a feature branch and
     # this compares *that branch's* chain map to upstream — reporting the base's
@@ -65,12 +65,12 @@ jobs:
     if: github.event_name == 'push' || github.base_ref == 'main'
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 24
+          node-version-file: .nvmrc
 
       # Regenerate the chain map, the Try-it method catalog and the
       # runnable-defaults roll-call from the live Magma-Devs/lava-specs repo,

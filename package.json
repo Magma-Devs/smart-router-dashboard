@@ -1,7 +1,7 @@
 {
   "name": "smart-router-dashboard",
   "private": true,
-  "packageManager": "pnpm@10.8.0",
+  "packageManager": "pnpm@10.34.9+sha512.f49b5a8ea0fdedb44bb3c0c1d6575092a53c2950d95b7ad15df11f17974877a2de3a01c07e934e9b28ce716e51c09a94962c7306d09be2e1e4b18a8c8762fd32",
   "engines": {
     "node": ">=24"
   },
@@ -18,33 +18,33 @@
     "e2e:ui": "pnpm --filter @sr/e2e e2e:ui"
   },
   "devDependencies": {
-    "@eslint/js": "^10.0.1",
-    "@next/eslint-plugin-next": "^16.4.0",
-    "eslint": "^10.13.0",
-    "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-react-hooks": "^7.1.1",
-    "globals": "^17.12.0",
-    "prettier": "^3.9.10",
-    "typescript": "^6.0.3",
-    "typescript-eslint": "^8.72.0",
-    "vite": "^8.3.5",
-    "vitest": "^5.0.5"
+    "@eslint/js": "10.0.1",
+    "@next/eslint-plugin-next": "16.4.0",
+    "eslint": "10.13.0",
+    "eslint-config-prettier": "10.1.8",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "globals": "17.12.0",
+    "prettier": "3.9.10",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.0",
+    "vite": "8.3.5",
+    "vitest": "5.0.5"
   },
   "pnpm": {
     "overrides": {
-      "brace-expansion@<5.0.8": ">=5.0.8",
-      "browserslist@<4.28.7": ">=4.28.7 <5",
-      "esbuild@<0.25.0": ">=0.25.0",
-      "fast-copy@<4.1.0": ">=4.1.0 <5",
-      "fast-jwt@<6.3.4": ">=6.3.4 <7",
-      "fast-uri@<3.1.8": ">=3.1.8 <4",
-      "find-my-way@<9.7.0": ">=9.7.0",
+      "brace-expansion@<5.0.8": "5.0.12",
+      "browserslist@<4.28.7": "4.29.3",
+      "esbuild@<0.25.0": "0.28.2",
+      "fast-copy@<4.1.0": "4.1.2",
+      "fast-jwt@<6.3.4": "6.3.4",
+      "fast-uri@<3.1.8": "3.1.9",
+      "find-my-way@<9.7.0": "9.10.0",
       "glob": "14.0.3",
-      "ip-address@<10.7.1": ">=10.7.1 <11",
+      "ip-address@<10.7.1": "10.7.6",
       "minimatch": "11.0.4",
-      "postcss@<8.5.18": ">=8.5.18",
-      "sharp@<0.35.0": ">=0.35.0",
-      "zod@<4.6.6": ">=4.6.6 <5"
+      "postcss@<8.5.18": "8.5.32",
+      "sharp@<0.35.0": "0.35.5",
+      "zod@<4.6.6": "4.6.7"
     }
   }
 }

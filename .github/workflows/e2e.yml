@@ -13,6 +13,7 @@ on:
       - "package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
+      - ".nvmrc"
       - ".github/workflows/e2e.yml"
       - "!**/*.md"
       - "!**/__tests__/**"
@@ -31,7 +32,7 @@ concurrency:
 jobs:
   e2e:
     name: Browser tests (2FA flows)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 8
     env:
       E2E_DATABASE_URL: postgres://sr:dev@localhost:5432/sr_dashboard
@@ -41,15 +42,15 @@ jobs:
       - name: Start Postgres
         run: |
           docker run -d --name pg -p 5432:5432 -e POSTGRES_USER=sr -e POSTGRES_PASSWORD=dev \
-            -e POSTGRES_DB=sr_dashboard postgres:18-alpine > "$RUNNER_TEMP/pg.log" 2>&1 &
+            -e POSTGRES_DB=sr_dashboard postgres:18.6-alpine@sha256:9ba53c7d41ea093baf5c1ba635ba5434c4f979880527d49bb7d9237d3193085b > "$RUNNER_TEMP/pg.log" 2>&1 &
 
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 24
+          node-version-file: .nvmrc
 
       - name: Enable corepack and install dependencies
         run: |
@@ -67,7 +68,7 @@ jobs:
       # headless shell is fetched, and only when this version is not cached.
       - name: Cache the headless shell
         id: browser
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: playwright-shell-${{ runner.os }}-${{ steps.playwright.outputs.version }}
@@ -87,7 +88,7 @@ jobs:
 
       - name: Upload the report on failure
         if: failure()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: playwright-report
           path: |

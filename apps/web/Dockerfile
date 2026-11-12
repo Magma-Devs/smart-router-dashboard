@@ -1,7 +1,7 @@
 # The build stage runs on the runner's own architecture whatever the image
 # targets: its output is plain JS and the web loads no native module at
 # runtime, so BuildKit runs it once for linux/amd64,linux/arm64.
-FROM --platform=$BUILDPLATFORM node:24-alpine AS builder
+FROM --platform=$BUILDPLATFORM node:24.22.3-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5 AS builder
 RUN corepack enable
 WORKDIR /app
 
@@ -36,7 +36,7 @@ RUN cd apps/web/.next/standalone/node_modules/.pnpm && \
 # Runtime stage, built once per target architecture. Keep it free of RUN:
 # the CI builder has no QEMU, so a RUN here fails on arm64 with "exec format
 # error". COPY, ENV, USER and CMD need no emulation.
-FROM node:24-alpine
+FROM node:24.22.3-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5
 WORKDIR /app
 
 COPY --from=builder /app/apps/web/.next/standalone ./

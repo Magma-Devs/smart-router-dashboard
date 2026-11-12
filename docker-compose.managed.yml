@@ -24,7 +24,7 @@ services:
   # amd64-only, so it runs under emulation on Apple silicon. It is a dev-only
   # service and the slowdown does not matter.
   ses:
-    image: dasprid/aws-ses-v2-local
+    image: dasprid/aws-ses-v2-local:2.3.1@sha256:051c11414ff3be674d3218db0e9539ca2e42a4e5f0efb65133064fe5d54fa7e4
     platform: linux/amd64
     ports:
       - "${SES_UI_PORT:-8005}:8005"
