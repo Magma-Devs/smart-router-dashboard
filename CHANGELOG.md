@@ -5,6 +5,51 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.65.1]
+
+### Fixed
+
+- **The forms that set a password show that they are working** (MAG-5269):
+  first-run setup, accepting an invitation, a reset link and **Change
+  password** on the Account page. From the click, the button shows a spinner
+  and is disabled, and the fields are read-only. Setup and invitations name
+  each step ("Creating…" or "Joining…", then "Signing in…") and stay that way
+  until the next page loads; before, the button only changed its words and
+  faded like a disabled one. The spinner is the Try-me drawer's, now shared
+  (`components/gateway/BusyButton.tsx`).
+- **No dashboard before the two-factor enrolment screen** (MAG-5269). After
+  signing in or accepting an invitation, somebody who had to set up an
+  authenticator saw the whole dashboard for a moment before the enrolment
+  screen replaced it: the gate decided from the browser's own read of
+  `/api/account/me`, which only starts once Auth.js has handed over a token,
+  and drew the dashboard until it came back. The `(app)` and standalone
+  layouts now read the account on the server while they render, so the first
+  HTML is the enrolment screen. If that read fails, the gate draws an empty
+  page until the browser's read answers. The block is as strict as before:
+  a "required" from either read shuts the dashboard, and the api still
+  refuses every other route to an unenrolled session.
+- **Signing in lands on Metrics** (MAG-5269). Setup, sign-in (password,
+  code, Google, GitHub), accepting an invitation, the two-factor page and the
+  no-accounts guard on every account page sent people to `/overview`, a page
+  the sidebar has not linked to since Metrics became where the dashboard
+  opens. They all go to `HOME_PATH` (`/metrics`, `lib/home-path.ts`) now,
+  as the root page and a signed-in visit to `/login` already did.
+
+### Removed
+
+- **The `/overview` page**, with `OverviewView` and the two pieces only it
+  used (`SparkLine`, `CHAIN_CLR`). A test fails if a route of that name comes
+  back, if the web's source names it, or if any redirect, link or sign-in
+  target names a page the app does not have.
+- **`GET /api/metrics/overview`** (MAG-5269). The `/overview` page was its
+  last caller; the topbar reads its health counts from
+  `GET /api/metrics/pulse`, and the Metrics tab's cards from
+  `GET /api/metrics/dashboard-summary`. Gone with it: `MetricsService.overview`
+  and its active-routes read, the `OverviewData`, `ChainLatency` and
+  `ActiveRoute` types, and the three query builders only it used
+  (`qLatencyDistribution`, `qPerSpecLatencyQuantile`,
+  `qPerSpecClientRpsSeriesExpr`). The path now answers 404.
+
 ## [0.65.0]
 
 ### Added
