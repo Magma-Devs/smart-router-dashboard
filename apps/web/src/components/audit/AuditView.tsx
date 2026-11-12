@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AUDIT_GROUPS, type AuditEventRecord } from "@sr/shared";
 import { SideSheet } from "@/components/gateway/SideSheet";
 import {
@@ -16,8 +16,20 @@ import {
   EMPTY_FILTERS,
   hasAnyFilter,
   useAuditFeed,
+  type AuditFeed,
   type AuditFilters,
 } from "@/components/audit/useAuditFeed";
+import {
+  AUDIT_PAGE_SIZES,
+  auditPositionLabel,
+  newerPage,
+  newestPage,
+  olderPage,
+  useAuditLocation,
+  withFilters,
+  withPageSize,
+  type AuditLocation,
+} from "@/components/audit/audit-location";
 import { apiDownload } from "@/lib/api-client";
 
 /**
@@ -62,25 +74,143 @@ function EmptyState({
   );
 }
 
+/** "7 new entries since this page was the newest", "100+ new entries …". */
+function arrivedLine({ count, more }: { count: number; more: boolean }): string {
+  const entries = count === 1 && !more ? "entry" : "entries";
+  return `${count}${more ? "+" : ""} new ${entries} since this page was the newest`;
+}
+
+/**
+ * Where the reader is and the way to the next page either side — above the
+ * table and again below it, so a hundred rows down is not a scroll back up.
+ *
+ * Older and Newer read from the rows on screen, so they wait while a page is
+ * on its way: those positions belong to the page being replaced.
+ */
+function Pager({
+  feed,
+  location,
+  move,
+  sizes,
+}: {
+  feed: AuditFeed;
+  location: AuditLocation;
+  move: (next: AuditLocation) => void;
+  sizes?: boolean;
+}) {
+  const page = feed.page;
+  if (!page) return null;
+  const busy = feed.loading;
+  const label = auditPositionLabel(location, {
+    count: page.items.length,
+    atNewest: page.atNewest,
+    hasOlder: page.hasOlder,
+  });
+  const end = !page.atNewest && !page.hasOlder;
+  return (
+    <div
+      className="gw-row"
+      style={{ justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}
+    >
+      <span style={{ fontSize: 13, fontWeight: 600 }} aria-live="polite">
+        {label}
+        {end ? (
+          <span style={{ fontWeight: 400, color: "var(--text-3)" }}> · end of the log</span>
+        ) : null}
+      </span>
+      <div className="gw-row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        {sizes ? (
+          <div className="gw-segctl" role="group" aria-label="Rows per page">
+            {AUDIT_PAGE_SIZES.map((size) => (
+              <button
+                key={size}
+                className={size === location.size ? "on" : ""}
+                aria-pressed={size === location.size}
+                onClick={() => move(withPageSize(location, size))}
+                title={`${size} rows per page`}
+              >
+                {size}
+              </button>
+            ))}
+          </div>
+        ) : null}
+        <button
+          className="gw-btn"
+          onClick={() => move(newestPage(location))}
+          disabled={busy || page.atNewest}
+        >
+          Newest
+        </button>
+        <button
+          className="gw-btn"
+          onClick={() => {
+            // Page 1 with entries above it: those are what Newer would show,
+            // and the newest page shows them whole.
+            if (page.arrived || !page.startCursor) move(newestPage(location));
+            else move(newerPage(location, page.startCursor));
+          }}
+          disabled={busy || !page.hasNewer}
+        >
+          ← Newer
+        </button>
+        <button
+          className="gw-btn"
+          onClick={() => page.endCursor && move(olderPage(location, page.endCursor))}
+          disabled={busy || !page.hasOlder || !page.endCursor}
+        >
+          Older →
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function AuditView() {
-  const [filters, setFilters] = useState<AuditFilters>(EMPTY_FILTERS);
   const [selected, setSelected] = useState<AuditEventRecord | null>(null);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
-  const feed = useAuditFeed(filters);
+  const { location, go } = useAuditLocation();
+  const { filters } = location;
+  const feed = useAuditFeed(location);
+
+  // The text filter being typed, if any. Its first keystroke is a history
+  // entry and the rest rewrite it, so Back undoes the word, not one letter.
+  const typing = useRef<string | null>(null);
+  useEffect(() => {
+    const forget = () => {
+      typing.current = null;
+    };
+    window.addEventListener("popstate", forget);
+    return () => window.removeEventListener("popstate", forget);
+  }, []);
 
   const filtered = useMemo(() => hasAnyFilter(filters), [filters]);
-  const set = (patch: Partial<AuditFilters>) => setFilters((f) => ({ ...f, ...patch }));
-  const clear = () => setFilters(EMPTY_FILTERS);
+  // A filter change starts again at the newest page: the cursor on screen
+  // belongs to the old filter set, and the api refuses it under a new one.
+  const set = (patch: Partial<AuditFilters>) => {
+    const keys = Object.keys(patch);
+    const field =
+      keys.length === 1 && (keys[0] === "actor" || keys[0] === "targetId") ? keys[0] : null;
+    const continuing =
+      field !== null && typing.current === field && location.position.kind === "newest";
+    typing.current = field;
+    go(withFilters(location, { ...filters, ...patch }), continuing ? "replace" : "push");
+  };
+  const clear = () => set(EMPTY_FILTERS);
+  const move = (next: AuditLocation) => {
+    typing.current = null;
+    go(next, "push");
+  };
+  const atNewest = feed.page?.atNewest ?? location.position.kind === "newest";
 
   return (
     <div className="gw-page">
       <div className="gw-row" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
         <h1 style={{ margin: 0 }}>Audit log</h1>
         <div className="gw-row" style={{ gap: 8 }}>
-          {/* Exports what the filters currently say, not just the rows already
-              loaded — "Load more" is a reading convenience, and a file that
-              stopped where someone happened to stop scrolling would be a
+          {/* Exports what the filters currently say, not just the page on
+              screen — paging is a reading convenience, and a file that
+              stopped where someone happened to stop reading would be a
               quietly incomplete record. */}
           <button
             className="gw-btn"
@@ -104,7 +234,7 @@ export function AuditView() {
             className="gw-btn"
             onClick={feed.refresh}
             disabled={feed.loading}
-            title="Re-read the log from the top"
+            title="Re-read this page"
           >
             Refresh
           </button>
@@ -198,11 +328,37 @@ export function AuditView() {
           body="The log is stored in Postgres and only exists when the dashboard runs with accounts enabled. Set AUTH_MODE=enabled to turn it on."
         />
       ) : feed.error ? (
-        <EmptyState title="Could not load the audit log" body={feed.error} />
-      ) : feed.loading ? (
+        location.position.kind === "newest" ? (
+          <EmptyState title="Could not load the audit log" body={feed.error} />
+        ) : (
+          <EmptyState
+            title="Could not open this page of the log"
+            body={
+              feed.badPosition
+                ? "The link points at a place in the log that these filters can't reach — it was edited, or its filters were changed after it was made."
+                : feed.error
+            }
+            action={
+              <button className="gw-btn" onClick={() => move(newestPage(location))}>
+                Go to the newest entries
+              </button>
+            }
+          />
+        )
+      ) : !feed.page || (feed.loading && feed.items.length === 0) ? (
         <div className="gw-card" style={{ color: "var(--text-3)", fontSize: 13 }}>
           Loading…
         </div>
+      ) : feed.items.length === 0 && !atNewest ? (
+        <EmptyState
+          title="Nothing on this page"
+          body="No entries lie past this point with these filters."
+          action={
+            <button className="gw-btn" onClick={() => move(newestPage(location))}>
+              Go to the newest entries
+            </button>
+          }
+        />
       ) : feed.items.length === 0 ? (
         /* Two different nothings. Collapsing them would tell a reader with a
            narrow filter that nothing ever happened, which is the one thing an
@@ -225,7 +381,43 @@ export function AuditView() {
         )
       ) : (
         <>
-          <div className="gw-card" style={{ padding: 0, overflow: "hidden" }}>
+          {feed.page.arrived ? (
+            <div
+              className="gw-card"
+              style={{
+                marginBottom: 12,
+                padding: "10px 14px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+              }}
+            >
+              <span style={{ fontSize: 13 }}>{arrivedLine(feed.page.arrived)}</span>
+              <button
+                className="gw-btn gw-btn--primary"
+                onClick={() => move(newestPage(location))}
+                disabled={feed.loading}
+              >
+                Show
+              </button>
+            </div>
+          ) : null}
+
+          <div style={{ marginBottom: 12 }}>
+            <Pager feed={feed} location={location} move={move} sizes />
+          </div>
+
+          <div
+            className="gw-card"
+            style={{
+              padding: 0,
+              overflow: "hidden",
+              opacity: feed.loading ? 0.55 : 1,
+              transition: "opacity 0.15s",
+            }}
+            aria-busy={feed.loading}
+          >
             <table className="gw-table">
               <thead>
                 <tr>
@@ -314,19 +506,11 @@ export function AuditView() {
             </table>
           </div>
 
-          {/* "Load more" rather than page numbers: the API is cursor-based and
-              cannot jump, so offering a page picker would promise something it
-              can't do. */}
-          <div className="gw-row" style={{ justifyContent: "center", marginTop: 16 }}>
-            {feed.hasMore ? (
-              <button className="gw-btn" onClick={feed.loadMore} disabled={feed.loadingMore}>
-                {feed.loadingMore ? "Loading…" : "Load more"}
-              </button>
-            ) : (
-              <span style={{ fontSize: 12, color: "var(--text-4)" }}>
-                {feed.items.length} event{feed.items.length === 1 ? "" : "s"} — end of the log
-              </span>
-            )}
+          {/* Newer and Older rather than page numbers to pick: a page is the
+              rows next to a row, not an offset, so there is no page 7 to jump
+              to — and no offset for a new entry at the head to shift. */}
+          <div style={{ marginTop: 12 }}>
+            <Pager feed={feed} location={location} move={move} />
           </div>
         </>
       )}

@@ -43,7 +43,33 @@ thing an audit surface must never imply.
 Reading the record of what happened is not a privilege; changing things is.
 Newest first, filterable by group, person, object and date, with a detail
 sheet per event and an **Export CSV** button that exports what the filters
-say — not just the rows already on screen.
+say — not just the page on screen.
+
+It reads a page at a time — 25, 50 (the default) or 100 rows — with
+**Newest**, **Newer** and **Older** above and below the table and a label
+saying where the reader is ("Newest 50", "Older entries · page 3"). A page is
+the rows next to a row, never an offset: Older reads `after` the last row on
+screen and Newer reads `before` the first, so entries recorded at the head
+while someone reads further down never shift or repeat what they see.
+Stepping back up to the page that was the newest shows it as it was and says
+how many entries have arrived above it ("7 new entries since this page was
+the newest — Show"); nothing slides in on its own, and Refresh re-reads the
+page on screen.
+
+The position is in the URL, so a reload, Back / Forward and a shared link
+open the same page:
+
+| Parameter | Meaning |
+| --------- | ------- |
+| `group` · `actor` · `target` · `from` · `to` | The filters (`from` / `to` as `yyyy-mm-dd`) |
+| `size` | Rows per page, 25 or 100; 50 is the default and stays out of the URL |
+| `older` / `newer` | An api cursor: the page older than that row, or newer than it. Neither is the newest page |
+| `page` | How many pages down from the newest, for the label only |
+
+A filter or page-size change starts again at the newest page — the cursor on
+screen was issued for the old filter set, and the api refuses it under
+another. A link whose cursor the api refuses says so and offers the newest
+entries.
 
 ## The pull API
 
@@ -62,9 +88,13 @@ Authenticated with a session **or an audit token** (below). Query parameters:
 | `target_type` / `target_id` | The object an event is about                     |
 | `order`       | `asc` (default — oldest first, resumable) or `desc` (viewer)   |
 | `per_page`    | Rows per page, default 100, max 1000                           |
-| `after`       | The `cursor` from the previous response                        |
+| `after`       | The `cursor` from a previous response: the page after it       |
+| `before`      | The `start_cursor` from a previous response: the page ahead of it — newer rows under `desc`. Not with `after` |
 
-The envelope is `{ items, cursor, has_more }`. A scheduled puller stores
+The envelope is `{ items, cursor, has_more, start_cursor, has_previous }`:
+`cursor` and `has_more` describe what lies past the page's last row,
+`start_cursor` and `has_previous` what lies ahead of its first, whichever way
+the page was read. A scheduled puller needs only the first pair — it stores
 `cursor` and sends it back as `after` on the next run:
 
 ```sh
@@ -72,9 +102,12 @@ TOKEN=srdash_audit_…            # minted by an admin over the API, shown once
 CURSOR_FILE=.audit-cursor
 after=$(cat "$CURSOR_FILE" 2>/dev/null)
 page=$(curl -sf -H "Authorization: Bearer $TOKEN" \
-  "https://dash.example.com/api/audit/events?per_page=500${after:+&after=$after}")
+  "https://dash.example.com/api/audit/events?per_page=500${after:+&after=$after}") || exit 1
 jq -c '.items[]' <<<"$page" >> events.ndjson
-jq -r '.cursor // empty' <<<"$page" > "$CURSOR_FILE"
+# A page with nothing new has no cursor: keep the stored one, or the next
+# run starts again from the first event.
+next=$(jq -r '.cursor // empty' <<<"$page")
+if [ -n "$next" ]; then printf '%s\n' "$next" > "$CURSOR_FILE"; fi
 ```
 
 **The resume is gap-free and duplicate-free.** A row is served only once its
@@ -90,8 +123,9 @@ Rules a puller must know:
 - The cursor encodes the **filter set and direction** it was issued for. A
   resume under different filters or the other `order` is refused with a 400 —
   answering it would silently skip rows.
-- A misspelled `action` or `group`, a malformed `actor`, an unparseable time
-  and a cursor this endpoint did not issue are all **400**, never an empty page.
+- A misspelled `action` or `group`, a malformed `actor`, an unparseable time,
+  `after` and `before` together, and a cursor this endpoint did not issue are
+  all **400**, never an empty page.
 - Changing `per_page` mid-pull is fine; it is not part of the cursor.
 
 ## The CSV export

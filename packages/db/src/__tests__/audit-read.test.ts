@@ -66,6 +66,20 @@ describe("cursor codec", () => {
     expect(decodeAuditCursor(wrong)).toBeNull();
   });
 
+  /**
+   * Shape-valid but past the largest `xid8`: Postgres would refuse the cast
+   * inside the query, turning a bad cursor into a 500.
+   */
+  it("rejects a position past the largest transaction id", () => {
+    const at = (xact: string) =>
+      Buffer.from(JSON.stringify({ seq: 1, xact, order: "asc", fingerprint: "x" })).toString(
+        "base64url",
+      );
+    expect(decodeAuditCursor(at("18446744073709551615"))).not.toBeNull();
+    expect(decodeAuditCursor(at("18446744073709551616"))).toBeNull();
+    expect(decodeAuditCursor(at("99999999999999999999"))).toBeNull();
+  });
+
   it("ignores page size but notices every real filter", () => {
     const base = { actions: ["signin.failed"] } as const;
     expect(auditFilterFingerprint({ ...base, limit: 10 })).toBe(
@@ -246,11 +260,154 @@ describe("listAuditEvents", () => {
     expect(seen).toEqual(Array.from({ length: 11 }, (_, i) => `event-${i}`));
   });
 
+  it("says which way there is more, from both ends of the page", async () => {
+    const w = writer();
+    for (let i = 0; i < 3; i++) {
+      await w.write({ action: "signout", actor: { id: null, kind: "system" } });
+    }
+    const head = await listAuditEvents(t.db, { order: "desc", limit: 2 });
+    expect(head.hasPrevious).toBe(false);
+    expect(head.hasMore).toBe(true);
+    // The newest row, the third written.
+    expect(head.startCursor?.seq).toBe(3);
+
+    const tail = await listAuditEvents(t.db, { order: "desc", limit: 2, cursor: head.cursor! });
+    expect(tail.items).toHaveLength(1);
+    // The cursor's own row lies ahead of a page read after it.
+    expect(tail.hasPrevious).toBe(true);
+    expect(tail.hasMore).toBe(false);
+  });
+
   it("returns an id that survives a re-pull of the same range", async () => {
     await writer().write({ action: "signout", actor: { id: null, kind: "system" } });
     const first = await listAuditEvents(t.db);
     const again = await listAuditEvents(t.db);
     expect(again.items[0]?.id).toBe(first.items[0]?.id);
+  });
+});
+
+/**
+ * Reading back from a position — the viewer stepping toward the newest rows
+ * with nothing but the link it is on.
+ */
+describe("reading before a cursor", () => {
+  async function seed(n: number): Promise<void> {
+    const w = writer();
+    for (let i = 0; i < n; i++) {
+      await w.write({ action: "signout", actor: { id: null, kind: "system" }, note: `e${i}` });
+    }
+  }
+  const notes = (page: { items: { note: string | null }[] }) => page.items.map((i) => i.note);
+
+  it("serves the page just ahead of a newest-first position, in newest-first order", async () => {
+    await seed(7);
+    const head = await listAuditEvents(t.db, { order: "desc", limit: 3 });
+    const older = await listAuditEvents(t.db, { order: "desc", limit: 3, cursor: head.cursor! });
+    expect(notes(older)).toEqual(["e3", "e2", "e1"]);
+
+    const back = await listAuditEvents(t.db, {
+      order: "desc",
+      limit: 3,
+      cursor: older.startCursor!,
+      direction: "before",
+    });
+    expect(notes(back)).toEqual(notes(head));
+    expect(back.hasPrevious).toBe(false);
+    expect(back.hasMore).toBe(true);
+    expect(back.cursor).toEqual(head.cursor);
+  });
+
+  it("keeps the rows nearest the position, not the far end of the log", async () => {
+    await seed(10);
+    const head = await listAuditEvents(t.db, { order: "desc", limit: 2 });
+    let page = head;
+    for (let i = 0; i < 3; i++) {
+      page = await listAuditEvents(t.db, { order: "desc", limit: 2, cursor: page.cursor! });
+    }
+    expect(notes(page)).toEqual(["e3", "e2"]);
+    const back = await listAuditEvents(t.db, {
+      order: "desc",
+      limit: 2,
+      cursor: page.startCursor!,
+      direction: "before",
+    });
+    expect(notes(back)).toEqual(["e5", "e4"]);
+    expect(back.hasPrevious).toBe(true);
+  });
+
+  it("walks back from the oldest page to the newest without a gap or a repeat", async () => {
+    await seed(9);
+    const forward: (string | null)[][] = [];
+    let page = await listAuditEvents(t.db, { order: "desc", limit: 3 });
+    forward.push(notes(page));
+    while (page.hasMore) {
+      page = await listAuditEvents(t.db, { order: "desc", limit: 3, cursor: page.cursor! });
+      forward.push(notes(page));
+    }
+    expect(forward).toHaveLength(3);
+
+    const backward: (string | null)[][] = [notes(page)];
+    while (page.hasPrevious) {
+      page = await listAuditEvents(t.db, {
+        order: "desc",
+        limit: 3,
+        cursor: page.startCursor!,
+        direction: "before",
+      });
+      backward.unshift(notes(page));
+    }
+    expect(backward).toEqual(forward);
+  });
+
+  it("reads back in pull order too, and still only settled rows", async () => {
+    await seed(5);
+    const rows = await t.db.select().from(auditEvents).orderBy(auditEvents.seq);
+    for (const [i, row] of rows.entries()) await setXactId(row.seq, String(100 + i));
+    // e4's transaction is still open at this horizon.
+    await setXactId(rows[4]!.seq, "5000");
+
+    const first = await listAuditEvents(t.db, { horizonOverride: "1000", limit: 2 });
+    const second = await listAuditEvents(t.db, {
+      horizonOverride: "1000",
+      limit: 2,
+      cursor: first.cursor!,
+    });
+    expect(notes(second)).toEqual(["e2", "e3"]);
+    expect(second.hasMore).toBe(false);
+
+    const back = await listAuditEvents(t.db, {
+      horizonOverride: "1000",
+      limit: 2,
+      cursor: second.startCursor!,
+      direction: "before",
+    });
+    expect(notes(back)).toEqual(["e0", "e1"]);
+    expect(back.hasPrevious).toBe(false);
+
+    // A position past the open transaction still serves nothing unsettled.
+    const beyond = await listAuditEvents(t.db, {
+      horizonOverride: "1000",
+      limit: 10,
+      cursor: { seq: 999, xact: "9000", order: "asc", fingerprint: auditFilterFingerprint({}) },
+      direction: "before",
+    });
+    expect(notes(beyond)).toEqual(["e0", "e1", "e2", "e3"]);
+  });
+
+  it("is an empty page with nowhere to go when nothing lies ahead", async () => {
+    await seed(2);
+    const head = await listAuditEvents(t.db, { order: "desc", limit: 5 });
+    const ahead = await listAuditEvents(t.db, {
+      order: "desc",
+      limit: 5,
+      cursor: head.startCursor!,
+      direction: "before",
+    });
+    expect(ahead.items).toEqual([]);
+    expect(ahead.cursor).toBeNull();
+    expect(ahead.startCursor).toBeNull();
+    expect(ahead.hasMore).toBe(false);
+    expect(ahead.hasPrevious).toBe(false);
   });
 });
 
