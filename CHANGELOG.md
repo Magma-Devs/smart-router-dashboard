@@ -5,6 +5,28 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.60.3]
+
+### Changed
+
+- **Ten Dependabot updates** (MAG-5228). Each one passed CI on a branch
+  rebased onto main before it merged.
+  - Images in the local and demo compose stacks: Grafana 11.5.2 → 13.3.0
+    (#332), Loki 3.4.2 → 3.7.9 (#339), Promtail 3.4.2 → 3.6.8 (#335). CI
+    never starts these, so they were booted locally with the repo's configs.
+    On a fresh Grafana volume and on one upgraded from 11.5.2, the Loki
+    datasource and the logs dashboard provision, and a line pushed to Loki
+    reads back through Grafana. Both Promtail configs pass `-check-syntax`.
+  - Actions: `docker/login-action` 4.7.0 → 4.8.0 (#338),
+    `actions/upload-artifact` 5.0.0 → 7.0.2 (#333).
+  - npm: jose 6.2.12 → 6.2.15 (#341), `@types/react-dom` 19.2.3 → 19.3.0
+    (#343), vite 8.3.5 → 8.3.6 (#340), vitest 5.0.5 → 5.1.0 (#342),
+    typescript-eslint 8.72.0 → 8.72.1 (#344).
+  - Node stays on 24 LTS. Dependabot's Node 26 bumps (#334, #336, #337) are
+    closed, and Dependabot ignores 26.x: Node 26 does not bundle corepack, so
+    `RUN corepack enable` fails in the image builds. Node 24 gets security
+    releases until April 2028.
+
 ## [0.60.2]
 
 ### Security
