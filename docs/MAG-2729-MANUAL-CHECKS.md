@@ -427,15 +427,15 @@ remove yourself."*
 
 > **This is the reset flow, not the change flow**, and they are different on
 > purpose. **Change password** on the Account tab needs your *current* one, takes
-> effect immediately, sends no email, and **keeps** the device you are on.
+> effect immediately, sends no link, and **keeps** the device you are on.
 > **Reset** is for when you cannot sign in at all: no current password, a link
 > delivered instead, and it closes **every** session including the one that used
 > it — because a reset is what somebody does when they think another person is
 > in their account.
 >
-> Only the reset flow has an email in it. If you change the password from the
-> Account tab, nothing is sent — a "your password was changed" notice is
-> MAG-2868's, not this ticket's.
+> Only the reset flow has a link in it. Either way the password changes, a
+> managed deployment then emails the owner a "your password was changed" notice
+> with no link in it (MAG-2868) — step 12 below.
 
 **Now the reset — entirely in the browser.** On managed, Dana asks for it
 herself.
@@ -461,14 +461,20 @@ herself.
    A reset link that signs you in is a reset link worth stealing.
 10. Switch to **Safari**. Click anything. She is signed out.
 11. Sign in with the **new** password — works. Try the old one — refused.
+12. Back to http://localhost:8005. A second message has arrived for Dana:
+    *"Your Smart Router password was changed"*, saying when in UTC and what to
+    do if it wasn't her, with **no link and no button anywhere** — not even a
+    sign-in link.
 
 > **On-prem** there is no mail server, so the same button says so and points at
 > an administrator. Use **Reset link** on her row in the Team page instead; the
-> rest of the steps are identical.
+> rest of the steps are identical, except that step 12 has no inbox: the
+> `password.reset_completed` audit row is the on-prem record of the change.
 
 ✅ **Passes if:** both addresses give the same screen and only the real one
-receives mail, there is no automatic sign-in, both prior sessions are dead, and
-the new password works where the old one does not.
+receives mail, there is no automatic sign-in, both prior sessions are dead, the
+new password works where the old one does not, and the password-changed notice
+arrived with no link in it.
 
 ---
 

@@ -33,7 +33,7 @@ name: smart-router-dashboard
 
 services:
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
@@ -139,7 +139,7 @@ services:
   #   docker compose --profile router --profile logs up --build
   loki:
     profiles: ["logs"]
-    image: grafana/loki:3.4.2
+    image: grafana/loki:3.7.9@sha256:0db216b630ae1f348a1584c67f3cead8b4c1fc839169a39501db664744158e28
     command: ["-config.file=/etc/loki/loki-config.yml"]
     volumes:
       - ./deploy/loki-config.yml:/etc/loki/loki-config.yml:ro
@@ -156,7 +156,7 @@ services:
 
   promtail:
     profiles: ["logs"]
-    image: grafana/promtail:3.4.2
+    image: grafana/promtail:3.6.8@sha256:6cfa64ec432b24a912d640e2edb940eeae2666f61861a66c121d763dd7241381
     command: ["-config.file=/etc/promtail/promtail-config.yml"]
     volumes:
       - ./deploy/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
@@ -169,7 +169,7 @@ services:
 
   grafana:
     profiles: ["logs"]
-    image: grafana/grafana:11.5.2
+    image: grafana/grafana:13.3.0@sha256:488984b716c0862639f91a698adbe2862677a5a07bad42da5f03f3030883b205
     environment:
       - GF_SECURITY_ADMIN_USER=${GRAFANA_USERNAME:-admin}
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
@@ -197,7 +197,7 @@ services:
   # depends_on and AUTH_MODE=disabled keeps the zero-dependency boot.
   postgres:
     profiles: ["auth"]
-    image: postgres:18-alpine
+    image: postgres:18.6-alpine@sha256:9ba53c7d41ea093baf5c1ba635ba5434c4f979880527d49bb7d9237d3193085b
     environment:
       - POSTGRES_USER=sr
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-dev}

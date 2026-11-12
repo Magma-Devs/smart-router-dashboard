@@ -1002,9 +1002,10 @@ describe("enrolment and reset over HTTP", () => {
   });
 
   it("records the reset and every session it ended, and claims no email it did not send", async () => {
-    // Nothing emails a 2FA reset on either deployment (the notice is MAG-2869),
-    // so the response must not say one went — managed included.
-    setEnv({ DEPLOYMENT_MODE: "managed" });
+    // Managed with no mail transport: the notice is not sent, so the response
+    // must not say it went. The sends themselves are in
+    // two-factor-reset-notice.test.ts.
+    setEnv({ DEPLOYMENT_MODE: "managed", AWS_REGION: undefined });
     app = await buildAuthApp();
     const admin = await seedUser({ role: "admin", email: `admin+${++seq}@example.com` });
     await enrol(admin);

@@ -187,8 +187,20 @@ what moved and why — a base spec such as ETH1 changing is reported as one caus
 not as forty importers — and the fix is a runbook keyed on that output:
 [`.claude/skills/chain-resync/SKILL.md`](.claude/skills/chain-resync/SKILL.md)
 (`/chain-resync` in Claude Code), with the reasoning in
-[`.claude/rules/chain-resync.md`](.claude/rules/chain-resync.md). Renovate-style dependency bumps arrive via
-[Dependabot](.github/dependabot.yml) (npm + GitHub Actions, weekly).
+[`.claude/rules/chain-resync.md`](.claude/rules/chain-resync.md).
+
+Every version is pinned. npm dependencies and `pnpm.overrides` use exact
+versions, pnpm itself is pinned by hash (`packageManager`), GitHub Actions by
+commit SHA, and base and compose images by version tag plus digest.
+[Dependabot](.github/dependabot.yml) moves the pins weekly (npm, Actions,
+Dockerfiles, compose) and proposes a release only once it is 7 days old.
+pnpm applies the same rule to any new version (`minimumReleaseAge` in
+[`pnpm-workspace.yaml`](./pnpm-workspace.yaml)). It also refuses a release
+published with weaker evidence than the package's earlier ones (`trustPolicy`),
+and `pnpm add` writes exact versions. Two escape hatches, each with its reason:
+a security fix younger than 7 days goes in `minimumReleaseAgeExclude` until it
+ages, and a trust exception goes in `trustPolicyExclude` by exact version.
+Transitive pins in `pnpm.overrides` move only by hand.
 
 When `NODE_ENV` isn't `production`, the api also serves an interactive
 **OpenAPI 3.1 explorer at [`/docs`](http://localhost:8000/docs)** (raw spec at

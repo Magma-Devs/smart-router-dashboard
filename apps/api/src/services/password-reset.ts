@@ -114,7 +114,14 @@ export async function selfServeResetIsCoolingDown(
 export type ResetRejection = "not_found" | "used" | "expired" | "user_inactive";
 
 export type ResetOutcome =
-  | { ok: true; user: User; createdBy: string | null; revokedSessionIds: string[] }
+  | {
+      ok: true;
+      user: User;
+      createdBy: string | null;
+      revokedSessionIds: string[];
+      /** The `password_updated_at` it wrote — the time the owner is told. */
+      changedAt: Date;
+    }
   | { ok: false; reason: ResetRejection };
 
 export type ResetLookup = { ok: true; user: User } | { ok: false; reason: ResetRejection };
@@ -189,6 +196,7 @@ export async function consumePasswordReset(
   // Hashed before the transaction opens: bcrypt at cost 12 is the slow part,
   // and there is no reason to hold row locks across it.
   const passwordHash = await hashPassword(newPassword);
+  const changedAt = new Date();
 
   return db.transaction(async (tx) => {
     const txDb = tx as unknown as Database;
@@ -201,7 +209,7 @@ export async function consumePasswordReset(
 
     await tx
       .update(users)
-      .set({ passwordHash, passwordUpdatedAt: new Date() })
+      .set({ passwordHash, passwordUpdatedAt: changedAt })
       .where(eq(users.id, row.user.id));
 
     const revokedSessionIds = await signOutEverywhere(txDb, row.user.id, { reason: "password_change" });
@@ -209,9 +217,10 @@ export async function consumePasswordReset(
 
     return {
       ok: true,
-      user: { ...row.user, passwordHash },
+      user: { ...row.user, passwordHash, passwordUpdatedAt: changedAt },
       createdBy: row.reset.createdBy,
       revokedSessionIds,
+      changedAt,
     } as const;
   });
 }
@@ -219,29 +228,32 @@ export async function consumePasswordReset(
 /** Set a password for someone who is signed in and knows their current one.
  *  Revokes every *other* session — they keep the one they're using, because
  *  being logged out of the tab you just changed your password in is hostile.
- *  Returns the ids of the sessions it ended. */
+ *  Returns the ids of the sessions it ended, and the `password_updated_at` it
+ *  wrote — the time the owner is told. */
 export async function changeOwnPassword(
   db: Database,
   userId: string,
   newPassword: string,
   keepSessionId: string,
-): Promise<string[]> {
+): Promise<{ revokedSessionIds: string[]; changedAt: Date }> {
   const passwordHash = await hashPassword(newPassword);
+  const changedAt = new Date();
   // One transaction, for the same reason as a reset: a new password with the
   // old devices still signed in is the state this exists to prevent.
   return db.transaction(async (tx) => {
     await tx
       .update(users)
-      .set({ passwordHash, passwordUpdatedAt: new Date() })
+      .set({ passwordHash, passwordUpdatedAt: changedAt })
       .where(eq(users.id, userId));
 
     // Per-device revoke, not the cutoff: `signed_out_all_at` compares against the
     // token's `iat` and would kill the surviving session too. Being logged out of
     // the tab you just changed your password in is hostile, so the other devices
     // go and this one stays.
-    return revokeAllForUser(tx as unknown as Database, userId, {
+    const revokedSessionIds = await revokeAllForUser(tx as unknown as Database, userId, {
       reason: "password_change",
       except: keepSessionId,
     });
+    return { revokedSessionIds, changedAt };
   });
 }

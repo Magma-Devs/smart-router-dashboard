@@ -4,6 +4,7 @@ import { requireAuth } from "../plugins/auth.js";
 import { lazyAuditWriter, type AuditWriter } from "../services/audit.js";
 import { validatePassword, verifyPassword } from "../services/password.js";
 import { changeOwnPassword } from "../services/password-reset.js";
+import { notifyPasswordChanged } from "../services/password-notice.js";
 import {
   listActiveSessions,
   revokeSession,
@@ -276,16 +277,24 @@ export async function accountRoutes(app: FastifyInstance) {
           .send({ statusCode: 400, error: "Bad Request", message: problem.message });
       }
 
-      const ended = await changeOwnPassword(db, me.id, body.next, me.sessionId);
+      const changed = await changeOwnPassword(db, me.id, body.next, me.sessionId);
+      // After the commit, so a send that fails cannot undo the change. The
+      // note says whether the owner was told: managed only, since on-prem this
+      // row is the notice and carries no note.
+      const notice = await notifyPasswordChanged(
+        { to: me.user.email, changedAt: changed.changedAt },
+        (msg, ctx) => request.log.warn(ctx ?? {}, msg),
+      );
       await audit.write({
         action: "password.changed",
         actor: { id: me.id, kind: "user" },
         access: accessFrom(request, me.sessionId),
+        ...(notice ? { note: notice } : {}),
       });
       // The other devices this change signed out, one row each, as a reset's
       // and a removal's are. The session it was changed from stays, and so
       // gets no row.
-      for (const id of ended) {
+      for (const id of changed.revokedSessionIds) {
         await audit.write({
           action: "session.revoked",
           actor: { id: me.id, kind: "user" },

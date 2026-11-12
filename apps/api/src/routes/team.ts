@@ -24,6 +24,7 @@ import { EMAIL_FIELD, resolveClientContext } from "./auth.js";
 import { clearEnrolment, isEnrolled, revokeChallenges } from "../services/two-factor.js";
 import { signOutEverywhere } from "../services/sessions.js";
 import { sendInvitationEmail } from "../services/email-templates.js";
+import { noticeTwoFactorReset, resetByLabel } from "../services/two-factor-reset-notice.js";
 
 /**
  * An id path parameter, in the 8-4-4-4-12 form only. `format: "uuid"` also
@@ -440,12 +441,26 @@ export async function teamRoutes(app: FastifyInstance) {
         }
       });
 
-      // Nothing is emailed, on either deployment: the transactional emails are
-      // exactly the invitation and the password reset (MAG-2870), and the
-      // 2FA-reset notice is parked in MAG-2869. The member finds out at their
-      // next sign-in — their sessions just ended, and the enrolment screen they
-      // meet says an administrator reset it.
-      return { ok: true, notified: "on_next_signin" as const };
+      // Told by email on managed, once the reset has committed: a send that
+      // failed must not take the reset with it. On-prem nothing is sent, and
+      // anywhere the email did not go the member finds out at their next
+      // sign-in — their sessions just ended, and the enrolment screen they meet
+      // says an administrator reset it.
+      const delivery = await noticeTwoFactorReset(
+        audit,
+        {
+          mode: deploymentMode(),
+          member: { id: target.id, email: target.email },
+          resetBy: resetByLabel(me.user),
+          at: new Date(),
+          actor: { id: me.id, kind: "user" },
+        },
+        (msg, ctx) => request.log.warn(ctx ?? {}, msg),
+      );
+      return {
+        ok: true,
+        notified: delivery === "sent" ? ("email" as const) : ("on_next_signin" as const),
+      };
     },
   );
 }

@@ -5,7 +5,7 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
-## [0.59.0]
+## [0.61.0]
 
 ### Changed
 
@@ -51,6 +51,127 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 - **One word for the provider.** "Node error" is now **Provider error**, the
   upstream filters read "All providers", and the Upstreams tab's errors chart
   says "Provider errors".
+## [0.60.3]
+
+### Changed
+
+- **Ten Dependabot updates** (MAG-5228). Each one passed CI on a branch
+  rebased onto main before it merged.
+  - Images in the local and demo compose stacks: Grafana 11.5.2 → 13.3.0
+    (#332), Loki 3.4.2 → 3.7.9 (#339), Promtail 3.4.2 → 3.6.8 (#335). CI
+    never starts these, so they were booted locally with the repo's configs.
+    On a fresh Grafana volume and on one upgraded from 11.5.2, the Loki
+    datasource and the logs dashboard provision, and a line pushed to Loki
+    reads back through Grafana. Both Promtail configs pass `-check-syntax`.
+  - Actions: `docker/login-action` 4.7.0 → 4.8.0 (#338),
+    `actions/upload-artifact` 5.0.0 → 7.0.2 (#333).
+  - npm: jose 6.2.12 → 6.2.15 (#341), `@types/react-dom` 19.2.3 → 19.3.0
+    (#343), vite 8.3.5 → 8.3.6 (#340), vitest 5.0.5 → 5.1.0 (#342),
+    typescript-eslint 8.72.0 → 8.72.1 (#344).
+  - Node stays on 24 LTS. Dependabot's Node 26 bumps (#334, #336, #337) are
+    closed, and Dependabot ignores 26.x: Node 26 does not bundle corepack, so
+    `RUN corepack enable` fails in the image builds. Node 24 gets security
+    releases until April 2028.
+
+## [0.60.2]
+
+### Security
+
+- **Every version is pinned, and a new one must be a week old** (MAG-5218).
+  Builds already installed from the lockfile. What a dependency update could
+  bring in was not gated: a Dependabot PR or a `pnpm install` took the newest
+  release on the day it shipped, and Actions and base images followed
+  movable tags.
+  - npm: the 54 direct dependencies and every `pnpm.overrides` target are
+    exact versions. pnpm 10.8.0 → 10.34.9, pinned by its sha512 in
+    `packageManager`. `pnpm-workspace.yaml` adds `minimumReleaseAge` (7
+    days), `trustPolicy: no-downgrade`, `blockExoticSubdeps` and
+    `saveExact`. Three locked packages under 7 days old went back to their
+    previous releases (cookie 2.0.1, fast-json-stringify 7.3.0,
+    `@isaacs/nonrecursive-glob-match` 1.0.3). next-auth 5.0.0-beta.32 is
+    exempt from the trust check by exact version: the only next-auth build
+    ever published with provenance is an experimental one, so every release
+    since trips it.
+  - CI: all 17 actions are pinned to commit SHAs, runners to `ubuntu-24.04`,
+    and Node to 24.22.3 through `.nvmrc`, which CI now reads. 24.22.3 is the
+    2026-11-10 security release that the images already ran. buildx v0.38.1
+    and BuildKit v0.34.2 are pinned by digest.
+  - Images: `node:24.22.3-alpine`, Postgres, Prometheus (`latest` →
+    v3.16.0), Grafana, Loki, Promtail and the SES mock are pinned by version
+    tag plus digest. The digests are the ones today's builds pulled.
+  - Dependabot waits 7 days after a release (security updates excepted) and
+    now also updates the Dockerfiles and compose files.
+
+## [0.60.1]
+
+### Fixed
+
+- **Three Dependabot alerts** (MAG-5214). All three packages are transitive,
+  and `pnpm.overrides` in the root `package.json` now holds each one past its
+  advisory. glob and minimatch are pinned to the newest releases at least a
+  week old, for every dependent; zod has a floor capped at its major:
+  - `glob` 13.0.6 → 14.0.3. It fixes GHSA-3g3m-2fjr-6pw4, where a glob walk
+    keeps reading the filesystem after its `AbortSignal` fires. It reaches the
+    api through `@fastify/swagger-ui` → `@fastify/static`, which now resolves
+    to 10.1.10, the release that asks for glob 14 itself. `@fastify/static`
+    calls glob only with `wildcard: false` and passes no signal, and
+    swagger-ui keeps the default wildcard and is registered only outside
+    production, so the api never ran the affected code.
+  - `minimatch` 10.2.6 → 11.0.4. It fixes GHSA-g3hv-75wg-m249, where a
+    pattern whose parts multiply takes exponential time. Its users are glob
+    and the lint tooling (`eslint`, `@eslint/config-array`,
+    `@typescript-eslint/typescript-estree`). No 10.x release carries the fix.
+    11 removes `makeRe()`, `Minimatch#regexp` and `AST`, and none of these
+    call them: they use `new Minimatch(…).match()` and `minimatch()`.
+    `pnpm lint` reports the same findings as before.
+  - `zod` 4.4.3 → 4.6.7, lint only, through `eslint-plugin-react-hooks`. It
+    fixes GHSA-mrhx-c7xc-m3w5, where validating an oversized constrained
+    collection exhausts memory. Dependabot had dismissed this one by itself as
+    a development dependency.
+
+## [0.60.0]
+
+### Added
+
+- **A managed deployment emails the owner when their password changes**
+  (MAG-2868), whichever way it changed: **Change password** on the Account
+  page, or a reset link being used — self-serve, an admin's, or one the
+  recovery command printed. A change the owner did not make is the earliest
+  sign that someone else is in the account. The notice says when, in UTC, and
+  what to do if it wasn't them, and carries no link or button at all. It goes
+  after the change has committed, so a failed send never fails or undoes it;
+  whether the owner was told is added to the change's audit note
+  (`password.changed`, `password.reset_completed`): `owner notified by email`,
+  `owner not notified, email failed`, or `owner not notified, no mail
+  transport`. On-prem sends nothing, and those rows are unchanged.
+
+## [0.59.0]
+
+### Added
+
+- **The member is emailed when an admin resets their two-factor
+  authentication** (managed deployments). The email names who reset it, by
+  name and address, and when, in UTC; says they are signed out everywhere and
+  set it up again at their next sign-in; and says to report it to their
+  security team or another administrator if they did not ask for it. It
+  carries no link. It is sent once the reset has committed, so a failed send
+  never undoes the reset, and its outcome is a new audit event,
+  `2fa.reset_notice` (`emailed`, `not sent, no mail transport` or `email
+  failed, not delivered`). `POST /api/team/members/:id/2fa/reset` answers
+  `notified: "email"` when it went and `"on_next_signin"` otherwise. On-prem
+  sends nothing; the `2fa.reset` row naming both people is the record there.
+- **`recover reset-2fa` emails the member too**, on managed, naming Magma Devs
+  rather than the operator, and prints whether the email went.
+
+## [0.58.2]
+
+### Added
+
+- **Browser tests for the flows that gate access** (`e2e/`, Playwright against
+  a live api + web, in their own workflow on PRs that touch that code). Four specs cover the two-step login, the
+  enrolment screen that shuts the dashboard, the grace-period countdown and the
+  admin's 2FA reset — the places where what is under test is what a person sees,
+  and an HTTP check can only prove that markup was sent. `pnpm e2e` runs them.
 
 ## [0.58.1]
 

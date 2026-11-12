@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { visibleNavSections } from "../nav";
 
-const reportsUrl = "https://magmadevs.grafana.net/d/sr-gk8-interactive-war-room/gk8-e28094-customer-experience?from=now-5m&to=now&timezone=browser&var-chain=$__all&var-provider=$__all&refresh=5m";
+const reportsUrl = "https://magmadevs.grafana.net/d/sr-interactive-war-room/customer-experience?from=now-5m&to=now&timezone=browser&var-chain=$__all&var-provider=$__all&refresh=5m";
 
 describe("customer Grafana navigation", () => {
   it.each([true, false])("adds the reports link after the existing sections (auth=%s)", (authEnabled) => {
@@ -30,7 +30,7 @@ describe("customer Grafana navigation", () => {
   });
 });
 
-const usageUrl = "https://magmadevs.grafana.net/d/sr-gk8-customer-usage?from=now-24h&to=now&var-chain=$__all&var-interface=$__all&var-customer=$__all&refresh=5m";
+const usageUrl = "https://magmadevs.grafana.net/d/sr-customer-usage?from=now-24h&to=now&var-chain=$__all&var-interface=$__all&var-customer=$__all&refresh=5m";
 
 describe("Customer Usage navigation", () => {
   it.each([true, false])("shows both independent links in order (auth=%s)", (authEnabled) => {

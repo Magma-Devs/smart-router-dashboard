@@ -1,5 +1,9 @@
 # Authentication
 
+> Why the account system is built the way it is — sessions in Postgres and minted
+> by the api, opaque link tokens, removal as a state change — is recorded in
+> [`ACCOUNTS-DESIGN.md`](ACCOUNTS-DESIGN.md) (MAG-2729), the design it was built from.
+
 The dashboard has two auth modes, selected by the `AUTH_MODE` env var
 (same value on the api **and** the web):
 
@@ -74,6 +78,7 @@ is "an admin copies a link", not "an invitation silently never arrives".
 | First admin | a Magma operator runs the first-run page, then invites the customer's named admin | first-run page + the installer's setup token |
 | Magma Devs account | the first-run account is ours, stays, and is labelled | never — the first-run account is the customer's own |
 | Invite / reset delivery | emailed — see [Email](#email-mag-2870) | link shown to an admin, handed over |
+| Password-changed notice | emailed to the owner — see [the notice](#the-password-changed-notice-mag-2868) | none; the audit row is the record |
 | Invite TTL | 7 days | 24 hours |
 | Reset TTL | 1 hour | 24 hours |
 
@@ -340,21 +345,29 @@ current one and signs out your *other* devices, keeping the tab you are in.
 Checking the current password is a credential guess, so it carries sign-in's
 per-IP limit **and** spends from the account's budget below.
 
+Either way a password changes — here, or by a reset link — a managed
+deployment then emails the owner that it changed; see
+[the password-changed notice](#the-password-changed-notice-mag-2868).
+
 For an account with no password — one that signs in through a linked provider
 — both this and the admin's reset link say which provider it uses.
 
 ## Email (MAG-2870)
 
-Exactly two transactional emails, and the ticket is explicit that nothing else
-is in scope: the invitation, and the password reset. Both are ports of
-lava-connect's approach — SES v2 behind a single send function, table-based HTML
-with inline styles because that is what renders the same in Gmail, Outlook and
-Apple Mail.
+Four transactional emails: the invitation and the password reset, which
+MAG-2870 specifies; the notice that a password changed, which MAG-2868 adds; and
+the notice that somebody's two-factor authentication was reset, which is
+MAG-2869's — see [`TWO-FACTOR.md`](./TWO-FACTOR.md) → "Lost phone". All four
+follow lava-connect's approach — SES v2 behind a single send function,
+table-based HTML with inline styles because that is what renders the same in
+Gmail, Outlook and Apple Mail.
 
-**On-prem sends nothing, ever.** That is the design, not a limitation: both
-flows produce a link the admin hands over, and no customer deployment needs a
-mail server. The copy still matters there, because the same link lands in a chat
-message instead.
+**On-prem sends nothing, ever.** That is the design, not a limitation: the
+invitation and the reset produce a link the admin hands over, the audit rows
+stand in for the two notices, and no customer deployment needs a mail server.
+The copy still matters there, because the same link lands in a chat message
+instead. A two-factor reset there is recorded by its `2fa.reset` row, which
+names both people.
 
 | Setting | Effect |
 |---|---|
@@ -409,6 +422,36 @@ link to, and returning one would let anybody mint a reset for any address. With
 no transport configured it fails closed instead (`404`, nothing issued); when SES
 refuses a send, the audit note is the only record it went nowhere.
 
+### The password-changed notice (MAG-2868)
+
+A password change the owner did not make is the earliest visible sign that
+someone else is in the account, so the owner is told whenever it changes,
+whichever way: **Change password** on the Account page
+(`POST /api/account/password`), or a reset link being used
+(`POST /auth/password/reset`). Every reset link ends there — a self-serve one,
+an admin's, and the one `make recover CMD="reset-password …"` prints — so all of
+them are covered. Creating an account sets a password too (first-run setup,
+invite redemption), but there is no earlier owner to warn.
+
+It says that the password changed, when (in UTC, from the `password_updated_at`
+the change wrote), and what to do if it wasn't them: open the dashboard the way
+they usually do, choose **Forgot your password?** on the sign-in page to set a
+new one, which signs out every device, and tell their administrator. It carries
+**no link** — see the rules below.
+
+| | Sent | Added to the change's audit note |
+|---|---|---|
+| On-prem | never, whatever the transport | nothing — the row is the record |
+| Managed, `AWS_REGION` unset | not attempted | `owner not notified, no mail transport` |
+| Managed, SES took it | yes | `owner notified by email` |
+| Managed, SES refused it or did not answer | no | `owner not notified, email failed` |
+
+The send happens **after the change has committed**, so it can neither undo
+the change nor fail the request: a refused send comes back as a value, and the
+response is the same `200`. The request does wait for it, to know what to
+record — SES answers in well under a second, and the transport's timeouts bound
+one that never answers.
+
 ### Why there is no email-log table
 
 lava-connect has `user_emails` because it has sixteen types, an admin console
@@ -422,8 +465,14 @@ on the audit row that already describes the event. `member.invited` and
 link shown to the admin` in their `note` — on `member.invited`, after the role
 and expiry the row already carries (`as approver, expires …; emailed`).
 `password.reset_requested` has no admin to hold a link, so it records `emailed`
-or `email failed, no link delivered`. That is where somebody investigating
-already looks.
+or `email failed, no link delivered`. The password-changed notice is recorded on
+the row of the change it reports — alone on `password.changed`, after the
+redemption on `password.reset_completed` (`redeemed a self-serve link; owner
+notified by email`). That is where somebody investigating already looks. The
+two-factor reset notice cannot ride on its event's row: `2fa.reset` commits in
+the reset's transaction, before anything is sent, so the notice's outcome is a
+row of its own, `2fa.reset_notice` (`emailed`, `not sent, no mail transport` or
+`email failed, not delivered`).
 
 **The body is never persisted**, in either design — not in a table, and outside
 development not in a log line either. A rendered invitation contains a live
@@ -435,8 +484,8 @@ token.
 
 From the ticket, and each has a test:
 
-- **The link appears as text as well as a button.** Mail clients strip buttons
-  and people forward these.
+- **The link appears as text as well as a button**, in the two emails that
+  have one. Mail clients strip buttons and people forward these.
 - **The expiry is in the message**, and is passed in rather than written into
   the copy — lava-connect's template hardcodes 30 minutes and ours is an hour.
 - **No marketing footer, no tracking, no unsubscribe.** The shell has no footer
@@ -447,6 +496,11 @@ From the ticket, and each has a test:
   verified, so a mistyped one puts a colleague's name and address in a
   stranger's inbox.
 - **The reset says what to do if it wasn't you**, as the last line.
+- **The password-changed notice carries no link at all** — no button, no reset
+  link, no sign-in link. A takeover notice with a button is one an attacker can
+  copy and bait somebody into pressing. It says what to do in words, and its
+  last line says it never contains a link, so a copy that has one gives itself
+  away.
 
 
 ### The reset password page

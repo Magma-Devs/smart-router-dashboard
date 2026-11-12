@@ -1,13 +1,56 @@
 version: 2
+
+# Every version in this repo is pinned: npm packages and overrides to exact
+# versions, actions to commit SHAs, images to digests. These updaters are how
+# the pins move. Each waits 7 days after a release before proposing it, the
+# same age pnpm's minimumReleaseAge enforces (pnpm-workspace.yaml), so a
+# version update never proposes a release the install would refuse. Security
+# updates are not delayed by the cooldown.
+#
+# Dependabot does not edit pnpm.overrides in package.json. A transitive
+# package pinned there moves only when someone edits it by hand.
 updates:
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
 
+  # Actions are pinned to commit SHAs with the release in a trailing comment
+  # (`@<sha> # v7.0.1`); the updater moves both together.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+
+  # Base images: apps/api/Dockerfile, apps/web/Dockerfile, Dockerfile.dev.
+  # Each FROM carries a version tag and a digest; the updater moves both.
+  - package-ecosystem: "docker"
+    directories:
+      - "/"
+      - "/apps/api"
+      - "/apps/web"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+
+  # The local and demo stacks: docker-compose.yml, docker-compose.dev.yml,
+  # docker-compose.managed.yml.
+  - package-ecosystem: "docker-compose"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+    ignore:
+      # Our own router image, followed on `main` by design (SR_ROUTER_IMAGE
+      # overrides it).
+      - dependency-name: "ghcr.io/magma-devs/smart-router"

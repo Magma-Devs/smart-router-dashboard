@@ -1,3 +1,31 @@
 packages:
   - "packages/*"
   - "apps/*"
+  - "e2e"
+
+# Supply-chain settings. Every version in this repo is exact (package.json,
+# overrides, the lockfile); these settings decide what a NEW version may be.
+#
+# minimumReleaseAge: refuse any release younger than 7 days (in minutes).
+#   Compromised releases are usually found and pulled within days. A security
+#   fix that cannot wait goes in minimumReleaseAgeExclude, by name, and comes
+#   out again once it has aged.
+# trustPolicy: refuse a version published with weaker evidence than the
+#   package's earlier versions (e.g. a plain token publish after trusted
+#   publishing), the usual sign of a stolen npm token.
+# blockExoticSubdeps: a dependency of a dependency may not come from a git
+#   repo or a tarball URL, only from the registry.
+# saveExact: `pnpm add` writes an exact version, never a ^range.
+minimumReleaseAge: 10080
+trustPolicy: no-downgrade
+blockExoticSubdeps: true
+saveExact: true
+# Exact versions only, each with its reason. A new version of a package listed
+# here is checked again, so an upgrade means re-reading its publish record.
+trustPolicyExclude:
+  # Every next-auth release since 2025-10-26 trips no-downgrade: the only
+  # version ever published with provenance is the experimental build
+  # 0.0.0-manual.2824fa11, and the 4.x/5.x-beta releases after it are plain
+  # maintainer publishes. beta.32 (2026-07-20) is by the same maintainer as
+  # beta.31 and has run here since then.
+  - next-auth@5.0.0-beta.32
