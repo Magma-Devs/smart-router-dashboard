@@ -1,23 +1,29 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { AuditEventRecord, AuditEventsResponse } from "@sr/shared";
 import { ApiError, apiGet, getAuthMode } from "@/lib/api-client";
 import { localDayEndIso, localDayStartIso } from "@/lib/datetime";
+import {
+  auditLocationSearch,
+  newestPage,
+  type AuditLocation,
+} from "@/components/audit/audit-location";
 
 /**
- * The audit feed — MAG-2770.
+ * The audit feed, a page at a time — MAG-2770, paged by MAG-5272.
  *
  * **Deliberately not `useApi`.** Every other panel in this app is a live gauge
  * on a 15-second SWR poll; this is a record, and the two want opposite things.
- * SWR keys a cache by URL, but a cursor feed's position lives in the *sequence*
- * of requests, so the key would have to encode an accumulated state — and the
- * refresh interval would re-fetch page one underneath pages two onward. Plain
- * state plus `apiGet` is the honest fit.
+ * The poll would re-read the newest page under someone reading it, and
+ * silently reordering a list somebody is reading is worse than making them
+ * ask: nothing here changes on its own in a way a reader needs within fifteen
+ * seconds. Refresh is a button. Plain state plus `apiGet` is the honest fit.
  *
- * No auto-poll for the same reason: nothing here changes on its own in a way a
- * reader needs within fifteen seconds, and silently reordering a list somebody
- * is reading is worse than making them ask. Refresh is a button.
+ * Which page is the URL's (`audit-location.ts`): the newest, or the one older
+ * or newer than a row. Moving between them is a keyset read from that row, so
+ * new entries at the head never shift the page someone is on; stepping back up
+ * to the page that was the newest says how many have arrived above it.
  */
 
 export interface AuditFilters {
@@ -47,8 +53,6 @@ export function hasAnyFilter(f: AuditFilters): boolean {
   return Object.values(f).some((v) => v.trim() !== "");
 }
 
-const PAGE_SIZE = 50;
-
 /** `to` is inclusive: a reader who types the 9th means the whole of the 9th,
  *  not midnight at the start of it. */
 function filterParams(filters: AuditFilters): URLSearchParams {
@@ -61,11 +65,17 @@ function filterParams(filters: AuditFilters): URLSearchParams {
   return params;
 }
 
-function toQuery(filters: AuditFilters, after: string | null): string {
-  const params = filterParams(filters);
+/**
+ * The api read for a location. Newest first, so in the api's words `after` a
+ * row is older and `before` it is newer.
+ */
+export function auditEventsPath(location: AuditLocation): string {
+  const params = filterParams(location.filters);
   params.set("order", "desc");
-  params.set("per_page", String(PAGE_SIZE));
-  if (after) params.set("after", after);
+  params.set("per_page", String(location.size));
+  const { position } = location;
+  if (position.kind === "older") params.set("after", position.cursor);
+  if (position.kind === "newer") params.set("before", position.cursor);
   return `/api/audit/events?${params.toString()}`;
 }
 
@@ -83,96 +93,152 @@ export function auditExportPath(filters: AuditFilters): string {
   return `/api/audit/export.csv${qs ? `?${qs}` : ""}`;
 }
 
-export interface AuditFeed {
+/** How far "N new entries" counts before it says "N+". */
+const ARRIVED_CAP = 100;
+
+export interface AuditPageRead {
   items: AuditEventRecord[];
+  /** The first row's position (Newer reads ahead of it) and the last row's
+   *  (Older reads on from it). Null on an empty page. */
+  startCursor: string | null;
+  endCursor: string | null;
+  /** This is the newest page there is. */
+  atNewest: boolean;
+  hasNewer: boolean;
+  hasOlder: boolean;
+  /** Entries recorded above page 1 since it was the newest page: counted when
+   *  a reader steps back up to it, up to `ARRIVED_CAP`. */
+  arrived: { count: number; more: boolean } | null;
+}
+
+export type AuditPageAnswer =
+  | ({ kind: "page" } & AuditPageRead)
+  /** `position` when the api refused the link's cursor (a 400 for a page
+   *  other than the newest): edited by hand, or its filters changed. */
+  | { kind: "error"; message: string; position?: true }
+  /** No audit log on this deployment at all, rather than an empty one —
+   *  `AUTH_MODE=disabled` never registers the routes. */
+  | { kind: "unavailable" };
+
+function pageOf(
+  body: AuditEventsResponse,
+  atNewest: boolean,
+  arrived: AuditPageRead["arrived"],
+): AuditPageAnswer {
+  return {
+    kind: "page",
+    items: body.items,
+    startCursor: body.start_cursor,
+    endCursor: body.cursor,
+    atNewest,
+    hasNewer: !atNewest && body.has_previous,
+    hasOlder: body.has_more,
+    arrived,
+  };
+}
+
+/** One location's page: a single read, plus a second only on page 1 when
+ *  stepping back up meets the newest entries (see below). */
+export async function readAuditPage(location: AuditLocation): Promise<AuditPageAnswer> {
+  try {
+    if ((await getAuthMode()) === "disabled") return { kind: "unavailable" };
+    const body = await apiGet<AuditEventsResponse>(auditEventsPath(location));
+    const { position } = location;
+
+    if (position.kind === "newer" && !body.has_previous) {
+      // Stepped back up onto the newest page. A step that came up short — a
+      // late write moved the page boundaries, or the link was made by hand —
+      // shows the newest page whole instead, so the head is always full.
+      if (body.items.length >= location.size) return pageOf(body, true, null);
+      const head = await apiGet<AuditEventsResponse>(auditEventsPath(newestPage(location)));
+      return pageOf(head, true, null);
+    }
+
+    // Back on the page that was the newest, with newer entries above it now:
+    // say how many, rather than slide them in over what the reader saw.
+    let arrived: AuditPageRead["arrived"] = null;
+    if (position.kind === "newer" && position.page === 1 && body.start_cursor) {
+      const above = await apiGet<AuditEventsResponse>(
+        auditEventsPath({
+          ...location,
+          size: ARRIVED_CAP,
+          position: { kind: "newer", cursor: body.start_cursor, page: null },
+        }),
+      );
+      arrived = { count: above.items.length, more: above.has_previous };
+    }
+    return pageOf(body, position.kind === "newest", arrived);
+  } catch (err) {
+    if (err instanceof ApiError && err.statusCode === 404) {
+      // The routes are registered only in AUTH_MODE=enabled. getAuthMode
+      // should already have caught that; a 404 here means the deployment
+      // disagrees with its own config, which is not something to explain
+      // away with an env-var suggestion.
+      return { kind: "unavailable" };
+    }
+    return {
+      kind: "error",
+      message: err instanceof Error ? err.message : "Could not load the audit log",
+      ...(err instanceof ApiError && err.statusCode === 400 && location.position.kind !== "newest"
+        ? { position: true as const }
+        : {}),
+    };
+  }
+}
+
+export interface AuditFeed {
+  /** The page to show: this location's once it answers, the previous one's
+   *  until then, so a page step doesn't blank the table. */
+  page: AuditPageRead | null;
+  /** Its rows; empty while there is no page. */
+  items: AuditEventRecord[];
+  /** From the render the location changes in until its page answers. Every
+   *  control that moves from a row's position is disabled meanwhile: the
+   *  cursors on screen belong to the previous page, and under new filters the
+   *  api refuses them. */
   loading: boolean;
-  loadingMore: boolean;
   error: string | null;
-  /** True when this deployment has no audit log at all, rather than an empty
-   *  one — `AUTH_MODE=disabled` never registers the routes. */
+  /** The error is the api refusing the link's position, not a failed read. */
+  badPosition: boolean;
   unavailable: boolean;
-  hasMore: boolean;
-  loadMore: () => void;
   refresh: () => void;
 }
 
-export function useAuditFeed(filters: AuditFilters): AuditFeed {
-  const [items, setItems] = useState<AuditEventRecord[]>([]);
-  const [cursor, setCursor] = useState<string | null>(null);
-  const [hasMore, setHasMore] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [unavailable, setUnavailable] = useState(false);
+export function useAuditFeed(location: AuditLocation): AuditFeed {
+  const key = auditLocationSearch(location);
+  const [round, setRound] = useState(0);
+  const [settled, setSettled] = useState<{
+    key: string;
+    round: number;
+    answer: AuditPageAnswer;
+  } | null>(null);
 
-  // Every fetch carries the generation it was started in. A filter change or a
-  // refresh bumps it, so a slow response from the previous query can't append
-  // its rows to a list that has moved on.
-  const generation = useRef(0);
-
-  const load = useCallback(
-    async (after: string | null, gen: number) => {
-      if (after) setLoadingMore(true);
-      else setLoading(true);
-      try {
-        if ((await getAuthMode()) === "disabled") {
-          if (generation.current !== gen) return;
-          setUnavailable(true);
-          setItems([]);
-          setHasMore(false);
-          return;
-        }
-        const page = await apiGet<AuditEventsResponse>(toQuery(filters, after));
-        if (generation.current !== gen) return;
-        setUnavailable(false);
-        setError(null);
-        // Append only when continuing; a fresh query replaces, so Refresh
-        // cannot leave stale rows below newly-fetched ones.
-        setItems((prev) => (after ? [...prev, ...page.items] : page.items));
-        setCursor(page.cursor);
-        setHasMore(page.has_more);
-      } catch (err) {
-        if (generation.current !== gen) return;
-        if (err instanceof ApiError && err.statusCode === 404) {
-          // The routes are registered only in AUTH_MODE=enabled. getAuthMode
-          // should already have caught that; a 404 here means the deployment
-          // disagrees with its own config, which is not something to explain
-          // away with an env-var suggestion.
-          setUnavailable(true);
-          setItems([]);
-        } else {
-          setError(err instanceof Error ? err.message : "Could not load the audit log");
-        }
-        setHasMore(false);
-      } finally {
-        if (generation.current === gen) {
-          setLoading(false);
-          setLoadingMore(false);
-        }
-      }
-    },
-    [filters],
-  );
-
-  // Any filter change starts a new feed: the cursor belongs to the filter set it
-  // was issued for, and the API refuses one that has moved.
-  //
-  // The stale cursor is not cleared here. It doesn't need to be — `load` flips
-  // `loading` before its first await and `loadMore` refuses to fire while that
-  // is set, so the old value is unreachable until the response replaces it.
-  // Clearing it would be a setState inside an effect for no gain.
+  // `loading` is derived rather than set, so it is already true in the render
+  // a location changes in — before this effect, and with no setState inside
+  // it. A read that answers after the location moved on is dropped.
   useEffect(() => {
-    void load(null, ++generation.current);
-  }, [load]);
+    let current = true;
+    void readAuditPage(location).then((answer) => {
+      if (current) setSettled({ key, round, answer });
+    });
+    return () => {
+      current = false;
+    };
+  }, [key, location, round]);
 
-  const loadMore = useCallback(() => {
-    if (!cursor || loadingMore || loading) return;
-    void load(cursor, generation.current);
-  }, [cursor, load, loading, loadingMore]);
+  const refresh = useCallback(() => setRound((r) => r + 1), []);
 
-  const refresh = useCallback(() => {
-    void load(null, ++generation.current);
-  }, [load]);
-
-  return { items, loading, loadingMore, error, unavailable, hasMore, loadMore, refresh };
+  const loading = settled === null || settled.key !== key || settled.round !== round;
+  const answer = settled?.answer ?? null;
+  const now = loading ? null : answer;
+  const page = answer?.kind === "page" ? answer : null;
+  return {
+    page,
+    items: page?.items ?? [],
+    loading,
+    error: now?.kind === "error" ? now.message : null,
+    badPosition: now?.kind === "error" && now.position === true,
+    unavailable: now?.kind === "unavailable",
+    refresh,
+  };
 }
