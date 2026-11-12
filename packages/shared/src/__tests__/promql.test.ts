@@ -90,6 +90,7 @@ import {
   MIN_RATE_RANGE_SEC,
 } from "../constants/windows.js";
 import { applyScope } from "../promql/scope.js";
+import { setRecordedReads } from "../promql/recorded.js";
 
 describe("selector", () => {
   it("drops undefined and empty labels", () => {
@@ -665,10 +666,21 @@ describe("retry builders", () => {
 });
 
 describe("an upstream against its peers", () => {
-  it("latency for every endpoint of a chain keeps one series per endpoint_id, and only where it was scraped", () => {
+  it("latency for every endpoint of a chain keeps one series per endpoint_id, and only where it answered a request in the point's own stretch", () => {
     expect(qEndpointLatencyByEndpointSeriesExpr(0.95, "ETH1", "10m", "1m")).toBe(
-      'histogram_quantile(0.95, sum by (le, endpoint_id) (rate(rpc_endpoint_end_to_end_latency_milliseconds_bucket{spec="ETH1"}[10m]))) and on (endpoint_id) (sum by (endpoint_id) (count_over_time(rpc_endpoint_end_to_end_latency_milliseconds_bucket{spec="ETH1",le="+Inf"}[1m])) > 0)',
+      'histogram_quantile(0.95, sum by (le, endpoint_id) (rate(rpc_endpoint_end_to_end_latency_milliseconds_bucket{spec="ETH1"}[10m]))) and on (endpoint_id) (sum by (endpoint_id) (increase(rpc_endpoint_end_to_end_latency_milliseconds_bucket{spec="ETH1",le="+Inf"}[1m])) > 0)',
     );
+  });
+
+  it("on recorded series, latency is kept only where the recorded rate moved in the point's own stretch", () => {
+    setRecordedReads({ from: "3h", available: true, historySeconds: 30 * 86400 });
+    try {
+      const q = qEndpointLatencyByEndpointSeriesExpr(0.95, "ETH1", "1h", "5m", "1d");
+      expect(q).toContain('and on (endpoint_id) (sum by (endpoint_id) (max_over_time(spec_endpoint_le:rpc_endpoint_end_to_end_latency_milliseconds_bucket:rate2m15s{spec="ETH1",le="+Inf"}[5m])) > 0)');
+      expect(q).not.toContain("count_over_time");
+    } finally {
+      setRecordedReads({ from: null, available: false });
+    }
   });
 
   it("the tip each endpoint of a chain reports, one series per endpoint_id - the highest in each step", () => {
