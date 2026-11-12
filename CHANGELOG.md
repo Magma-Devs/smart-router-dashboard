@@ -5,6 +5,28 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.63.1]
+
+### Fixed
+
+- **A dialog's backdrop covers the whole window** (MAG-5270). The Team page's
+  dialogs (Invite, Change role, Reset link, Reset 2FA, Remove), Report
+  incident and the Audit log's event sheet dimmed only the page's own box:
+  the top bar and the sidebar stayed undimmed and clickable, the area below
+  short content stayed plain, and a side sheet started below the top bar.
+  The page wrapper's entry animation leaves an identity `transform` on it,
+  which makes it the containing block of any `position: fixed` element
+  inside. Every dialog now renders through
+  `DialogLayer`, portaled to `<body>`, so the backdrop is the viewport and the
+  dialog is centred in it at any scroll position. While a dialog is open the
+  page behind it does not scroll, Tab stays inside the dialog, Escape closes
+  it, and focus returns to the control that opened it. Escape follows the
+  backdrop: a dialog that a click outside does not close (a report being sent,
+  a one-time link on screen) stays open on Escape too. With layers open over
+  each other, Escape closes the top one. The Try-it drawer takes the same
+  keyboard, focus and scroll behaviour. `dialog-portal.test.ts` fails on any
+  dialog drawn in place.
+
 ## [0.63.0]
 
 ### Added

@@ -125,7 +125,7 @@ function ReportIncidentModal({ open, onClose }: { open: boolean; onClose: () => 
       open={open}
       onClose={close}
       md
-      closeOnBackdrop={!busy && !sent}
+      dismissible={!busy && !sent}
       title={sent ? "Report sent" : "Report an incident"}
       footer={
         sent ? (

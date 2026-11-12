@@ -320,7 +320,10 @@ apps/web/                 @sr/web — Next.js 16 App Router (:3000)
                         page's chains, beside the sidebar) · RouterHeader ·
                         FiltersProvider · WindowSelect · ChainSelect ·
                         RouterFilterSelect · HealthTag · charts · SortTable ·
-                        SideSheet · icons
+                        Modal · SideSheet · DialogLayer (what every dialog
+                        renders through: portaled to <body>, since the
+                        page's `.fade-in` wrapper traps `position: fixed`;
+                        scroll lock, focus trap, Escape) · icons
       overview/         OverviewView (KPI strip + 2×2 chart grid)
       metrics/          MetricsView (4 tabs) · HeroPanel · RouterOverview ·
                         ChainDetail (its Availability view is

@@ -93,7 +93,7 @@ export function ResetLinkModal({
     <Modal
       open={open}
       onClose={close}
-      closeOnBackdrop={!result}
+      dismissible={!result}
       title={result ? "Reset link created" : "Generate a reset link"}
       footer={
         result ? (
