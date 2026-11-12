@@ -92,6 +92,36 @@ describe("groupErrors", () => {
   });
 });
 
+describe("groupErrors - one error reads as one, whatever ids it carries", () => {
+  const one = (message: string) => row({ attempts: [attempt("lava", { replied: true, message })] });
+  const groupsOf = (...messages: string[]) => groupErrors(messages.map(one));
+
+  it("blanks transaction hashes, addresses and ids, with or without 0x", () => {
+    expect(groupsOf(
+      "transaction 0x5f3a9c0e7d1b2a4c6e8f0a1b3c5d7e9f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d already known",
+      "transaction 0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefab12 already known",
+    )).toHaveLength(1);
+    expect(groupsOf(
+      "tx 4F3A9C0E7D1B2A4C6E8F0A1B3C5D7E9F1A2B3C4D5E6F7A8B9C0D1E2F3A4B5C6D already exists in cache",
+      "tx 0D1E2F3A4B5C6D7E8F9A0B1C2D3E4F5A6B7C8D9E0F1A2B3C4D5E6F7A8B9C0D1E already exists in cache",
+    )).toHaveLength(1);
+    expect(groupsOf(
+      "signature 5VERv8NMvzbJMEkV8xnrLkEaWRtSz9CosKDYjCJjBRnbJLgp8uirBgmQpjKhoR4tjF3ZpRzrFmBV6UjKdiSZkQUW not found",
+      "signature 2jg9xbGLtZRsiJBrDWQnz33JuLjDkiKSZuxZPdjJ3qrJbMeTEerXFAKynkPW63J88nNJmSzwcp6Djbm5frmh1SW6 not found",
+    )).toHaveLength(1);
+    expect(groupsOf("request 3f2b8c1e-9d4a-4b7e-8c2f-1a2b3c4d5e6f timed out", "request 7a1c0e2d-1b3f-4e5a-9c8d-6f5e4d3c2b1a timed out")).toHaveLength(1);
+  });
+
+  it("keeps different errors apart", () => {
+    expect(groupsOf("header not found", "missing trie node", "HTTP 429", "HTTP 503", "getTransactionReceipt failed")).toHaveLength(5);
+  });
+
+  it("blanks them in a router error too, when no try failed", () => {
+    const failed = (error: string) => row({ result: "failed", error });
+    expect(groupErrors([failed("no upstream for 0x5f3a9c0e7d1b"), failed("no upstream for 0x77aa")])).toHaveLength(1);
+  });
+});
+
 describe("groupErrors - who caused it", () => {
   it("puts the client's own error in one group whichever provider answered", () => {
     const nonce = (p: string) => [attempt(p, { replied: true, code: "CHAIN_NONCE_TOO_LOW" })];

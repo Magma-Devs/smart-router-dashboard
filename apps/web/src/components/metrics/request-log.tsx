@@ -53,14 +53,25 @@ export function errorLabel(a: RelayAttempt): string {
   return code ? codeWords(code) : clip(errorWords(a));
 }
 
+/** An error message with what changes from one request to the next blanked,
+ *  so one error reads as one: hashes and addresses (0x…, and long runs of
+ *  letters and digits - hex, base58, bech32), ids, and numbers. An HTTP
+ *  status keeps its number: a 429 and a 503 are different errors. */
+export function blankIds(m: string): string {
+  return m
+    .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, "…")
+    .replace(/0x[0-9a-f]+/gi, "0x…")
+    .replace(/[0-9A-Za-z]{16,}/g, (run) => (/\d/.test(run) ? "…" : run))
+    .replace(/(?<!HTTP )\d+/g, "#");
+}
+
 /** The error-type filter's key and label. Without a code, the message with
- *  its numbers blanked (an HTTP status kept), so one error on different
- *  blocks groups together. */
+ *  its ids and numbers blanked (`blankIds`), so one error on different
+ *  blocks or transactions groups together. */
 export function errorType(a: RelayAttempt): { key: string; label: string } {
   const code = realCode(a);
   if (code) return { key: code, label: codeWords(code) };
-  // An HTTP status keeps its number: a 429 and a 503 are different errors.
-  const m = errorWords(a).replace(/(?<!HTTP )\d+/g, "#");
+  const m = blankIds(errorWords(a));
   return { key: "msg:" + m, label: clip(m) };
 }
 
