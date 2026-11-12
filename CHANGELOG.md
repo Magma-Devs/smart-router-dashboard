@@ -42,6 +42,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   request ("the newest 1 second"), it understated what had been read.
 - **"Load older" is in the grouped view too.** The line above the groups
   pointed to it, but only the list of every request showed it.
+- Keyboard focus follows a group: opened, it moves to "← All groups";
+  closed, back to the group's line.
 - **"The request" follows the error catalogue.** A code is the request's
   when any healthy provider would give the same answer: the request's own
   and the chain's rules. A provider-side `CHAIN_` code (state pruned, block
