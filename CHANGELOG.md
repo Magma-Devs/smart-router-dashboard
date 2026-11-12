@@ -9,17 +9,18 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ### Fixed
 
-- **Three Dependabot alerts** (MAG-5214). All three packages are transitive.
-  `pnpm.overrides` in the root `package.json` now sets a floor for each one,
-  capped at its major:
-  - `glob` 13.0.6 → 14.0.5. It fixes GHSA-3g3m-2fjr-6pw4, where a glob walk
+- **Three Dependabot alerts** (MAG-5214). All three packages are transitive,
+  and `pnpm.overrides` in the root `package.json` now holds each one past its
+  advisory. glob and minimatch are pinned to the newest releases at least a
+  week old, for every dependent; zod has a floor capped at its major:
+  - `glob` 13.0.6 → 14.0.3. It fixes GHSA-3g3m-2fjr-6pw4, where a glob walk
     keeps reading the filesystem after its `AbortSignal` fires. It reaches the
     api through `@fastify/swagger-ui` → `@fastify/static`, which now resolves
     to 10.1.10, the release that asks for glob 14 itself. `@fastify/static`
     calls glob only with `wildcard: false` and passes no signal, and
     swagger-ui keeps the default wildcard and is registered only outside
     production, so the api never ran the affected code.
-  - `minimatch` 10.2.6 → 11.0.8. It fixes GHSA-g3hv-75wg-m249, where a
+  - `minimatch` 10.2.6 → 11.0.4. It fixes GHSA-g3hv-75wg-m249, where a
     pattern whose parts multiply takes exponential time. Its users are glob
     and the lint tooling (`eslint`, `@eslint/config-array`,
     `@typescript-eslint/typescript-estree`). No 10.x release carries the fix.
