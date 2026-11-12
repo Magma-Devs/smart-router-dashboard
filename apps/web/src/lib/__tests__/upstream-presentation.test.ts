@@ -26,7 +26,7 @@ describe("MAG-4226: current health takes precedence over historical metrics", ()
 
   it("reports partial upstream failure even while the router serves traffic", () => {
     expect(deploymentHealthSummary("operational", { unhealthy: 1, unknown: 0 })).toEqual({
-      label: "Router operational · 1 upstream unhealthy",
+      label: "Router operational · 1 provider unhealthy",
       color: "var(--warn)",
     });
   });
@@ -37,7 +37,7 @@ describe("MAG-4226: current health takes precedence over historical metrics", ()
       color: "var(--warn)",
     });
     expect(deploymentHealthSummary("operational", { unhealthy: 0, unknown: 1 })).toEqual({
-      label: "Router operational · 1 upstream unknown",
+      label: "Router operational · 1 provider with no health data",
       color: "var(--warn)",
     });
   });

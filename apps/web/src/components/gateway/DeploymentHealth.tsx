@@ -47,11 +47,15 @@ export function DeploymentHealthBadge({
  * for these three fields costs dozens of reads a call (MAG-4296).
  */
 export function useDeploymentPulse() {
-  const { withScope, routerId } = useFilters();
+  const { withScope, routerId, chain } = useFilters();
+  // On a chain's page the badge speaks for that chain: counting every chain's
+  // providers beside one chain's name read as that chain's own trouble.
+  const params = [
+    ...(chain ? [`spec=${encodeURIComponent(chain)}`] : []),
+    ...(routerId ? [`routerId=${encodeURIComponent(routerId)}`] : []),
+  ];
   const scoped = withScope("/api/metrics/pulse");
-  const url = routerId
-    ? `${scoped}${scoped.includes("?") ? "&" : "?"}routerId=${encodeURIComponent(routerId)}`
-    : scoped;
+  const url = params.length ? `${scoped}${scoped.includes("?") ? "&" : "?"}${params.join("&")}` : scoped;
   return useApi<DeploymentPulse>(url, 30000, { keepPreviousData: false });
 }
 

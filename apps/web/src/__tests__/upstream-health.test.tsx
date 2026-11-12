@@ -75,7 +75,7 @@ describe("MAG-4226", () => {
     const html = renderToStaticMarkup(
       createElement(UpstreamMetricsTab, { timeWindow: "5m", chainFilter: "ETH1" }),
     );
-    expect(html).toContain("This upstream is unhealthy");
+    expect(html).toContain("This provider is unhealthy");
     expect(html).toContain("Request success rate");
     expect(html).toContain("100.00%");
     expect(html).toContain("Historical · last");
@@ -123,7 +123,7 @@ describe("MAG-4226", () => {
       createElement(UpstreamMetricsTab, { timeWindow: "5m", chainFilter: "ETH1" }),
     );
     expect(html).toContain("Operational");
-    expect(html).not.toContain("This upstream is unhealthy");
+    expect(html).not.toContain("This provider is unhealthy");
     expect(html).not.toContain("100.00%");
   });
 
@@ -171,7 +171,7 @@ it("does not claim all systems normal when an upstream is unhealthy", () => {
       counts: { unhealthy: 1, unknown: 0 },
     }),
   );
-  expect(html).toContain("Router operational · 1 upstream unhealthy");
+  expect(html).toContain("Router operational · 1 provider unhealthy");
   expect(html).not.toContain("All systems normal");
 });
 
