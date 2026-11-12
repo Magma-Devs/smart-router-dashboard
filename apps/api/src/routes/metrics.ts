@@ -340,6 +340,28 @@ export async function metricRoutes(app: FastifyInstance, opts: MetricRoutesOptio
       app.scoped(router).metricsDetail.upstreamTimeline(spec, window, routerId || undefined));
   });
 
+  // The Errors tab's incidents: errors batched by when they arrived (MAG-5263).
+  app.get<{ Querystring: WindowQuery & { spec?: string } }>("/api/metrics/error-incidents", {
+    schema: {
+      tags: ["Metrics"],
+      summary: "Errors batched by when they arrived: incidents, chain-wide, recurring and long-running lines, and the errors always present, from failed tries and error replies per chain and provider",
+      querystring: {
+        type: "object" as const,
+        properties: {
+          window: windowQuerySchema.properties.window,
+          router: windowQuerySchema.properties.router,
+          routerId: windowQuerySchema.properties.routerId,
+          spec: { type: "string" as const, description: "Chain spec label, e.g. ETH1" },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const { spec, router, routerId } = request.query;
+    const window = parseWindow(request.query.window);
+    return snapshot(reply, "live", window, ["error-incidents", window, spec ?? null, routerId ?? null, scopeKey(router)], () =>
+      app.scoped(router).metricsDetail.errorIncidents(window, spec || undefined, routerId || undefined));
+  });
+
   // Which upstream took one chain's traffic - the "Traffic by provider" card.
   app.get<{ Querystring: { window?: string; spec?: string; router?: string } }>("/api/metrics/upstream-mix", {
     schema: {

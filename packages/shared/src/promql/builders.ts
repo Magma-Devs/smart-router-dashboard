@@ -1066,3 +1066,16 @@ export function qCsm(): string {
 export function qPresence(metricName: string): string {
   return `count({__name__="${metricName}"})`;
 }
+
+/**
+ * Failed tries (no usable answer) per chain and provider in each `step`
+ * stretch - the Errors tab's incidents (`detectErrorIncidents`).
+ */
+export function qFailedTriesBySpecProvider(step: string): string {
+  return `sum by (spec, provider_address) (increase(${OPTIONAL_METRICS.requestsFailedTotal}[${step}]))`;
+}
+
+/** Provider error replies per chain and provider in each `step` stretch - the incidents' other kind. */
+export function qErrorRepliesBySpecProvider(step: string): string {
+  return `sum by (spec, provider_address) (increase(${OPTIONAL_METRICS.nodeErrorsTotal}[${step}]))`;
+}

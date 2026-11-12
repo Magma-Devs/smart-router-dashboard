@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  qErrorRepliesBySpecProvider,
+  qFailedTriesBySpecProvider,
   countPointsPerStep,
   countRangeSec,
   qClientRpsSeriesExpr,
@@ -914,5 +916,12 @@ describe("short drawing steps", () => {
     expect(failed).toMatch(/^round\(/);
     expect(failed).toContain('{spec="ETH1",provider_address="eth-lava"}[52s]) * 37)');
     expect(qUpstreamNodeErrorSeriesExpr(ref, "37s", true)).toContain("[52s]) * 37)");
+  });
+});
+
+describe("incident reads", () => {
+  it("count failed tries and error replies per chain and provider, one count per step", () => {
+    expect(qFailedTriesBySpecProvider("300s")).toBe("sum by (spec, provider_address) (increase(smartrouter_requests_failed_total[300s]))");
+    expect(qErrorRepliesBySpecProvider("60s")).toBe("sum by (spec, provider_address) (increase(smartrouter_node_errors_total[60s]))");
   });
 });
