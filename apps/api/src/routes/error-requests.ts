@@ -8,6 +8,8 @@ interface ErrorRequestsQuery extends RangeQuery {
   spec?: string;
   routerId?: string;
   upstream?: string;
+  failingProvider?: string;
+  errorClass?: string;
 }
 
 export async function errorRequestRoutes(app: FastifyInstance) {
@@ -34,17 +36,30 @@ export async function errorRequestRoutes(app: FastifyInstance) {
             pattern: "^[^`]{1,128}$",
             description: "Only requests whose try at this upstream failed - what its errors-over-time bars count (optional)",
           },
+          failingProvider: {
+            type: "string" as const,
+            // Spliced into the LogQL as a literal, as upstream is.
+            pattern: "^[^`]{0,128}$",
+            description:
+              "Only requests whose deciding failed try was at this provider - the failed try whose answer went back, else the last failed try: a group of GET /api/error-groups. Empty: the requests no try failed in (optional)",
+          },
+          errorClass: {
+            type: "string" as const,
+            pattern: "^[A-Za-z0-9_.:-]{0,64}$",
+            description:
+              "Only requests in this error class (the router's `error_class`); a request from a router that writes no class passes through. Empty: the unclassified requests (optional)",
+          },
         },
       },
     },
   }, async (request, reply) => {
-    const { spec, routerId, before, upstream } = request.query;
+    const { spec, routerId, before, upstream, failingProvider, errorClass } = request.query;
     const range = readRange(request.query);
     if ("error" in range) {
       sendApiError(reply, 400, range.error);
       return reply;
     }
-    return app.errorRequests.report(range, spec, routerId, before, upstream);
+    return app.errorRequests.report(range, spec, routerId, before, upstream, { failingProvider, errorClass });
   });
 
   // How many requests the router gave up on - the Metrics page's "Failed

@@ -731,6 +731,8 @@ export interface ErrorRequestRow extends CallFacts {
    * Null when it ended `ok`, and on a router that writes no `relay_end`.
    */
   errorCode: string | null;
+  /** The router's fixed class of the error (`error_class` on `relay_end`); absent where the router writes none. */
+  errorClass?: string;
 }
 
 /** Why the router's logs couldn't be read: no log store configured, or it didn't answer in time. */
