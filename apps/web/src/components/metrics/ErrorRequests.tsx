@@ -101,6 +101,16 @@ type ResultPick = ErrorRequestRow["result"] | typeof ALL | typeof REACHED;
 /** Rare results: a pill only while the list holds one. */
 const RARE: ReadonlySet<ErrorRequestRow["result"]> = new Set(["write-unknown", "unknown"]);
 
+/**
+ * The result the list shows before anyone picks one: the requests that
+ * reached the client when there are any, else every request. Opened from a
+ * bar on the Upstreams tab, every request: the bar counts each failed try at
+ * its provider, recovered or not, and the click promised its requests.
+ */
+export function openingResult(reachedCount: number, fromBar: boolean): typeof ALL | typeof REACHED {
+  return reachedCount > 0 && !fromBar ? REACHED : ALL;
+}
+
 /** Did this upstream's own attempt fail - no response, or an error response?
  *  What the upstream filter keeps, and what its bar on the Upstreams tab
  *  counts: a request it took part in and answered fine isn't its error. */
@@ -324,7 +334,9 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
     return retry === "retryable" ? k.retryable : k.notRetryable;
   });
   const reachedCount = narrowed.filter((r) => REACHED_CLIENT.has(r.result)).length;
-  const result: ResultPick = picked === AUTO ? (reachedCount > 0 ? REACHED : ALL) : picked;
+  // On a bar's times with its provider picked, the list opens on every request the bar counts.
+  const fromBar = onBarRange && upstream !== ALL;
+  const result: ResultPick = picked === AUTO ? openingResult(reachedCount, fromBar) : picked;
   const inResult = (r: ErrorRequestRow) => result === ALL || (result === REACHED ? REACHED_CLIENT.has(r.result) : r.result === result);
   const rows = narrowed.filter(inResult);
   const byResult = (k: ErrorRequestRow["result"]) => narrowed.filter((r) => r.result === k).length;
