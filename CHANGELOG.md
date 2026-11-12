@@ -40,6 +40,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   left) to the end of the read, with its date, and the bars share it. It
   was the first to the last request shown, so under a filter, or with one
   request ("the newest 1 second"), it understated what had been read.
+- **"Load older" is in the grouped view too.** The line above the groups
+  pointed to it, but only the list of every request showed it.
 - **"The request" follows the error catalogue.** A code is the request's
   when any healthy provider would give the same answer: the request's own
   and the chain's rules. A provider-side `CHAIN_` code (state pruned, block
