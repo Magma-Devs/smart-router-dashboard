@@ -139,7 +139,7 @@ services:
   #   docker compose --profile router --profile logs up --build
   loki:
     profiles: ["logs"]
-    image: grafana/loki:3.4.2@sha256:58a6c186ce78ba04d58bfe2a927eff296ba733a430df09645d56cdc158f3ba08
+    image: grafana/loki:3.7.9@sha256:0db216b630ae1f348a1584c67f3cead8b4c1fc839169a39501db664744158e28
     command: ["-config.file=/etc/loki/loki-config.yml"]
     volumes:
       - ./deploy/loki-config.yml:/etc/loki/loki-config.yml:ro
@@ -156,7 +156,7 @@ services:
 
   promtail:
     profiles: ["logs"]
-    image: grafana/promtail:3.4.2@sha256:c6e9a987ca086cbfef945b8ebd708eb09f98b5e78bfb659e4e5a8b3bd604d11b
+    image: grafana/promtail:3.6.8@sha256:6cfa64ec432b24a912d640e2edb940eeae2666f61861a66c121d763dd7241381
     command: ["-config.file=/etc/promtail/promtail-config.yml"]
     volumes:
       - ./deploy/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
@@ -169,7 +169,7 @@ services:
 
   grafana:
     profiles: ["logs"]
-    image: grafana/grafana:11.5.2@sha256:8b37a2f028f164ce7b9889e1765b9d6ee23fec80f871d156fbf436d6198d32b7
+    image: grafana/grafana:13.3.0@sha256:488984b716c0862639f91a698adbe2862677a5a07bad42da5f03f3030883b205
     environment:
       - GF_SECURITY_ADMIN_USER=${GRAFANA_USERNAME:-admin}
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
