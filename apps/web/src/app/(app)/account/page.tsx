@@ -5,15 +5,13 @@
  *
  * Change password and Active sessions act on the signed-in account. Basic
  * details carries the REAL build provenance from the api's /version endpoint.
- * Connected accounts and Leaving? are statements, not controls: a provider
- * links itself by verified address at sign-in, and nobody deletes their own
- * account. The theme toggle lives in the Topbar.
+ * Connected accounts is a statement, not a control: a provider links itself by
+ * verified address at sign-in. The theme toggle lives in the Topbar.
  *
  * With AUTH_MODE=disabled there are no accounts, so only Basic details renders:
  * the other cards post to routes the api never registers in that mode. */
 
 import type { CSSProperties } from "react";
-import Link from "next/link";
 import { useApi } from "@/hooks/use-api";
 import { ChangePasswordCard } from "@/components/account/ChangePasswordCard";
 import { TwoFactorCard } from "@/components/account/TwoFactorCard";
@@ -89,29 +87,6 @@ export default function AccountPage() {
         <ChangePasswordCard />
 
         <SessionsCard />
-
-        {/* Not a notice, and not a disabled Delete button. Nothing deletes an
-            account on any deployment, and nobody removes themselves — the
-            ticket says both, and the api enforces the second in
-            services/members.ts rather than trusting this screen. A greyed-out
-            button would promise a feature nobody intends to build, so the card
-            states the rule and names who can act instead. */}
-        <div className="gw-card">
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Leaving?</div>
-          <div style={{ fontSize: 12.5, color: "var(--text-2)", lineHeight: 1.65 }}>
-            Accounts here are never deleted, and nobody can remove their own - including
-            administrators. Ask another administrator to remove you from{" "}
-            <Link href="/team" style={{ color: "var(--brand)" }}>
-              Team
-            </Link>
-            .
-            <div style={{ marginTop: 8 }}>
-              Removal ends every session you have within one request and frees your address to be
-              invited again later. Your name stays in the audit log permanently - that record is the
-              point, and deleting the row would erase the trail it exists to keep.
-            </div>
-          </div>
-        </div>
         </>
       )}
     </div>
