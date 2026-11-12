@@ -1,9 +1,11 @@
+import { EnrolmentVerdictProvider } from "@/components/auth/two-factor-gate";
 import { FiltersProvider } from "@/components/gateway/FiltersProvider";
 import { AuthModeProvider } from "@/components/gateway/auth-mode";
 import { Shell } from "@/components/gateway/Shell";
+import { readEnrolmentVerdict } from "@/lib/enrolment-verdict";
 import { normalizeGrafanaDashboardUrl } from "@/lib/grafana-dashboard-url";
 
-export default function AppLayout({ children }: { children: React.ReactNode }) {
+export default async function AppLayout({ children }: { children: React.ReactNode }) {
   // Same source as the root layout's SessionProvider decision, one level down,
   // so the chrome and the session plumbing cannot disagree about whether this
   // deployment has accounts.
@@ -14,11 +16,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // render when the api is the thing that broke. The api has its own
   // INCIDENTS_ENABLED and refuses reports while it is off.
   const incidentsEnabled = process.env.INCIDENTS_ENABLED?.trim().toLowerCase() === "true";
+  // Before anything is drawn: the Shell's two-factor gate needs to know whether
+  // to show the enrolment screen instead of the dashboard on its first render,
+  // not after the browser has asked. See `lib/enrolment-verdict.ts`.
+  const verdict = await readEnrolmentVerdict();
   return (
     <AuthModeProvider enabled={authEnabled}>
-      <FiltersProvider>
-        <Shell grafanaDashboardUrl={grafanaDashboardUrl} grafanaCustomerUsageDashboardUrl={grafanaCustomerUsageDashboardUrl} incidentsEnabled={incidentsEnabled}>{children}</Shell>
-      </FiltersProvider>
+      <EnrolmentVerdictProvider verdict={verdict}>
+        <FiltersProvider>
+          <Shell grafanaDashboardUrl={grafanaDashboardUrl} grafanaCustomerUsageDashboardUrl={grafanaCustomerUsageDashboardUrl} incidentsEnabled={incidentsEnabled}>{children}</Shell>
+        </FiltersProvider>
+      </EnrolmentVerdictProvider>
     </AuthModeProvider>
   );
 }

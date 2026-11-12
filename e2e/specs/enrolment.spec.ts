@@ -1,5 +1,11 @@
 import { inviteMember, type SeededMember } from "../support/api.js";
-import { expect, signInThroughUi, test } from "../support/fixtures.js";
+import {
+  dashboardChromeSeen,
+  expect,
+  signInThroughUi,
+  test,
+  watchForDashboardChrome,
+} from "../support/fixtures.js";
 import { Authenticator } from "../support/totp.js";
 
 /**
@@ -25,6 +31,7 @@ test.beforeAll(async ({ operator }) => {
 });
 
 test("the dashboard stays shut until an authenticator is set up", async ({ page }) => {
+  await watchForDashboardChrome(page);
   await signInThroughUi(page, member);
 
   // The password alone got a session — and a session is not the dashboard.
@@ -33,6 +40,11 @@ test("the dashboard stays shut until an authenticator is set up", async ({ page 
   ).toBeVisible();
   // No sidebar full of links that would 403: the gate wraps the chrome.
   await expect(page.locator(".gw-app")).toHaveCount(0);
+  // Not now, and not for a moment before the enrolment screen either: the gate
+  // decides on the first render, from the server's read of the account.
+  expect(await dashboardChromeSeen(page), "the dashboard was drawn before the enrolment screen").toBe(
+    false,
+  );
 
   // The QR is painted, not just delivered.
   const qr = page.locator('[aria-label="Authenticator QR code"] svg');

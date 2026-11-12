@@ -176,6 +176,17 @@ Web side, `TwoFactorGate` wraps the app rather than redirecting: the gate's
 answer changes the moment enrolment lands, and a route-based version would have
 to poll for that or bounce somebody who has just finished.
 
+It decides before the dashboard draws anything. The `(app)` and `standalone`
+layouts ask `GET /api/account/me` from the web server with the session's Bearer
+while they render (`lib/enrolment-verdict.ts`), so the first HTML is already the
+enrolment screen for somebody who must enrol. The browser's own read of the
+same route takes over once it lands, and that is what lifts the block after
+enrolment. If the server's read fails, the gate draws an empty page until the
+browser's read answers, and the app only if that fails too (`lib/enrolment-gate.ts`).
+The browser's read alone comes too late to decide: it starts only once Auth.js
+has handed the page a token, and anything drawn before it answers is the
+dashboard.
+
 ---
 
 ## Storage
