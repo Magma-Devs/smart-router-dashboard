@@ -233,11 +233,26 @@ next sign-in, from a secret only they will ever hold — the same rule as
 passwords, and for the same reason: an admin who could set someone's second
 factor could sign in as them.
 
-Logged as `2fa.reset`, naming both people. **Nothing is emailed**, on either
-deployment — the transactional emails are the invitation and the password
-reset, and the 2FA-reset notice is MAG-2869's. The member finds out at their
-next sign-in: their sessions just ended, and the enrolment screen says an
-administrator reset it. The route answers `notified: "on_next_signin"`.
+Logged as `2fa.reset`, naming both people.
+
+**On a managed deployment the member is emailed** (MAG-2869), once the reset
+has committed. The email says their second factor was reset, by whom (the
+admin's name and address), when (in UTC), that they are signed out everywhere
+and are asked to set it up again at their next sign-in, and to report it to
+their security team or another administrator if they did not ask for it. It carries no link:
+nobody asked for it, and nothing in it can change anything. A send that fails
+never undoes the reset.
+
+What became of the email is a row of its own, `2fa.reset_notice` — `emailed`,
+`not sent, no mail transport` or `email failed, not delivered` — because
+`2fa.reset` commits in the reset's transaction, before anything is sent, and a
+row cannot be amended. The route answers `notified: "email"` when it was sent
+and `notified: "on_next_signin"` otherwise.
+
+**On-prem nothing is emailed**; the `2fa.reset` row naming both people is the
+record there. On-prem, and wherever the email did not go, the member finds out
+at their next sign-in: their sessions just ended, and the enrolment screen says
+an administrator reset it.
 
 **Not your own.** An admin cannot reset their own second factor, or mint their
 own password-reset link (409 for both). Together those were a takeover from one
@@ -292,6 +307,12 @@ already do all of this; what they cannot do, once these are the documented path,
 is do it quietly. On managed the row is marked as performed by Magma Devs —
 there the host is ours, so shell access is Magma's by definition.
 
+`reset-2fa` **emails the member on managed**, as an admin's reset does, once
+the reset has committed, and prints whether it went. The email names "Magma
+Devs, from the server the dashboard runs on" — a fact about a managed host —
+and not the operator, whose name is only what the shell reported; that stays on
+the `host.recovery` row. On-prem it sends nothing.
+
 `reset-password` **prints a link and never sets a password**: the account holder
 still chooses the value. `promote-admin` reactivates as well as promotes,
 because the commonest way to reach "no admin is left" is the last one being
@@ -333,4 +354,4 @@ than being quietly skipped: the thirtieth day (asserted by moving
 - [`ACCOUNTS-DESIGN.md`](./ACCOUNTS-DESIGN.md) — the accounts system this sits on
 - [`AUTH.md`](./AUTH.md) — the operator guide for `AUTH_MODE=enabled`
 - [`MAG-2730-REQUIREMENTS.md`](./MAG-2730-REQUIREMENTS.md) — the ticket, line by line
-- `packages/shared/src/constants/audit-events.ts` — `2fa.enrolled`, `2fa.reset`, `host.recovery`
+- `packages/shared/src/constants/audit-events.ts` — `2fa.enrolled`, `2fa.reset`, `2fa.reset_notice`, `host.recovery`

@@ -5,6 +5,24 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.59.0]
+
+### Added
+
+- **The member is emailed when an admin resets their two-factor
+  authentication** (managed deployments). The email names who reset it, by
+  name and address, and when, in UTC; says they are signed out everywhere and
+  set it up again at their next sign-in; and says to report it to their
+  security team or another administrator if they did not ask for it. It
+  carries no link. It is sent once the reset has committed, so a failed send
+  never undoes the reset, and its outcome is a new audit event,
+  `2fa.reset_notice` (`emailed`, `not sent, no mail transport` or `email
+  failed, not delivered`). `POST /api/team/members/:id/2fa/reset` answers
+  `notified: "email"` when it went and `"on_next_signin"` otherwise. On-prem
+  sends nothing; the `2fa.reset` row naming both people is the record there.
+- **`recover reset-2fa` emails the member too**, on managed, naming Magma Devs
+  rather than the operator, and prints whether the email went.
+
 ## [0.58.2]
 
 ### Added

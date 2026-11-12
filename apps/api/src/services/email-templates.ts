@@ -12,11 +12,13 @@ import {
 import { config } from "../config.js";
 
 /**
- * The two transactional emails, with their copy — MAG-2870's, close to
- * verbatim. Structure follows lava-connect: one `send*` per type, each
+ * The transactional emails, with their copy. The invitation and the password
+ * reset are MAG-2870's, close to verbatim; the two-factor reset notice is
+ * MAG-2869's. Structure follows lava-connect: one `send*` per type, each
  * composing subject, plain text and HTML and handing them to `deliver()`.
  *
- * Both follow the four rules the ticket sets for them:
+ * The invitation and the reset follow the four rules MAG-2870 sets for them
+ * (the notice carries no link and no expiry, so only the last two apply to it):
  *
  *  1. **The link appears as text as well as a button**, because mail clients
  *     strip buttons and people forward these.
@@ -163,6 +165,98 @@ export async function sendPasswordResetEmail(
   log?: EmailLogFn,
 ): Promise<DeliveryOutcome> {
   return deliver({ to: opts.to, ...renderPasswordResetEmail(opts) }, log);
+}
+
+/**
+ * Two-factor reset notice — MAG-2869.
+ *
+ * An admin can clear anybody's second factor. That is the lost-phone path, and
+ * also the shortest way to take over an approver's account using only intended
+ * features; the member would otherwise learn of it only by being signed out.
+ * This names who did it and when, so a reset nobody asked for is something the
+ * member asks about.
+ *
+ * **No link, on purpose** — no undo, no sign-out button, no sign-in button.
+ * Unlike the invitation and the reset, nobody asked for this message, and an
+ * unrequested security notice with a link in it is the shape phishing takes; a
+ * notice that never carries one makes a copy that does easy to spot. The reset
+ * has already signed them out everywhere, so a link would have nothing to do.
+ *
+ * `resetBy` is passed in already worded, because the admin route and the host
+ * recovery command name different kinds of actor.
+ */
+export function renderTwoFactorResetEmail(opts: {
+  to: string;
+  resetBy: string;
+  at: Date;
+}): RenderedEmail {
+  const customer = customerName();
+  const subject = EMAIL_SUBJECTS.two_factor_reset(customer);
+  const when = utcStamp(opts.at);
+
+  const text =
+    `Two-factor authentication was reset on your account (${opts.to}) on the ` +
+    `Smart Router dashboard for ${customer}.\n\n` +
+    `Reset by: ${opts.resetBy}\n` +
+    `When: ${when}\n\n` +
+    `You have been signed out on every device. The next time you sign in, you'll be ` +
+    `asked to set up an authenticator app again.\n\n` +
+    `If you didn't ask for this, report it to your security team or another ` +
+    `administrator straight away.\n`;
+
+  const html = renderEmailHtml({
+    subject,
+    body:
+      heading("Your two-factor authentication was reset") +
+      paragraph(
+        `Two-factor authentication was reset on your account (${escapeHtml(opts.to)}) on the ` +
+          `Smart Router dashboard for ${escapeHtml(customer)}.`,
+      ) +
+      paragraph(
+        `<strong>Reset by:</strong> ${escapeHtml(opts.resetBy)}<br>` +
+          `<strong>When:</strong> ${when}`,
+      ) +
+      paragraph(
+        "You have been signed out on every device. The next time you sign in, you'll be asked to set up an authenticator app again.",
+      ) +
+      paragraphSmall(
+        "If you didn't ask for this, report it to your security team or another administrator straight away.",
+      ),
+  });
+
+  return { subject, text, html };
+}
+
+export async function sendTwoFactorResetEmail(
+  opts: { to: string; resetBy: string; at: Date },
+  log?: EmailLogFn,
+): Promise<DeliveryOutcome> {
+  return deliver({ to: opts.to, ...renderTwoFactorResetEmail(opts) }, log);
+}
+
+const MONTHS = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+] as const;
+
+/** `11 November 2026 at 14:05 UTC` — spelled out, so no reader has to guess
+ *  which of day and month comes first, and in UTC, so it matches the audit log
+ *  whatever the reader's timezone. Built by hand: `Intl`'s wording moves with
+ *  the ICU version the runtime ships. */
+function utcStamp(at: Date): string {
+  const hh = String(at.getUTCHours()).padStart(2, "0");
+  const mm = String(at.getUTCMinutes()).padStart(2, "0");
+  return `${at.getUTCDate()} ${MONTHS[at.getUTCMonth()]} ${at.getUTCFullYear()} at ${hh}:${mm} UTC`;
 }
 
 /** Re-exported so call sites can type their audit note without reaching past

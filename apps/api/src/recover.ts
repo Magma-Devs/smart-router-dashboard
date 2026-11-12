@@ -4,6 +4,11 @@ import { createAuditWriter, createDb, users, type Database, type User } from "@s
 import { createPasswordReset, resetUrl } from "./services/password-reset.js";
 import { clearEnrolment, isEnrolled, revokeChallenges } from "./services/two-factor.js";
 import { signOutEverywhere } from "./services/sessions.js";
+import type { EmailLogFn } from "./services/email.js";
+import {
+  HOST_RECOVERY_RESET_BY,
+  noticeTwoFactorReset,
+} from "./services/two-factor-reset-notice.js";
 import { config } from "./config.js";
 
 /**
@@ -41,7 +46,8 @@ const USAGE = `Usage: recover <command> --email <address> [--by <name>]
 
 Commands:
   reset-2fa        Clear the account's authenticator. They sign in with their
-                   password and set up a new one.
+                   password and set up a new one. On a managed deployment
+                   they are emailed that it was reset.
   reset-password   Print a single-use set-password link. It does NOT set a
                    password — the person still chooses their own.
   promote-admin    Make the account an admin. For when no admin is left.
@@ -144,7 +150,9 @@ export interface RecoveryResult {
 export async function runRecovery(
   db: Database,
   args: Args,
-  deps: { mode: "managed" | "onprem"; webOrigin?: string } = { mode: config.deploymentMode },
+  deps: { mode: "managed" | "onprem"; webOrigin?: string; log?: EmailLogFn } = {
+    mode: config.deploymentMode,
+  },
 ): Promise<RecoveryResult> {
   const user = await findAccount(db, args.email);
   if (!user) throw new Error(`No account for ${args.email}.`);
@@ -172,7 +180,7 @@ export async function runRecovery(
   // not at all. A recovery with no `host.recovery` row is exactly the quiet one
   // this command exists to rule out, and a failed audit write inside a
   // transaction propagates rather than being swallowed.
-  return await db.transaction(async (tx) => {
+  const outcome = await db.transaction(async (tx) => {
   let result: RecoveryResult;
   let endedSessions: string[] = [];
 
@@ -267,6 +275,33 @@ export async function runRecovery(
 
   return result;
   });
+
+  if (args.command !== "reset-2fa") return outcome;
+
+  // The member is told on managed, as after an admin's reset — once the reset
+  // has committed, so a send that fails cannot undo it. The email says "Magma
+  // Devs", which on managed is a fact about the host; the operator's name is
+  // what the shell reported, and stays on the row.
+  const delivery = await noticeTwoFactorReset(
+    audit,
+    {
+      mode: deps.mode,
+      member: { id: user.id, email: user.email },
+      resetBy: HOST_RECOVERY_RESET_BY,
+      at: new Date(),
+      actor: { kind: "host", label: by },
+    },
+    deps.log ??
+      ((msg, ctx) => console.error(ctx ? `${msg} ${JSON.stringify(ctx)}` : msg)),
+  );
+  if (delivery === null) return outcome;
+  const told =
+    delivery === "sent"
+      ? "They were emailed that it was reset."
+      : delivery === "link"
+        ? "They were not emailed: no mail transport is configured here (AWS_REGION is unset). Tell them yourself."
+        : "The email telling them could not be sent. Tell them yourself.";
+  return { ...outcome, message: `${outcome.message}\n${told}` };
 }
 
 

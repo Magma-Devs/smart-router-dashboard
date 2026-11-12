@@ -1,17 +1,20 @@
 /**
- * The transactional emails this product sends. Exactly two, and MAG-2870 says
- * so explicitly — approval notifications are MAG-2731's and out of scope there,
- * password-changed and 2FA-reset notices are parked in MAG-2868 and MAG-2869.
+ * The transactional emails this product sends. The invitation and the password
+ * reset are MAG-2870's; the notice that an admin reset somebody's two-factor
+ * authentication is MAG-2869's. Approval notifications are MAG-2731's, and the
+ * password-changed notice is parked in MAG-2868.
  *
  * A typed catalog rather than string literals at the call sites, for the same
  * reason the audit log has one: a typo becomes a typecheck failure instead of a
  * message nobody can search for afterwards.
  *
- * **On-prem sends none of these.** Both flows produce a link the admin hands
- * over directly, and no customer deployment ever needs a mail server. The copy
- * still matters there, because the same link lands in a chat message instead.
+ * **On-prem sends none of these.** The invitation and the reset produce a link
+ * the admin hands over directly, and no customer deployment ever needs a mail
+ * server. The copy still matters there, because the same link lands in a chat
+ * message instead. A 2FA reset there is recorded by its `2fa.reset` audit row,
+ * which names both people.
  */
-export const EMAIL_TYPES = ["invitation", "password_reset"] as const;
+export const EMAIL_TYPES = ["invitation", "password_reset", "two_factor_reset"] as const;
 
 export type EmailType = (typeof EMAIL_TYPES)[number];
 
@@ -21,11 +24,13 @@ export type EmailType = (typeof EMAIL_TYPES)[number];
  * The invitation's subject carries the customer name because it arrives at an
  * address that has never heard of us; "Smart Router" alone reads as spam. The
  * reset's does not, because by then the person has an account and the shorter
- * subject is the clearer one.
+ * subject is the clearer one. The two-factor notice goes to an account holder
+ * too, and names the customer in its body.
  */
 export const EMAIL_SUBJECTS: Record<EmailType, (customer: string) => string> = {
   invitation: (customer) => `You've been added to ${customer} on Smart Router`,
   password_reset: () => "Reset your Smart Router password",
+  two_factor_reset: () => "Your Smart Router two-factor authentication was reset",
 };
 
 /**
@@ -73,3 +78,21 @@ export const RESET_REQUEST_NOTES = {
  *  dropped: a run of these against one account is what a flood looks like. */
 export const RESET_REQUEST_COOLING_DOWN_NOTE = "not re-sent, a recent link is still unused";
 
+/**
+ * How the two-factor reset notice is recorded, on its own `2fa.reset_notice`
+ * row.
+ *
+ * Not on `2fa.reset`'s note, the way an invitation's delivery rides on
+ * `member.invited`: that row commits in the reset's own transaction, before
+ * anything is sent, and the log is append-only. Not {@link
+ * EMAIL_DELIVERY_NOTES} either — the notice carries no link, so there is
+ * nothing for an admin to hold.
+ */
+export const TWO_FACTOR_RESET_NOTICE_NOTES = {
+  /** Handed to SES. */
+  sent: "emailed",
+  /** Managed, with no transport configured. Nothing is attempted. */
+  link: "not sent, no mail transport",
+  /** SES refused it. The member was not told. */
+  failed: "email failed, not delivered",
+} as const satisfies Record<EmailDelivery, string>;
