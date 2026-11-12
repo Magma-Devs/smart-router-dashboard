@@ -91,7 +91,7 @@ export async function signInThroughUi(page: Page, account: UiAccount): Promise<v
     await page.getByRole("button", { name: "Verify" }).click();
   }
 
-  await page.waitForURL(/\/overview/);
+  await page.waitForURL(/\/metrics$/);
 }
 
 /** A member with a working authenticator, seeded over HTTP. */

@@ -91,7 +91,7 @@ believes you are signed in to an account that no longer exists.
 What that looks like: pages load but every panel reports **"Your session is no
 longer valid"**, the **Invite** button is missing because the page cannot read
 your role, and — the part that actually blocks you — **`/setup` bounces you to
-`/overview`**, because the edge gate only sees the cookie and has no way to ask
+`/metrics`**, because the edge gate only sees the cookie and has no way to ask
 the database whether the deployment needs setting up.
 
 So before check 1: **sign out** (the icon by your name, bottom-left), or start in

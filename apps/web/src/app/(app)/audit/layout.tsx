@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { HOME_PATH } from "@/lib/home-path";
 
 /**
  * The audit log does not exist without accounts.
@@ -14,6 +15,6 @@ import { redirect } from "next/navigation";
  * uses.
  */
 export default function AuditLayout({ children }: { children: React.ReactNode }) {
-  if (process.env.AUTH_MODE !== "enabled") redirect("/overview");
+  if (process.env.AUTH_MODE !== "enabled") redirect(HOME_PATH);
   return children;
 }

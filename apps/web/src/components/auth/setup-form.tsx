@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { signIn } from "next-auth/react";
 import { apiUrl } from "@/lib/api-client";
+import { HOME_PATH } from "@/lib/home-path";
 import { BusyButton } from "@/components/gateway/BusyButton";
 
 /**
@@ -67,7 +68,7 @@ export function SetupForm({ mode }: { mode: "managed" | "onprem" }) {
         window.location.href = "/login";
         return;
       }
-      window.location.href = "/overview";
+      window.location.href = HOME_PATH;
     } catch {
       setError("Could not reach the dashboard API.");
       setBusy(false);

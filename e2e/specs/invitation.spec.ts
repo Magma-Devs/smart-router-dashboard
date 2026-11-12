@@ -77,7 +77,7 @@ test("the form shows it is working from the click until the next page", async ({
   await expect(page.getByRole("button", { name: "Accept invitation" })).toHaveCount(0);
 
   signIn.release();
-  await page.waitForURL(/\/overview/);
+  await page.waitForURL(/\/metrics$/);
   // A new member has no authenticator and no grace period, so the dashboard
   // is shut until they set one up — from the first paint of the new page.
   await expect(

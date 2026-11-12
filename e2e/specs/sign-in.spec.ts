@@ -69,6 +69,6 @@ test("a wrong code costs the whole sign-in, and the right one gets through", asy
   await page.getByLabel("Authenticator code").fill(await member.authenticator.next());
   await page.getByRole("button", { name: "Verify" }).click();
 
-  await page.waitForURL(/\/overview/);
+  await page.waitForURL(/\/metrics$/);
   await expect(page.locator(".gw-app")).toBeVisible();
 });

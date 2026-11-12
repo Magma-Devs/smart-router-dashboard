@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { HOME_PATH } from "@/lib/home-path";
 import { ResetDead, ResetForm } from "@/components/auth/reset-form";
 import { previewReset } from "@/lib/bootstrap";
 
@@ -24,7 +25,7 @@ export const dynamic = "force-dynamic";
  * rate-limited, and every failure answers identically.
  */
 export default async function ResetPage({ params }: { params: Promise<{ token: string }> }) {
-  if (process.env.AUTH_MODE !== "enabled") redirect("/overview");
+  if (process.env.AUTH_MODE !== "enabled") redirect(HOME_PATH);
 
   const { token } = await params;
   const preview = await previewReset(token);

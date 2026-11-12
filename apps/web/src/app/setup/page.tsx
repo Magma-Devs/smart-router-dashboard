@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { HOME_PATH } from "@/lib/home-path";
 import { SetupForm } from "@/components/auth/setup-form";
 import { fetchBootstrap } from "@/lib/bootstrap";
 
@@ -14,7 +15,7 @@ export const dynamic = "force-dynamic";
  * they never see the field.
  */
 export default async function SetupPage() {
-  if (process.env.AUTH_MODE !== "enabled") redirect("/overview");
+  if (process.env.AUTH_MODE !== "enabled") redirect(HOME_PATH);
 
   const state = await fetchBootstrap();
   // Unreachable api ⇒ don't guess. Sending someone to /login is recoverable;

@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { signIn, signOut } from "next-auth/react";
 import { apiUrl } from "@/lib/api-client";
+import { HOME_PATH } from "@/lib/home-path";
 import { BusyButton } from "@/components/gateway/BusyButton";
 import { ROLE_DESCRIPTIONS, ROLE_LABELS, type Role } from "@sr/shared";
 import { enabledProviders, type ProviderFlags } from "./oauth-providers";
@@ -71,7 +72,7 @@ export function InviteForm({
         body: JSON.stringify({ token }),
       });
       if (!parked.ok) throw new Error("handoff refused");
-      await signIn(provider, { callbackUrl: "/overview" });
+      await signIn(provider, { callbackUrl: HOME_PATH });
     } catch {
       setError("Could not start that sign-in. Please try again, or set a password below.");
       setBusy(false);
@@ -108,7 +109,7 @@ export function InviteForm({
       // starts — an idle button in that gap reads as a request that was lost.
       setBusyLabel("Signing in…");
       const signedIn = await signIn("credentials", { email, password, redirect: false });
-      window.location.href = signedIn?.error ? "/login" : "/overview";
+      window.location.href = signedIn?.error ? "/login" : HOME_PATH;
     } catch {
       setError("Could not reach the dashboard API.");
       setBusy(false);
@@ -375,7 +376,7 @@ export function InviteSignedIn({
           {!sameAddress && (
             <a
               className="gw-btn"
-              href="/overview"
+              href={HOME_PATH}
               style={{ justifyContent: "center", fontSize: 12.5 }}
             >
               Stay signed in as {signedInAs}

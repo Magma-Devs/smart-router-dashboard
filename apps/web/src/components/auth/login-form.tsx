@@ -4,6 +4,7 @@ import { useRef, useState, type FormEvent } from "react";
 import { signIn } from "next-auth/react";
 import { TOTP_DIGITS } from "@sr/shared";
 import { apiUrl } from "@/lib/api-client";
+import { HOME_PATH } from "@/lib/home-path";
 import { enabledProviders, type ProviderFlags } from "./oauth-providers";
 
 /**
@@ -124,7 +125,7 @@ export function LoginForm({
         setBusy(false);
         return;
       }
-      window.location.href = "/overview";
+      window.location.href = HOME_PATH;
     } catch {
       setError("Could not reach the dashboard API.");
       setBusy(false);
@@ -158,7 +159,7 @@ export function LoginForm({
       setBusy(false);
       return;
     }
-    window.location.href = "/overview";
+    window.location.href = HOME_PATH;
   }
 
   return (
@@ -329,7 +330,7 @@ export function LoginForm({
                   type="button"
                   className="gw-btn gw-btn--ghost"
                   style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
-                  onClick={() => void signIn(p.id, { redirectTo: "/overview" })}
+                  onClick={() => void signIn(p.id, { redirectTo: HOME_PATH })}
                 >
                   {p.icon}
                   Continue with {p.label}

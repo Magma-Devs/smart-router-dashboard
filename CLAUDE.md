@@ -311,8 +311,9 @@ apps/api/                 @sr/api — Fastify 5 (:8000)
     config.ts           single source of truth for env defaults
 apps/web/                 @sr/web — Next.js 16 App Router (:3000)
   src/
-    app/(app)/          overview · upstreams · metrics · team · account
-                        (Shell layout)
+    app/(app)/          metrics · upstreams · team · audit · account
+                        (Shell layout; the dashboard opens on /metrics,
+                        HOME_PATH in lib/home-path.ts)
     app/standalone/     chrome-less Metrics page (sharing/embedding)
     app/api/config/     runtime-config route (DASHBOARD_API_URL → browser)
     components/
@@ -324,7 +325,6 @@ apps/web/                 @sr/web — Next.js 16 App Router (:3000)
                         renders through: portaled to <body>, since the
                         page's `.fade-in` wrapper traps `position: fixed`;
                         scroll lock, focus trap, Escape) · icons
-      overview/         OverviewView (KPI strip + 2×2 chart grid)
       metrics/          MetricsView (4 tabs) · HeroPanel · RouterOverview ·
                         ChainDetail (its Availability view is
                         AvailabilityBreakdown: availability in blocks, all

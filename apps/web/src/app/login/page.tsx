@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { HOME_PATH } from "@/lib/home-path";
 import { oauthProviderFlags } from "@/auth.config";
 import { LoginForm } from "@/components/auth/login-form";
 import { fetchBootstrap } from "@/lib/bootstrap";
@@ -19,7 +20,7 @@ export default async function LoginPage({
 }: {
   searchParams: Promise<{ step?: string }>;
 }) {
-  if (process.env.AUTH_MODE !== "enabled") redirect("/overview");
+  if (process.env.AUTH_MODE !== "enabled") redirect(HOME_PATH);
 
   // A deployment with no accounts has nobody to sign in as. This is the single
   // place that redirect lives — the edge gate already funnels everything here,

@@ -52,7 +52,8 @@ Browser ── Authorization: Bearer <same JWT> ──▶ Fastify api (@fastify/
   bridge on first load so nothing races a 401).
 - **Edge gate** (`apps/web/src/proxy.ts`) — redirects unauthenticated
   page loads to `/login`; signed-in users hitting `/login` bounce to
-  `/overview`. A no-op in disabled mode.
+  `/metrics` (`HOME_PATH`, `apps/web/src/lib/home-path.ts`). A no-op in
+  disabled mode.
 - **Api** (`apps/api/src/plugins/auth.ts`) — validates HS256 + iss/aud,
   then resolves the token's `sid` to a live session **and the live user
   row**, and puts both on `request.authUser`. 401s any non-public route

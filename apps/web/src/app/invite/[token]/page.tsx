@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { HOME_PATH } from "@/lib/home-path";
 import { auth } from "@/auth";
 import { oauthProviderFlags } from "@/auth.config";
 import { InviteDead, InviteForm, InviteSignedIn } from "@/components/auth/invite-form";
@@ -27,7 +28,7 @@ export default async function InvitePage({
   params: Promise<{ token: string }>;
   searchParams: Promise<{ error?: string }>;
 }) {
-  if (process.env.AUTH_MODE !== "enabled") redirect("/overview");
+  if (process.env.AUTH_MODE !== "enabled") redirect(HOME_PATH);
 
   const { token } = await params;
   // Set when a Google redemption bounced back — see `auth.config.ts`.

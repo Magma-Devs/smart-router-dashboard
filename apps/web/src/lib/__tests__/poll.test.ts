@@ -148,7 +148,7 @@ describe("idleGateApplies", () => {
   });
 
   it("holds every other page, including one whose name only starts the same", () => {
-    for (const path of ["/", "/metrics", "/overview", "/upstreams", "/team", "/account", "/standalones", "/metrics/standalone"]) {
+    for (const path of ["/", "/metrics", "/audit", "/upstreams", "/team", "/account", "/standalones", "/metrics/standalone"]) {
       expect(idleGateApplies(path)).toBe(true);
     }
   });

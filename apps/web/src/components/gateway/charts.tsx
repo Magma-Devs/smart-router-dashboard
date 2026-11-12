@@ -794,32 +794,6 @@ export function ColumnChart({
   );
 }
 
-/* ── SparkLine ───────────────────────────────────────────────────────── */
-export function SparkLine({
-  values,
-  color = "var(--brand)",
-  width = 60,
-  height = 22,
-}: {
-  values?: number[];
-  color?: string;
-  width?: number;
-  height?: number;
-}) {
-  if (!values?.length || values.length < 2) return null;
-  const min = Math.min(...values),
-    max = Math.max(...values),
-    range = max - min || 1;
-  const pts = values
-    .map((v, i) => `${((i / (values.length - 1)) * width).toFixed(1)},${(height - 2 - ((v - min) / range) * (height - 4)).toFixed(1)}`)
-    .join(" ");
-  return (
-    <svg width={width} height={height} style={{ display: "block", flexShrink: 0, opacity: 0.75 }}>
-      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
 /* ── ChartLegend ─────────────────────────────────────────────────────── */
 export interface LegendItem {
   label: string;
