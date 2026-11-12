@@ -17,6 +17,7 @@ import { Modal } from "@/components/gateway/Modal";
 import { useAuthMode } from "@/components/gateway/auth-mode";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 import { IconAlert } from "@/components/gateway/icons";
+import { LocalTime } from "@/components/gateway/LocalTime";
 import { useMe } from "@/hooks/use-me";
 import { apiPost } from "@/lib/api-client";
 import { labelStyle } from "@/lib/styles";
@@ -144,7 +145,7 @@ function ReportIncidentModal({ open, onClose }: { open: boolean; onClose: () => 
         <div style={{ display: "grid", gap: 12 }}>
           <div style={{ fontSize: 13, lineHeight: 1.6 }}>
             Your <strong>{INCIDENT_SEVERITY_LABELS[sent.severity]}</strong> report reached our on-call system at{" "}
-            {new Date(sent.sentAt).toLocaleTimeString()}.
+            <LocalTime t={sent.sentAt} format="timeSec" />.
           </div>
           <div style={{ fontSize: 12.5, color: "var(--text-2)", lineHeight: 1.6 }}>
             {INCIDENT_SEVERITY_NEXT[sent.severity]} Keep the reference below if you write to us about it.

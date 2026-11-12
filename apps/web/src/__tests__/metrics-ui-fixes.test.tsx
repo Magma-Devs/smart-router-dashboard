@@ -4,7 +4,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { HeroSummary, RouterMetrics } from "@sr/shared";
 import { RouterOverview } from "@/components/metrics/RouterOverview";
 import { HeroPanel } from "@/components/metrics/HeroPanel";
-import { chainsTitle, chainWords, fmtWhen, TxHash, WhenCell } from "@/components/metrics/request-log";
+import { chainsTitle, chainWords, TxHash, WhenCell } from "@/components/metrics/request-log";
+import { fmtDateTime } from "@/lib/datetime";
 import { RequestBreakdown, type BreakdownProps } from "@/components/metrics/request-breakdown";
 
 /** What `useApi` answers per path: SWR's fields as a window change leaves them. */
@@ -126,7 +127,7 @@ describe("log rows", () => {
   it("dates every row, today's included", () => {
     const now = new Date();
     const month = now.toLocaleString("en-US", { month: "short" });
-    expect(fmtWhen(now.getTime())).toContain(`${month} ${now.getDate()},`);
+    expect(fmtDateTime(now.getTime())).toContain(`${month} ${now.getDate()},`);
   });
 
   it("names a few candidate chains and counts many, listing them on hover", () => {

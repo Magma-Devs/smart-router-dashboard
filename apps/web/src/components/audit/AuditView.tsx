@@ -7,9 +7,10 @@ import {
   AuditDetail,
   ChangeList,
   GroupTag,
-  eventDateParts,
+  NoteText,
   targetLabel,
 } from "@/components/audit/bits";
+import { LocalTime, ZoneLabel } from "@/components/gateway/LocalTime";
 import {
   auditExportPath,
   EMPTY_FILTERS,
@@ -228,14 +229,14 @@ export function AuditView() {
             <table className="gw-table">
               <thead>
                 <tr>
-                  <th style={{ width: 148 }}>Time (UTC)</th>
+                  {/* The reader's own clock, named; each time's tooltip gives it in UTC. */}
+                  <th style={{ width: 148 }}>Time <ZoneLabel /></th>
                   <th style={{ width: 190 }}>Actor</th>
                   <th>Action</th>
                   <th>Target</th>
                 </tr>
               </thead>
               {feed.items.map((event) => {
-                const { date, time } = eventDateParts(event.time);
                 const open = () => setSelected(event);
                 return (
                   // One <tbody> per event so the stacked changes belong to their
@@ -255,10 +256,10 @@ export function AuditView() {
                     >
                       <td>
                         <div className="gw-mono" style={{ fontSize: 12 }}>
-                          {date}
+                          <LocalTime t={event.time} format="date" />
                         </div>
                         <div className="gw-mono" style={{ fontSize: 11, color: "var(--text-3)" }}>
-                          {time}
+                          <LocalTime t={event.time} format="timeSec" />
                         </div>
                       </td>
                       <td>
@@ -279,7 +280,7 @@ export function AuditView() {
                         </div>
                         {event.note ? (
                           <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 2 }}>
-                            {event.note}
+                            <NoteText text={event.note} />
                           </div>
                         ) : null}
                       </td>

@@ -4,7 +4,7 @@ import useSWR from "swr";
 import { useState } from "react";
 import { signOut } from "next-auth/react";
 import { apiGet, apiSend } from "@/lib/api-client";
-import { relativeTime } from "@/components/team/bits";
+import { LocalTime } from "@/components/gateway/LocalTime";
 
 interface SessionsResponse {
   sessions: Array<{
@@ -81,7 +81,8 @@ export function SessionsCard() {
                 {s.current && <span style={{ color: "var(--brand)", fontWeight: 600 }}> · this device</span>}
               </div>
               <div className="gw-mono" style={{ fontSize: 11, color: "var(--text-3)", marginTop: 2 }}>
-                {s.ip ?? "—"} · signed in {relativeTime(s.createdAt)} · seen {relativeTime(s.lastSeenAt)}
+                {s.ip ?? "—"} · signed in <LocalTime t={s.createdAt} format="relative" /> · seen{" "}
+                <LocalTime t={s.lastSeenAt} format="relative" />
               </div>
             </div>
             {!s.current && (

@@ -1,6 +1,9 @@
 "use client";
 
+import { Fragment } from "react";
 import type { AuditChangeRecord, AuditEventRecord } from "@sr/shared";
+import { LocalTime } from "@/components/gateway/LocalTime";
+import { splitInstants } from "@/lib/datetime";
 
 /**
  * Pieces of one audit row.
@@ -10,21 +13,17 @@ import type { AuditChangeRecord, AuditEventRecord } from "@sr/shared";
  * nobody alters a row through the product including an admin.
  */
 
-/**
- * `2026-08-09 14:22:07Z`, exactly as the ticket writes it.
- *
- * UTC, to the second, and never localised. A security record read by two people
- * in different places has to mean the same thing to both of them, and "14:22"
- * that silently shifts by an hour is worse than a format someone has to think
- * about once.
- */
-export function eventTime(iso: string): string {
-  return `${iso.slice(0, 10)} ${iso.slice(11, 19)}Z`;
-}
-
-/** Same instant, split for a two-line cell. */
-export function eventDateParts(iso: string): { date: string; time: string } {
-  return { date: iso.slice(0, 10), time: `${iso.slice(11, 19)}Z` };
+/** A note as it was written, with any instant in it (an invitation's expiry)
+ *  on the reader's clock like every other time on the page. The export keeps
+ *  the note's own ISO UTC text. */
+export function NoteText({ text }: { text: string }) {
+  return (
+    <>
+      {splitInstants(text).map((part, i) =>
+        i % 2 === 1 ? <LocalTime key={i} t={part} format="dateTime" /> : <Fragment key={i}>{part}</Fragment>,
+      )}
+    </>
+  );
 }
 
 const GROUP_TONE: Record<string, string> = {
@@ -117,9 +116,9 @@ export function AuditDetail({ event }: { event: AuditEventRecord }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
         <Field label="Time">
-          <span className="gw-mono" style={{ fontSize: 12 }}>
-            {eventTime(event.time)}
-          </span>
+          {/* In full, with its zone: the sheet stands apart from the table and
+              its header. The tooltip gives the instant in UTC. */}
+          <LocalTime t={event.time} format="dateTime" className="gw-mono" style={{ fontSize: 12 }} />
         </Field>
         <Field label="Source">{event.source}</Field>
         <Field label="Actor">
@@ -147,7 +146,7 @@ export function AuditDetail({ event }: { event: AuditEventRecord }) {
         </Field>
       </div>
 
-      {event.note ? <Field label="Note">{event.note}</Field> : null}
+      {event.note ? <Field label="Note"><NoteText text={event.note} /></Field> : null}
 
       {event.changes.length > 0 ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>

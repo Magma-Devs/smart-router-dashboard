@@ -354,6 +354,8 @@ apps/web/                 @sr/web — Next.js 16 App Router (:3000)
     lib/poll.ts         the poll cadence per window + the idle gate's rules (pure)
     lib/idle-store.ts   the idle gate's clock: page activity → SWR's isPaused
     lib/api-client.ts   base URL resolved ONCE per session from /api/config
+    lib/datetime.ts     every date and time shown: one format, in the reader's
+                        zone (`<LocalTime>` renders one); CSV + API stay ISO UTC
     styles/globals.css  design tokens + gw-* classes, 1:1 from the prototype
 ```
 
