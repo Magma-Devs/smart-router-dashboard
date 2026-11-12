@@ -23,7 +23,8 @@
  * The relay cache ("Cached") is not a provider here.
  *
  * Pure: the list's rows in, groups out. It groups only the rows the list has
- * loaded - the newest 300 - and the view says which minutes they cover.
+ * loaded - the newest 300 a read - and the view says which times those
+ * cover (`coveredSpan`).
  */
 import { explainRouterError, type ErrorRequestRow } from "@sr/shared";
 import { blankIds, codeWords, errorLabel, errorType, isCache } from "@/components/metrics/request-log";
@@ -147,4 +148,29 @@ export function groupBuckets(rows: readonly { time: number }[], fromMs: number, 
     out[Math.min(out.length - 1, Math.max(0, k))]!++;
   }
   return out;
+}
+
+/**
+ * The times the list's loaded requests cover, unix ms - what the grouped view
+ * says it groups, and the span its bars share. From where the reads on
+ * screen begin (`readFrom`, while older requests are left to load; else the
+ * start of the times read) to the end of the times read, widened to any
+ * request outside them: a request whose lines straddle a read's lower end
+ * starts before it. Without the times read, the requests' own; null when
+ * there is nothing to go by.
+ */
+export function coveredSpan(
+  times: readonly number[],
+  read: { startMs: number; endMs: number } | null | undefined,
+  readFrom: number | null,
+): { fromMs: number; toMs: number } | null {
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const t of times) {
+    if (!Number.isFinite(t)) continue;
+    lo = Math.min(lo, t);
+    hi = Math.max(hi, t);
+  }
+  if (read) return { fromMs: Math.min(readFrom ?? read.startMs, lo), toMs: Math.max(read.endMs, hi) };
+  return lo <= hi ? { fromMs: lo, toMs: hi } : null;
 }

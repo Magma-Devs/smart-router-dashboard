@@ -20,7 +20,7 @@ import { Tip } from "@/components/gateway/Tip";
 import { TT } from "@/lib/tooltips";
 import { fmtComma } from "@/lib/format";
 import { linkRequest, requestFromUrl } from "@/lib/request-in-url";
-import { groupBuckets, groupErrors, type ErrorGroup } from "@/lib/error-groups";
+import { coveredSpan, groupBuckets, groupErrors, type ErrorGroup } from "@/lib/error-groups";
 import {
   appGot,
   customerOptions,
@@ -362,7 +362,9 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
   const openGroup = groupKey ? groups.find((g) => g.key === groupKey) ?? null : null;
   // An opened group lists its own requests; a filter that empties it shows the rest again.
   const rows = openGroup ? openGroup.rows : filtered;
-  const showGroups = grouped && !openGroup && rows.length > 0;
+  // The times the loaded requests cover: what the grouped view says it groups.
+  const span = coveredSpan(allRows.map((r) => r.time), head?.range, log.readFrom);
+  const showGroups = grouped && !openGroup && rows.length > 0 && span !== null;
   /* Under the opening filter, recovered requests are hidden: a provider the
      router kept working around is still worth a line. */
   const hiddenRecovered = result === REACHED ? narrowed.filter((r) => r.result === "recovered") : [];
@@ -507,8 +509,9 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
           <button className="gw-btn" style={{ marginLeft: "auto", padding: "3px 10px", fontSize: 11.5 }} onClick={() => { setGroupKey(null); setPage(0); }}>← All groups</button>
         </div>
       )}
-      {showGroups ? (
+      {showGroups && span ? (
         <ErrorGroupsTable groups={groups} rows={rows} partial={log.more} windowLabel={range ? null : WINDOWS[win].label}
+          span={span}
           hiddenRecovered={hiddenRecovered.length} hiddenRecoveredGroups={hiddenRecovered.length ? groupErrors(hiddenRecovered).length : 0}
           onShowRecovered={() => { setResult(ALL); setPage(0); }}
           onOpen={(k) => { setGroupKey(k); setPage(0); setOpen(null); }} />
@@ -626,7 +629,13 @@ function groupTitle(g: ErrorGroup): string {
   return `${g.errorLabel.charAt(0).toUpperCase()}${g.errorLabel.slice(1)}${who}${on}`;
 }
 
-const timeOf = (ms: number, secs = false) => new Date(ms).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", ...(secs ? { second: "2-digit" } : {}), hour12: false });
+/** A time on the groups' span, with its date as every time on the list has
+ *  (a window spans days), unless the time before it said the same day. */
+const timeOf = (ms: number, secs: boolean, after?: number) =>
+  new Date(ms).toLocaleString("en-US", {
+    ...(after != null && new Date(after).toDateString() === new Date(ms).toDateString() ? {} : { month: "short", day: "numeric" }),
+    hour: "2-digit", minute: "2-digit", ...(secs ? { second: "2-digit" } : {}), hour12: false,
+  });
 
 /** How long a span is, in words: "51 seconds", "4 minutes", "3 hours". */
 function spanWords(ms: number): string {
@@ -646,9 +655,11 @@ const BUCKETS = 24;
  * it. The bars share one time span, so a burst shows as a burst and two at
  * the same minute line up. A click opens the group's requests in the list.
  */
-function ErrorGroupsTable({ groups, rows, partial, windowLabel, hiddenRecovered, hiddenRecoveredGroups, onShowRecovered, onOpen }: {
+function ErrorGroupsTable({ groups, rows, span, partial, windowLabel, hiddenRecovered, hiddenRecoveredGroups, onShowRecovered, onOpen }: {
   groups: ErrorGroup[];
   rows: ErrorRequestRow[];
+  /** The times the loaded requests cover (`coveredSpan`): what the first line states and the bars share. */
+  span: { fromMs: number; toMs: number };
   /** The list holds only the newest requests of the period: the groups cover those. */
   partial: boolean;
   /** The page window's words ("12 hours"), or null on picked times. */
@@ -659,11 +670,10 @@ function ErrorGroupsTable({ groups, rows, partial, windowLabel, hiddenRecovered,
   onShowRecovered: () => void;
   onOpen: (key: string) => void;
 }) {
-  const times = rows.map((r) => r.time).filter(Number.isFinite);
-  const from = Math.min(...times);
-  const to = Math.max(...times);
+  const { fromMs: from, toMs: to } = span;
   const short = to - from < 15 * 60_000;
-  const peak = Math.max(1, ...groups.map((g) => Math.max(...groupBuckets(g.rows, from, to, BUCKETS))));
+  const bars = new Map(groups.map((g) => [g.key, groupBuckets(g.rows, from, to, BUCKETS)]));
+  const peak = Math.max(1, ...[...bars.values()].map((b) => Math.max(...b)));
   return (
     <div>
       {/* What the groups cover, before anything else: the list reads the newest
@@ -672,7 +682,7 @@ function ErrorGroupsTable({ groups, rows, partial, windowLabel, hiddenRecovered,
         {partial && <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--warn)", flexShrink: 0 }} />}
         <span>
           {fmtComma(rows.length)} request{rows.length === 1 ? "" : "s"} in {fmtComma(groups.length)} group{groups.length === 1 ? "" : "s"},
-          {" "}from {timeOf(from, short)} to {timeOf(to, short)}
+          {" "}from {timeOf(from, short)} to {timeOf(to, short, from)}
           {partial ? <> - the newest {spanWords(to - from)}{windowLabel ? ` of the last ${windowLabel}` : " of the times you picked"}. Load older requests below the list to group more.</> : "."}
         </span>
       </div>
@@ -690,13 +700,13 @@ function ErrorGroupsTable({ groups, rows, partial, windowLabel, hiddenRecovered,
               <th>Error</th>
               <th>Caused by</th>
               <th style={{ textAlign: "right" }}>Requests</th>
-              <th>When <span style={{ fontWeight: 400, color: "var(--text-4)", textTransform: "none", letterSpacing: 0 }}>{timeOf(from, short)} - {timeOf(to, short)}</span></th>
+              <th>When <span style={{ fontWeight: 400, color: "var(--text-4)", textTransform: "none", letterSpacing: 0 }}>{timeOf(from, short)} - {timeOf(to, short, from)}</span></th>
               <th>Client</th>
             </tr>
           </thead>
           <tbody>
             {groups.map((g) => {
-              const bars = groupBuckets(g.rows, from, to, BUCKETS);
+              const counts = bars.get(g.key) ?? [];
               const open = () => onOpen(g.key);
               const methods = g.methods.length === 1 ? g.methods[0]!.method : `${g.methods.length} methods`;
               return (
@@ -722,7 +732,7 @@ function ErrorGroupsTable({ groups, rows, partial, windowLabel, hiddenRecovered,
                   <td className="gw-tnum" style={{ textAlign: "right", fontSize: 14, fontWeight: 600, color: "var(--text)" }}>{fmtComma(g.count)}</td>
                   <td>
                     <div style={{ display: "flex", alignItems: "flex-end", gap: 1, height: 20, borderBottom: "1px solid var(--line)" }} aria-hidden>
-                      {bars.map((b, k) => (
+                      {counts.map((b, k) => (
                         <span key={k} style={{ flex: 1, height: b ? Math.max(3, Math.round((b / peak) * 20)) : 0, background: b ? "var(--text-3)" : "transparent", opacity: 0.7, borderRadius: 1 }} />
                       ))}
                     </div>
