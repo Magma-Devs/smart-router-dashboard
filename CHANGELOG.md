@@ -5,6 +5,27 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.60.4]
+
+### Fixed
+
+- **The cache card reads again on a deployment with a metrics scope.** With
+  `METRICS_SCOPE_LABEL` / `METRICS_SCOPE_VALUE` set, the scope was also
+  spliced into the label `cache_tier`, because its name starts like a cache
+  metric. The store refused the query (400), so the hero's cache offload
+  figure came back empty. Label names inside a selector, and in `by`,
+  `without`, `on`, `ignoring`, `group_left` and `group_right` lists, are now
+  left as written.
+- **The scope reads PromQL the way Prometheus does** (MAG-5260). Queries
+  through the raw `/api/metrics/query` passthrough can carry shapes the
+  builders never emit. The walker that adds the scope now treats tabs, line
+  breaks and `#` comments as blanks, matches keywords in any case, and
+  scopes a nameless selector after `and`, `or`, `unless`, `atan2`, `bool`,
+  `group_left` or `group_right`. Before, a label list after a line break or
+  an upper-case `BY` turned a label into a metric and the store refused the
+  query, and a quote or a brace inside a comment, or a `{…}` after one of
+  those keywords, could leave a selector without the scope.
+
 ## [0.60.3]
 
 ### Changed

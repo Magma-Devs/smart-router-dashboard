@@ -101,6 +101,96 @@ describe("applyScope", () => {
     );
   });
 
+  it("never reads a label name as a metric - the cache_tier matcher under the deployment scope", () => {
+    // `cache_tier` starts like a cache metric. Read as one, it became
+    // `cache_tier{zone="eu-west"}="primary"`, which the store refuses, so the
+    // cache offload card read empty on every scoped deployment.
+    const ZONE: MetricScope = { label: "zone", value: "eu-west" };
+    const q = 'sum(increase(smartrouter_cache_success_total[300s])) / sum(increase(smartrouter_cache_requests_total{cache_tier="primary"}[300s]))';
+    const scoped = 'sum(increase(smartrouter_cache_success_total{zone="eu-west"}[300s])) / sum(increase(smartrouter_cache_requests_total{zone="eu-west",cache_tier="primary"}[300s]))';
+    expect(applyScope(q, ZONE, { cache: true })).toBe(scoped);
+    // The router scope stacked on top: both matchers, the label still a label.
+    expect(applyScope(scoped, SCOPE)).toBe(
+      `sum(increase(smartrouter_cache_success_total{${M},zone="eu-west"}[300s])) / sum(increase(smartrouter_cache_requests_total{${M},zone="eu-west",cache_tier="primary"}[300s]))`,
+    );
+    // The same label in a nameless selector and in an unscoped metric's.
+    expect(applyScope('count({__name__="smartrouter_cache_requests_total",cache_tier="secondary"})', ZONE, { cache: true })).toBe(
+      'count({zone="eu-west",__name__="smartrouter_cache_requests_total",cache_tier="secondary"})',
+    );
+    expect(applyScope('up{cache_tier="primary"}', ZONE, { cache: true })).toBe('up{cache_tier="primary"}');
+  });
+
+  it("never reads a name in a by / without / on / ignoring / group_left list as a metric", () => {
+    const ZONE: MetricScope = { label: "zone", value: "eu-west" };
+    expect(applyScope("sum by (cache_tier, spec) (rate(cache_total_hits[5m]))", ZONE, { cache: true })).toBe(
+      'sum by (cache_tier, spec) (rate(cache_total_hits{zone="eu-west"}[5m]))',
+    );
+    expect(applyScope("sum without (cache_tier) (smartrouter_cache_requests_total)", ZONE, { cache: true })).toBe(
+      'sum without (cache_tier) (smartrouter_cache_requests_total{zone="eu-west"})',
+    );
+    expect(applyScope("a_metric * on (cache_tier) group_left (cache_tier) cache_total_hits", ZONE, { cache: true })).toBe(
+      'a_metric * on (cache_tier) group_left (cache_tier) cache_total_hits{zone="eu-west"}',
+    );
+    expect(applyScope("rpc_endpoint_x / ignoring (rpc_endpoint_label) rpc_endpoint_y", SCOPE)).toBe(
+      `rpc_endpoint_x{${M}} / ignoring (rpc_endpoint_label) rpc_endpoint_y{${M}}`,
+    );
+  });
+
+  it("a brace or quote inside a matcher's value doesn't end the matcher list", () => {
+    const ZONE: MetricScope = { label: "zone", value: "eu-west" };
+    expect(applyScope('cache_total_hits{method=~"a}|cache_x"} + cache_total_hits', ZONE, { cache: true })).toBe(
+      'cache_total_hits{zone="eu-west",method=~"a}|cache_x"} + cache_total_hits{zone="eu-west"}',
+    );
+    expect(applyScope('smartrouter_x{m="say \\"hi\\" }"} or smartrouter_y', SCOPE)).toBe(
+      `smartrouter_x{${M},m="say \\"hi\\" }"} or smartrouter_y{${M}}`,
+    );
+  });
+
+  it("reads blanks and keyword case the way PromQL does", () => {
+    // Tabs, line breaks and comments separate tokens like spaces do, and
+    // keywords are case-insensitive. Read any other way, `by\n(cache_tier)`
+    // is no label list and `cache_tier` takes the scope as a cache metric.
+    const ZONE: MetricScope = { label: "zone", value: "eu-west" };
+    const Z = 'zone="eu-west"';
+    const zoned = (q: string) => applyScope(q, ZONE, { cache: true });
+    expect(zoned("sum by\n(cache_tier) (cache_total_hits)")).toBe(`sum by\n(cache_tier) (cache_total_hits{${Z}})`);
+    expect(zoned("sum(cache_total_hits) without\t(cache_tier)")).toBe(`sum(cache_total_hits{${Z}}) without\t(cache_tier)`);
+    expect(zoned("sum by # tiers\n(cache_tier) (cache_total_hits)")).toBe(`sum by # tiers\n(cache_tier) (cache_total_hits{${Z}})`);
+    expect(zoned("sum BY (cache_tier) (cache_total_hits) / On (cache_tier) Group_Right (spec) cache_total_hits")).toBe(
+      `sum BY (cache_tier) (cache_total_hits{${Z}}) / On (cache_tier) Group_Right (spec) cache_total_hits{${Z}}`,
+    );
+    // A metric and its selector across a line break or a comment are one selector.
+    expect(zoned('cache_total_hits\r\n{cache_tier="primary"}')).toBe(`cache_total_hits\r\n{${Z},cache_tier="primary"}`);
+    expect(applyScope('smartrouter_x # per tier\n{cache_tier="primary"}', SCOPE)).toBe(
+      `smartrouter_x # per tier\n{${M},cache_tier="primary"}`,
+    );
+    expect(applyScope("smartrouter_x{\t}", SCOPE)).toBe(`smartrouter_x{${M}\t}`);
+  });
+
+  it("copies a comment as written - a quote or a brace in it opens nothing", () => {
+    expect(applyScope("vector(0) # it's\n+ count(smartrouter_overall_health)", SCOPE)).toBe(
+      `vector(0) # it's\n+ count(smartrouter_overall_health{${M}})`,
+    );
+    expect(applyScope("vector(0) # x{\n+ count(smartrouter_overall_health) # }", SCOPE)).toBe(
+      `vector(0) # x{\n+ count(smartrouter_overall_health{${M}}) # }`,
+    );
+    // Nor does a `}` or `)` in a comment inside a matcher list or a label list end it.
+    const ZONE: MetricScope = { label: "zone", value: "eu-west" };
+    expect(applyScope('smartrouter_x{spec="a" # }\n, cache_tier="p"} + smartrouter_y', ZONE, { cache: true })).toBe(
+      'smartrouter_x{zone="eu-west",spec="a" # }\n, cache_tier="p"} + smartrouter_y{zone="eu-west"}',
+    );
+    expect(applyScope("sum by (spec # )\n, cache_tier) (cache_total_hits)", ZONE, { cache: true })).toBe(
+      'sum by (spec # )\n, cache_tier) (cache_total_hits{zone="eu-west"})',
+    );
+  });
+
+  it("scopes the nameless selector after and / or / unless / atan2 / bool / group_left / group_right", () => {
+    // The `{` there opens the right operand, not a selector of the keyword's own.
+    for (const op of ["and", "or", "unless", "atan2", "> bool", "* on (spec) group_left", "* ignoring (spec) group_right", "AND"]) {
+      expect(applyScope(`up ${op} {__name__="smartrouter_x"}`, SCOPE)).toBe(`up ${op} {${M},__name__="smartrouter_x"}`);
+    }
+  });
+
   it("leaves an unscoped metric's own selector alone", () => {
     // The `{` after a metric the scope skips is that metric's selector, not
     // a nameless `{__name__=…}` one — the trap a stacked scope walks into.

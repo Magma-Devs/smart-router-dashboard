@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { MetricsService } from "../services/metrics.js";
 import { PrometheusClient, RANGE_REUSE_MAX_MS, RANGE_SETTLE_MS, buildAuthHeaders, type PromLogger } from "../services/prometheus-client.js";
 
 /**
@@ -117,6 +118,20 @@ describe("PrometheusClient deployment scope (METRICS_SCOPE_*)", () => {
     expect(sentQuery(calls, 0)).toBe('increase(cache_total_hits{zone="eu-west"}[300s])');
     // Router scope on top: still only the zone on the cache metric.
     expect(sentQuery(calls, 1)).toBe('increase(cache_total_hits{zone="eu-west"}[300s])');
+  });
+
+  it("sends the hero's cache offload read with cache_tier still a label", async () => {
+    // The walker read `cache_tier` as a cache metric and spliced the zone into
+    // it - `cache_tier{zone="eu-west"}="primary"` - which the store refuses
+    // (400), so the cache card read empty on every scoped deployment.
+    const calls = captureFetch();
+    const client = new PrometheusClient(BASE, 1000, null, {}, { baseScope: ZONE, cacheTtlMs: 0 });
+    await new MetricsService(client).dashboardSummary("6h");
+    const sent = calls.map((_, i) => sentQuery(calls, i) ?? "");
+    const tiered = sent.filter((q) => q.includes("cache_tier"));
+    expect(tiered.length).toBeGreaterThan(0);
+    for (const q of tiered) expect(q).toContain('smartrouter_cache_requests_total{zone="eu-west",cache_tier="primary"}');
+    expect(sent.filter((q) => q.includes("cache_tier{"))).toEqual([]);
   });
 
   it("survives withScope — the router matcher stacks on top of it", async () => {
