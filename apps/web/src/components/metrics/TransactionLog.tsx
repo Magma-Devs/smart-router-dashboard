@@ -37,6 +37,7 @@ import {
   FilterSelect,
   NewRowsStrip,
   useHeldRows,
+  TimeColumnHead,
   WhenCell,
   stickyListHeader,
   useListHeadHeight,
@@ -372,7 +373,7 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
             </colgroup>
             <thead>
               <tr>
-                <th>Time · customer</th>
+                <th><TimeColumnHead /></th>
                 <th>Chain · method</th>
                 <th>Sent to</th>
                 <th>Result</th>

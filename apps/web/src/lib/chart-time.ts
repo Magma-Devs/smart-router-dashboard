@@ -3,6 +3,7 @@
    name says ms. */
 import type { ChartGrid } from "@sr/shared";
 import type { XTick } from "@/components/gateway/charts";
+import { fmtDay, fmtDayTime, fmtTime } from "@/lib/datetime";
 
 /** Every point of a grid, unix seconds: the chart's time axis. */
 export function gridTimes(grid: ChartGrid | undefined): number[] {
@@ -11,9 +12,6 @@ export function gridTimes(grid: ChartGrid | undefined): number[] {
   for (let t = grid.start; t <= grid.end; t += grid.stepSec) out.push(t);
   return out;
 }
-
-export const dayOf = (ms: number) => new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-export const hhmm = (ms: number) => new Date(ms).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
 
 /** Tick spacings for a time axis: the clock's own, a minute to a week. */
 const TICK_STEPS = [60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600, 43200, 86400, 172800, 259200, 604800];
@@ -31,7 +29,7 @@ export function timeTicks(dom: [number, number] | undefined): XTick[] | undefine
   for (let t = Math.ceil((from + tz) / step) * step - tz; t <= to; t += step) {
     const d = new Date(t * 1000);
     const midnight = d.getHours() === 0 && d.getMinutes() === 0;
-    out.push({ at: t, label: step >= 86400 || (span > 86400 && midnight) ? dayOf(t * 1000) : hhmm(t * 1000) });
+    out.push({ at: t, label: step >= 86400 || (span > 86400 && midnight) ? fmtDay(t * 1000) : fmtTime(t * 1000) });
   }
   return out;
 }
@@ -45,6 +43,6 @@ export const barSpanWords = (sec: number) =>
 export function barWords(endSec: number, stepSec: number, asOf: number): string {
   const from = (endSec - stepSec) * 1000;
   const to = Math.min(endSec, asOf) * 1000;
-  const end = endSec > asOf ? "now" : dayOf(to) === dayOf(from) || stepSec < 86400 ? hhmm(to) : `${dayOf(to)} ${hhmm(to)}`;
-  return `${dayOf(from)}, ${hhmm(from)} - ${end}`;
+  const end = endSec > asOf ? "now" : fmtDay(to) === fmtDay(from) || stepSec < 86400 ? fmtTime(to) : fmtDayTime(to);
+  return `${fmtDayTime(from)} - ${end}`;
 }

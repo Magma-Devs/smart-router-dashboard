@@ -15,7 +15,8 @@ import { ColumnChart, type Layer } from "@/components/gateway/charts";
 import { SkelLine } from "@/components/gateway/Skel";
 import { Tip } from "@/components/gateway/Tip";
 import { useApi } from "@/hooks/use-api";
-import { barSpanWords, barWords, gridTimes, hhmm, timeTicks } from "@/lib/chart-time";
+import { barSpanWords, barWords, gridTimes, timeTicks } from "@/lib/chart-time";
+import { fmtTime } from "@/lib/datetime";
 import { fmtComma } from "@/lib/format";
 import { TT } from "@/lib/tooltips";
 
@@ -106,7 +107,7 @@ export function TransactionsChart({ win, specQ, routerIdQ, exactRange }: {
         </div>
         {data.partialFrom != null && (
           <div style={{ marginTop: 6, paddingLeft: PAD_X, fontSize: 11, color: "var(--text-4)" }}>
-            Transactions since {hhmm(data.partialFrom * 1000)} aren&apos;t counted yet: the store records them a couple of minutes late, and the logs didn&apos;t fill them in.
+            Transactions since {fmtTime(data.partialFrom * 1000)} aren&apos;t counted yet: the store records them a couple of minutes late, and the logs didn&apos;t fill them in.
           </div>
         )}
       </>

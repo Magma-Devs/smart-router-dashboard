@@ -32,6 +32,7 @@ import {
   FilterSelect,
   NewRowsStrip,
   useHeldRows,
+  TimeColumnHead,
   WhenCell,
   stickyListHeader,
   useListHeadHeight,
@@ -540,7 +541,7 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
           </colgroup>
           <thead>
             <tr>
-              <th>Time · customer</th>
+              <th><TimeColumnHead /></th>
               <th>Chain · method</th>
               <th>What happened</th>
               <th>Result</th>

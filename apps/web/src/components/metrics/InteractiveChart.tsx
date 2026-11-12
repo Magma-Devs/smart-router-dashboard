@@ -5,6 +5,7 @@
 
 import { useState } from "react";
 import { niceScale, useChartDims } from "@/components/gateway/charts";
+import { fmtDay, fmtDayTime, fmtTime } from "@/lib/datetime";
 
 export const RO_WIN_MS = {
   "5m": 3e5, "15m": 9e5, "30m": 18e5, "1h": 36e5, "3h": 108e5, "6h": 216e5,
@@ -19,11 +20,12 @@ export function roTimes(win: string, n: number): Date[] {
   return Array.from({ length: n }, (_, i) => new Date(now - (n - 1 - i) * step));
 }
 
+/** An axis label: the time across a day, the date and time across a week, the date beyond. */
 export function roFmtTime(d: Date, win: string): string {
   const dur = (RO_WIN_MS as Record<string, number>)[win] || RO_WIN_MS["1d"];
-  if (dur <= 864e5) return d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
-  if (dur <= 6048e5) return d.toLocaleString("en-US", { weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false });
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  if (dur <= 864e5) return fmtTime(d);
+  if (dur <= 6048e5) return fmtDayTime(d);
+  return fmtDay(d);
 }
 
 export interface InteractiveChartTarget {
@@ -124,7 +126,7 @@ export function InteractiveChart({
       </svg>
       {hov != null && (
         <div style={{ position: "absolute", top: 6, left: cx(hov), transform: `translateX(${tipRight ? "-108%" : "8px"})`, pointerEvents: "none", background: "var(--surface)", border: "1px solid var(--line-2)", borderRadius: 6, padding: "5px 9px", whiteSpace: "nowrap", boxShadow: "0 6px 18px rgba(0,0,0,0.35)" }}>
-          <div style={{ color: "var(--text-4)", fontSize: 10, fontFamily: "var(--font-mono)" }}>{roFmtTime(times[hov]!, win)}</div>
+          <div style={{ color: "var(--text-4)", fontSize: 10, fontFamily: "var(--font-mono)" }}>{fmtDayTime(times[hov]!)}</div>
           <div className="gw-mono gw-tnum" style={{ color: "var(--text)", fontWeight: 700, fontSize: 13 }}>{fmt(values[hov]!)}</div>
         </div>
       )}

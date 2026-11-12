@@ -25,8 +25,9 @@ import {
 } from "@sr/shared";
 import { CopyButton } from "@/components/gateway/CopyButton";
 import { ExplorerBlockLink } from "@/components/gateway/ExplorerLink";
+import { LocalTime } from "@/components/gateway/LocalTime";
 import { fmtComma } from "@/lib/format";
-import { codeWords, fmtTook, fmtWhen, isCache, providerInWords, providerName, realCode, RequestLogsLink } from "./request-log";
+import { codeWords, fmtTook, isCache, providerInWords, providerName, realCode, RequestLogsLink } from "./request-log";
 
 /** What each source means, on hover. */
 export const SOURCE_HINTS: Record<ErrorSource, string> = {
@@ -318,7 +319,7 @@ export function RequestBreakdown(p: BreakdownProps) {
                   router also logs aren't shown: behind the gateway the first is the gateway's own ID for every request. */}
               <KV label="Smart Router request ID"><span title="The ID Smart Router gives every request: its GUID in the router's logs, and the Lava-Guid header on the reply" style={{ display: "contents" }}><Id value={p.guid} /></span><RequestLogsLink id={p.guid} startMs={p.time} tookMs={p.tookMs} /></KV>
               <KV label="Chain"><span title={p.chainTitle}>{p.chain}</span></KV>
-              <KV label="Time"><span className="gw-mono gw-tnum">{fmtWhen(p.time)}</span></KV>
+              <KV label="Time"><LocalTime t={p.time} format="dateTime" className="gw-mono gw-tnum" /></KV>
               {facts.customer && <KV label="Customer"><Id value={facts.customer} /></KV>}
               {facts.requestedBlock != null && <KV label="Requested block"><span className="gw-mono gw-tnum">{block(facts.requestedBlock)}</span></KV>}
               {facts.seenBlock != null && <KV label="Router's latest block"><span className="gw-mono gw-tnum">{block(facts.seenBlock)}</span></KV>}

@@ -27,7 +27,8 @@ import { ColumnChart, LineChart, niceScale, type ChartHover, type Layer, type Se
 import { useApi } from "@/hooks/use-api";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 import { fmtComma } from "@/lib/format";
-import { barSpanWords, dayOf, gridTimes, hhmm, timeTicks } from "@/lib/chart-time";
+import { barSpanWords, gridTimes, timeTicks } from "@/lib/chart-time";
+import { fmtDay, fmtDayTime, fmtTime } from "@/lib/datetime";
 import type { ErrorsJump } from "../ErrorsBreakdown";
 import { PMPanel } from "./PMPanel";
 
@@ -56,8 +57,7 @@ function onGrid(times: number[], grid: ChartGrid | undefined, series: TimePoint[
   });
 }
 
-const whenOf = (t: number | undefined) =>
-  t ? new Date(t * 1000).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }) : "";
+const whenOf = (t: number | undefined) => (t ? fmtDayTime(t * 1000) : "");
 
 /** The value at quantile q of some numbers (0 when there are none). */
 const quantile = (xs: number[], q: number) => {
@@ -242,8 +242,8 @@ export function PMBody({ pm, detail, name, timeWindow, onOpenErrors }: {
   const ticks = timeTicks(dom);
   const barWords = (i: number) => {
     const from = barFrom(i), to = barTo(i);
-    const end = barFilling(i) ? "now" : dayOf(to) === dayOf(from) || barSec < 86400 ? hhmm(to) : `${dayOf(to)} ${hhmm(to)}`;
-    return `${dayOf(from)}, ${hhmm(from)} - ${end}`;
+    const end = barFilling(i) ? "now" : fmtDay(to) === fmtDay(from) || barSec < 86400 ? fmtTime(to) : fmtDayTime(to);
+    return `${fmtDayTime(from)} - ${end}`;
   };
 
   /* The errors legend: the window's totals. */

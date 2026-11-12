@@ -20,6 +20,7 @@ import { ChartLegend, StackedAreaChart, type Layer } from "@/components/gateway/
 import { Tip } from "@/components/gateway/Tip";
 import { Skel } from "@/components/gateway/Skel";
 import { roFmtTime } from "@/components/metrics/InteractiveChart";
+import { fmtDayTime } from "@/lib/datetime";
 
 /** The Overview's upstream colours, in the same order. */
 const PALETTE = ["#60a5fa", "#22c55e", "#f59e0b", "#a78bfa", "#f472b6", "#2dd4bf"];
@@ -87,7 +88,7 @@ export function ChainTrafficByProvider({ spec, timeWindow }: { spec: string; tim
           <StackedAreaChart key={mode} layers={mode === "share" ? view.shareLayers : view.layers} normalized={mode === "share"}
             height={HEIGHT} xLabels={view.labels} id={`mix-${spec}-${mode}`}
             hover={{
-              title: (i) => roFmtTime(new Date((view.times[i] ?? 0) * 1000), timeWindow),
+              title: (i) => fmtDayTime((view.times[i] ?? 0) * 1000),
               fmt: mode === "share" ? (v) => `${pct(v)}%` : fmtRate,
               total: mode === "rate",
             }} />

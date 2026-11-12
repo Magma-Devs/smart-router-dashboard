@@ -15,6 +15,7 @@ import { Tip } from "@/components/gateway/Tip";
 import { SkelValue, SkelLine } from "@/components/gateway/Skel";
 import { TT } from "@/lib/tooltips";
 import { fmtNum } from "@/lib/format";
+import { fmtDay } from "@/lib/datetime";
 
 export function HeroPanel({ tw, spec }: { tw: MetricWindow; spec?: string | null }) {
   const { scopeQ } = useFilters();
@@ -43,7 +44,7 @@ export function HeroPanel({ tw, spec }: { tw: MetricWindow; spec?: string | null
   const failedN = failed.data?.available ? failed.data.value : null;
   // Recorded counts that start inside the window count from there.
   const failedSince = failed.data?.available && failed.data.since
-    ? new Date(failed.data.since).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+    ? fmtDay(failed.data.since)
     : null;
   // "Requests served" counts the requests the router answered; the ones it
   // gave up on aren't in it, so together they are every request - over the

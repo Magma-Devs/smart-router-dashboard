@@ -14,7 +14,9 @@ import { Fragment, useCallback, useState } from "react";
 import { buildChainMetaByIndex, explorerTxUrl, guidMintedSecond, type LogUnavailable, type RelayAttempt } from "@sr/shared";
 import { SkelRows, type SkelCol } from "@/components/gateway/Skel";
 import { CopyButton } from "@/components/gateway/CopyButton";
+import { LocalTime, ZoneLabel } from "@/components/gateway/LocalTime";
 import { useGrafanaUrl } from "@/hooks/use-grafana-url";
+import { fmtDay, fmtTime, toLocalInputValue } from "@/lib/datetime";
 import { fmtComma } from "@/lib/format";
 import { requestLogsHref } from "@/lib/grafana-logs";
 
@@ -120,11 +122,6 @@ export function errorTypeOptions(rows: ErrorTyped[]): { key: string; label: stri
 
 export function hasErrorType(r: ErrorTyped, key: string): boolean {
   return errorTypesOf(r).has(key);
-}
-
-/** A row's time, always with its date: a list can span midnight, and a time alone doesn't say which day. */
-export function fmtWhen(ms: number): string {
-  return new Date(ms).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
 }
 
 export function fmtTook(ms: number | null): string {
@@ -253,19 +250,10 @@ export function retryKinds(row: { attempts: RelayAttempt[]; retried: boolean; ex
 /** An exact time range, unix ms. */
 export interface ExactRange { from: number; to: number }
 
-/** `<input type="datetime-local">` speaks local wall time, minutes only. */
-const toLocalInput = (ms: number) => {
-  const d = new Date(ms);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-};
-
-const dayWords = (ms: number) => new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-const clockWords = (ms: number) => new Date(ms).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
 /** "Sep 29, 16:10 - 16:20", or "Sep 28, 16:10 - Sep 29, 16:20" across midnight. */
 export function rangeWords(r: ExactRange): string {
-  const same = dayWords(r.from) === dayWords(r.to);
-  return `${dayWords(r.from)}, ${clockWords(r.from)} - ${same ? "" : `${dayWords(r.to)}, `}${clockWords(r.to)}`;
+  const same = fmtDay(r.from) === fmtDay(r.to);
+  return `${fmtDay(r.from)}, ${fmtTime(r.from)} - ${same ? "" : `${fmtDay(r.to)}, `}${fmtTime(r.to)}`;
 }
 
 /**
@@ -282,7 +270,7 @@ export function TimeRangeControl({ range, onChange, windowLabel, windowMs }: {
 }) {
   const [draft, setDraft] = useState<{ from: string; to: string } | null>(null);
   // The latest a time can be: read when editing starts, not on every render.
-  const [latest, setLatest] = useState(() => toLocalInput(Date.now()));
+  const [latest, setLatest] = useState(() => toLocalInputValue(Date.now()));
   const input: React.CSSProperties = { ...filterSelectStyle, width: 190, colorScheme: "dark light" };
   const link: React.CSSProperties = { border: "none", background: "none", color: "var(--brand)", cursor: "pointer", padding: 0, fontSize: 12, fontWeight: 600, fontFamily: "inherit" };
 
@@ -290,7 +278,7 @@ export function TimeRangeControl({ range, onChange, windowLabel, windowMs }: {
     return (
       <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12, color: "var(--text-3)" }}>
         Last {windowLabel}
-        <button style={link} onClick={() => { const now = Date.now(); setLatest(toLocalInput(now)); setDraft({ from: toLocalInput(now - windowMs), to: toLocalInput(now) }); }}>
+        <button style={link} onClick={() => { const now = Date.now(); setLatest(toLocalInputValue(now)); setDraft({ from: toLocalInputValue(now - windowMs), to: toLocalInputValue(now) }); }}>
           Pick exact times
         </button>
       </div>
@@ -300,12 +288,12 @@ export function TimeRangeControl({ range, onChange, windowLabel, windowMs }: {
     return (
       <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12, color: "var(--text-3)" }}>
         <span className="gw-mono" style={{ color: "var(--text)" }}>{rangeWords(range)}</span>
-        <button style={link} onClick={() => { setLatest(toLocalInput(Date.now())); setDraft({ from: toLocalInput(range.from), to: toLocalInput(range.to) }); }}>Change</button>
+        <button style={link} onClick={() => { setLatest(toLocalInputValue(Date.now())); setDraft({ from: toLocalInputValue(range.from), to: toLocalInputValue(range.to) }); }}>Change</button>
         <button style={link} onClick={() => onChange(null)}>Back to the last {windowLabel}</button>
       </div>
     );
   }
-  const shown = draft ?? { from: toLocalInput(range!.from), to: toLocalInput(range!.to) };
+  const shown = draft ?? { from: toLocalInputValue(range!.from), to: toLocalInputValue(range!.to) };
   const from = new Date(shown.from).getTime();
   const to = new Date(shown.to).getTime();
   // `latest` is a minute: a From inside it is still in the past.
@@ -333,16 +321,21 @@ export function TimeRangeControl({ range, onChange, windowLabel, windowMs }: {
 /** Clicks inside an opened row's own controls stay there: a copy or a link doesn't fold the row. */
 const keepClick = (e: React.MouseEvent) => e.stopPropagation();
 
-/** A row's time: the hour, and under it the date and the caller's project when the request named one. */
+/** The time column's header, with the reader's zone under it: the column is too narrow for both on one line. */
+export function TimeColumnHead() {
+  return <>Time · customer<ZoneLabel style={{ display: "block", marginTop: 3, color: "var(--text-4)" }} /></>;
+}
+
+/** A row's time: the hour, and under it the date (a list can span midnight)
+ *  and the caller's project when the request named one. The time's tooltip
+ *  gives the instant in full, local and UTC. */
 export function WhenCell({ time, customer }: { time: number; customer?: string }) {
-  const d = new Date(time);
-  const date = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
   return (
     <>
-      <span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{d.toLocaleTimeString("en-US", { hour12: false })}</span>
+      <LocalTime t={time} format="timeSec" className="gw-mono gw-tnum" style={{ fontSize: 12 }} />
       <span title={customer ? undefined : "No customer: the caller sent no project-id header"}
         style={{ display: "block", marginTop: 4, fontSize: 10.5, color: "var(--text-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-        {date}
+        <LocalTime t={time} format="day" title={false} />
         {customer && <span className="gw-mono" title={`Customer - the project-id header the caller sent: ${customer}`}> · {customer}</span>}
       </span>
     </>
@@ -451,7 +444,7 @@ export function NotFound({ id, rangeWords, wide, onWiden }: { id: string; rangeW
     <div style={{ color: "var(--text-4)", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
       No request with this ID or hash in the router&apos;s logs {wide ? "of the last 30 days" : rangeWords}.
       {minted !== null ? (
-        <span>Its ID dates it to {fmtWhen(minted * 1000)}, and the logs around then don&apos;t have it either.</span>
+        <span>Its ID dates it to <LocalTime t={minted * 1000} format="dateTime" />, and the logs around then don&apos;t have it either.</span>
       ) : !wide && (
         <button onClick={onWiden} style={{ border: "none", background: "none", color: "var(--brand)", cursor: "pointer", padding: 0, fontSize: 12, fontWeight: 600, fontFamily: "inherit" }}>
           Search the last 30 days
