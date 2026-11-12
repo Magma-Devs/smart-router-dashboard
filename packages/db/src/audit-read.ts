@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, asc, desc, eq, gte, inArray, lt, lte, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, lt, lte, sql, type SQL } from "drizzle-orm";
 import type { AuditChangeRecord, AuditEventRecord } from "@sr/shared";
 import type { Database } from "./client.js";
 import { auditEventChanges, auditEvents } from "./schema-audit.js";
@@ -38,6 +38,14 @@ export interface AuditQuery {
    *  mid-pull is legitimate and must not invalidate a position. */
   limit?: number;
   cursor?: AuditCursor;
+  /**
+   * Which side of `cursor` to read. `after` (the default) continues the feed
+   * past it, and is the only direction a puller needs. `before` reads the page
+   * that ends just ahead of it, in the same order, so a reader paging through
+   * the viewer can step back without keeping a stack of every position it
+   * passed. Ignored without a cursor.
+   */
+  direction?: "after" | "before";
   /**
    * **Test seam. Production never sets this.**
    *
@@ -79,8 +87,14 @@ export type { AuditChangeRecord, AuditEventRecord } from "@sr/shared";
 
 export interface AuditPage {
   items: AuditEventRecord[];
+  /** The last item's position: read on from it with `direction: "after"`. */
   cursor: AuditCursor | null;
+  /** Rows lie past the last item, in the feed's order. */
   hasMore: boolean;
+  /** The first item's position: read back from it with `direction: "before"`. */
+  startCursor: AuditCursor | null;
+  /** Rows lie ahead of the first item, in the feed's order. */
+  hasPrevious: boolean;
 }
 
 export const AUDIT_PAGE_DEFAULT = 100;
@@ -231,12 +245,24 @@ async function readHorizon(db: Database): Promise<string> {
  * `desc` skips all of this. It is the screen, it re-polls, and a viewer that
  * lagged five seconds behind its own database would be a bug rather than a
  * guarantee.
+ *
+ * **Reading `before` a cursor** answers the page that ends just ahead of it,
+ * in the same order: the same predicate turned round, sorted the other way so
+ * the limit keeps the rows nearest the position, then put back in the feed's
+ * order. It is how the viewer steps back toward the newest rows from a link
+ * alone, with no stack of earlier positions to carry. `asc` keeps the horizon
+ * on it too, so no direction serves an unsettled row. Whichever way a page was
+ * read, `cursor` / `hasMore` describe what lies past its last row and
+ * `startCursor` / `hasPrevious` what lies ahead of its first; the side the
+ * read came from holds at least the cursor's own row, so its flag is true
+ * without another query.
  */
 export async function listAuditEvents(db: Database, query: AuditQuery = {}): Promise<AuditPage> {
   const order = query.order ?? "asc";
   const limit = Math.min(Math.max(query.limit ?? AUDIT_PAGE_DEFAULT, 1), AUDIT_PAGE_MAX);
   const where = filterConditions(query);
   const cursor = query.cursor;
+  const backward = cursor !== undefined && query.direction === "before";
 
   if (order === "asc") {
     const horizon = query.horizonOverride ?? (await readHorizon(db));
@@ -244,27 +270,34 @@ export async function listAuditEvents(db: Database, query: AuditQuery = {}): Pro
     if (cursor) {
       // Postgres row comparison — the keyset resume over the (xact, seq) order.
       where.push(
-        sql`(${auditEvents.xactId}, ${auditEvents.seq}) > (${cursor.xact}::xid8, ${cursor.seq})`,
+        backward
+          ? sql`(${auditEvents.xactId}, ${auditEvents.seq}) < (${cursor.xact}::xid8, ${cursor.seq})`
+          : sql`(${auditEvents.xactId}, ${auditEvents.seq}) > (${cursor.xact}::xid8, ${cursor.seq})`,
       );
     }
   } else if (cursor) {
-    where.push(lt(auditEvents.seq, cursor.seq));
+    where.push(backward ? gt(auditEvents.seq, cursor.seq) : lt(auditEvents.seq, cursor.seq));
   }
 
-  // One extra row answers `hasMore` without a second count query.
+  // The feed's order, turned round when reading backward so that the limit
+  // keeps the rows nearest the cursor rather than the far end of the log.
+  const ascending = (order === "asc") !== backward;
+  const dir = ascending ? asc : desc;
+  const keys = order === "asc" ? [auditEvents.xactId, auditEvents.seq] : [auditEvents.seq];
+
+  // One extra row answers "is there more that way" without a count query.
   const rows = await db
     .select()
     .from(auditEvents)
     .where(where.length ? and(...where) : undefined)
-    .orderBy(
-      ...(order === "asc"
-        ? [asc(auditEvents.xactId), asc(auditEvents.seq)]
-        : [desc(auditEvents.seq)]),
-    )
+    .orderBy(...keys.map((k) => dir(k)))
     .limit(limit + 1);
 
-  const hasMore = rows.length > limit;
-  const page = hasMore ? rows.slice(0, limit) : rows;
+  const beyond = rows.length > limit;
+  const read = beyond ? rows.slice(0, limit) : rows;
+  const page = backward ? read.reverse() : read;
+  const hasMore = backward ? true : beyond;
+  const hasPrevious = backward ? beyond : cursor !== undefined;
 
   const changes = await loadChanges(
     db,
@@ -275,17 +308,17 @@ export async function listAuditEvents(db: Database, query: AuditQuery = {}): Pro
 
   // The position is the last row served — strictly increasing in the feed's
   // own order, so a straggler cannot drag it backwards by construction.
-  const last = page.at(-1);
-  const next: AuditCursor | null = last
-    ? {
-        seq: last.seq,
-        xact: last.xactId,
-        order,
-        fingerprint: auditFilterFingerprint(query),
-      }
-    : null;
+  const fingerprint = auditFilterFingerprint(query);
+  const positionOf = (row: Row | undefined): AuditCursor | null =>
+    row ? { seq: row.seq, xact: row.xactId, order, fingerprint } : null;
 
-  return { items, cursor: next, hasMore };
+  return {
+    items,
+    cursor: positionOf(page.at(-1)),
+    hasMore: page.length > 0 && hasMore,
+    startCursor: positionOf(page[0]),
+    hasPrevious: page.length > 0 && hasPrevious,
+  };
 }
 
 async function loadChanges(

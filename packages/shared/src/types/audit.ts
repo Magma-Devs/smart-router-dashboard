@@ -82,7 +82,15 @@ export interface AuditEventRecord {
  */
 export interface AuditEventsResponse {
   items: AuditEventRecord[];
-  /** Feed this back as `after`. Null only when the page was empty. */
+  /** The last item's position: feed it back as `after` for the next page.
+   *  Null only when the page was empty. */
   cursor: string | null;
+  /** Rows lie past the last item, in the requested order. */
   has_more: boolean;
+  /** The first item's position: send it as `before` for the page ahead of
+   *  this one — newer rows, in the viewer's newest-first order. Null only when
+   *  the page was empty. */
+  start_cursor: string | null;
+  /** Rows lie ahead of the first item, in the requested order. */
+  has_previous: boolean;
 }

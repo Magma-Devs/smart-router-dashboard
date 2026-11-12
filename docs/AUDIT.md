@@ -62,9 +62,13 @@ Authenticated with a session **or an audit token** (below). Query parameters:
 | `target_type` / `target_id` | The object an event is about                     |
 | `order`       | `asc` (default — oldest first, resumable) or `desc` (viewer)   |
 | `per_page`    | Rows per page, default 100, max 1000                           |
-| `after`       | The `cursor` from the previous response                        |
+| `after`       | The `cursor` from a previous response: the page after it       |
+| `before`      | The `start_cursor` from a previous response: the page ahead of it — newer rows under `desc`. Not with `after` |
 
-The envelope is `{ items, cursor, has_more }`. A scheduled puller stores
+The envelope is `{ items, cursor, has_more, start_cursor, has_previous }`:
+`cursor` and `has_more` describe what lies past the page's last row,
+`start_cursor` and `has_previous` what lies ahead of its first, whichever way
+the page was read. A scheduled puller needs only the first pair — it stores
 `cursor` and sends it back as `after` on the next run:
 
 ```sh
@@ -90,8 +94,9 @@ Rules a puller must know:
 - The cursor encodes the **filter set and direction** it was issued for. A
   resume under different filters or the other `order` is refused with a 400 —
   answering it would silently skip rows.
-- A misspelled `action` or `group`, a malformed `actor`, an unparseable time
-  and a cursor this endpoint did not issue are all **400**, never an empty page.
+- A misspelled `action` or `group`, a malformed `actor`, an unparseable time,
+  `after` and `before` together, and a cursor this endpoint did not issue are
+  all **400**, never an empty page.
 - Changing `per_page` mid-pull is fine; it is not part of the cursor.
 
 ## The CSV export

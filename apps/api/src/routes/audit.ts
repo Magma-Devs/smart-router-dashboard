@@ -50,6 +50,7 @@ interface AuditEventsQuery {
   order?: string;
   per_page?: number;
   after?: string;
+  before?: string;
 }
 
 /**
@@ -99,6 +100,10 @@ const AUDIT_FILTER_PROPS = {
 };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Longer than any cursor this endpoint issues (about 110 characters), short
+ *  enough that a pasted blob is refused by the schema before it is decoded. */
+const CURSOR_MAX_LENGTH = 512;
 
 /** Fastify hands a repeated param back as an array and a single one as a
  *  string. Normalising here keeps every caller from having to care. */
@@ -322,7 +327,8 @@ export async function auditRoutes(app: FastifyInstance) {
         description:
           "Every recorded event, filterable by time, person, verb, group and object. " +
           "Ordered oldest-first by default so a scheduled puller can keep its position and resume; " +
-          "pass order=desc for a newest-first view. Feed `cursor` back as `after` to continue.",
+          "pass order=desc for a newest-first view. Feed `cursor` back as `after` to continue, " +
+          "or `start_cursor` as `before` for the page ahead of this one.",
         querystring: {
           type: "object" as const,
           properties: {
@@ -335,7 +341,15 @@ export async function auditRoutes(app: FastifyInstance) {
             },
             after: {
               type: "string" as const,
-              description: "Opaque cursor from a previous response",
+              maxLength: CURSOR_MAX_LENGTH,
+              description: "Opaque `cursor` from a previous response: the page after it",
+            },
+            before: {
+              type: "string" as const,
+              maxLength: CURSOR_MAX_LENGTH,
+              description:
+                "Opaque `start_cursor` from a previous response: the page ahead of it " +
+                "(newer rows under order=desc). Not with `after`",
             },
           },
         },
@@ -355,15 +369,23 @@ export async function auditRoutes(app: FastifyInstance) {
         limit: Math.min(Math.max(q.per_page ?? AUDIT_PAGE_DEFAULT, 1), AUDIT_PAGE_MAX),
       };
 
-      if (q.after) {
-        const cursor = decodeAuditCursor(q.after);
-        if (!cursor) return sendApiError(reply, 400, "`after` is not a cursor from this endpoint");
+      // One position per read: a page after one row and before another is a
+      // range, and nothing here serves ranges.
+      if (q.after && q.before) {
+        return sendApiError(reply, 400, "send `after` or `before`, not both");
+      }
+      const param = q.before ? "before" : "after";
+      const raw = q.before || q.after;
+      if (raw) {
+        const cursor = decodeAuditCursor(raw);
+        if (!cursor)
+          return sendApiError(reply, 400, `\`${param}\` is not a cursor from this endpoint`);
         const rejection = checkAuditCursor(cursor, query);
         if (rejection === "order-changed") {
           return sendApiError(
             reply,
             400,
-            "`after` was issued for the other `order` — restart the pull",
+            `\`${param}\` was issued for the other \`order\` — restart the pull`,
           );
         }
         if (rejection === "filters-changed") {
@@ -372,10 +394,11 @@ export async function auditRoutes(app: FastifyInstance) {
           return sendApiError(
             reply,
             400,
-            "`after` was issued for a different filter set — restart the pull",
+            `\`${param}\` was issued for a different filter set — restart the pull`,
           );
         }
         query.cursor = cursor;
+        query.direction = param;
       }
 
       const page = await listAuditEvents(db, query);
@@ -383,6 +406,8 @@ export async function auditRoutes(app: FastifyInstance) {
         items: page.items,
         cursor: page.cursor ? encodeAuditCursor(page.cursor) : null,
         has_more: page.hasMore,
+        start_cursor: page.startCursor ? encodeAuditCursor(page.startCursor) : null,
+        has_previous: page.hasPrevious,
       };
       return body;
     },
@@ -396,8 +421,8 @@ export async function auditRoutes(app: FastifyInstance) {
    * it", and an audit log is the one table that only ever grows. Paging
    * internally keeps a single page in memory however long the history is.
    *
-   * No `per_page` or `after` — those describe a position, and this endpoint has
-   * no position to describe. Every other filter is shared with the feed, parsed
+   * No `per_page`, `after` or `before` — those describe a position, and this
+   * endpoint has no position to describe. Every other filter is shared with the feed, parsed
    * by the same function, so the file cannot disagree with the screen.
    */
   app.get<{ Querystring: AuditEventsQuery }>(

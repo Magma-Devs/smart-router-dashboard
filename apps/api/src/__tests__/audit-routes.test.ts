@@ -3,9 +3,11 @@ import type { FastifyInstance } from "fastify";
 import { SignJWT } from "jose";
 import { createTestDb, enrolledTwoFactor, type TestDb } from "@sr/db/testing";
 import {
+  auditEvents,
   auditFilterFingerprint,
   createAuditWriter,
   encodeAuditCursor,
+  mintAuditToken,
   users,
   type User,
 } from "@sr/db";
@@ -359,6 +361,273 @@ describe("GET /api/audit/events", () => {
     // must not 500.
     const res = await get(token, "?per_page=99999");
     expect([200, 400]).toContain(res.statusCode);
+  });
+});
+
+/**
+ * Paging — the viewer's Older / Newer / Newest over the newest-first feed.
+ *
+ * `after` continues past the last row of a page, `before` reads the page just
+ * ahead of the first. Both are keyset reads from a position, so rows written
+ * at the head while someone reads further down never move what they see.
+ */
+describe("GET /api/audit/events paging", () => {
+  /**
+   * Rows in the writer's shape with the sequence chosen, so a test can leave a
+   * hole and fill it later — a transaction that took its sequence early and
+   * committed late. Each call is one statement, so one transaction.
+   */
+  async function insertAt(seqs: number[]): Promise<void> {
+    await t.db.insert(auditEvents).values(
+      seqs.map((seq) => ({
+        seq,
+        action: "signout",
+        actionGroup: "access",
+        source: "dashboard" as const,
+        actorKind: "system" as const,
+        actorName: "System",
+        note: `e${seq}`,
+      })),
+    );
+  }
+  const range = (from: number, to: number) =>
+    Array.from({ length: to - from + 1 }, (_, i) => from + i);
+  const notes = (body: AuditEventsResponse) => body.items.map((i) => i.note);
+  const page = async (token: string, qs: string) => {
+    const res = await get(token, qs);
+    expect(res.statusCode).toBe(200);
+    return res.json() as AuditEventsResponse;
+  };
+  const at = (param: "after" | "before", cursor: string | null) =>
+    `&${param}=${encodeURIComponent(cursor!)}`;
+
+  it("pages older, then back newer to the same pages", async () => {
+    app = await buildAuthedApp();
+    await insertAt(range(1, 7));
+    const { token } = await signedIn();
+    const q = "?order=desc&per_page=3";
+
+    const head = await page(token, q);
+    expect(notes(head)).toEqual(["e7", "e6", "e5"]);
+    expect(head).toMatchObject({ has_more: true, has_previous: false });
+
+    const second = await page(token, q + at("after", head.cursor));
+    expect(notes(second)).toEqual(["e4", "e3", "e2"]);
+    expect(second).toMatchObject({ has_more: true, has_previous: true });
+
+    const last = await page(token, q + at("after", second.cursor));
+    expect(notes(last)).toEqual(["e1"]);
+    expect(last).toMatchObject({ has_more: false, has_previous: true });
+
+    const backToSecond = await page(token, q + at("before", last.start_cursor));
+    expect(notes(backToSecond)).toEqual(notes(second));
+    expect(backToSecond).toMatchObject({ has_more: true, has_previous: true });
+
+    const backToHead = await page(token, q + at("before", backToSecond.start_cursor));
+    expect(notes(backToHead)).toEqual(notes(head));
+    expect(backToHead.has_previous).toBe(false);
+  });
+
+  it("ends an exact multiple of the page size without an empty page", async () => {
+    app = await buildAuthedApp();
+    await insertAt(range(1, 6));
+    const { token } = await signedIn();
+    const q = "?order=desc&per_page=3";
+
+    const head = await page(token, q);
+    expect(head.has_more).toBe(true);
+    const last = await page(token, q + at("after", head.cursor));
+    expect(notes(last)).toEqual(["e3", "e2", "e1"]);
+    // Nothing past it: no Older button leading to a blank page.
+    expect(last.has_more).toBe(false);
+  });
+
+  it("answers an empty feed with no positions either way", async () => {
+    app = await buildAuthedApp();
+    const { token } = await signedIn();
+    const body = await page(token, "?order=desc&per_page=50");
+    expect(body).toEqual({
+      items: [],
+      cursor: null,
+      has_more: false,
+      start_cursor: null,
+      has_previous: false,
+    });
+  });
+
+  it("does not move a page when rows are written at the head", async () => {
+    app = await buildAuthedApp();
+    await insertAt(range(1, 9));
+    const { token } = await signedIn();
+    const q = "?order=desc&per_page=3";
+
+    const head = await page(token, q);
+    const second = await page(token, q + at("after", head.cursor));
+    await insertAt(range(10, 14));
+
+    // Further down: continues from the row it stopped at.
+    const third = await page(token, q + at("after", second.cursor));
+    expect(notes(third)).toEqual(["e3", "e2", "e1"]);
+    // Back up: the page that was the newest, exactly, and word that more
+    // has arrived above it.
+    const back = await page(token, q + at("before", second.start_cursor));
+    expect(notes(back)).toEqual(notes(head));
+    expect(back.has_previous).toBe(true);
+    const arrived = await page(token, "?order=desc&per_page=100" + at("before", back.start_cursor));
+    expect(notes(arrived)).toEqual(["e14", "e13", "e12", "e11", "e10"]);
+    expect(arrived.has_previous).toBe(false);
+  });
+
+  /**
+   * A transaction that took its sequence early and committed while someone was
+   * paging. Newest-first is the screen's order and has no horizon, so the row
+   * lands where its sequence puts it: a reader already past that point meets it
+   * on the way back up, once, and no page in either walk repeats a row.
+   */
+  it("places a straggler committed mid-paging once, without repeating a row", async () => {
+    app = await buildAuthedApp();
+    await insertAt([...range(1, 4), ...range(6, 10)]);
+    const { token } = await signedIn();
+    const q = "?order=desc&per_page=3";
+
+    const down: (string | null)[][] = [];
+    let body = await page(token, q);
+    down.push(notes(body));
+    body = await page(token, q + at("after", body.cursor));
+    down.push(notes(body));
+    expect(notes(body)).toEqual(["e7", "e6", "e4"]);
+
+    await insertAt([5]); // commits now, behind the reader's position
+
+    while (body.has_more) {
+      body = await page(token, q + at("after", body.cursor));
+      down.push(notes(body));
+    }
+    expect(down.flat()).toEqual(["e10", "e9", "e8", "e7", "e6", "e4", "e3", "e2", "e1"]);
+
+    const up: (string | null)[] = [...notes(body)];
+    while (body.has_previous) {
+      body = await page(token, q + at("before", body.start_cursor));
+      up.unshift(...notes(body));
+    }
+    expect(up).toEqual(
+      range(1, 10)
+        .reverse()
+        .map((n) => `e${n}`),
+    );
+  });
+
+  /**
+   * The pull's guarantee, end to end over HTTP: the same late row in
+   * oldest-first order arrives after everything already pulled, rather than
+   * behind the stored cursor.
+   */
+  it("still delivers a straggler to an oldest-first puller after its cursor", async () => {
+    app = await buildAuthedApp();
+    await insertAt([1, 2, 4]);
+    const { token } = await signedIn();
+
+    const first = await page(token, "?per_page=10");
+    expect(notes(first)).toEqual(["e1", "e2", "e4"]);
+    await insertAt([3]);
+    const next = await page(token, "?per_page=10" + at("after", first.cursor));
+    expect(notes(next)).toEqual(["e3"]);
+  });
+
+  it("lets an audit token page back, and still nothing but read", async () => {
+    app = await buildAuthedApp();
+    await insertAt(range(1, 4));
+    const { secret } = await mintAuditToken(t.db, {
+      name: "SIEM pull",
+      createdBy: null,
+      createdByName: "Dana Levi",
+    });
+    const q = "?order=desc&per_page=2";
+    const head = await page(secret, q);
+    const older = await page(secret, q + at("after", head.cursor));
+    const back = await page(secret, q + at("before", older.start_cursor));
+    expect(notes(back)).toEqual(notes(head));
+
+    const write = await app.inject({
+      method: "POST",
+      url: `/api/audit/events${q}${at("before", older.start_cursor)}`,
+      headers: { authorization: `Bearer ${secret}` },
+    });
+    expect(write.statusCode).toBe(403);
+  });
+
+  /** Every malformed position is the caller's mistake: 400, never a 500 and
+   *  never a quietly empty page. */
+  describe("refuses a position it cannot use", () => {
+    it("a `before` it did not issue", async () => {
+      app = await buildAuthedApp();
+      const { token } = await signedIn();
+      const res = await get(token, "?order=desc&before=not-a-cursor");
+      expect(res.statusCode).toBe(400);
+      expect(res.json().message).toContain("`before`");
+    });
+
+    it("`after` and `before` together", async () => {
+      app = await buildAuthedApp();
+      await insertAt(range(1, 4));
+      const { token } = await signedIn();
+      const head = await page(token, "?order=desc&per_page=2");
+      const res = await get(
+        token,
+        "?order=desc&per_page=2" + at("after", head.cursor) + at("before", head.start_cursor),
+      );
+      expect(res.statusCode).toBe(400);
+      expect(res.json().message).toContain("not both");
+    });
+
+    it("a `before` from another filter set or the other order", async () => {
+      app = await buildAuthedApp();
+      await insertAt(range(1, 4));
+      const { token } = await signedIn();
+      const head = await page(token, "?order=desc&per_page=2&group=access");
+
+      const moved = await get(token, "?order=desc&per_page=2" + at("before", head.start_cursor));
+      expect(moved.statusCode).toBe(400);
+      expect(moved.json().message).toContain("filter set");
+
+      const flipped = await get(
+        token,
+        "?order=asc&per_page=2&group=access" + at("before", head.start_cursor),
+      );
+      expect(flipped.statusCode).toBe(400);
+    });
+
+    it("a `before` past the largest transaction id", async () => {
+      app = await buildAuthedApp();
+      await insertAt(range(1, 2));
+      const { token } = await signedIn();
+      const forged = encodeAuditCursor({
+        seq: 1,
+        xact: "99999999999999999999",
+        order: "asc",
+        fingerprint: auditFilterFingerprint({ order: "asc" }),
+      });
+      expect((await get(token, `?before=${forged}`)).statusCode).toBe(400);
+    });
+
+    it("a negative or fractional sequence", async () => {
+      app = await buildAuthedApp();
+      const { token } = await signedIn();
+      const fingerprint = auditFilterFingerprint({ order: "desc" });
+      for (const seq of [-1, 1.5]) {
+        const raw = Buffer.from(
+          JSON.stringify({ seq, xact: "1", order: "desc", fingerprint }),
+        ).toString("base64url");
+        expect((await get(token, `?order=desc&before=${raw}`)).statusCode).toBe(400);
+      }
+    });
+
+    it("a cursor longer than any it issues", async () => {
+      app = await buildAuthedApp();
+      const { token } = await signedIn();
+      const res = await get(token, `?order=desc&before=${"a".repeat(600)}`);
+      expect(res.statusCode).toBe(400);
+    });
   });
 });
 
