@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AuditEventRecord, AuditEventsResponse } from "@sr/shared";
 import { ApiError, apiGet, getAuthMode } from "@/lib/api-client";
+import { localDayEndIso, localDayStartIso } from "@/lib/datetime";
 
 /**
  * The audit feed — MAG-2770.
@@ -28,7 +29,8 @@ export interface AuditFilters {
   actor: string;
   /** Object id, e.g. `ep_8143`. */
   targetId: string;
-  /** `yyyy-mm-dd`, inclusive at both ends. */
+  /** `yyyy-mm-dd`, inclusive at both ends: days on the reader's clock, the
+   *  one the log's times are shown in. */
   from: string;
   to: string;
 }
@@ -54,8 +56,8 @@ function filterParams(filters: AuditFilters): URLSearchParams {
   if (filters.group) params.set("group", filters.group);
   if (filters.actor.trim()) params.set("actor", filters.actor.trim());
   if (filters.targetId.trim()) params.set("target_id", filters.targetId.trim());
-  if (filters.from) params.set("from", new Date(`${filters.from}T00:00:00.000Z`).toISOString());
-  if (filters.to) params.set("to", new Date(`${filters.to}T23:59:59.999Z`).toISOString());
+  if (filters.from) params.set("from", localDayStartIso(filters.from));
+  if (filters.to) params.set("to", localDayEndIso(filters.to));
   return params;
 }
 

@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { eventDateParts, eventTime, targetLabel } from "@/components/audit/bits";
+import { afterEach, describe, expect, it } from "vitest";
+import { targetLabel } from "@/components/audit/bits";
 import { auditExportPath, EMPTY_FILTERS, hasAnyFilter } from "@/components/audit/useAuditFeed";
 import type { AuditEventRecord } from "@sr/shared";
 
@@ -24,29 +24,6 @@ function event(over: Partial<AuditEventRecord> = {}): AuditEventRecord {
     ...over,
   };
 }
-
-describe("eventTime", () => {
-  it("writes the instant exactly as the ticket does", () => {
-    expect(eventTime("2026-08-09T14:22:07.000Z")).toBe("2026-08-09 14:22:07Z");
-  });
-
-  /**
-   * The one that matters. Rendering through `Date` would shift the clock by the
-   * reader's offset, so two people looking at the same incident would quote
-   * different times to each other — and neither would be wrong on their own
-   * screen, which is what makes it hard to catch.
-   */
-  it("does not shift with the reader's timezone", () => {
-    const iso = "2026-08-09T23:30:00.000Z";
-    expect(eventTime(iso)).toBe("2026-08-09 23:30:00Z");
-    expect(eventTime(iso).slice(0, 10)).toBe("2026-08-09");
-    expect(eventDateParts(iso)).toEqual({ date: "2026-08-09", time: "23:30:00Z" });
-  });
-
-  it("keeps whole seconds, dropping the milliseconds the API sends", () => {
-    expect(eventTime("2026-08-09T14:22:07.891Z")).toBe("2026-08-09 14:22:07Z");
-  });
-});
 
 describe("targetLabel", () => {
   it("shows the name it had at the time, with the id that outlives a rename", () => {
@@ -82,6 +59,12 @@ describe("hasAnyFilter", () => {
 });
 
 describe("auditExportPath", () => {
+  const savedTz = process.env.TZ;
+  afterEach(() => {
+    if (savedTz === undefined) delete process.env.TZ;
+    else process.env.TZ = savedTz;
+  });
+
   it("exports the whole log when nothing is filtered", () => {
     expect(auditExportPath(EMPTY_FILTERS)).toBe("/api/audit/export.csv");
   });
@@ -90,6 +73,7 @@ describe("auditExportPath", () => {
    *  the download quietly ignored would produce a wider record than the person
    *  thought they asked for. */
   it("carries every filter the screen has applied", () => {
+    process.env.TZ = "UTC";
     const path = auditExportPath({
       group: "config",
       actor: "dana@customer.com",
@@ -103,6 +87,20 @@ describe("auditExportPath", () => {
     expect(path).toContain("from=2026-08-01T00%3A00%3A00.000Z");
     // Inclusive of the whole closing day, not midnight at the start of it.
     expect(path).toContain("to=2026-08-09T23%3A59%3A59.999Z");
+  });
+
+  /** The dates are days on the reader's clock, the one the log is shown in:
+   *  a day picked in Jerusalem starts at 21:00 UTC the evening before. */
+  it("reads From and To as whole days where the reader is", () => {
+    process.env.TZ = "Asia/Jerusalem";
+    const summer = auditExportPath({ ...EMPTY_FILTERS, from: "2026-08-01", to: "2026-08-09" });
+    expect(summer).toContain("from=2026-07-31T21%3A00%3A00.000Z");
+    expect(summer).toContain("to=2026-08-09T20%3A59%3A59.999Z");
+
+    process.env.TZ = "America/New_York";
+    const winter = auditExportPath({ ...EMPTY_FILTERS, from: "2026-01-05", to: "2026-01-05" });
+    expect(winter).toContain("from=2026-01-05T05%3A00%3A00.000Z");
+    expect(winter).toContain("to=2026-01-06T04%3A59%3A59.999Z");
   });
 
   it("does not pin an order or a page size", () => {
