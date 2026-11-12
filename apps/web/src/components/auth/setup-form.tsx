@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { signIn } from "next-auth/react";
 import { apiUrl } from "@/lib/api-client";
+import { BusyButton } from "@/components/gateway/BusyButton";
 
 /**
  * First-run: the screen that turns a fresh install into one with a named admin.
@@ -19,6 +20,9 @@ export function SetupForm({ mode }: { mode: "managed" | "onprem" }) {
   const [repeat, setRepeat] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Two requests and then a page load sit behind one click; the label says
+  // which of them is running, so a slow one never looks like nothing.
+  const [busyLabel, setBusyLabel] = useState("Creating…");
 
   const mismatch = repeat.length > 0 && password !== repeat;
 
@@ -28,6 +32,7 @@ export function SetupForm({ mode }: { mode: "managed" | "onprem" }) {
       setError("Those passwords don't match.");
       return;
     }
+    setBusyLabel("Creating…");
     setBusy(true);
     setError(null);
 
@@ -52,6 +57,11 @@ export function SetupForm({ mode }: { mode: "managed" | "onprem" }) {
       // The account exists now, so sign in the ordinary way. Deliberately not
       // reusing the session the api just opened: this page has no way to hand
       // it to Auth.js, and one sign-in path is easier to reason about than two.
+      //
+      // `busy` stays set from here on: the next thing to happen is the browser
+      // leaving this page, and an idle button in the meantime reads as a
+      // request that was lost.
+      setBusyLabel("Signing in…");
       const signedIn = await signIn("credentials", { email, password, redirect: false });
       if (signedIn?.error) {
         window.location.href = "/login";
@@ -104,6 +114,7 @@ export function SetupForm({ mode }: { mode: "managed" | "onprem" }) {
             Setup token
             <input
               className="gw-input"
+              readOnly={busy}
               type="password"
               autoComplete="off"
               required
@@ -118,6 +129,7 @@ export function SetupForm({ mode }: { mode: "managed" | "onprem" }) {
             </span>
             <input
               className="gw-input"
+              readOnly={busy}
               type="text"
               autoComplete="name"
               value={name}
@@ -129,6 +141,7 @@ export function SetupForm({ mode }: { mode: "managed" | "onprem" }) {
             Email
             <input
               className="gw-input"
+              readOnly={busy}
               type="email"
               autoComplete="email"
               required
@@ -141,6 +154,7 @@ export function SetupForm({ mode }: { mode: "managed" | "onprem" }) {
             Password
             <input
               className="gw-input"
+              readOnly={busy}
               type="password"
               autoComplete="new-password"
               required
@@ -154,6 +168,7 @@ export function SetupForm({ mode }: { mode: "managed" | "onprem" }) {
             Repeat password
             <input
               className="gw-input"
+              readOnly={busy}
               type="password"
               autoComplete="new-password"
               required
@@ -185,14 +200,16 @@ export function SetupForm({ mode }: { mode: "managed" | "onprem" }) {
             </div>
           )}
 
-          <button
+          <BusyButton
             className="gw-btn gw-btn--primary"
             type="submit"
-            disabled={busy || mismatch}
+            busy={busy}
+            busyLabel={busyLabel}
+            disabled={mismatch}
             style={{ justifyContent: "center", marginTop: 4 }}
           >
-            {busy ? "Creating…" : "Create administrator"}
-          </button>
+            Create administrator
+          </BusyButton>
         </form>
       </div>
     </main>

@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { signIn, signOut } from "next-auth/react";
 import { apiUrl } from "@/lib/api-client";
+import { BusyButton } from "@/components/gateway/BusyButton";
 import { ROLE_DESCRIPTIONS, ROLE_LABELS, type Role } from "@sr/shared";
 import { enabledProviders, type ProviderFlags } from "./oauth-providers";
 
@@ -44,6 +45,9 @@ export function InviteForm({
     handoffError ? (HANDOFF_ERRORS[handoffError] ?? HANDOFF_ERRORS.invite_failed!) : null,
   );
   const [busy, setBusy] = useState(false);
+  // Accepting, signing in and the page load behind one click: the label says
+  // which is running, so a slow one never looks like nothing.
+  const [busyLabel, setBusyLabel] = useState("Joining…");
 
   /**
    * Redeem with a social account — any provider the deployment offers, not
@@ -82,6 +86,7 @@ export function InviteForm({
       setError("Those passwords don't match.");
       return;
     }
+    setBusyLabel("Joining…");
     setBusy(true);
     setError(null);
 
@@ -99,6 +104,9 @@ export function InviteForm({
         return;
       }
 
+      // `busy` stays set from here on, through the page load the redirect
+      // starts — an idle button in that gap reads as a request that was lost.
+      setBusyLabel("Signing in…");
       const signedIn = await signIn("credentials", { email, password, redirect: false });
       window.location.href = signedIn?.error ? "/login" : "/overview";
     } catch {
@@ -202,6 +210,7 @@ export function InviteForm({
             </span>
             <input
               className="gw-input"
+              readOnly={busy}
               type="text"
               autoComplete="name"
               value={name}
@@ -213,6 +222,7 @@ export function InviteForm({
             Password
             <input
               className="gw-input"
+              readOnly={busy}
               type="password"
               autoComplete="new-password"
               required
@@ -226,6 +236,7 @@ export function InviteForm({
             Repeat password
             <input
               className="gw-input"
+              readOnly={busy}
               type="password"
               autoComplete="new-password"
               required
@@ -257,14 +268,16 @@ export function InviteForm({
             </div>
           )}
 
-          <button
+          <BusyButton
             className="gw-btn gw-btn--primary"
             type="submit"
-            disabled={busy || mismatch}
+            busy={busy}
+            busyLabel={busyLabel}
+            disabled={mismatch}
             style={{ justifyContent: "center", marginTop: 4 }}
           >
-            {busy ? "Joining…" : "Accept invitation"}
-          </button>
+            Accept invitation
+          </BusyButton>
         </form>
       </div>
     </main>

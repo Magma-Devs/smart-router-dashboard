@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { apiUrl } from "@/lib/api-client";
+import { BusyButton } from "@/components/gateway/BusyButton";
 
 /**
  * Setting a new password from a reset link.
@@ -99,6 +100,7 @@ export function ResetForm({ token, email }: { token: string; email: string | nul
               New password
               <input
                 className="gw-input"
+                readOnly={busy}
                 type="password"
                 autoComplete="new-password"
                 required
@@ -123,6 +125,7 @@ export function ResetForm({ token, email }: { token: string; email: string | nul
               Repeat password
               <input
                 className="gw-input"
+                readOnly={busy}
                 type="password"
                 autoComplete="new-password"
                 required
@@ -156,14 +159,16 @@ export function ResetForm({ token, email }: { token: string; email: string | nul
               </div>
             )}
 
-            <button
+            <BusyButton
               className="gw-btn gw-btn--primary"
               type="submit"
-              disabled={busy || mismatch}
+              busy={busy}
+              busyLabel="Saving…"
+              disabled={mismatch}
               style={{ justifyContent: "center", marginTop: 4 }}
             >
-              {busy ? "Saving…" : "Save password"}
-            </button>
+              Save password
+            </BusyButton>
           </form>
         )}
       </div>
