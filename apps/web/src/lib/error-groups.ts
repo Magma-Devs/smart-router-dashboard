@@ -26,7 +26,7 @@
  * loaded - the newest 300 - and the view says which minutes they cover.
  */
 import { explainRouterError, type ErrorRequestRow } from "@sr/shared";
-import { codeWords, errorType, isCache } from "@/components/metrics/request-log";
+import { blankIds, codeWords, errorType, isCache } from "@/components/metrics/request-log";
 
 /** The results a client received as an error, or with no clear outcome. */
 const REACHED: ReadonlySet<ErrorRequestRow["result"]> = new Set(["error-reply", "failed", "write-unknown"]);
@@ -91,8 +91,8 @@ export function decidingError(r: ErrorRequestRow): { key: string; label: string;
   if (r.errorCode && r.errorCode !== "UNKNOWN_ERROR") {
     return { key: r.errorCode, label: codeWords(r.errorCode), cause: isRequestCode(r.errorCode) ? "request" : "none", provider: null, providerCount: 0 };
   }
-  const words = (r.error ?? "no error recorded").slice(0, 64);
-  return { key: "err:" + words.replace(/\d+/g, "#"), label: words, cause: "none", provider: null, providerCount: 0 };
+  const words = r.error ?? "no error recorded";
+  return { key: "err:" + blankIds(words), label: words.slice(0, 64), cause: "none", provider: null, providerCount: 0 };
 }
 
 /** The rows as groups: pinned first, then the most requests; ties go to the newest. */

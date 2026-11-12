@@ -26,6 +26,10 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   line with "Show them".
 - An error with no router code keeps its HTTP status apart (429 and 503
   are two errors), in the error-type filter too.
+- **Hashes and ids don't split one error.** Without a router code, a
+  message's transaction hashes, addresses (0x…, long hex, base58, bech32)
+  and ids are blanked like its numbers, so "already known" on fifty
+  transactions is one group and one error type, not fifty.
 - **"The request" follows the error catalogue.** A code is the request's
   when any healthy provider would give the same answer: the request's own
   and the chain's rules. A provider-side `CHAIN_` code (state pruned, block
