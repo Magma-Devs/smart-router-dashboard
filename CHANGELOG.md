@@ -5,6 +5,28 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.63.0]
+
+### Added
+
+- **The Errors list groups similar errors** (MAG-5263). It opens "Grouped":
+  one line per way requests failed, with the error, who caused it, how many
+  requests, a small bar chart of when, and whether the client got it. A
+  click opens the group's requests; "Every request" brings back the old
+  list. Who caused it:
+  - **The request**, when the router's code says so (invalid params, nonce
+    too low, already known): one group whichever provider answered.
+  - **All providers (n)**, when two or more gave the same error.
+  - **Every provider failed**, each with its own error: pinned to the top
+    whatever its size.
+  - Else the provider that gave it. The cache is never counted as one.
+- The line above the groups says which minutes they cover: the list reads
+  the newest 300 requests, which on a busy deployment is under a minute of
+  a 12-hour window. Recovered requests hidden by the opening filter get one
+  line with "Show them".
+- An error with no router code keeps its HTTP status apart (429 and 503
+  are two errors), in the error-type filter too.
+
 ## [0.62.0]
 
 ### Changed
