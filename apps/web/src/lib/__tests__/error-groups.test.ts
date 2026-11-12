@@ -1,0 +1,134 @@
+import { describe, expect, it } from "vitest";
+import type { ErrorRequestRow, RelayAttempt } from "@sr/shared";
+import { decidingError, groupBuckets, groupErrors } from "../error-groups";
+
+const attempt = (upstream: string, over: Partial<RelayAttempt> = {}): RelayAttempt => ({
+  upstream, batch: 0, outcome: "failed", replied: false, code: null, retryable: null, message: "server error", note: null,
+  ...over,
+} as RelayAttempt);
+
+let n = 0;
+const row = (over: Partial<ErrorRequestRow>): ErrorRequestRow => ({
+  guid: `g${n++}`, time: 1_000_000, spec: "NEAR", method: "block", attempts: [], result: "error-reply",
+  errorCode: null, error: null,
+  ...over,
+} as ErrorRequestRow);
+
+describe("decidingError - the error that decided a request, and who caused it", () => {
+  it("two providers each failing differently, with the client getting one: every provider failed", () => {
+    const r = row({ attempts: [attempt("lava", { message: "malformed JSON-RPC response" }), attempt("tatum", { replied: true, code: "NODE_INTERNAL_ERROR" })] });
+    expect(decidingError(r)).toMatchObject({ key: "all-failed", cause: "all-failed", providerCount: 2 });
+  });
+
+  it("is the provider that gave it, when only one failed", () => {
+    const r = row({ attempts: [attempt("tatum", { replied: true, code: "NODE_INTERNAL_ERROR" })] });
+    expect(decidingError(r)).toEqual({ key: "NODE_INTERNAL_ERROR", label: "internal error", cause: "provider", provider: "tatum", providerCount: 1 });
+  });
+
+  it("is the last failed try when none went back (the request recovered)", () => {
+    const r = row({ result: "recovered", attempts: [attempt("lava", { message: "timeout after 5000ms" }), attempt("tatum", { outcome: "ok", replied: true })] });
+    expect(decidingError(r)).toMatchObject({ key: "msg:timeout after #ms", label: "timeout after 5000ms", cause: "provider", provider: "lava" });
+  });
+
+  it("is the client's request when the router's code says so, whichever provider answered", () => {
+    for (const code of ["USER_INVALID_PARAMS", "CHAIN_NONCE_TOO_LOW"]) {
+      expect(decidingError(row({ attempts: [attempt("tatum", { replied: true, code })] }))).toMatchObject({ cause: "request", provider: null });
+    }
+  });
+
+  it("is every provider when two or more gave the same provider-side error", () => {
+    const err = { code: "NODE_DATA_NOT_HELD" };
+    const r = row({ attempts: [attempt("lava", err), attempt("tatum", { ...err, replied: true })] });
+    expect(decidingError(r)).toMatchObject({ cause: "every-provider", providerCount: 2 });
+  });
+
+  it("is 'every provider failed' when each gave a different error and the client got one", () => {
+    const r = row({ result: "failed", attempts: [attempt("a", { code: "NODE_TIMEOUT" }), attempt("b", { message: "HTTP 503" }), attempt("c", { message: "HTTP 429" })] });
+    expect(decidingError(r)).toMatchObject({ key: "all-failed", label: "Every provider failed", cause: "all-failed", providerCount: 3 });
+  });
+
+  it("does not count the cache as a provider", () => {
+    const r = row({ attempts: [attempt("Cached", { code: "NODE_INTERNAL_ERROR" }), attempt("tatum", { replied: true, code: "NODE_INTERNAL_ERROR" })] });
+    expect(decidingError(r)).toMatchObject({ cause: "provider", provider: "tatum" });
+  });
+
+  it("falls back to the request's own code, then to its error words", () => {
+    expect(decidingError(row({ result: "write-unknown", errorCode: "NODE_GATEWAY_TIMEOUT" })))
+      .toMatchObject({ key: "NODE_GATEWAY_TIMEOUT", label: "gateway timeout", cause: "none" });
+    expect(decidingError(row({ result: "failed", error: "insufficient results 3" }))).toMatchObject({ key: "err:insufficient results #", label: "insufficient results 3" });
+  });
+});
+
+describe("groupErrors", () => {
+  it("folds a burst of one error at one provider into one group, biggest first", () => {
+    const burst = Array.from({ length: 5 }, (_, k) => row({ time: 1000 + k, attempts: [attempt("lava", { replied: true, code: "NODE_SERVER_ERROR" })] }));
+    const other = row({ time: 5000, attempts: [attempt("lava", { replied: true, message: "malformed JSON-RPC response" })] });
+    const groups = groupErrors([other, ...burst]);
+    expect(groups.map((g) => [g.errorLabel, g.provider, g.count])).toEqual([["server error", "lava", 5], ["malformed JSON-RPC response", "lava", 1]]);
+    expect(groups[0]!.methods).toEqual([{ method: "block", count: 5 }]);
+    expect(groups[0]).toMatchObject({ firstMs: 1000, lastMs: 1004, reached: true });
+    expect(groups[0]!.rows.map((r) => r.time)).toEqual([1004, 1003, 1002, 1001, 1000]);
+  });
+
+  it("keeps apart the same error on another chain, at another provider, or one the client never saw", () => {
+    const err = () => [attempt("lava", { replied: true, code: "NODE_SERVER_ERROR" })];
+    const groups = groupErrors([
+      row({ attempts: err() }),
+      row({ spec: "ETH1", attempts: err() }),
+      row({ attempts: [attempt("tatum", { replied: true, code: "NODE_SERVER_ERROR" })] }),
+      row({ result: "recovered", attempts: [attempt("lava", { code: "NODE_SERVER_ERROR" }), attempt("tatum", { outcome: "ok", replied: true })] }),
+    ]);
+    expect(groups).toHaveLength(4);
+    expect(groups.filter((g) => !g.reached)).toHaveLength(1);
+  });
+
+  it("blanks the numbers in a message, so one error on different blocks is one group", () => {
+    const groups = groupErrors([
+      row({ attempts: [attempt("lava", { replied: true, message: "block 101 not found" })] }),
+      row({ attempts: [attempt("lava", { replied: true, message: "block 202 not found" })] }),
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]!.count).toBe(2);
+  });
+});
+
+describe("groupErrors - who caused it", () => {
+  it("puts the client's own error in one group whichever provider answered", () => {
+    const nonce = (p: string) => [attempt(p, { replied: true, code: "CHAIN_NONCE_TOO_LOW" })];
+    const groups = groupErrors([row({ attempts: nonce("tatum") }), row({ attempts: nonce("tatum") }), row({ attempts: nonce("blockdaemon") })]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatchObject({ cause: "request", count: 3 });
+  });
+
+  it("pins 'every provider failed' above bigger groups", () => {
+    const big = Array.from({ length: 4 }, () => row({ attempts: [attempt("lava", { replied: true, code: "NODE_SERVER_ERROR" })] }));
+    const all = row({ result: "failed", attempts: [attempt("a", { code: "NODE_TIMEOUT" }), attempt("b", { message: "HTTP 503" })] });
+    const groups = groupErrors([...big, all]);
+    expect(groups[0]).toMatchObject({ pinned: true, count: 1 });
+  });
+
+  it("keeps HTTP statuses apart when there is no code", () => {
+    const groups = groupErrors([
+      row({ attempts: [attempt("lava", { replied: true, message: "HTTP 429" })] }),
+      row({ attempts: [attempt("lava", { replied: true, message: "HTTP 503" })] }),
+    ]);
+    expect(groups.map((g) => g.errorLabel).sort()).toEqual(["HTTP 429", "HTTP 503"]);
+  });
+
+  it("counts each method in a group", () => {
+    const err = () => [attempt("blockfrost", { replied: true, code: "NODE_DATA_NOT_HELD" })];
+    const groups = groupErrors([row({ method: "/addresses/{a}", attempts: err() }), row({ method: "/blocks/{n}", attempts: err() }), row({ method: "/blocks/{n}", attempts: err() })]);
+    expect(groups[0]!.methods).toEqual([{ method: "/blocks/{n}", count: 2 }, { method: "/addresses/{a}", count: 1 }]);
+  });
+});
+
+describe("groupBuckets - a group's requests across the list's span", () => {
+  it("counts each request in its stretch of the span", () => {
+    expect(groupBuckets([{ time: 0 }, { time: 1 }, { time: 99 }, { time: 100 }], 0, 100, 4)).toEqual([2, 0, 0, 2]);
+  });
+
+  it("puts a request outside the span in the nearest end, and a zero span in the last bucket", () => {
+    expect(groupBuckets([{ time: -5 }, { time: 500 }], 0, 100, 2)).toEqual([1, 1]);
+    expect(groupBuckets([{ time: 7 }], 7, 7, 3)).toEqual([0, 0, 1]);
+  });
+});

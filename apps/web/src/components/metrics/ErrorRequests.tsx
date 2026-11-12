@@ -10,7 +10,7 @@
  * and details are shared with the Transactions tab (request-log.tsx). */
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { WINDOWS, WRITE_UNKNOWN_NOTE, explainRouterError, type ErrorRequestRow, type ErrorRequestsReport, type MetricWindow, type RequestLookup } from "@sr/shared";
+import { WINDOWS, WRITE_UNKNOWN_NOTE, buildChainMetaByIndex, explainRouterError, type ErrorRequestRow, type ErrorRequestsReport, type MetricWindow, type RequestLookup } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { useLogReads } from "@/hooks/use-log-reads";
 import { useRouterFilter } from "@/hooks/use-router-options";
@@ -20,6 +20,7 @@ import { Tip } from "@/components/gateway/Tip";
 import { TT } from "@/lib/tooltips";
 import { fmtComma } from "@/lib/format";
 import { linkRequest, requestFromUrl } from "@/lib/request-in-url";
+import { groupBuckets, groupErrors, type ErrorGroup } from "@/lib/error-groups";
 import {
   appGot,
   customerOptions,
@@ -301,6 +302,9 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
   // A request named in the URL opens looked up.
   const [lookupId, setLookupId] = useState<string | null>(requestFromUrl);
   const [page, setPage] = useState(0);
+  /* Grouped (the default) or every request; and the one group opened, by key. */
+  const [grouped, setGrouped] = useState(true);
+  const [groupKey, setGroupKey] = useState<string | null>(null);
   // Back / Forward: the look-up follows the URL.
   useEffect(() => {
     const onPop = () => setLookupId(requestFromUrl());
@@ -352,7 +356,16 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
   const fromBar = onBarRange && upstream !== ALL;
   const result: ResultPick = picked === AUTO ? openingResult(reachedCount, fromBar) : picked;
   const inResult = (r: ErrorRequestRow) => result === ALL || (result === REACHED ? REACHED_CLIENT.has(r.result) : r.result === result);
-  const rows = narrowed.filter(inResult);
+  const filtered = narrowed.filter(inResult);
+  // 300 rows at most: grouping them on each render costs less than a memo's bookkeeping.
+  const groups = groupErrors(filtered);
+  const openGroup = groupKey ? groups.find((g) => g.key === groupKey) ?? null : null;
+  // An opened group lists its own requests; a filter that empties it shows the rest again.
+  const rows = openGroup ? openGroup.rows : filtered;
+  const showGroups = grouped && !openGroup && rows.length > 0;
+  /* Under the opening filter, recovered requests are hidden: a provider the
+     router kept working around is still worth a line. */
+  const hiddenRecovered = result === REACHED ? narrowed.filter((r) => r.result === "recovered") : [];
   const byResult = (k: ErrorRequestRow["result"]) => narrowed.filter((r) => r.result === k).length;
   const kinds = byDropdowns.filter(inResult).map(retryKinds);
   /* Nothing reached the client, and nobody has picked a result: the list
@@ -420,6 +433,17 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
             ]}
           />
           <span style={{ flex: 1 }} />
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+          <span style={{ fontSize: 11, color: "var(--text-4)" }}>View</span>
+          <Seg
+            value={grouped ? "grouped" : "every"}
+            onChange={(v) => { setGrouped(v === "grouped"); setGroupKey(null); setPage(0); }}
+            options={[
+              { key: "grouped", label: "Grouped", title: "One line per way requests failed: the error, who caused it, how many, when." },
+              { key: "every", label: "Every request", title: "Every request on its own line, newest first." },
+            ]}
+          />
+          </span>
           <TimeRangeControl
             range={range}
             onChange={(r) => { list.pick(r); setPage(0); }}
@@ -475,6 +499,21 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
       )}
       <NewRowsStrip count={held.newCount} noun="request" onShow={held.showNew} />
       {/* Below 860px the columns would overlap: scroll sideways instead. */}
+      {openGroup && (
+        <div style={{ padding: "8px 16px", borderTop: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 10, fontSize: 12 }}>
+          <span style={{ color: "var(--text-3)" }}>One group:</span>
+          <span style={{ color: "var(--text)", fontWeight: 600 }}>{groupTitle(openGroup)}</span>
+          <span className="gw-tnum" style={{ color: "var(--text-4)" }}>{fmtComma(openGroup.count)} request{openGroup.count === 1 ? "" : "s"}</span>
+          <button className="gw-btn" style={{ marginLeft: "auto", padding: "3px 10px", fontSize: 11.5 }} onClick={() => { setGroupKey(null); setPage(0); }}>← All groups</button>
+        </div>
+      )}
+      {showGroups ? (
+        <ErrorGroupsTable groups={groups} rows={rows} partial={log.more} windowLabel={range ? null : WINDOWS[win].label}
+          hiddenRecovered={hiddenRecovered.length} hiddenRecoveredGroups={hiddenRecovered.length ? groupErrors(hiddenRecovered).length : 0}
+          onShowRecovered={() => { setResult(ALL); setPage(0); }}
+          onOpen={(k) => { setGroupKey(k); setPage(0); setOpen(null); }} />
+      ) : (
+      <>
       <div className="gw-log-scroll">
         <table className="gw-table" style={{ tableLayout: "fixed", width: "100%", minWidth: 860 }}>
           <colgroup>
@@ -548,7 +587,9 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
           </tbody>
         </table>
       </div>
-      <Pager
+      </>
+      )}
+      {!showGroups && <Pager
         page={curPage}
         pageCount={pageCount}
         total={rows.length}
@@ -556,7 +597,155 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
         noun="requests"
         onPage={setPage}
         more={log.more ? { loading: log.loadingOlder, failed: log.olderFailed, onLoad: log.loadOlder } : null}
-      />
+      />}
+    </div>
+  );
+}
+
+/** Who caused a group's error, in a few words: a provider's name, "The request", "All providers (2)". */
+function causeWords(g: ErrorGroup): string {
+  switch (g.cause) {
+    case "request": return "The request";
+    case "every-provider": return `All providers (${g.providerCount})`;
+    case "all-failed": return `All providers (${g.providerCount})`;
+    case "provider": return g.provider === "Cached" ? "Cache" : g.provider ?? "—";
+    default: return "—";
+  }
+}
+
+const CAUSE_HINT: Partial<Record<ErrorGroup["cause"], string>> = {
+  request: "The router's code says the request itself caused it (invalid params, nonce too low, already known…): sending it to another provider would not help.",
+  "every-provider": "Every provider the router tried gave this same error.",
+  "all-failed": "Every provider the router tried failed, each in its own way: nothing usable came back.",
+};
+
+/** "Data not held at blockfrost on Cardano" - a group in one line. */
+function groupTitle(g: ErrorGroup): string {
+  const who = g.cause === "request" ? ", caused by the request" : g.cause === "provider" ? ` at ${g.provider === "Cached" ? "the cache" : g.provider}` : g.cause === "none" ? "" : " at every provider";
+  const on = g.spec ? ` on ${buildChainMetaByIndex(g.spec).name}` : "";
+  return `${g.errorLabel.charAt(0).toUpperCase()}${g.errorLabel.slice(1)}${who}${on}`;
+}
+
+const timeOf = (ms: number, secs = false) => new Date(ms).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", ...(secs ? { second: "2-digit" } : {}), hour12: false });
+
+/** How long a span is, in words: "51 seconds", "4 minutes", "3 hours". */
+function spanWords(ms: number): string {
+  const s = Math.max(1, Math.round(ms / 1000));
+  if (s < 120) return `${s} second${s === 1 ? "" : "s"}`;
+  const m = Math.round(s / 60);
+  if (m < 120) return `${m} minutes`;
+  return `${Math.round(m / 60)} hours`;
+}
+
+const BUCKETS = 24;
+
+/**
+ * The Errors list grouped: one line per way requests failed, the most first
+ * ("every provider failed" pinned above). Each line says what the error was,
+ * who caused it, how many requests, when, and whether the client received
+ * it. The bars share one time span, so a burst shows as a burst and two at
+ * the same minute line up. A click opens the group's requests in the list.
+ */
+function ErrorGroupsTable({ groups, rows, partial, windowLabel, hiddenRecovered, hiddenRecoveredGroups, onShowRecovered, onOpen }: {
+  groups: ErrorGroup[];
+  rows: ErrorRequestRow[];
+  /** The list holds only the newest requests of the period: the groups cover those. */
+  partial: boolean;
+  /** The page window's words ("12 hours"), or null on picked times. */
+  windowLabel: string | null;
+  /** Recovered requests the opening filter hides, and how many groups they make. */
+  hiddenRecovered: number;
+  hiddenRecoveredGroups: number;
+  onShowRecovered: () => void;
+  onOpen: (key: string) => void;
+}) {
+  const times = rows.map((r) => r.time).filter(Number.isFinite);
+  const from = Math.min(...times);
+  const to = Math.max(...times);
+  const short = to - from < 15 * 60_000;
+  const peak = Math.max(1, ...groups.map((g) => Math.max(...groupBuckets(g.rows, from, to, BUCKETS))));
+  return (
+    <div>
+      {/* What the groups cover, before anything else: the list reads the newest
+          requests first, and on a busy deployment 300 of them is a minute. */}
+      <div style={{ padding: "9px 16px", borderTop: "1px solid var(--line)", fontSize: 12, color: partial ? "var(--text)" : "var(--text-2)", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        {partial && <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--warn)", flexShrink: 0 }} />}
+        <span>
+          {fmtComma(rows.length)} request{rows.length === 1 ? "" : "s"} in {fmtComma(groups.length)} group{groups.length === 1 ? "" : "s"},
+          {" "}from {timeOf(from, short)} to {timeOf(to, short)}
+          {partial ? <> - the newest {spanWords(to - from)}{windowLabel ? ` of the last ${windowLabel}` : " of the times you picked"}. Load older requests below the list to group more.</> : "."}
+        </span>
+      </div>
+      <div className="gw-log-scroll">
+        <table className="gw-table" style={{ tableLayout: "fixed", width: "100%", minWidth: 860 }}>
+          <colgroup>
+            <col style={{ width: "34%" }} />
+            <col style={{ width: 150 }} />
+            <col style={{ width: 90 }} />
+            <col style={{ width: 280 }} />
+            <col />
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Error</th>
+              <th>Caused by</th>
+              <th style={{ textAlign: "right" }}>Requests</th>
+              <th>When <span style={{ fontWeight: 400, color: "var(--text-4)", textTransform: "none", letterSpacing: 0 }}>{timeOf(from, short)} - {timeOf(to, short)}</span></th>
+              <th>Client</th>
+            </tr>
+          </thead>
+          <tbody>
+            {groups.map((g) => {
+              const bars = groupBuckets(g.rows, from, to, BUCKETS);
+              const open = () => onOpen(g.key);
+              const methods = g.methods.length === 1 ? g.methods[0]!.method : `${g.methods.length} methods`;
+              return (
+                <tr key={g.key} tabIndex={0} className="gw-logrow" onClick={open} onKeyDown={onRowKey(open)} title="Show these requests">
+                  <td style={{ maxWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                      {g.spec && <span style={{ display: "flex", flexShrink: 0 }}><ChainBadge spec={g.spec} size={16} /></span>}
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={g.errorLabel}>
+                          {g.errorLabel.charAt(0).toUpperCase() + g.errorLabel.slice(1)}
+                        </div>
+                        <div style={{ fontSize: 11, color: "var(--text-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                          title={g.methods.map((m) => `${m.method}: ${fmtComma(m.count)}`).join("\n")}>
+                          {g.spec ? buildChainMetaByIndex(g.spec).name : "chain not in the logs"} · <span className={g.methods.length === 1 ? "gw-mono" : undefined}>{methods}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                  <td style={{ maxWidth: 0 }}>
+                    <span className={g.cause === "provider" ? "gw-mono" : undefined} title={CAUSE_HINT[g.cause]}
+                      style={{ fontSize: 12, color: "var(--text)", fontWeight: g.cause === "all-failed" ? 600 : 400 }}>{causeWords(g)}</span>
+                  </td>
+                  <td className="gw-tnum" style={{ textAlign: "right", fontSize: 14, fontWeight: 600, color: "var(--text)" }}>{fmtComma(g.count)}</td>
+                  <td>
+                    <div style={{ display: "flex", alignItems: "flex-end", gap: 1, height: 20, borderBottom: "1px solid var(--line)" }} aria-hidden>
+                      {bars.map((b, k) => (
+                        <span key={k} style={{ flex: 1, height: b ? Math.max(3, Math.round((b / peak) * 20)) : 0, background: b ? "var(--text-3)" : "transparent", opacity: 0.7, borderRadius: 1 }} />
+                      ))}
+                    </div>
+                  </td>
+                  <td>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12, color: "var(--text-2)" }}>
+                      <span style={{ width: 7, height: 7, borderRadius: "50%", background: g.reached ? "var(--err)" : "var(--ok)", flexShrink: 0 }} />
+                      {g.reached ? "Reached the client" : "Recovered"}
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {hiddenRecovered > 0 && (
+        <div style={{ padding: "9px 16px", fontSize: 12, color: "var(--text-2)", borderTop: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--ok)", flexShrink: 0 }} />
+          Also {fmtComma(hiddenRecovered)} recovered request{hiddenRecovered === 1 ? "" : "s"} in {fmtComma(hiddenRecoveredGroups)} group{hiddenRecoveredGroups === 1 ? "" : "s"}: a provider failed and the router answered from another.
+          <button className="gw-btn" style={{ marginLeft: "auto", padding: "3px 10px", fontSize: 11.5 }} onClick={onShowRecovered}>Show them</button>
+        </div>
+      )}
     </div>
   );
 }

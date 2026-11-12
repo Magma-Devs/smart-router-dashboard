@@ -54,11 +54,13 @@ export function errorLabel(a: RelayAttempt): string {
 }
 
 /** The error-type filter's key and label. Without a code, the message with
- *  its numbers blanked, so one error on different blocks groups together. */
+ *  its numbers blanked (an HTTP status kept), so one error on different
+ *  blocks groups together. */
 export function errorType(a: RelayAttempt): { key: string; label: string } {
   const code = realCode(a);
   if (code) return { key: code, label: codeWords(code) };
-  const m = errorWords(a).replace(/\d+/g, "#");
+  // An HTTP status keeps its number: a 429 and a 503 are different errors.
+  const m = errorWords(a).replace(/(?<!HTTP )\d+/g, "#");
   return { key: "msg:" + m, label: clip(m) };
 }
 
