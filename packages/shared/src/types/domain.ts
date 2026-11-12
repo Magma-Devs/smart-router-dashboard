@@ -731,6 +731,8 @@ export interface ErrorRequestRow extends CallFacts {
    * Null when it ended `ok`, and on a router that writes no `relay_end`.
    */
   errorCode: string | null;
+  /** The router's fixed class of the error (`error_class` on `relay_end`); absent where the router writes none. */
+  errorClass?: string;
 }
 
 /** Why the router's logs couldn't be read: no log store configured, or it didn't answer in time. */
@@ -787,6 +789,76 @@ export interface ErrorRequestsReport {
    * covers the same stretch rather than one that moved with the clock.
    */
   range?: { startMs: number; endMs: number };
+}
+
+/**
+ * One way requests failed over the page window, from the store's recorded
+ * counts (`smartrouter_request_errors:count1m`): the requests on one chain
+ * whose error class, failing provider and outcome were the same, and whether
+ * the client got the error.
+ */
+export interface RecordedErrorGroup {
+  /** Unique within a report: chain, class (the outcome when unclassified), provider, reached. */
+  key: string;
+  /** The chain's spec; null when the count names none. */
+  spec: string | null;
+  /** The router's fixed class of the error; null when the router writes none yet ("unclassified"). */
+  errorClass: string | null;
+  /**
+   * The request's `relay_end` outcome (`no_answer`, `node_error`, `ok` …).
+   * Part of the group when it has no class; with a class, the one outcome its
+   * requests share, or null when they ended more than one way.
+   */
+  outcome: string | null;
+  /** The failed try that decided it: the one whose answer went back, else the last; null when no try failed. */
+  failingProvider: string | null;
+  /** The client got the error (true), or a later try recovered the request (false). */
+  reachedClient: boolean;
+  count: number;
+  /**
+   * Unix s: from the start of the first bar that counts one of its requests
+   * (a minute earlier, the ruler's window; never before the page window) to
+   * the end of the last (now, for the bar still filling). The minutes to read
+   * its requests in.
+   */
+  from: number;
+  to: number;
+  /** One count per bar of `grid`, in order. */
+  buckets: number[];
+}
+
+/**
+ * The Errors tab's grouped view over the whole page window, from the store's
+ * recorded counts: `GET /api/error-groups`. The same cost at any window: a
+ * range read with a point per bar, and one read for the bar still filling.
+ */
+export interface ErrorGroupsReport {
+  /**
+   * False when the counts can't answer: the store didn't (`unreachable`), it
+   * holds no such series (`no-series`: the recording rule isn't on it, or
+   * nothing failed for a day), or a router was asked for whose counts can't
+   * be told from another router's on its chain (`shared-chain`). The web then
+   * groups the requests the list has loaded.
+   */
+  available: boolean;
+  reason?: "unreachable" | "no-series" | "shared-chain";
+  /** `recorded` with an answer; null without a read. */
+  source: "recorded" | null;
+  /** The bars' END times (`bucketGrid`): a bar at `t` counts the `stepSec` before it; the last is still filling up to `asOf`. */
+  grid: ChartGrid;
+  asOf: number;
+  /** The most requests first, at most `limit`. */
+  groups: RecordedErrorGroup[];
+  /** The most groups listed. */
+  limit: number;
+  /** Groups past `limit` and the requests in them: counted in `total` and `reached`, not listed. */
+  omitted: { groups: number; count: number };
+  /** Requests with an error in the window, every group. */
+  total: number;
+  /** Requests whose error reached the client: over the window, and one count per bar. */
+  reached: { count: number; buckets: number[] };
+  /** Unix s from which the newest bar may be short: the recorded counts run two to three minutes behind. Null without a read. */
+  partialFrom: number | null;
 }
 
 /* ── Transactions tab ────────────────────────────────────────────────────── */

@@ -1,9 +1,10 @@
 "use client";
 
 /* Errors tab - what went wrong, where, and what the app got. The count cards
- * run from an upstream failing to the client seeing it: failed attempts
- * (/api/metrics/errors), then the router's retry counters
- * (/api/metrics/retries). Below them, every request that hit an error, one
+ * run from the client seeing an error over the whole window (the store's
+ * recorded counts, /api/error-groups) to an upstream failing: the router's
+ * retry counters (/api/metrics/retries), then failed attempts
+ * (/api/metrics/errors). Below them, every request that hit an error, one
  * row each, from the router's logs (ErrorRequests, /api/error-requests). Its
  * filters - the result, retryable or not, the error type, the method, the
  * upstream - answer what the Upstreams and Error types views used to, with
@@ -12,7 +13,7 @@
  * requests (ErrorsJump). */
 
 import { useState } from "react";
-import type { ErrorsReport, MetricWindow, RetriesReport } from "@sr/shared";
+import { WINDOWS, type ErrorGroupsReport, type ErrorsReport, type MetricWindow, type RetriesReport } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { fmtComma, fmtPct } from "@/lib/format";
 import { TT } from "@/lib/tooltips";
@@ -62,6 +63,11 @@ export function ErrorsBreakdown({ chainFilter, win, focus = null, onFocus }: {
   const { data, isLoading } = useApi<ErrorsReport>(`/api/metrics/errors?window=${win}${specQ}${routerIdQ}${scopeQ}`);
   // Once a minute: each read counts retries back to their counters' births.
   const counts = useApi<RetriesReport>(`/api/metrics/retries?window=${win}${specQ}${scopeQ}`, 60_000);
+  // The whole window's errors from the store's recorded counts: the first
+  // card, and the list's groups. Once a minute, as the counts move.
+  // Another window's or chain's numbers are never shown under this one's name.
+  const groups = useApi<ErrorGroupsReport>(`/api/error-groups?window=${win}${specQ}${routerIdQ}`, 60_000, { keepPreviousData: false });
+  const rec = groups.data ?? null;
 
   const total = data?.total ?? 0;
 
@@ -72,7 +78,7 @@ export function ErrorsBreakdown({ chainFilter, win, focus = null, onFocus }: {
   // is only in the logs. When the list below shows more, the card says so -
   // while the list covers the cards' window: the rows it has loaded.
   // Only the ones it meant to retry: a transaction is never retried by design.
-  const logs = list.range === null && list.log.head?.available ? list.log : null;
+  const logs = list.range === null && !list.group && list.log.head?.available ? list.log : null;
   const logFailed = (logs?.rows ?? []).filter((r) => r.result === "failed" && (r.retried || r.exhausted)).length;
   const failedNote = logs && logFailed > (c?.failed ?? 0)
     ? <span style={{ color: "var(--warn)" }}>{fmtComma(logFailed - (c?.failed ?? 0))}{logs.more ? "+" : ""} more in the list below that the retry counter misses: only one attempt returned</span>
@@ -81,6 +87,13 @@ export function ErrorsBreakdown({ chainFilter, win, focus = null, onFocus }: {
      order someone debugging asks in. One number format on all four. */
   const count = (v: number | null | undefined) => (v == null ? "—" : fmtComma(v));
   const kpis: { label: string; tipKey: string; value: string; color: string; sub: React.ReactNode; loading: boolean }[] = [
+    { label: "Reached the client", tipKey: "reachedClient", loading: groups.isLoading && !rec,
+      value: rec?.available ? fmtComma(rec.reached.count) : "—",
+      // Not green at zero: a router before relay_end isn't in the counts.
+      color: rec?.available ? (rec.reached.count ? "var(--err)" : "var(--text)") : "var(--text-4)",
+      sub: rec?.available
+        ? <>of {fmtComma(rec.total)} requests with an error, last {WINDOWS[win].label}</>
+        : <>{countsMissing(rec?.reason)}</> },
     { label: "Still failed", tipKey: "retryFailed", value: count(c?.failed), loading: counts.isLoading,
       // A zero here is not an all-clear, so it isn't green: the card counts
       // retried requests only, and a provider's error reply goes back to the
@@ -98,7 +111,7 @@ export function ErrorsBreakdown({ chainFilter, win, focus = null, onFocus }: {
 
   return (
     <div style={{ paddingTop: 8 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 12, marginBottom: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5,minmax(0,1fr))", gap: 12, marginBottom: 16 }}>
         {kpis.map((k) => (
           <div key={k.label} className="gw-card" style={{ padding: "13px 16px" }}>
             <div style={{ display: "inline-flex", alignItems: "center", fontSize: 12, color: "var(--text-3)", fontWeight: 500 }}>
@@ -115,7 +128,17 @@ export function ErrorsBreakdown({ chainFilter, win, focus = null, onFocus }: {
       </div>
 
       <ErrorRequests chainFilter={chainFilter} win={win} upstream={upstream} onUpstream={pickUpstream}
-        initialRange={initialRange} list={list} />
+        initialRange={initialRange} list={list} recorded={rec} />
     </div>
   );
+}
+
+/** Why the window's recorded error counts can't answer, in a few words. */
+function countsMissing(reason: ErrorGroupsReport["reason"] | undefined): string {
+  switch (reason) {
+    case "no-series": return "No recorded error counts on this store";
+    case "unreachable": return "The metrics store didn't answer";
+    case "shared-chain": return "Can't be told apart from the other routers on this chain";
+    default: return "The API didn't answer";
+  }
 }

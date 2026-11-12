@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { WRITE_UNKNOWN_NOTE, type RouterTopology } from "@sr/shared";
-import { buildErrorRows, ErrorRequestsService } from "../services/error-requests.js";
+import { buildErrorRows, ErrorRequestsService, failingProviderOf, inErrorClass } from "../services/error-requests.js";
 import { buildTxRows, NOTE, summarize, TransactionsService } from "../services/transactions.js";
 import { attemptsOf, methodOf, retried } from "../services/relay-end.js";
 import { CANCELLED_NOTE, LOOKUP_ID, METHOD_REDACTED, ownRow, parseRouterLine, UpstreamIndex, type RouterLine } from "../services/router-log.js";
@@ -458,6 +458,82 @@ describe("ErrorRequestsService on a router that writes relay_end", () => {
         " | json outcome=\"outcome\", method=\"method\", selection=\"selection\" | __error__=\"\"" +
         " | method!=\"\" or selection!=\"\" | selection!=\"subscription\" | outcome=~`no_answer|write_unknown|rejected_before_dispatch|router_error` [3600s])) or vector(0))",
     );
+  });
+});
+
+/* Opening one group of the recorded error counts (GET /api/error-groups): the
+   list reads the group's minutes, narrowed to its failing provider, and keeps
+   the requests that provider decided - labelled the way the rule labels them. */
+describe("a group of the recorded counts, opened on the list", () => {
+  const LINES = [READ_RECOVERED, NO_ANSWER, READ_NODE_ERROR, WRITE_NODE_ERROR, WRITE_UNKNOWN, TX_NO_PROVIDERS];
+  const rowOf = (l: LokiLine) => errorRows([l], true)[0]!;
+
+  it("the failing provider is the failed try whose answer went back, else the last failed try; none when no try failed", () => {
+    expect(failingProviderOf(rowOf(READ_NODE_ERROR).attempts)).toBe("node-a");
+    // Both refused the nonce; node-a's refusal is the one the client got.
+    expect(failingProviderOf(rowOf(WRITE_NODE_ERROR).attempts)).toBe("node-a");
+    // node-b answered; node-a is the try that failed on the way.
+    expect(failingProviderOf(rowOf(READ_RECOVERED).attempts)).toBe("node-a");
+    expect(failingProviderOf(rowOf(NO_ANSWER).attempts)).toBe("node-a");
+    // node-b was still out when the relay ended: no result, not a failure.
+    expect(failingProviderOf(rowOf(WRITE_UNKNOWN).attempts)).toBe("node-a");
+    expect(failingProviderOf(rowOf(TX_NO_PROVIDERS).attempts)).toBeNull();
+    const twoFailed = ev(90_050, {
+      GUID: "9001", method: "eth_call", chain: "ETH1", selection: "stateless", outcome: "no_answer", stop_reason: "AllProvidersExhausted", served_by: "", status: 504, has_reply: false, latency_ms: 50,
+      error_code: "PROTOCOL_CONTEXT_DEADLINE", error: "deadline",
+      attempts: [
+        { upstream: "node-a", outcome: "timeout", error_code: "PROTOCOL_CONTEXT_DEADLINE", message: "deadline", retryable: true, batch: 0, sent_ms: 1, latency_ms: 20, returned_to_client: false },
+        { upstream: "node-b", outcome: "rate_limited", error_code: "NODE_RATE_LIMITED", message: "HTTP 429", retryable: true, batch: 1, sent_ms: 22, latency_ms: 5, returned_to_client: false },
+      ],
+    });
+    expect(failingProviderOf(rowOf(twoFailed).attempts)).toBe("node-b");
+  });
+
+  it("the error class is the router's when it writes one, and the filter passes every row through while it writes none", () => {
+    expect(rowOf(NO_ANSWER).errorClass).toBeUndefined();
+    const classed = ev(91_050, { GUID: "9101", method: "eth_call", chain: "ETH1", selection: "stateless", outcome: "no_answer", error_class: "rate_limit", stop_reason: "", served_by: "", status: 0, has_reply: false, latency_ms: 50, attempts: [] });
+    expect(rowOf(classed).errorClass).toBe("rate_limit");
+    expect(inErrorClass(rowOf(NO_ANSWER), "rate_limit")).toBe(true);
+    expect(inErrorClass(rowOf(classed), "rate_limit")).toBe(true);
+    expect(inErrorClass(rowOf(classed), "timeout")).toBe(false);
+  });
+
+  it("a failing provider narrows both reads to its name and keeps the requests it decided", async () => {
+    const { loki, queries } = lokiOf(LINES);
+    const svc = new ErrorRequestsService(loki, SEL, cfg);
+    const r = await svc.report(RANGE, undefined, undefined, undefined, undefined, { failingProvider: "node-a" });
+    expect(queries[0]).toMatch(/\|~ `node-a`$/);
+    expect(queries[1]).toContain(' |= `"upstream":"node-a"` | json');
+    expect(r.rows.map((x) => x.guid)).toEqual(["7043733", "7481116", "7285711", "7846121", "7387963"]);
+    const b = await svc.report(RANGE, undefined, undefined, undefined, undefined, { failingProvider: "node-b" });
+    expect(b.rows).toEqual([]); // node-b answered, refused second or never answered: it decided none
+  });
+
+  it("an empty failing provider keeps the requests no try failed in, without narrowing the read", async () => {
+    const { loki, queries } = lokiOf(LINES);
+    const r = await new ErrorRequestsService(loki, SEL, cfg).report(RANGE, undefined, undefined, undefined, undefined, { failingProvider: "" });
+    expect(queries[1]).not.toContain('"upstream"');
+    expect(r.rows.map((x) => x.guid)).toEqual(["8601"]);
+  });
+
+  it("an error class passes rows from a router that writes none, and keeps only its own once it does", async () => {
+    const classed = (guid: string, at: number, cls: string) => ev(at, {
+      GUID: guid, method: "eth_call", chain: "ETH1", selection: "stateless", outcome: "no_answer", error_class: cls, stop_reason: "AllProvidersExhausted", served_by: "", status: 0, has_reply: false, latency_ms: 5,
+      error_code: "NODE_RATE_LIMITED", error: "HTTP 429",
+      attempts: [{ upstream: "node-b", outcome: "rate_limited", error_code: "NODE_RATE_LIMITED", message: "HTTP 429", retryable: true, batch: 0, sent_ms: 1, latency_ms: 3, returned_to_client: false }],
+    });
+    const { loki } = lokiOf([NO_ANSWER, classed("9201", 92_000, "rate_limit"), classed("9202", 93_000, "timeout")]);
+    const svc = new ErrorRequestsService(loki, SEL, cfg);
+    const of = async (errorClass: string) => (await svc.report(RANGE, undefined, undefined, undefined, undefined, { errorClass })).rows.map((x) => x.guid);
+    expect(await of("rate_limit")).toEqual(["9201", "7846121"]);
+    expect(await of("")).toEqual(["7846121"]); // the unclassified
+    expect((await svc.report(RANGE)).rows).toHaveLength(3);
+  });
+
+  it("exact times read only those minutes", async () => {
+    const { loki } = lokiOf(LINES);
+    const r = await new ErrorRequestsService(loki, SEL, cfg).report({ startMs: 20_000, endMs: 31_000 }, undefined, undefined, undefined, undefined, { failingProvider: "node-a" });
+    expect(r.rows.map((x) => x.guid)).toEqual(["7285711", "7846121"]);
   });
 });
 

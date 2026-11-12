@@ -42,6 +42,7 @@ import type {
   FailedRequests,
   LogUnavailable,
   MetricWindow,
+  RelayAttempt,
   RequestLookup,
   RouterTopology,
 } from "@sr/shared";
@@ -238,8 +239,37 @@ function rowOfEvent(e: RouterLine, guid: string, index: UpstreamIndex, every: bo
     totalMs: latency,
     error: FAILED_SET.has(outcome) ? scrubUrls(withoutGuid(str(e.f.error)) || "no upstream replied") : null,
     errorCode: str(e.f.error_code) || null,
+    ...(str(e.f.error_class) ? { errorClass: str(e.f.error_class) } : {}),
     ...callFactsOf(e),
   };
+}
+
+/**
+ * The provider whose failed try decided a request - the label the recorded
+ * error counts carry (`failing_provider`): the failed try whose answer went
+ * back to the client, else the last failed try. Null when no try failed: the
+ * router refused or failed the request itself.
+ */
+export function failingProviderOf(attempts: readonly RelayAttempt[]): string | null {
+  const failed = attempts.filter((a) => a.outcome === "failed");
+  return (failed.find((a) => a.replied) ?? failed[failed.length - 1])?.upstream ?? null;
+}
+
+/**
+ * Whether a row is in an error class: the class it carries, or any class
+ * while the router writes none - so the filter passes every row through
+ * until it does. An empty class asks for the requests without one.
+ */
+export function inErrorClass(row: Pick<ErrorRequestRow, "errorClass">, errorClass: string): boolean {
+  return row.errorClass === undefined || row.errorClass === errorClass;
+}
+
+/** What opens one group of the recorded counts on the list: its provider and class. */
+export interface GroupFocus {
+  /** The failing provider (`failingProviderOf`); empty for the requests no try failed in. */
+  failingProvider?: string;
+  /** The error class (`inErrorClass`); empty for the unclassified requests. */
+  errorClass?: string;
 }
 
 /**
@@ -482,13 +512,16 @@ export class ErrorRequestsService {
    * two reads can come back in both; the client keeps it once, by GUID.
    * `upstream` keeps the requests whose try at that upstream failed - what
    * an errors-over-time bar counts - and narrows the read to it, so the cap
-   * applies to what was asked for. One read scans at most
+   * applies to what was asked for. `focus` opens one group of the recorded
+   * counts: a failing provider narrows the read to its name the same way and
+   * keeps the requests it decided (`failingProviderOf`), and an error class
+   * keeps its requests (`inErrorClass`). One read scans at most
    * LOG_READ_BUDGET_BYTES of logs (`readStart`): on a busy deployment a long
    * range is read in parts, newest first, one per "Load older". One read per
    * list at a time on this process, its answer kept (`ListReads`); a poll of a
    * page window reads only what is new since the last (`readList`).
    */
-  async report(range: ReadRange, spec?: string, routerId?: string, before?: number, upstream?: string): Promise<ErrorRequestsReport> {
+  async report(range: ReadRange, spec?: string, routerId?: string, before?: number, upstream?: string, focus: GroupFocus = {}): Promise<ErrorRequestsReport> {
     const read = { startMs: range.startMs, endMs: range.endMs };
     const none = (available: boolean, reason?: LogUnavailable): ErrorRequestsReport =>
       ({ available, ...(reason ? { reason } : { range: read }), rows: [], more: false, nextBefore: null });
@@ -497,7 +530,10 @@ export class ErrorRequestsService {
     const endMs = readEnd(range, before);
     if (endMs <= range.startMs) return none(true);
 
-    return this.reads.get(range, before, [spec, routerId, upstream], async (last) => {
+    const { failingProvider, errorClass } = focus;
+    // The one upstream the read is about: a bar's, or a group's failing provider.
+    const named = upstream ?? (failingProvider || undefined);
+    return this.reads.get(range, before, [spec, routerId, upstream, failingProvider, errorClass], async (last) => {
       // A request writes several of these lines, so read a few per request.
       // Called-off tries are left out here: they alone don't make an error.
       // A chain, router or upstream narrows the read to those names, so the
@@ -508,17 +544,17 @@ export class ErrorRequestsService {
       // Loki opens no other chain's chunks. Else narrow by the upstreams' names, as before.
       const scoped = await this.scope(loki).narrow(router?.spec ?? spec, routerId);
       const selector = scoped ?? this.selector;
-      const names = upstream ? [upstream] : scoped ? undefined : this.upstreamsFor(spec, routerId);
+      const names = named ? [named] : scoped ? undefined : this.upstreamsFor(spec, routerId);
       // A request no upstream could be chosen for names none: its end line names the chain's listener.
-      const chain = upstream || scoped ? undefined : (router?.spec ?? spec);
+      const chain = named || scoped ? undefined : (router?.spec ?? spec);
       const alts = [
         ...(names?.filter(inRawString).map(escapeRe) ?? []),
         ...(names && chain && LABEL_TOKEN.test(chain) ? [listenerPattern(chain)] : []),
       ];
       const narrow = alts.length ? ` |~ \`${alts.join("|")}\`` : "";
       // A relay_end is one line per request and names its chain and its tries' upstreams.
-      const eventNarrow = upstream
-        ? inRawString(upstream) ? ` |= \`"upstream":"${upstream}"\`` : ""
+      const eventNarrow = named
+        ? inRawString(named) ? ` |= \`"upstream":"${named}"\`` : ""
         : chain && LABEL_TOKEN.test(chain) ? ` |= \`"chain":"${chain}"\`` : "";
       const index = new UpstreamIndex(routers);
       const got = await readList(loki, selector, {
@@ -552,6 +588,8 @@ export class ErrorRequestsService {
       if (spec) rows = rows.filter((r) => onChain(r, spec));
       if (routerId) rows = router ? rows.filter((r) => ownRow(r, router, routers)) : [];
       if (upstream) rows = rows.filter((r) => r.attempts.some((a) => a.upstream === upstream && a.outcome === "failed"));
+      if (failingProvider !== undefined) rows = rows.filter((r) => (failingProviderOf(r.attempts) ?? "") === failingProvider);
+      if (errorClass !== undefined) rows = rows.filter((r) => (errorClass ? inErrorClass(r, errorClass) : !r.errorClass));
       const unread = got.read.unread ? { unread: got.read.unread } : {};
       return { report: { available: true, rows, ...unread, more: nextBefore !== null, nextBefore, range: read }, head: got.head };
     });

@@ -635,6 +635,54 @@ describe("GET /api/error-requests", () => {
   });
 });
 
+describe("GET /api/error-requests, opening one group of the recorded counts", () => {
+  let app: FastifyInstance;
+  const queries: string[] = [];
+  const ns = (ls: LokiLine[]) => ls.map((l) => [String(BigInt(Math.round(l.tsMs * 1000)) * 1000n), l.line]);
+
+  beforeEach(() => {
+    queries.length = 0;
+    vi.stubGlobal("fetch", async (input: URL | string) => {
+      const url = new URL(input.toString());
+      if (url.pathname.endsWith("/loki/api/v1/index/stats")) return Response.json({ streams: 0, chunks: 0, bytes: 0, entries: 0 });
+      if (!url.pathname.endsWith("/loki/api/v1/query_range")) return Response.json({ status: "success", data: { resultType: "vector", result: [] } });
+      const q = url.searchParams.get("query") ?? "";
+      queries.push(q);
+      const lines = q.includes('`"GUID":"(')
+        ? RATE_LIMITED_THEN_OK
+        : RATE_LIMITED_THEN_OK.filter((l) => l.line.includes("could not send relay") || l.line.includes("policy.Decide"));
+      return Response.json({ status: "success", data: { resultType: "streams", result: [{ stream: { service: "router" }, values: ns(lines) }] } });
+    });
+  });
+
+  afterEach(async () => {
+    await app.close();
+    delete process.env.LOKI_URL;
+    vi.unstubAllGlobals();
+  });
+
+  it("the group's minutes, failing provider and class: the read narrowed to the provider, the rows it decided", async () => {
+    process.env.LOKI_URL = "http://loki.test:3100";
+    app = await buildApp();
+    const span = `from=${Date.now() - 600_000}&to=${Date.now()}`;
+    const res = await app.inject({ method: "GET", url: `/api/error-requests?${span}&failingProvider=sol-solana-labs&errorClass=rate_limit` });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().rows.map((r: { guid: string }) => r.guid)).toEqual(["15972212763463815960"]);
+    expect(queries[0]).toMatch(/\|~ `sol-solana-labs`$/);
+    // sol-publicnode answered: it decided nothing.
+    const other = await app.inject({ method: "GET", url: `/api/error-requests?${span}&failingProvider=sol-publicnode` });
+    expect(other.json()).toMatchObject({ available: true, rows: [] });
+  });
+
+  it("a provider or a class that could reach into the query is a 400", async () => {
+    process.env.LOKI_URL = "http://loki.test:3100";
+    app = await buildApp();
+    expect((await app.inject({ method: "GET", url: "/api/error-requests?window=1h&failingProvider=a%60b" })).statusCode).toBe(400);
+    expect((await app.inject({ method: "GET", url: "/api/error-requests?window=1h&errorClass=a%22b" })).statusCode).toBe(400);
+    expect((await app.inject({ method: "GET", url: "/api/error-requests?window=1h&failingProvider=&errorClass=" })).statusCode).toBe(200);
+  });
+});
+
 describe("GET /api/error-requests/count", () => {
   let app: FastifyInstance;
   const queries: string[] = [];

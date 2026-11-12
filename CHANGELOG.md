@@ -5,6 +5,31 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.64.0]
+
+### Added
+
+- **The Errors list groups the whole window, at any window** (MAG-5265).
+  Where the metrics store holds the per-minute error counts the log store
+  records (`smartrouter_request_errors:count1m`, MAG-5264), the grouped view
+  covers the page window from them, not just the newest 300 requests the
+  list has loaded. 30 days cost the store the same two reads as 30 minutes.
+  - A group is the chain, the error class, the provider whose failed try
+    decided the request, and whether the client got it. Until the router
+    names a class (MAG-5266), the outcome stands in for it and the line
+    says "unclassified".
+  - The 50 largest groups are listed; the line above them says how many
+    more there are.
+  - A click opens the group's requests: the list reads only its minutes,
+    narrowed to its provider.
+  - On picked or a bar's times, with a filter the counts don't carry, or on
+    a store without the counts, the list groups the requests it has loaded,
+    as before.
+- **A "Reached the client" card** opens the Errors tab: the requests whose
+  error reached the client over the whole window, from the same counts.
+- `GET /api/error-groups`, and `failingProvider` and `errorClass` on
+  `GET /api/error-requests`.
+
 ## [0.63.0]
 
 ### Added

@@ -10,7 +10,7 @@
  * and details are shared with the Transactions tab (request-log.tsx). */
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { WINDOWS, WRITE_UNKNOWN_NOTE, buildChainMetaByIndex, explainRouterError, type ErrorRequestRow, type ErrorRequestsReport, type MetricWindow, type RequestLookup } from "@sr/shared";
+import { WINDOWS, WRITE_UNKNOWN_NOTE, buildChainMetaByIndex, explainRouterError, type ErrorGroupsReport, type ErrorRequestRow, type ErrorRequestsReport, type MetricWindow, type RecordedErrorGroup, type RequestLookup } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { useLogReads } from "@/hooks/use-log-reads";
 import { useRouterFilter } from "@/hooks/use-router-options";
@@ -21,6 +21,8 @@ import { TT } from "@/lib/tooltips";
 import { fmtComma } from "@/lib/format";
 import { linkRequest, requestFromUrl } from "@/lib/request-in-url";
 import { coveredSpan, groupBuckets, groupErrors, type ErrorGroup } from "@/lib/error-groups";
+import { groupQuery, groupsForPick, listGroups, resultsOfGroup } from "@/lib/recorded-error-groups";
+import { RecordedGroupHeader, RecordedGroupsTable } from "./RecordedErrorGroups";
 import {
   appGot,
   customerOptions,
@@ -231,7 +233,10 @@ const narrowSelect: React.CSSProperties = { ...filterSelectStyle, maxWidth: 200 
 /**
  * The list's times - the page window, or exact ones picked here or a bar's -
  * and its reads of them. Held by the tab, so the cards above count the rows
- * the list shows rather than reading the logs again.
+ * the list shows rather than reading the logs again. One group of the
+ * recorded counts can be opened on it: the list then reads that group's
+ * minutes, narrowed to its failing provider and class, until it is closed,
+ * times are picked, or the window, chain or router changes.
  */
 export function useErrorList({ chainFilter, win, upstream, initialRange = null, onPick }: {
   chainFilter: string | null;
@@ -246,19 +251,30 @@ export function useErrorList({ chainFilter, win, upstream, initialRange = null, 
   const [live, setLive] = useState(() => rangeIsLive(initialRange));
   const specQ = chainFilter ? `&spec=${encodeURIComponent(chainFilter)}` : "";
   const { routerIdQ } = useRouterFilter();
+  const [opened, setOpened] = useState<{ scope: string; group: RecordedErrorGroup; live: boolean } | null>(null);
+  // The group belongs to the window, chain and router it was opened on.
+  const scope = `${win}|${chainFilter ?? ""}|${routerIdQ}`;
+  const group = opened && opened.scope === scope && range === null ? opened : null;
   const rangeQ = range ? `from=${Math.round(range.from)}&to=${Math.round(range.to)}` : `window=${win}`;
   // On a bar's times with an upstream picked, the read itself is narrowed to
   // that upstream, so the cap applies to the requests the bar counts.
   const onBarRange = initialRange != null && range != null && range.from === initialRange.from && range.to === initialRange.to;
   const barQ = onBarRange && upstream !== ALL ? `&upstream=${encodeURIComponent(upstream)}` : "";
-  const log = useLogReads<ErrorRequestRow, ErrorRequestsReport>(`/api/error-requests?${rangeQ}${specQ}${routerIdQ}${barQ}`, live);
-  const pick = (r: ExactRange | null) => { setRange(r); setLive(rangeIsLive(r)); onPick?.(r); };
-  return { log, range, pick, rangeQ, routerIdQ, onBarRange, barQ };
+  const g = group ? groupQuery(group.group) : null;
+  const readQ = g ? `from=${Math.round(g.from)}&to=${Math.round(g.to)}${g.q}` : rangeQ;
+  const log = useLogReads<ErrorRequestRow, ErrorRequestsReport>(`/api/error-requests?${readQ}${specQ}${routerIdQ}${barQ}`, group ? group.live : live);
+  const pick = (r: ExactRange | null) => { setRange(r); setLive(rangeIsLive(r)); setOpened(null); onPick?.(r); };
+  const openGroup = (rg: RecordedErrorGroup) => {
+    const q = groupQuery(rg);
+    setOpened({ scope, group: rg, live: rangeIsLive({ from: q.from, to: q.to }) });
+  };
+  const closeGroup = () => setOpened(null);
+  return { log, range, pick, rangeQ, routerIdQ, onBarRange, barQ, group: group?.group ?? null, openGroup, closeGroup };
 }
 
 export type ErrorList = ReturnType<typeof useErrorList>;
 
-export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialRange = null, list }: {
+export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialRange = null, list, recorded = null }: {
   chainFilter: string | null;
   win: MetricWindow;
   /** Controlled from the tab, so a bar on the Upstreams tab can open its own requests. */
@@ -268,6 +284,8 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
   initialRange?: ExactRange | null;
   /** The list's reads, held by the tab (`useErrorList`). */
   list: ErrorList;
+  /** The window's groups from the store's recorded counts (/api/error-groups), held by the tab; null before they answer. */
+  recorded?: ErrorGroupsReport | null;
 }) {
   const [picked, setResult] = useState<ResultPick | typeof AUTO>(AUTO);
   const [retry, setRetry] = useState<RetryFilter>(ALL);
@@ -291,7 +309,7 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
   const find = (id: string | null) => { setLookupId(id); linkRequest(id ?? open); };
   const toggleRow = (guid: string) => { const next = open === guid ? null : guid; setOpen(next); linkRequest(next ?? lookupId); };
 
-  const { log, range, rangeQ, routerIdQ, onBarRange, barQ } = list;
+  const { log, range, rangeQ, routerIdQ, onBarRange, barQ, group: recordedOpen } = list;
 
   // Another chain or router is another list: what was open on the last one closes.
   const scopeKey = `${chainFilter ?? ""}|${routerIdQ}`;
@@ -328,26 +346,41 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
     return retry === "retryable" ? k.retryable : k.notRetryable;
   });
   const reachedCount = narrowed.filter((r) => REACHED_CLIENT.has(r.result)).length;
-  const result: ResultPick = picked === AUTO ? (reachedCount > 0 ? REACHED : ALL) : picked;
+  /* The groups come from the store's recorded counts when they answer for
+     what the list shows - the whole window - else from the loaded requests. */
+  const view = listGroups(recorded, {
+    picked: picked === AUTO ? "auto" : picked,
+    exactRange: range !== null,
+    filtered: retry !== ALL || errType !== ALL || customer !== ALL || method !== ALL || upstream !== ALL,
+    loadedReached: reachedCount,
+  });
+  const result: ResultPick = view.result;
   const inResult = (r: ErrorRequestRow) => result === ALL || (result === REACHED ? REACHED_CLIENT.has(r.result) : r.result === result);
   const filtered = narrowed.filter(inResult);
+  const recordedGroups = view.source === "recorded" && recorded ? groupsForPick(recorded.groups, result) : [];
+  const fromRecorded = recordedGroups.length > 0;
   // 300 rows a read: grouping them on each render costs about 3 ms (11 ms
   // for 3,000 loaded with "Load older"), less than a memo's bookkeeping.
-  const groups = groupErrors(filtered);
+  const groups = fromRecorded ? [] : groupErrors(filtered);
   const openGroup = groupKey ? groups.find((g) => g.key === groupKey) ?? null : null;
   // An opened group lists its own requests; a filter that empties it shows the rest again.
-  const rows = openGroup ? openGroup.rows : filtered;
+  // A recorded group's read is its own: it keeps the results its outcome stands for.
+  const recordedResults = recordedOpen ? resultsOfGroup(recordedOpen) : null;
+  const rows = recordedResults ? narrowed.filter((r) => recordedResults.has(r.result)) : openGroup ? openGroup.rows : filtered;
   // The times the loaded requests cover: what the grouped view says it groups.
   const span = coveredSpan(allRows.map((r) => r.time), head?.range, log.readFrom);
-  const showGroups = grouped && !openGroup && rows.length > 0 && span !== null;
+  const showGroups = grouped && !openGroup && !recordedOpen && (fromRecorded || (rows.length > 0 && span !== null));
   /* Under the opening filter, recovered requests are hidden: a provider the
      router kept working around is still worth a line. */
-  const hiddenRecovered = result === REACHED ? narrowed.filter((r) => r.result === "recovered") : [];
+  const hiddenRecovered = result === REACHED && !fromRecorded ? narrowed.filter((r) => r.result === "recovered") : [];
+  const hiddenRecorded = result === REACHED && fromRecorded && recorded ? groupsForPick(recorded.groups, "recovered") : [];
   const byResult = (k: ErrorRequestRow["result"]) => narrowed.filter((r) => r.result === k).length;
   const kinds = byDropdowns.filter(inResult).map(retryKinds);
   /* Nothing reached the client, and nobody has filtered: the list says so
      above the recovered requests it then shows. */
-  const allRecovered = !!head && picked === AUTO && reachedCount === 0 && narrowed.length > 0;
+  const allRecovered = picked === AUTO && !recordedOpen && (view.source === "recorded" && recorded
+    ? recorded.reached.count === 0 && recorded.total > 0
+    : !!head && reachedCount === 0 && narrowed.length > 0);
 
   const pageCount = Math.max(1, Math.ceil(rows.length / PER_PAGE));
   const curPage = Math.min(page, pageCount - 1);
@@ -369,23 +402,30 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
   }, [jumpKey]);
   /* Keyboard focus follows a group opened and closed: the group's line
      unmounts when it opens, so focus moves to "← All groups", and back to
-     the group's line when it closes. Left alone it fell to the page. */
+     the group's line when it closes. Left alone it fell to the page. A group
+     of the recorded counts the same way. */
   const backRef = useRef<HTMLButtonElement>(null);
   const lastGroup = useRef<string | null>(null);
+  const openKey = groupKey ?? recordedOpen?.key ?? null;
   useEffect(() => {
-    if (groupKey) backRef.current?.focus();
+    if (openKey) backRef.current?.focus();
     else if (lastGroup.current) listRef.current?.querySelector<HTMLElement>(`tr[data-group="${CSS.escape(lastGroup.current)}"]`)?.focus();
-    lastGroup.current = groupKey;
-  }, [groupKey]);
+    lastGroup.current = openKey;
+  }, [openKey]);
 
   const cantRead = (title: string, body: React.ReactNode) => (
     <div className="gw-card" style={{ padding: "40px 24px", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
       <span style={{ fontSize: 13, color: "var(--text-3)" }}>{title}</span>
       <span style={{ fontSize: 12, color: "var(--text-4)", maxWidth: 520, lineHeight: 1.6 }}>{body}</span>
+      {/* A group opened from the recorded counts goes back to them. */}
+      {recordedOpen && <button ref={backRef} className="gw-btn" style={{ marginTop: 6, padding: "3px 10px", fontSize: 11.5 }} onClick={() => { list.closeGroup(); setPage(0); }}>← All groups</button>}
     </div>
   );
-  if (head && !head.available) {
-    return head.reason === "unreachable"
+  // The recorded groups need no logs: a list read that fails leaves them up, and only opening one needs the logs.
+  const logsDown = head && !head.available ? head.reason ?? "unreachable" : null;
+  const groupsWithoutLogs = logsDown !== null && showGroups && fromRecorded;
+  if (logsDown && !groupsWithoutLogs) {
+    return logsDown === "unreachable"
       ? cantRead("The router's logs didn't answer in time.", <>Try again, or pick a shorter range. The counts above come from Prometheus and work without them.</>)
       : cantRead("This list can't read the router's logs.", <>
           It reads them from Loki (the log store). Set <span className="gw-mono">LOKI_URL</span> on the API to your Loki - the compose{" "}
@@ -411,11 +451,11 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
             onChange={reset(setResult)}
             options={[
               // No counts before the first read lands: a 0 there would be a claim.
-              { key: ALL, label: "All", count: head ? narrowed.length : undefined },
-              { key: REACHED, label: "Reached the client", count: head ? reachedCount : undefined, color: reachedCount ? "var(--err)" : "var(--ok)",
+              { key: ALL, label: "All", count: head?.available ? narrowed.length : undefined },
+              { key: REACHED, label: "Reached the client", count: head?.available ? reachedCount : undefined, color: reachedCount ? "var(--err)" : "var(--ok)",
                 title: "Reached the client: the client received an error, or a write whose outcome is unknown. Provider error, Router error and Outcome unknown together." },
               ...RESULT_ORDER.filter((k) => !RARE.has(k) || byResult(k) > 0)
-                .map((k) => ({ key: k, label: RESULT[k].label, count: head ? byResult(k) : undefined, color: RESULT[k].color, title: RESULT[k].hint })),
+                .map((k) => ({ key: k, label: RESULT[k].label, count: head?.available ? byResult(k) : undefined, color: RESULT[k].color, title: RESULT[k].hint })),
             ]}
           />
           <span style={{ flex: 1 }} />
@@ -423,7 +463,7 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
           <span style={{ fontSize: 11, color: "var(--text-4)" }}>View</span>
           <Seg
             value={grouped ? "grouped" : "every"}
-            onChange={(v) => { setGrouped(v === "grouped"); setGroupKey(null); setPage(0); }}
+            onChange={(v) => { setGrouped(v === "grouped"); setGroupKey(null); list.closeGroup(); setPage(0); }}
             options={[
               { key: "grouped", label: "Grouped", title: "One line per way requests failed: the error, who caused it, how many, when." },
               { key: "every", label: "Every request", title: "Every request on its own line, newest first." },
@@ -470,8 +510,8 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
           </div>
         )}
       </div>
-      <ReadingStrip show={first.isLoading} rangeWords={range ? "for the times you picked" : `for the last ${WINDOWS[win].label}`} />
-      <UnreadStrip count={log.unread} noun="request" bound={!!chainFilter || !!routerIdQ || !!barQ} covers="the list" />
+      <ReadingStrip show={first.isLoading} rangeWords={recordedOpen ? "for this group's minutes" : range ? "for the times you picked" : `for the last ${WINDOWS[win].label}`} />
+      <UnreadStrip count={log.unread} noun="request" bound={!!chainFilter || !!routerIdQ || !!barQ || !!recordedOpen} covers="the list" />
       {lookupId && (
         <LookupPanel key={lookupId + rangeQ} id={lookupId} rangeQ={rangeQ} rangeWords={range ? "of the times you picked" : `of the last ${WINDOWS[win].label}`}
           onClose={() => find(null)} />
@@ -485,6 +525,7 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
       )}
       <NewRowsStrip count={held.newCount} noun="request" onShow={held.showNew} />
       {/* Below 860px the columns would overlap: scroll sideways instead. */}
+      {recordedOpen && <RecordedGroupHeader group={recordedOpen} backRef={backRef} onClose={() => { list.closeGroup(); setPage(0); setOpen(null); }} />}
       {openGroup && (
         <div style={{ padding: "8px 16px", borderTop: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 10, fontSize: 12 }}>
           <span style={{ color: "var(--text-3)" }}>One group:</span>
@@ -493,7 +534,20 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
           <button ref={backRef} className="gw-btn" style={{ marginLeft: "auto", padding: "3px 10px", fontSize: 11.5 }} onClick={() => { setGroupKey(null); setPage(0); }}>← All groups</button>
         </div>
       )}
-      {showGroups && span ? (
+      {groupsWithoutLogs && (
+        <div style={{ padding: "9px 16px", fontSize: 12, color: "var(--text-2)", borderTop: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--warn)", flexShrink: 0 }} />
+          {logsDown === "unreachable"
+            ? "The router's logs didn't answer in time. The groups below come from the recorded counts; opening one reads only its minutes."
+            : "This list can't read the router's logs (LOKI_URL is not set). The groups below come from the recorded counts; their requests can't be listed."}
+        </div>
+      )}
+      {showGroups && fromRecorded && recorded ? (
+        <RecordedGroupsTable report={recorded} groups={recordedGroups} windowLabel={WINDOWS[win].label}
+          hiddenRecovered={{ count: hiddenRecorded.reduce((n, g) => n + g.count, 0), groups: hiddenRecorded.length }}
+          onShowRecovered={() => { setResult(ALL); setPage(0); }}
+          onOpen={logsDown === "unconfigured" ? undefined : (g) => { list.openGroup(g); setPage(0); setOpen(null); }} />
+      ) : showGroups && span ? (
         <ErrorGroupsTable groups={groups} rows={rows} partial={log.more} windowLabel={range ? null : WINDOWS[win].label}
           span={span}
           hiddenRecovered={hiddenRecovered.length} hiddenRecoveredGroups={hiddenRecovered.length ? groupErrors(hiddenRecovered).length : 0}
@@ -566,6 +620,7 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
                 {!allRows.length && log.unread ? "None of the requests found in this range came back from the logs in time."
                   : onBar
                   ? <>No client requests failed at <span className="gw-mono">{upstream}</span> in this period. The bar also counts the router&apos;s internal relays (startup and health checks), which this list excludes.</>
+                  : recordedOpen && allRows.length ? "None of the requests read so far match this group."
                   : allRows.length ? "No requests match these filters."
                   : log.more ? "No requests with errors in the part of this period read so far."
                   : range ? "No requests with errors in this period." : `No requests with errors in the last ${WINDOWS[win].label}.`}
