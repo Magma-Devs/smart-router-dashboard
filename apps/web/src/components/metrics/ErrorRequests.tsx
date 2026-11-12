@@ -394,6 +394,16 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
   useEffect(() => {
     if (jumpKey) listRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
   }, [jumpKey]);
+  /* Keyboard focus follows a group opened and closed: the group's line
+     unmounts when it opens, so focus moves to "← All groups", and back to
+     the group's line when it closes. Left alone it fell to the page. */
+  const backRef = useRef<HTMLButtonElement>(null);
+  const lastGroup = useRef<string | null>(null);
+  useEffect(() => {
+    if (groupKey) backRef.current?.focus();
+    else if (lastGroup.current) listRef.current?.querySelector<HTMLElement>(`tr[data-group="${CSS.escape(lastGroup.current)}"]`)?.focus();
+    lastGroup.current = groupKey;
+  }, [groupKey]);
 
   const cantRead = (title: string, body: React.ReactNode) => (
     <div className="gw-card" style={{ padding: "40px 24px", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
@@ -507,7 +517,7 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
           <span style={{ color: "var(--text-3)" }}>One group:</span>
           <span style={{ color: "var(--text)", fontWeight: 600 }}>{groupTitle(openGroup)}</span>
           <span className="gw-tnum" style={{ color: "var(--text-4)" }}>{fmtComma(openGroup.count)} request{openGroup.count === 1 ? "" : "s"}</span>
-          <button className="gw-btn" style={{ marginLeft: "auto", padding: "3px 10px", fontSize: 11.5 }} onClick={() => { setGroupKey(null); setPage(0); }}>← All groups</button>
+          <button ref={backRef} className="gw-btn" style={{ marginLeft: "auto", padding: "3px 10px", fontSize: 11.5 }} onClick={() => { setGroupKey(null); setPage(0); }}>← All groups</button>
         </div>
       )}
       {showGroups && span ? (
@@ -714,7 +724,7 @@ function ErrorGroupsTable({ groups, rows, span, partial, windowLabel, hiddenReco
               const open = () => onOpen(g.key);
               const methods = g.methods.length === 1 ? g.methods[0]!.method : `${g.methods.length} methods`;
               return (
-                <tr key={g.key} tabIndex={0} className="gw-logrow" onClick={open} onKeyDown={onRowKey(open)} title="Show these requests">
+                <tr key={g.key} data-group={g.key} tabIndex={0} className="gw-logrow" onClick={open} onKeyDown={onRowKey(open)} title="Show these requests">
                   <td style={{ maxWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
                       {g.spec && <span style={{ display: "flex", flexShrink: 0 }}><ChainBadge spec={g.spec} size={16} /></span>}
