@@ -50,23 +50,3 @@ export function InitialsAvatar({ name, size = 30 }: { name: string; size?: numbe
     }}>{initials}</div>
   );
 }
-
-/** "3 days ago", or an em dash for someone who has never signed in. Relative
- *  beats a timestamp here: the question is "is this person still around", and
- *  nobody reads an ISO date to answer it. */
-export function relativeTime(iso: string | null): string {
-  if (!iso) return "—";
-  const then = new Date(iso).getTime();
-  const mins = Math.floor((Date.now() - then) / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins} min ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 30) return `${days} day${days === 1 ? "" : "s"} ago`;
-  return new Date(iso).toLocaleDateString();
-}
-
-export function shortDate(iso: string): string {
-  return new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
-}

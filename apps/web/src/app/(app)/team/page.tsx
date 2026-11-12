@@ -18,9 +18,8 @@ import {
   InitialsAvatar,
   MagmaAccountTag,
   RoleBadge,
-  relativeTime,
-  shortDate,
 } from "@/components/team/bits";
+import { LocalTime } from "@/components/gateway/LocalTime";
 import { InviteModal } from "@/components/team/InviteModal";
 import { ChangeRoleModal, type MemberSummary } from "@/components/team/ChangeRoleModal";
 import { RemoveMemberModal } from "@/components/team/RemoveMemberModal";
@@ -236,10 +235,13 @@ export default function TeamPage() {
                       </span>
                     </td>
                     <td style={{ textAlign: "right", fontSize: 12, color: "var(--text-3)" }}>
-                      {relativeTime(m.lastActiveAt)}
+                      {/* Relative: the question is "is this person still around",
+                          and nobody reads a timestamp to answer it. The tooltip
+                          has the timestamp. */}
+                      {m.lastActiveAt ? <LocalTime t={m.lastActiveAt} format="relative" /> : "—"}
                     </td>
                     <td style={{ textAlign: "right", fontSize: 12, color: "var(--text-3)" }}>
-                      {shortDate(m.joinedAt)}
+                      <LocalTime t={m.joinedAt} format="date" />
                     </td>
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                       {isAdmin && !self && (
@@ -317,8 +319,8 @@ export default function TeamPage() {
                         {i.state}
                       </span>
                     </td>
-                    <td style={{ textAlign: "right", fontSize: 12, color: "var(--text-3)" }}>{shortDate(i.createdAt)}</td>
-                    <td style={{ textAlign: "right", fontSize: 12, color: "var(--text-3)" }}>{shortDate(i.expiresAt)}</td>
+                    <td style={{ textAlign: "right", fontSize: 12, color: "var(--text-3)" }}><LocalTime t={i.createdAt} format="date" /></td>
+                    <td style={{ textAlign: "right", fontSize: 12, color: "var(--text-3)" }}><LocalTime t={i.expiresAt} format="date" /></td>
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                       {i.state !== "revoked" && (
                         <>

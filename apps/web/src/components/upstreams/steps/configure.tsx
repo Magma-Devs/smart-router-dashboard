@@ -29,6 +29,7 @@ import {
   type LiveChain,
 } from "@/components/upstreams/bits";
 import { UpstreamLogo } from "@/components/upstreams/UpstreamLogo";
+import { fmtDateTime } from "@/lib/datetime";
 
 /** Credential-form payload (the design's onSubmit object shapes, unified). */
 export interface CredData {
@@ -297,9 +298,9 @@ export function StepJwt({ catalog, chains, onSubmit }: {
           <FL>JWT token <span style={{ color: "var(--err)" }}>*</span></FL>
           <SecretInput rows={4} value={token} onChange={(e) => setToken(e.target.value)} placeholder="eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9…" />
           <FE msg={errors.token} />
-          {jwtExp && !isExpired && !nearExp && <div style={{ fontSize: 11, color: "var(--ok)", marginTop: 5 }}>✓ Expires {jwtExp.toLocaleString()}</div>}
-          {nearExp && <Hint type="warn">Expires soon — {jwtExp?.toLocaleString()}. You&apos;ll need to rotate this.</Hint>}
-          {isExpired && <Hint type="err">This token expired on {jwtExp?.toLocaleString()}.</Hint>}
+          {jwtExp && !isExpired && !nearExp && <div style={{ fontSize: 11, color: "var(--ok)", marginTop: 5 }}>✓ Expires {fmtDateTime(jwtExp)}</div>}
+          {nearExp && <Hint type="warn">Expires soon — {jwtExp && fmtDateTime(jwtExp)}. You&apos;ll need to rotate this.</Hint>}
+          {isExpired && <Hint type="err">This token expired on {jwtExp && fmtDateTime(jwtExp)}.</Hint>}
         </div>
       ) : (
         <div style={{ display: "grid", gap: 12 }}>

@@ -11,12 +11,13 @@
  * With AUTH_MODE=disabled there are no accounts, so only Basic details renders:
  * the other cards post to routes the api never registers in that mode. */
 
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { useApi } from "@/hooks/use-api";
 import { ChangePasswordCard } from "@/components/account/ChangePasswordCard";
 import { TwoFactorCard } from "@/components/account/TwoFactorCard";
 import { SessionsCard } from "@/components/account/SessionsCard";
 import { useAuthMode } from "@/components/gateway/auth-mode";
+import { LocalTime } from "@/components/gateway/LocalTime";
 
 interface VersionInfo {
   commit: string;
@@ -45,11 +46,11 @@ export default function AccountPage() {
 
   const fl: CSSProperties = { fontSize: 11, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600, marginBottom: 8 };
 
-  const build = [
+  const build: { label: string; value: ReactNode }[] = [
     { label: "Version", value: version?.version ?? "—" },
     { label: "Commit", value: version?.commit ?? "—" },
     { label: "Environment", value: version?.env ?? "—" },
-    { label: "Started", value: version ? new Date(version.startedAt).toLocaleString() : "—" },
+    { label: "Started", value: version ? <LocalTime t={version.startedAt} format="dateTime" /> : "—" },
     { label: "Uptime", value: version ? fmtUptime(version.uptimeSec) : "—" },
   ];
 
