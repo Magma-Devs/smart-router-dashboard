@@ -5,6 +5,40 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.65.0]
+
+### Added
+
+- **The Audit log page reads a page at a time** (MAG-5272), instead of one
+  list that only grew with "Load more". 25, 50 (the default) or 100 rows, with
+  **Newest**, **Newer** and **Older** above and below the table and a label
+  saying where the reader is ("Newest 50", "Older entries · page 3"). A page
+  is the rows next to a row, never an offset, so entries recorded at the head
+  while someone reads further down never shift or repeat what they see.
+  Stepping back up to the page that was the newest shows it unchanged and
+  says how many entries have arrived above it, with a button to show them;
+  nothing slides in on its own. The filters, the page size and the position
+  are in the URL, so a reload, Back / Forward and a shared link open the same
+  page. A filter or page-size change starts again at the newest page. See
+  `docs/AUDIT.md` → "The page".
+- **`before` on `GET /api/audit/events`**: the page just ahead of a cursor, in
+  the requested order (newer rows under `order=desc`). Responses carry
+  `start_cursor` and `has_previous` beside `cursor` and `has_more`. `before`
+  is validated like `after`, the two together are a 400, and the oldest-first
+  read keeps its settled-transaction horizon in both directions.
+
+### Fixed
+
+- **An audit cursor past the largest transaction id is a 400**, not a 500.
+  The cursor's `xact` was checked for 1 to 20 digits only; one above
+  18446744073709551615 reached the `xid8` cast inside the query and failed
+  there.
+- **The example puller in `docs/AUDIT.md` keeps its position on a quiet
+  run.** It wrote the response's `cursor` to its cursor file unconditionally,
+  and a page with nothing new has `cursor: null`, so the next run started
+  from the first event and appended the whole history again. It now keeps the
+  stored cursor in that case, and stops on a failed request.
+
 ## [0.64.0]
 
 ### Changed
