@@ -5,7 +5,7 @@
  * "nonce too low") is one problem, and should read as one.
  *
  * A group is: the chain, the error that decided the request, who caused it,
- * and whether the client received it. The deciding error is the failed try
+ * and whether the client received it (or the logs can't say: no end logged). The deciding error is the failed try
  * whose answer went back to the client, else the last failed try, else the
  * request's own code (a write the router couldn't settle names one with no
  * failed try). Who caused it:
@@ -48,6 +48,8 @@ export interface ErrorGroup {
   providerCount: number;
   /** Whether the client received the error (true) or a later try recovered it (false). */
   reached: boolean;
+  /** The logs show no end for these requests: neither received nor recovered, as far as anyone can tell. */
+  noEnd: boolean;
   /** Pinned above the rest whatever its size: every provider failed with different errors. */
   pinned: boolean;
   count: number;
@@ -103,13 +105,15 @@ export function groupErrors(rows: readonly ErrorRequestRow[]): ErrorGroup[] {
   for (const r of rows) {
     const d = decidingError(r);
     const reached = REACHED.has(r.result);
+    // A request with no end logged is neither: it may still be running, or its client went away.
+    const noEnd = r.result === "unknown";
     const who = d.cause === "provider" ? `p:${d.provider}` : d.cause;
-    const key = [r.spec ?? "", d.key, who, reached ? "1" : "0"].join("|");
+    const key = [r.spec ?? "", d.key, who, reached ? "1" : noEnd ? "?" : "0"].join("|");
     let g = by.get(key);
     if (!g) {
       g = {
         key, spec: r.spec, errorKey: d.key, errorLabel: d.label, cause: d.cause, provider: d.provider, providerCount: d.providerCount,
-        reached, pinned: d.cause === "all-failed", count: 0, firstMs: r.time, lastMs: r.time, methods: [], rows: [], methodCounts: new Map(),
+        reached, noEnd, pinned: d.cause === "all-failed", count: 0, firstMs: r.time, lastMs: r.time, methods: [], rows: [], methodCounts: new Map(),
       };
       by.set(key, g);
     }
