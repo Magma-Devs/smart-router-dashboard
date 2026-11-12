@@ -209,7 +209,7 @@ the router chose from (`validAddresses`). One node name serves many chains,
 so a name alone never decides it; with several candidates `spec` is null and
 `specs` lists them, and the row shows under each.
 
-A request is on the Errors tab's list when a try failed, when its relay
+The list opens grouped (`lib/error-groups.ts`): one line per chain, deciding error (the failed try whose answer went back, else the last failed try, else the request's own code), cause (`request` for a code the catalogue files under the request or the chain, or an undetermined USER_ one - a CHAIN_ code can be a provider's, `every-provider` for two or more providers with that error, `all-failed` for two or more with different ones - pinned first - else the provider; the cache is not a provider) and whether the client got it, a request with no end logged apart. Without a code the error is its message with ids, hashes and numbers blanked (`blankIds`, an HTTP status kept). It groups the rows loaded and states the times those reads cover (`coveredSpan`: from where they begin, the window's start once nothing older is left, to the end of the read); the bars share that span. A request is on the Errors tab's list when a try failed, when its relay
 policy decided to retry it (`[StateMachine] policy.Decide`, `action: retry`),
 or when the router gave up. It gives up with one of two lines: `failed
 getting responses from RPC endpoints` when nothing came back (it returns

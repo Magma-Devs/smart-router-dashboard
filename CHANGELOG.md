@@ -5,6 +5,51 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.63.0]
+
+### Added
+
+- **The Errors list groups similar errors** (MAG-5263). It opens "Grouped":
+  one line per way requests failed, with the error, who caused it, how many
+  requests, a small bar chart of when, and whether the client got it. A
+  click opens the group's requests; "Every request" brings back the old
+  list. Who caused it:
+  - **The request**, when the router's code says so (invalid params, nonce
+    too low, already known): one group whichever provider answered.
+  - **All providers (n)**, when two or more gave the same error.
+  - **Every provider failed**, each with its own error: pinned to the top
+    whatever its size.
+  - Else the provider that gave it. The cache is never counted as one.
+- The line above the groups says which minutes they cover: the list reads
+  the newest 300 requests, which on a busy deployment is under a minute of
+  a 12-hour window. Recovered requests hidden by the opening filter get one
+  line with "Show them".
+- An error with no router code keeps its HTTP status apart (429 and 503
+  are two errors), in the error-type filter too.
+- **Hashes and ids don't split one error.** Without a router code, a
+  message's transaction hashes, addresses (0x…, long hex, base58, bech32)
+  and ids are blanked like its numbers, so "already known" on fifty
+  transactions is one group and one error type, not fifty. The group's name
+  leaves the hash out too: "tx … already exists in cache".
+- A group without a router code is named in the list's words: "dial tcp …:
+  connection refused", not the first 64 characters of
+  `http request failed: Post "…"`, which cut off the error itself.
+- A request with no end in the logs is grouped apart and reads "No end
+  logged", not "Recovered".
+- **The span the groups cover is the one the list read.** It runs from
+  where the loaded reads begin (the window's start once nothing older is
+  left) to the end of the read, with its date, and the bars share it. It
+  was the first to the last request shown, so under a filter, or with one
+  request ("the newest 1 second"), it understated what had been read.
+- **"Load older" is in the grouped view too.** The line above the groups
+  pointed to it, but only the list of every request showed it.
+- Keyboard focus follows a group: opened, it moves to "← All groups";
+  closed, back to the group's line.
+- **"The request" follows the error catalogue.** A code is the request's
+  when any healthy provider would give the same answer: the request's own
+  and the chain's rules. A provider-side `CHAIN_` code (state pruned, block
+  not found, data not available) stays with the provider that gave it.
+
 ## [0.62.0]
 
 ### Changed
