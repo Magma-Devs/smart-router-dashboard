@@ -860,8 +860,6 @@ export interface TransactionsReport {
   rejected: number;
   failed: number;
   failedOnChain: number;
-  /** accepted ÷ (accepted + rejected + failed + failedOnChain); `unknown` is left out. Null with none. */
-  successRate: number | null;
   /** Newest first. */
   rows: TxLogRow[];
   /** Transactions this read found whose lines Loki didn't return in time: left out of `rows` and every number above. */

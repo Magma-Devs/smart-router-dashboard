@@ -1,20 +1,19 @@
 "use client";
 
 /* An opened row of either request list - the Errors tab's and the
- * Transactions tab's - as one breakdown in three parts:
+ * Transactions tab's - in three parts:
  *
- *   Outcome    what the client received: status, what happened in one
- *              plain sentence (storyOf), the error's meaning and next step
- *              from the table
- *   Tries      one row per try at a provider: result, error and how long it
- *              took (the story above says whether they went out together)
+ *   Outcome    what the client received: status, the error's meaning and
+ *              next step from the table
+ *   Flow       what happened, step by step (stepsOf): the request, each send
+ *              with every provider it went to and what that provider
+ *              answered, then the answer that went back to the client
  *   Details    the facts the router wrote about the call, as a key-value list
  *
- * One statement per error: the outcome names the one that reached the client,
- * each try names its own. The router's code, the node's code and the
- * provider's own words sit behind a name on hover, except where the source is
- * undetermined and the provider's words are the only explanation. "→ client"
- * marks the one try that reached the client. */
+ * One statement per error: the outcome names the router's own, each provider
+ * line names its own. The router's code, the node's code and the meaning sit
+ * behind a name on hover; the provider's own words show under its line.
+ * "→ client" marks the one answer that reached the client. */
 
 import {
   ERROR_SOURCE_LABELS,
@@ -79,99 +78,95 @@ function Section({ title, aside, children }: { title: string; aside?: React.Reac
   );
 }
 
-const RESULT: Record<RelayAttempt["outcome"], { words: string; color: string }> = {
-  ok: { words: "Succeeded", color: "var(--ok)" },
-  failed: { words: "Failed", color: "var(--err)" },
-  skipped: { words: "Skipped", color: "var(--text-3)" },
-  cancelled: { words: "Cancelled", color: "var(--text-3)" },
-  "no-result": { words: "No response", color: "var(--text-3)" },
-};
-
-/** The provider's words a try prints under its line: only where nothing else explains the error - no code,
- *  or an undetermined source - and only when they say more than the error's name. */
-function triesOwnWords(a: RelayAttempt): string | null {
-  const code = a.outcome === "failed" ? realCode(a) : null;
-  const entry = code ? explainRouterError(code) : null;
-  return a.outcome === "failed" && a.message && (!code || entry?.source === "unclear")
-    && !(code && a.message.toLowerCase().includes(codeWords(code))) ? a.message : null;
+/** What a provider did with its copy, in a word, where no error code names it. */
+function responseWords(a: RelayAttempt, isWrite: boolean): { words: string; color: string } {
+  if (a.outcome === "ok" || (a.outcome === "no-result" && a.replied)) return { words: isWrite ? "Took the transaction" : "Answered", color: "var(--ok)" };
+  if (a.outcome === "failed") return { words: "Failed", color: "var(--err)" };
+  if (a.outcome === "skipped") return { words: "Passed over", color: "var(--text-3)" };
+  if (a.outcome === "cancelled") return { words: "Cancelled", color: "var(--text-3)" };
+  return { words: "No response logged", color: "var(--text-3)" };
 }
 
-const TRY_COLUMNS = "20px minmax(110px, 1fr) minmax(150px, 2fr) 64px";
-
-/** One try: provider, result and error, and how long it took. */
-function TryRow({ a, n }: { a: RelayAttempt; n: number }) {
-  const code = a.outcome === "failed" ? realCode(a) : null;
-  const entry = code ? explainRouterError(code) : null;
-  const r = RESULT[a.outcome];
-  const ok = a.outcome === "ok" || (a.outcome === "no-result" && a.replied);
-  const words = ok ? "Succeeded" : r.words;
-  const color = ok ? "var(--ok)" : r.color;
-  const ownWords = triesOwnWords(a);
-  const ran = a.endMs != null && a.outcome !== "skipped";
-  return (
-    <div style={{
-      display: "grid", gridTemplateColumns: TRY_COLUMNS, columnGap: 12, alignItems: "center",
-      padding: "8px 12px", borderTop: "1px solid var(--line)",
-      background: a.replied ? "var(--surface-2)" : undefined,
-    }}>
-      <span className="gw-mono gw-tnum" style={{ fontSize: 11, color: "var(--text-4)" }}>{n}</span>
-      <span style={{ display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-        <span className="gw-mono" title={a.upstream} style={{ fontSize: 12, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.upstream}</span>
-        {a.replied && <span title="This try's reply went back to the client." style={{ fontSize: 11, fontWeight: 600, color: "var(--warn)", whiteSpace: "nowrap" }}>→ client</span>}
-      </span>
-      <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap", minWidth: 0 }}>
-        {code
-          ? <ErrorName code={code} entry={entry} nodeCode={a.nodeCode} message={a.message} />
-          : <span style={{ fontSize: 12, color, whiteSpace: "nowrap" }}>{words}</span>}
-        {entry && <SourceTag source={entry.source} />}
-      </span>
-      <span className="gw-mono gw-tnum" style={{ fontSize: 11.5, color: "var(--text-2)", textAlign: "right" }}>{ran ? fmtTook(a.endMs! - a.atMs) : "—"}</span>
-      {(ownWords || a.note) && (
-        <div className={ownWords ? "gw-mono" : undefined} title={ownWords ?? undefined}
-          style={{ gridColumn: "2 / -1", marginTop: 4, fontSize: 11.5, color: "var(--text-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {ownWords ?? a.note}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** What one try did, as the story says it: "answered", "failed (Nonce too low)", "was called off". */
-function tryVerb(a: RelayAttempt): string {
-  if (a.outcome === "ok" || (a.outcome === "no-result" && a.replied)) return "answered";
-  if (a.outcome === "failed") { const code = realCode(a); return code ? `failed (${errorName(code)})` : "failed"; }
-  if (a.outcome === "skipped") return "was skipped";
-  if (a.outcome === "cancelled") return "was called off";
-  return "didn't answer";
+/** The provider's own words under its line, unless they only repeat the error's name. */
+function ownWords(a: RelayAttempt): string | null {
+  if (a.outcome !== "failed" || !a.message) return null;
+  const code = realCode(a);
+  return code && a.message.trim().toLowerCase() === codeWords(code) ? null : a.message;
 }
 
 const andList = (xs: string[]) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
 
-/** What happened, in one or two plain sentences: where the router sent it, what each answered, what went back. */
-export function storyOf(attempts: RelayAttempt[], final: FinalAnswer): string | null {
-  if (!attempts.length) return final?.from === "router" ? "No provider was tried: the router answered the client itself." : null;
-  // Batches in the order the router sent them; the tries of one batch went out together.
+/** The sends, in the order the router made them: the tries of one batch went out together. */
+export function stepsOf(attempts: RelayAttempt[]): { title: string; attempts: RelayAttempt[] }[] {
   const order: number[] = [];
   const byBatch = new Map<number, RelayAttempt[]>();
   for (const a of attempts) {
     if (!byBatch.has(a.batch)) { byBatch.set(a.batch, []); order.push(a.batch); }
     byBatch.get(a.batch)!.push(a);
   }
-  const phrase = (group: RelayAttempt[]) => {
-    const verbs = group.map(tryVerb);
-    if (group.length > 1 && verbs.every((v) => v === verbs[0])) {
-      return `${andList(group.map((a) => a.upstream))} ${group.length === 2 ? "both" : "all"} ${verbs[0]}`;
-    }
-    return andList(group.map((a, i) => `${a.upstream} ${verbs[i]}`));
-  };
-  const groups = order.map((b) => byBatch.get(b)!);
-  const sent = groups.length === 1 && groups[0]!.length > 1 ? "Sent to all at the same time: " : "";
-  const what = sent + groups.map(phrase).join(", then ");
-  const back = final?.from === "provider"
-    ? (attempts.length > 1 ? ` ${final.attempt.upstream}'s answer went to the client.` : "")
-    : final?.from === "router" ? " No provider gave a usable answer, so the router answered the client itself." : "";
-  // A provider's name keeps its own spelling, even first in the sentence.
-  return `${what}.${back}`;
+  let sentBefore = false;
+  return order.map((b) => {
+    const group = byBatch.get(b)!;
+    const sent = group.filter((a) => a.outcome !== "skipped").map((a) => a.upstream);
+    const title = !sent.length
+      ? `Passed over ${andList(group.map((a) => a.upstream))}`
+      : `${sentBefore ? "Then sent to" : "Sent to"} ${andList(sent)}${sent.length > 1 ? " at the same time" : ""}`;
+    if (sent.length) sentBefore = true;
+    return { title, attempts: group };
+  });
+}
+
+const PROVIDER_COLUMNS = "minmax(110px, 1fr) minmax(150px, 2fr) 96px";
+
+/** One provider's line in a send: its name, what it answered, how long it took; its own words under it. */
+function ProviderLine({ a, isWrite }: { a: RelayAttempt; isWrite: boolean }) {
+  const code = a.outcome === "failed" ? realCode(a) : null;
+  const entry = code ? explainRouterError(code) : null;
+  const r = responseWords(a, isWrite);
+  const words = ownWords(a);
+  const below = words ?? a.note ?? (a.outcome === "cancelled" ? "Another provider had already answered, or the client stopped waiting." : null);
+  const ran = a.endMs != null && a.outcome !== "skipped";
+  return (
+    <div style={{
+      display: "grid", gridTemplateColumns: PROVIDER_COLUMNS, columnGap: 12, alignItems: "center",
+      padding: "8px 12px", borderTop: "1px solid var(--line)",
+      background: a.replied ? "var(--surface-2)" : undefined,
+    }}>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+        <span className="gw-mono" title={a.upstream} style={{ fontSize: 12, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.upstream}</span>
+        {a.replied && <span title="This provider's answer went back to the client." style={{ fontSize: 11, fontWeight: 600, color: "var(--warn)", whiteSpace: "nowrap" }}>→ client</span>}
+      </span>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap", minWidth: 0 }}>
+        {code
+          ? <ErrorName code={code} entry={entry} nodeCode={a.nodeCode} message={a.message} />
+          : <span style={{ fontSize: 12, color: r.color, whiteSpace: "nowrap" }}>{r.words}</span>}
+        {entry && <SourceTag source={entry.source} />}
+      </span>
+      <span className="gw-mono gw-tnum" style={{ fontSize: 11.5, color: "var(--text-2)", textAlign: "right" }}>{ran ? fmtTook(a.endMs! - a.atMs) : "—"}</span>
+      {below && (
+        <div className={words ? "gw-mono" : undefined} title={below}
+          style={{ gridColumn: "1 / -1", marginTop: 4, fontSize: 11.5, color: "var(--text-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {below}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** One numbered step of the flow, on a line that joins it to the next. */
+function Step({ n, title, last, children }: { n: number; title: React.ReactNode; last?: boolean; children?: React.ReactNode }) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "20px minmax(0, 1fr)", columnGap: 12 }}>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+        <span className="gw-tnum" style={{ width: 20, height: 20, borderRadius: 999, border: "1px solid var(--line-2, var(--line))", background: "var(--surface)", display: "grid", placeItems: "center", fontSize: 10.5, color: "var(--text-2)", flexShrink: 0 }}>{n}</span>
+        {!last && <span aria-hidden style={{ flex: 1, width: 1, background: "var(--line)", marginTop: 4 }} />}
+      </div>
+      <div style={{ display: "grid", gap: 8, paddingBottom: last ? 0 : 16, minWidth: 0 }}>
+        <div style={{ fontSize: 12.5, color: "var(--text)", fontWeight: 500, paddingTop: 1, minWidth: 0 }}>{title}</div>
+        {children}
+      </div>
+    </div>
+  );
 }
 
 /** What reached the client: the try whose reply went back, or the router's own answer. */
@@ -240,10 +235,7 @@ export function RequestBreakdown(p: BreakdownProps) {
   const block = (n: number) => (p.spec ? <ExplorerBlockLink spec={p.spec} block={n}>{fmtComma(n)}</ExplorerBlockLink> : fmtComma(n));
   const providers = new Set(p.attempts.map((a) => a.upstream)).size;
   const blockAhead = finalCode && facts.requestedBlock != null && facts.seenBlock != null && facts.requestedBlock > facts.seenBlock;
-  // The provider's words that reached the client, unless its try already prints them.
-  const finalTry = p.final?.from === "provider" && p.final.attempt.outcome === "failed" ? p.final.attempt : null;
-  const providerWords = finalTry?.message && !triesOwnWords(finalTry) ? finalTry.message : null;
-  const story = storyOf(p.attempts, p.final);
+  const steps = stepsOf(p.attempts);
   return (
     <div style={{ display: "grid", gap: 16, padding: "8px 4px 12px" }}>
       {/* Outcome: what the client received, and what it means. */}
@@ -265,14 +257,16 @@ export function RequestBreakdown(p: BreakdownProps) {
           <span style={{ flex: 1 }} />
           <span className="gw-mono gw-tnum" title="How long the request took, start to answer" style={{ fontSize: 12, color: "var(--text-2)", whiteSpace: "nowrap" }}>{fmtTook(p.tookMs)}</span>
         </div>
-        {story && <div style={{ fontSize: 13, color: "var(--text)", lineHeight: 1.45 }}>{story}</div>}
         {entry && <div style={{ fontSize: 13, color: "var(--text-2)", lineHeight: 1.45 }}>{entry.meaning}</div>}
-        {providerWords && (
-          <div className="gw-mono" title={providerWords} style={{ fontSize: 11.5, color: "var(--text-2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{providerWords}</div>
+        {/* The one thing to do gets its own box, apart from the facts below it. */}
+        {entry?.action && (
+          <div className="gw-next-step">
+            <span className="gw-next-step-label">Next step</span>
+            <span>{entry.action}</span>
+          </div>
         )}
-        {(entry?.action || p.retries || blockAhead || p.extra?.length) && (
+        {Boolean(p.retries || blockAhead || p.extra?.length) && (
           <div style={{ ...kvGrid, rowGap: 6, marginTop: 2 }}>
-            {entry?.action && <KV label="Next step">{entry.action}</KV>}
             {p.retries && <KV label="Retries"><span style={{ color: "var(--text-2)" }}>{p.retries}</span></KV>}
             {blockAhead && <KV label="Note"><span style={{ color: "var(--text-2)" }}>Requested block is ahead of the router&apos;s latest block.</span></KV>}
             {p.extra?.map((x) => <KV key={x.label} label={x.label}>{x.value}</KV>)}
@@ -281,20 +275,33 @@ export function RequestBreakdown(p: BreakdownProps) {
       </div>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 24, alignItems: "flex-start" }}>
-        {/* Tries: one row each, in the order the router sent them. */}
+        {/* Flow: the request, each send and what every provider answered, then what went back. */}
         <div style={{ flex: "2 1 560px", minWidth: 0 }}>
-          <Section title="Tries" aside={p.attempts.length ? `${p.attempts.length} on ${providers} ${providers === 1 ? "provider" : "providers"}` : "none logged"}>
-            {p.attempts.length > 0 && (
-              <div style={{ border: "1px solid var(--line)", borderRadius: 8, overflow: "hidden", background: "var(--surface)" }}>
-                <div style={{ display: "grid", gridTemplateColumns: TRY_COLUMNS, columnGap: 12, padding: "6px 12px", fontSize: 11, color: "var(--text-4)" }}>
-                  <span />
-                  <span>Provider</span>
-                  <span>Result</span>
-                  <span style={{ textAlign: "right" }}>Took</span>
+          <Section title="What happened" aside={p.attempts.length ? `${providers} ${providers === 1 ? "provider" : "providers"}` : "no provider logged"}>
+            <div>
+              <Step n={1} title={<>Request from the client: <span className="gw-mono">{p.method}</span>{facts.requestBytes != null && <span className="gw-mono gw-tnum" style={{ color: "var(--text-3)", fontWeight: 400 }}> · {fmtBytes(facts.requestBytes)}</span>}</>} />
+              {steps.map((s, i) => (
+                <Step key={i} n={i + 2} title={s.title}>
+                  <div style={{ border: "1px solid var(--line)", borderRadius: 8, overflow: "hidden", background: "var(--surface)" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: PROVIDER_COLUMNS, columnGap: 12, padding: "6px 12px", fontSize: 11, color: "var(--text-4)" }}>
+                      <span>Provider</span>
+                      <span>What it answered</span>
+                      <span style={{ textAlign: "right" }}>Response time</span>
+                    </div>
+                    {s.attempts.map((a, j) => <ProviderLine key={j} a={a} isWrite={p.isWrite} />)}
+                  </div>
+                </Step>
+              ))}
+              <Step n={steps.length + 2} last title={<>Answer to the client: <span style={{ color: p.status.color }}>{p.status.label}</span></>}>
+                <div style={{ fontSize: 12, color: "var(--text-2)", display: "flex", flexWrap: "wrap", gap: 6, alignItems: "baseline" }}>
+                  {p.final?.from === "provider" ? <span><span className="gw-mono">{p.final.attempt.upstream}</span>&apos;s answer went back</span>
+                    : routerAnswered ? <span>No provider gave a usable answer, so the router sent its own error, named above</span>
+                      : <span>The logs don&apos;t show an answer.</span>}
+                  {p.tookMs != null && <span className="gw-mono gw-tnum" style={{ color: "var(--text-3)" }}>· after {fmtTook(p.tookMs)}</span>}
+                  {facts.replyBytes != null && <span className="gw-mono gw-tnum" style={{ color: "var(--text-3)" }}>· {fmtBytes(facts.replyBytes)}</span>}
                 </div>
-                {p.attempts.map((a, i) => <TryRow key={i} a={a} n={i + 1} />)}
-              </div>
-            )}
+              </Step>
+            </div>
           </Section>
         </div>
 
@@ -305,12 +312,9 @@ export function RequestBreakdown(p: BreakdownProps) {
               {/* The request's one ID is Smart Router's. The X-Request-Id, X-Task-Id and X-Tx-Id headers the
                   router also logs aren't shown: behind the gateway the first is the gateway's own ID for every request. */}
               <KV label="Smart Router request ID"><span title="The ID Smart Router gives every request: its GUID in the router's logs, and the Lava-Guid header on the reply" style={{ display: "contents" }}><Id value={p.guid} /></span><RequestLogsLink id={p.guid} startMs={p.time} tookMs={p.tookMs} /></KV>
-              <KV label="Method"><span className="gw-mono">{p.method}</span></KV>
               <KV label="Chain"><span title={p.chainTitle}>{p.chain}</span></KV>
               <KV label="Time"><span className="gw-mono gw-tnum">{fmtWhen(p.time)}</span></KV>
               {facts.customer && <KV label="Customer"><Id value={facts.customer} /></KV>}
-              {facts.requestBytes != null && <KV label="Request size"><span className="gw-mono gw-tnum">{fmtBytes(facts.requestBytes)}</span></KV>}
-              {facts.replyBytes != null && <KV label="Reply size"><span className="gw-mono gw-tnum">{fmtBytes(facts.replyBytes)}</span></KV>}
               {facts.requestedBlock != null && <KV label="Requested block"><span className="gw-mono gw-tnum">{block(facts.requestedBlock)}</span></KV>}
               {facts.seenBlock != null && <KV label="Router's latest block"><span className="gw-mono gw-tnum">{block(facts.seenBlock)}</span></KV>}
             </div>
