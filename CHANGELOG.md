@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.64.0]
+
 ### Added
 
 - **The Errors list groups the whole window, at any window** (MAG-5265).
