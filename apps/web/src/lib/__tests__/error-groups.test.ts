@@ -87,6 +87,13 @@ describe("groupErrors", () => {
     expect(groups.filter((g) => !g.reached)).toHaveLength(1);
   });
 
+  it("keeps a request with no end logged apart from recovered ones: nobody knows what its client got", () => {
+    const tries = () => [attempt("lava", { code: "NODE_SERVER_ERROR" }), attempt("tatum", { outcome: "ok", replied: true })];
+    const groups = groupErrors([row({ result: "recovered", attempts: tries() }), row({ result: "unknown", attempts: tries() })]);
+    expect(groups).toHaveLength(2);
+    expect(groups.map((g) => [g.reached, g.noEnd]).sort()).toEqual([[false, false], [false, true]]);
+  });
+
   it("blanks the numbers in a message, so one error on different blocks is one group", () => {
     const groups = groupErrors([
       row({ attempts: [attempt("lava", { replied: true, message: "block 101 not found" })] }),

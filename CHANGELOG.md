@@ -33,6 +33,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 - A group without a router code is named in the list's words: "dial tcp …:
   connection refused", not the first 64 characters of
   `http request failed: Post "…"`, which cut off the error itself.
+- A request with no end in the logs is grouped apart and reads "No end
+  logged", not "Recovered".
 - **"The request" follows the error catalogue.** A code is the request's
   when any healthy provider would give the same answer: the request's own
   and the chain's rules. A provider-side `CHAIN_` code (state pruned, block

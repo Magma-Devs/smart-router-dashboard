@@ -701,9 +701,9 @@ function ErrorGroupsTable({ groups, rows, partial, windowLabel, hiddenRecovered,
                     </div>
                   </td>
                   <td>
-                    <span style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12, color: "var(--text-2)" }}>
-                      <span style={{ width: 7, height: 7, borderRadius: "50%", background: g.reached ? "var(--err)" : "var(--ok)", flexShrink: 0 }} />
-                      {g.reached ? "Reached the client" : "Recovered"}
+                    <span title={g.noEnd ? RESULT.unknown.hint : undefined} style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12, color: "var(--text-2)" }}>
+                      <span style={{ width: 7, height: 7, borderRadius: "50%", background: g.reached ? "var(--err)" : g.noEnd ? "var(--text-4)" : "var(--ok)", flexShrink: 0 }} />
+                      {g.reached ? "Reached the client" : g.noEnd ? RESULT.unknown.label : "Recovered"}
                     </span>
                   </td>
                 </tr>
