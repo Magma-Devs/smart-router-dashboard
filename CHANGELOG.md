@@ -5,6 +5,22 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.60.0]
+
+### Added
+
+- **A managed deployment emails the owner when their password changes**
+  (MAG-2868), whichever way it changed: **Change password** on the Account
+  page, or a reset link being used — self-serve, an admin's, or one the
+  recovery command printed. A change the owner did not make is the earliest
+  sign that someone else is in the account. The notice says when, in UTC, and
+  what to do if it wasn't them, and carries no link or button at all. It goes
+  after the change has committed, so a failed send never fails or undoes it;
+  whether the owner was told is added to the change's audit note
+  (`password.changed`, `password.reset_completed`): `owner notified by email`,
+  `owner not notified, email failed`, or `owner not notified, no mail
+  transport`. On-prem sends nothing, and those rows are unchanged.
+
 ## [0.59.0]
 
 ### Added
