@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.60.3]
+
 ### Changed
 
 - **Ten Dependabot updates** (MAG-5228). Each one passed CI on a branch
