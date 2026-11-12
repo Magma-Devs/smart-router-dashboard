@@ -137,7 +137,15 @@ export interface Series {
   /** "linear" joins points with straight segments - for values that jump (a
    *  block height), where a smoothed curve would overshoot and dip. */
   curve?: "smooth" | "linear";
+  /** Points with nothing to measure although the source was read - an
+   *  upstream that served no requests, so it has no latency. The line breaks
+   *  there (`maxGap` doesn't apply) and a dotted grey bridge joins the points
+   *  either side, read as "No requests" on hover. */
+  idle?: boolean[];
 }
+
+/** What a point with nothing to measure reads as on hover (Series.idle). */
+const IDLE_LABEL = "No requests";
 
 /** What a LineChart shows on hover: a crosshair, and every series' value at that point. */
 export interface ChartHover {
@@ -278,13 +286,18 @@ export function LineChart({
   /* A series' points split where a value is missing (NaN): each run is drawn
      on its own, so a gap reads as a gap - never as a drop to zero. A series
      with no gaps is one run, drawn exactly as before. */
-  const runsOf = (vals: number[]) => {
+  const runsOf = (vals: number[], idle?: boolean[]) => {
     const runs: [number, number][][] = [];
     let cur: [number, number][] = [];
     let missing = 0;
     vals.forEach((v, i) => {
       if (Number.isFinite(v)) {
         cur.push([cx(i), cy(v)]);
+        missing = 0;
+      } else if (idle?.[i]) {
+        // Nothing was measured because nothing happened: never bridged.
+        if (cur.length) runs.push(cur);
+        cur = [];
         missing = 0;
       } else if (cur.length && ++missing > maxGap) {
         runs.push(cur);
@@ -299,6 +312,51 @@ export function LineChart({
       ? run.map(([x, y], k) => `${k ? "L" : "M"} ${x.toFixed(1)} ${y.toFixed(1)}`).join(" ")
       : smoothLine(run);
   const baseY = padY + iH;
+  /* A series' idle stretches (Series.idle), dotted grey. Between two
+     measured points the stretch is a bridge from one to the other at their
+     own heights, so the line keeps its shape and only the stretch with no
+     requests looks different. Before the first measured point or after the
+     last there is nothing to join: drawn at the last point's height, a
+     provider that answered once all day would read as that latency all day,
+     so those run along the floor (a little above it, off the axis line).
+     A neighbour off the chart (a peer far above the axis) gives no height to
+     aim at either: the bridge runs flat from the side that is on it, and with
+     neither on it there is nothing to draw - the line itself is off it.
+     `yAt` is where the stretch passes each idle point, for the hover. */
+  const idleFloor = baseY - 3;
+  const idleOf = (s: Series): { segs: [number, number, number, number][]; yAt: Map<number, number> } => {
+    const segs: [number, number, number, number][] = [];
+    const yAt = new Map<number, number>();
+    const idle = s.idle;
+    if (!idle?.some(Boolean)) return { segs, yAt };
+    const val = (i: number) => (i >= 0 && i < n && Number.isFinite(s.values[i] ?? NaN) ? s.values[i]! : null);
+    const onChart = (v: number | null): v is number => v != null && v >= lo && v <= hi;
+    for (let i = 0; i < n; i++) {
+      if (!idle[i]) continue;
+      let j = i;
+      while (j + 1 < n && idle[j + 1]) j++;
+      const vp = val(i - 1), vn = val(j + 1);
+      const between = vp != null && vn != null;
+      if (between && !onChart(vp) && !onChart(vn)) {
+        for (let k = i; k <= j; k++) yAt.set(k, padY + 8);
+        i = j;
+        continue;
+      }
+      let x1: number, y1: number, x2: number, y2: number;
+      if (between) {
+        const yp = onChart(vp) ? cy(vp) : null, yn = onChart(vn) ? cy(vn) : null;
+        [x1, x2, y1, y2] = [cx(i - 1), cx(j + 1), yp ?? yn!, yn ?? yp!];
+      } else {
+        [x1, x2, y1, y2] = [cx(i), cx(j), idleFloor, idleFloor];
+      }
+      const wide = x2 - x1 < 4;
+      segs.push(wide ? [x1 - 2, y1, x2 + 2, y2] : [x1, y1, x2, y2]);
+      for (let k = i; k <= j; k++) yAt.set(k, wide || x2 === x1 ? y1 : y1 + ((cx(k) - x1) / (x2 - x1)) * (y2 - y1));
+      i = j;
+    }
+    return { segs, yAt };
+  };
+  const idleBy = series.map((s) => idleOf(s));
   const clipId = `${id}cp`;
   // fill the area under a series when it's the only line, or when explicitly asked
   const single = series.filter((s) => s.values?.length).length === 1;
@@ -354,7 +412,7 @@ export function LineChart({
             if (!s.values?.length) return null;
             const doFill = s.fill !== undefined ? s.fill : single;
             if (!doFill) return null;
-            const d = runsOf(s.values)
+            const d = runsOf(s.values, s.idle)
               .filter((p) => p.length > 1)
               .map((p) => `${smoothLine(p)} L ${p[p.length - 1]![0].toFixed(1)} ${baseY.toFixed(1)} L ${p[0]![0].toFixed(1)} ${baseY.toFixed(1)} Z`)
               .join(" ");
@@ -365,9 +423,13 @@ export function LineChart({
               rather than as a speck the renderer left behind */}
           {series.map((s, si) => {
             if (!s.values?.length) return null;
-            const runs = runsOf(s.values);
+            const runs = runsOf(s.values, s.idle);
             return (
               <g key={si} opacity={s.opacity ?? 1}>
+                {idleBy[si]!.segs.map(([x1, y1, x2, y2], k) => (
+                  <line key={"i" + k} x1={x1} x2={x2} y1={y1} y2={y2} stroke="var(--text-3)"
+                    strokeWidth={Math.max(2, (s.width || 2) * 0.8)} strokeDasharray="1 4" strokeLinecap="round" />
+                ))}
                 <path d={runs.filter((r) => r.length > 1).map((r) => runPath(r, s.curve)).join(" ")} fill="none"
                   stroke={s.color || "var(--brand)"} strokeWidth={s.width || 2}
                   strokeLinejoin="round" strokeLinecap="round"
@@ -394,6 +456,9 @@ export function LineChart({
             <line x1={cx(shownI)} x2={cx(shownI)} y1={padY} y2={padY + iH} stroke="var(--text-3)" strokeWidth="1" strokeDasharray="3 3" opacity="0.7" />
             {series.map((s, si) => {
               const v = s.values?.[shownI];
+              if ((v == null || !Number.isFinite(v)) && s.idle?.[shownI]) {
+                return <circle key={si} cx={cx(shownI)} cy={idleBy[si]!.yAt.get(shownI) ?? idleFloor} r="3" fill="var(--surface)" stroke="var(--text-4)" strokeWidth="1.5" opacity={s.opacity ?? 1} />;
+              }
               return v != null && Number.isFinite(v) && v >= lo && v <= hi
                 ? <circle key={si} cx={cx(shownI)} cy={cy(v)} r="3.5" fill={s.color || "var(--brand)"} stroke="var(--surface)" strokeWidth="1.5" opacity={s.opacity ?? 1} />
                 : null;
@@ -407,10 +472,16 @@ export function LineChart({
               const top = padY + 8, bottom = padY + iH - 8;
               const items = series.flatMap((s, si) => {
                 const v = s.values?.[shownI];
-                if (v == null || !Number.isFinite(v) || !hover.rows[si]) return [];
+                if (!hover.rows[si]) return [];
+                if ((v == null || !Number.isFinite(v)) && s.idle?.[shownI]) {
+                  const iy = idleBy[si]!.yAt.get(shownI) ?? idleFloor;
+                  return [{ si, dotY: iy, y: Math.min(Math.max(iy, top), bottom), text: IDLE_LABEL, idle: true,
+                    color: s.color || "var(--brand)", bold: !!hover.rows[si]!.bold, faded: (s.opacity ?? 1) < 0.5 }];
+                }
+                if (v == null || !Number.isFinite(v)) return [];
                 const extra = hover.sub?.(si, shownI);
                 const dotY = Math.min(Math.max(cy(v), padY), padY + iH);
-                return [{ si, dotY, y: Math.min(Math.max(dotY, top), bottom), text: hover.fmt(v) + (extra ? ` · ${extra}` : ""),
+                return [{ si, dotY, y: Math.min(Math.max(dotY, top), bottom), text: hover.fmt(v) + (extra ? ` · ${extra}` : ""), idle: false,
                   color: s.color || "var(--brand)", bold: !!hover.rows[si]!.bold, faded: (s.opacity ?? 1) < 0.5 }];
               }).sort((a, b) => a.y - b.y);
               for (let k = 1; k < items.length; k++) items[k]!.y = Math.max(items[k]!.y, items[k - 1]!.y + 17);
@@ -437,7 +508,7 @@ export function LineChart({
                           <line x1={x} y1={it.dotY} x2={right ? lx : lx + lw} y2={it.y} stroke={it.color} strokeWidth="1" opacity="0.5" />
                         )}
                         <rect x={lx} y={it.y - 8.5} width={lw} height={17} rx={4} fill="var(--surface-2)" stroke={it.color} strokeWidth={it.bold ? 1.4 : 1} />
-                        <text x={lx + 6} y={it.y + 3.6} fontSize="10.5" fontFamily="var(--font-mono)" fill="var(--text)" fontWeight={it.bold ? 700 : 500}>{it.text}</text>
+                        <text x={lx + 6} y={it.y + 3.6} fontSize="10.5" fontFamily="var(--font-mono)" fill={it.idle ? "var(--text-3)" : "var(--text)"} fontWeight={it.bold ? 700 : 500}>{it.text}</text>
                       </g>
                     );
                   })}
@@ -479,7 +550,7 @@ export function LineChart({
               <div key={si} style={{ display: "flex", alignItems: "center", gap: 7, padding: "2px 0" }}>
                 <span style={{ width: 9, height: row.bold ? 3 : 2, background: s.color || "var(--brand)", borderRadius: 1, flexShrink: 0 }} />
                 <span className="gw-mono" style={{ flex: 1, color: row.bold ? "var(--text)" : "var(--text-2)", fontWeight: row.bold ? 600 : 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.name}</span>
-                <span className="gw-mono gw-tnum" style={{ color: "var(--text)", fontWeight: 600 }}>{v != null && Number.isFinite(v) ? hover.fmt(v) : "—"}</span>
+                <span className="gw-mono gw-tnum" style={{ color: "var(--text)", fontWeight: 600 }}>{v != null && Number.isFinite(v) ? hover.fmt(v) : s.idle?.[shownI] ? IDLE_LABEL : "—"}</span>
               </div>
             );
           })}

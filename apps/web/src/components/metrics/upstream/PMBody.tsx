@@ -38,6 +38,10 @@ import { PMPanel } from "./PMPanel";
 const PAD_X = 80;
 const PAD_R = 16;
 
+/** The relay cache's row in the volume chart: the router's own name for a
+ *  reply that came from its cache, not an upstream. */
+const CACHED_ROW = "Cached";
+
 /** The peers' colours; the selected upstream is always the brand colour. */
 const PEER_COLORS = ["#38bdf8", "#a78bfa", "#22c55e", "#eab308", "#ec4899", "#14b8a6", "#f97316", "#94a3b8"];
 
@@ -110,6 +114,16 @@ function LegendLine({ heading, rows, foot, onFocus }: {
   );
 }
 
+/** The key for the latency chart's dotted grey line (Series.idle). */
+function NoRequestsKey() {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
+      <svg width="16" height="4" aria-hidden><line x1="1" x2="15" y1="2" y2="2" stroke="var(--text-3)" strokeWidth="2" strokeDasharray="1 4" strokeLinecap="round" /></svg>
+      No requests
+    </span>
+  );
+}
+
 /** A chart, and its legend on one line under it. */
 function ChartRow({ height, chart, legend }: { height: number; chart: ReactNode; legend: ReactNode }) {
   return (
@@ -157,11 +171,11 @@ export function PMBody({ pm, detail, name, timeWindow, onOpenErrors }: {
   const times = useMemo(() => gridTimes(grid), [grid]);
   const colorOf = (u: string, i: number) => (u === name ? "var(--brand)" : PEER_COLORS[i % PEER_COLORS.length]!);
   /* A line pointed at in a legend comes forward; the others fade. */
-  const lineOf = (u: string, i: number, values: number[], curve: Series["curve"] = "smooth"): Series => {
+  const lineOf = (u: string, i: number, values: number[], curve: Series["curve"] = "smooth", idle?: boolean[]): Series => {
     const faded = focusUp != null && focusUp !== u;
     return u === name
-      ? { values, color: colorOf(u, i), width: 2.6, opacity: faded ? 0.25 : 1, fill: false, curve }
-      : { values, color: colorOf(u, i), width: focusUp === u ? 2.2 : 1.4, opacity: faded ? 0.2 : focusUp === u ? 1 : 0.8, fill: false, curve };
+      ? { values, color: colorOf(u, i), width: 2.6, opacity: faded ? 0.25 : 1, fill: false, curve, idle }
+      : { values, color: colorOf(u, i), width: focusUp === u ? 2.2 : 1.4, opacity: faded ? 0.2 : focusUp === u ? 1 : 0.8, fill: false, curve, idle };
   };
   /* The pointer snaps to the grid the lines are sampled on, so moving within
      one point doesn't redraw every chart. */
@@ -196,6 +210,15 @@ export function PMBody({ pm, detail, name, timeWindow, onOpenErrors }: {
 
   /* request volume - req/s per upstream, from zero */
   const rps = useMemo(() => onGrid(times, grid, ordered.map((u) => u.rps)), [times, grid, ordered]);
+  /* Where an upstream was read but served no requests, it has no latency to
+     show: the latency line turns into a dotted grey bridge there, at the
+     height of the points either side - not a gap (which means nothing was
+     read), and not a value drawn as if it had been measured. */
+  const latIdle = useMemo(() => lat.map((vals, i) =>
+    // The relay cache ("Cached" in the volume chart) answers without an
+    // upstream, so it never has a latency of its own to miss.
+    ordered[i]!.upstream === CACHED_ROW ? [] : vals.map((v, k) => !Number.isFinite(v) && Number.isFinite(rps[i]![k]!))), [lat, rps, ordered]);
+  const anyIdle = latIdle.some((row) => row.some(Boolean));
   const rpsAll = rps.flat().filter(Number.isFinite);
   const rpsHi = rpsAll.length ? Math.max(...rpsAll) : 0;
 
@@ -289,13 +312,13 @@ export function PMBody({ pm, detail, name, timeWindow, onOpenErrors }: {
       </PMPanel>
 
       <PMPanel full title="Latency · p95"
-        tip={`The time 95% of requests finished within, each point over ${averages} before it.\n\nA gap means that upstream served no requests then.`}>
+        tip={`The time 95% of requests finished within, each point over ${averages} before it.\n\n- **Dotted grey line**: that upstream served no requests then, so there is no latency to show. Between two points it joins them; before the first or after the last it runs along the bottom\n- **A gap**: no data was collected then`}>
         {latAll.length ? (
           <>
             <ChartRow height={220}
-              chart={<LineChart series={ordered.map((u, i) => lineOf(u.upstream, i, lat[i]!))} id={"pml" + pid} padY={16}
+              chart={<LineChart series={ordered.map((u, i) => lineOf(u.upstream, i, lat[i]!, "smooth", latIdle[i]))} id={"pml" + pid} padY={16}
                 yDomain={[0, latTop]} niceY yFmt={fmtMs} xs={times} maxGap={maxGap} hover={hoverOf(fmtMs)} hoverBox={false} pointLabels {...shared} />}
-              legend={<LegendLine rows={nameRows} onFocus={setFocusUp} />} />
+              legend={<LegendLine rows={nameRows} onFocus={setFocusUp} foot={anyIdle ? <NoRequestsKey /> : undefined} />} />
             {latOver.length > 0 && (
               <div style={{ marginTop: 6, fontSize: 11, color: "var(--text-4)" }}>
                 ↑ Off the top of the chart: {latOver.map((x) => `${x.name} (up to ${fmtMs(x.max)})`).join(", ")} - point at it to read each value.

@@ -756,18 +756,21 @@ export function qEndpointLatencyByEndpointSeriesExpr(
   quantile: number,
   spec: string,
   lookback: string,
-  presence: string,
+  served: string,
   window?: MetricWindow,
 ): string {
-  // Only where the upstream was scraped in the last `presence`: a quantile
-  // over `lookback` would otherwise carry the last value that far into a
-  // stretch with no data at all.
+  // Only where the upstream answered a request in the last `served` (one
+  // point's own stretch): a quantile over `lookback` would otherwise carry a
+  // handful of requests across the whole lookback - a flat line at their
+  // latency for half an hour on a 12-hour chart while the volume chart read 0.
+  // Being scraped is not enough: a counter's series exists whether or not it
+  // moves.
   if (recordedSeriesFor(window)) {
-    const seen = `sum by (endpoint_id) (count_over_time(${RECORDED.endpointLatencyBucket}${selector({ spec, le: "+Inf" })}[${presence}])) > 0`;
-    return `histogram_quantile(${quantile}, sum by (le, endpoint_id) (${aot(`${RECORDED.endpointLatencyBucket}${selector({ spec })}`, lookback)})) and on (endpoint_id) (${seen})`;
+    const busy = `sum by (endpoint_id) (max_over_time(${RECORDED.endpointLatencyBucket}${selector({ spec, le: "+Inf" })}[${served}])) > 0`;
+    return `histogram_quantile(${quantile}, sum by (le, endpoint_id) (${aot(`${RECORDED.endpointLatencyBucket}${selector({ spec })}`, lookback)})) and on (endpoint_id) (${busy})`;
   }
-  const seen = `sum by (endpoint_id) (count_over_time(${ENDPOINT_METRICS.latencyBucket}${selector({ spec, le: "+Inf" })}[${presence}])) > 0`;
-  return `histogram_quantile(${quantile}, sum by (le, endpoint_id) (rate(${ENDPOINT_METRICS.latencyBucket}${selector({ spec })}[${lookback}]))) and on (endpoint_id) (${seen})`;
+  const busy = `sum by (endpoint_id) (increase(${ENDPOINT_METRICS.latencyBucket}${selector({ spec, le: "+Inf" })}[${served}])) > 0`;
+  return `histogram_quantile(${quantile}, sum by (le, endpoint_id) (rate(${ENDPOINT_METRICS.latencyBucket}${selector({ spec })}[${lookback}]))) and on (endpoint_id) (${busy})`;
 }
 
 /**

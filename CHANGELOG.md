@@ -5,6 +5,24 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.60.3]
+
+### Fixed
+
+- **A provider with no requests no longer shows a latency.** On the Metrics
+  page's Upstreams view, the latency chart drew a point wherever the
+  provider's numbers were collected, and each point covers a long stretch
+  before it (half an hour on a 12-hour window). So a provider with a few
+  requests drew a flat latency line for half an hour while the volume chart
+  read 0 requests a second. Now a latency point shows only where the
+  provider answered requests in that point's own few minutes. Where it
+  served none, that part of its line turns into a dotted grey bridge
+  between the points either side, and pointing at it reads "No requests".
+  The rest of the line is drawn as before. Before the first request or
+  after the last, the dotted line runs along the bottom instead, so one
+  answer doesn't read as that latency all day. A gap still means no data
+  was collected.
+
 ## [0.60.2]
 
 ### Security
