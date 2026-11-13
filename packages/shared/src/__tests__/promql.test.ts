@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   qErrorRepliesBySpecProvider,
   qFailedTriesBySpecProvider,
+  qFailedTriesBySpecProviderRecorded,
+  qRecordedSamplesPerStep,
   countPointsPerStep,
   countRangeSec,
   qClientRpsSeriesExpr,
@@ -89,6 +91,7 @@ import {
   MIN_RATE_RANGE_SEC,
 } from "../constants/windows.js";
 import { applyScope } from "../promql/scope.js";
+import { RECORDED, setRecordedReads } from "../promql/recorded.js";
 
 describe("selector", () => {
   it("drops undefined and empty labels", () => {
@@ -930,5 +933,39 @@ describe("incident reads", () => {
     expect(qErrorRepliesBySpecProvider("60s", "ETH1")).toBe('sum by (spec, provider_address) (increase(smartrouter_node_errors_total{spec="ETH1"}[60s]))');
     expect(qFailedTriesBySpecProvider("60s", 'X"} or vector(1) #')).toBe('sum by (spec, provider_address) (increase(smartrouter_requests_failed_total{spec="X\\"} or vector(1) #"}[60s]))');
     expect(qFailedTriesBySpecProvider("60s", "")).toBe("sum by (spec, provider_address) (increase(smartrouter_requests_failed_total[60s]))");
+  });
+
+  it("count failed tries from the recorded relays per provider: total minus success, a count per step", () => {
+    const tot = `sum by (spec, provider_address) (sum_over_time(${RECORDED.requestsByProvider}[1800s]))`;
+    const ok = `sum by (spec, provider_address) (sum_over_time(${RECORDED.successByProvider}[1800s]))`;
+    expect(qFailedTriesBySpecProviderRecorded("1800s")).toBe(`round(clamp_min((${tot} - (${ok} or ${tot} * 0)) * 60, 0))`);
+  });
+
+  it("read a provider with no success series as failing every try - the `or` branch", () => {
+    // `ok or tot * 0`: where the success sum has no series for a chain and
+    // provider, the total's own labels answer 0, so the difference is the total.
+    const expr = qFailedTriesBySpecProviderRecorded("1800s", "ETH1");
+    const tot = `sum by (spec, provider_address) (sum_over_time(${RECORDED.requestsByProvider}{spec="ETH1"}[1800s]))`;
+    expect(expr).toContain(`(sum by (spec, provider_address) (sum_over_time(${RECORDED.successByProvider}{spec="ETH1"}[1800s])) or ${tot} * 0)`);
+    expect(expr.startsWith(`round(clamp_min((${tot} - (`)).toBe(true);
+  });
+
+  it("mirror the recorded failed-relays reader the Errors hotspots use, over a step instead of the window", () => {
+    setRecordedReads({ from: "3h", available: true, historySeconds: 40 * 86_400 });
+    try {
+      expect(qErrorsByUpstream("30d", "ETH1").replaceAll("[2592000s]", "[1800s]")).toBe(qFailedTriesBySpecProviderRecorded("1800s", "ETH1"));
+    } finally {
+      setRecordedReads({ from: null, available: false });
+    }
+  });
+
+  it("read one chain's recorded series when given its spec, quoted so no value closes the matcher", () => {
+    expect(qFailedTriesBySpecProviderRecorded("1800s", 'X"} or vector(1) #')).toContain('{spec="X\\"} or vector(1) #"}[1800s]');
+    expect(qFailedTriesBySpecProviderRecorded("1800s", "")).toBe(qFailedTriesBySpecProviderRecorded("1800s"));
+  });
+
+  it("count the recorded samples per step, the most any series of the chain has", () => {
+    expect(qRecordedSamplesPerStep("1800s")).toBe(`max(count_over_time(${RECORDED.requestsByProvider}[1800s]))`);
+    expect(qRecordedSamplesPerStep("1800s", "ETH1")).toBe(`max(count_over_time(${RECORDED.requestsByProvider}{spec="ETH1"}[1800s]))`);
   });
 });

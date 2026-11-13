@@ -115,10 +115,19 @@ export function recordedReadsPolicy(): RecordedReadsPolicy {
  * itself, 2 when it also reads the window before (`offset`).
  */
 export function recordedReadsFor(window: MetricWindow, spans = 1): boolean {
+  return recordedReadsReach(window, WINDOWS[window].rangeSeconds * spans);
+}
+
+/**
+ * Whether a read of this window that reaches `seconds` back from now may read
+ * the recorded series: `recordedReadsFor` for a read whose reach is not a whole
+ * number of windows - a series on a grid that ends up to a step before now,
+ * whose first point sums the step before it.
+ */
+export function recordedReadsReach(window: MetricWindow, seconds: number): boolean {
   if (policy.from === null || !policy.available) return false;
-  const range = WINDOWS[window].rangeSeconds;
-  if (range < WINDOWS[policy.from].rangeSeconds) return false;
-  return policy.historySeconds !== null && policy.historySeconds >= range * spans;
+  if (WINDOWS[window].rangeSeconds < WINDOWS[policy.from].rangeSeconds) return false;
+  return policy.historySeconds !== null && policy.historySeconds >= seconds;
 }
 
 /**

@@ -1081,6 +1081,34 @@ export function qFailedTriesBySpecProvider(step: string, spec?: string): string 
   return `sum by (spec, provider_address) (increase(${OPTIONAL_METRICS.requestsFailedTotal}${specMatcher(spec)}[${step}]))`;
 }
 
+/**
+ * `qFailedTriesBySpecProvider` from the recorded relays per provider, for
+ * long windows: a month of the raw failed counters on a large deployment is
+ * a read of seconds. Each try is counted on the total and on exactly one of
+ * success or failed, with the same labels, so a provider's tries minus its
+ * successes are its failed tries, a minute earlier (see recorded.ts); a
+ * provider with no success series failed every try (`or … * 0`). Rounded per
+ * stretch, as the recorded failed-tries bars are.
+ */
+export function qFailedTriesBySpecProviderRecorded(step: string, spec?: string): string {
+  const sel = specMatcher(spec);
+  const tot = `sum by (spec, provider_address) (${sot(`${RECORDED.requestsByProvider}${sel}`, step)})`;
+  const ok = `sum by (spec, provider_address) (${sot(`${RECORDED.successByProvider}${sel}`, step)})`;
+  return `round(clamp_min((${tot} - (${ok} or ${tot} * 0)) * ${K}, 0))`;
+}
+
+/**
+ * Recorded samples in each `step` stretch, the most any series of the chain
+ * has: one a minute where the ruler evaluated every minute of the stretch.
+ * Fewer is a stretch the ruler skipped minutes of (a store restart, say),
+ * whose increments the recorded series never hold - while the raw counters
+ * do, since the collector delivers its samples late after an outage and the
+ * ruler doesn't go back.
+ */
+export function qRecordedSamplesPerStep(step: string, spec?: string): string {
+  return `max(count_over_time(${RECORDED.requestsByProvider}${specMatcher(spec)}[${step}]))`;
+}
+
 /** Provider error replies per chain and provider in each `step` stretch - the incidents' other kind. */
 export function qErrorRepliesBySpecProvider(step: string, spec?: string): string {
   return `sum by (spec, provider_address) (increase(${OPTIONAL_METRICS.nodeErrorsTotal}${specMatcher(spec)}[${step}]))`;

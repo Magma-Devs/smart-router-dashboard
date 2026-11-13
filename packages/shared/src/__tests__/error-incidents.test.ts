@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ERROR_INCIDENT_RULES, detectErrorIncidents, errorIncidentsRead, type ErrorIncidentSeries } from "../constants/error-incidents.js";
+import { ERROR_INCIDENTS_RECORDED_ABOVE_SEC, ERROR_INCIDENT_RULES, detectErrorIncidents, errorIncidentsRead, type ErrorIncidentSeries } from "../constants/error-incidents.js";
 
 const STEP = 300;
 const T0 = 1_700_000_000 - (1_700_000_000 % STEP);
@@ -246,5 +246,11 @@ describe("errorIncidentsRead", () => {
     expect(errorIncidentsRead(86400)).toEqual({ stepSec: 300, readSeconds: 86400 });
     expect(errorIncidentsRead(7 * 86400)).toEqual({ stepSec: 300, readSeconds: 7 * 86400 });
     expect(errorIncidentsRead(30 * 86400)).toEqual({ stepSec: 1800, readSeconds: 30 * 86400 });
+  });
+
+  it("reads recorded failed tries past a week, where the stretches are half an hour", () => {
+    expect(ERROR_INCIDENTS_RECORDED_ABOVE_SEC).toBe(7 * 86400);
+    expect(errorIncidentsRead(ERROR_INCIDENTS_RECORDED_ABOVE_SEC).stepSec).toBe(300);
+    expect(errorIncidentsRead(14 * 86400).stepSec).toBe(1800);
   });
 });

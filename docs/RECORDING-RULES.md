@@ -21,7 +21,7 @@ are about 650 series and the same read is a fraction of that.
 | `spec_router:smartrouter_end_to_end_latency_milliseconds_count:rate2m15s` | — | requests served, RPS, the topbar pulse |
 | `spec_router:smartrouter_requests_total:rate2m15s`, `…_success_total:rate2m15s` | — | availability, errors |
 | `spec_router_le:smartrouter_end_to_end_latency_milliseconds_bucket:rate2m15s` | `le` | every latency quantile |
-| `spec_router_provider:smartrouter_requests_total:rate2m15s`, `…_success_total:rate2m15s` | `provider_address` | the upstream roster |
+| `spec_router_provider:smartrouter_requests_total:rate2m15s`, `…_success_total:rate2m15s` | `provider_address` | the upstream roster, the Errors tab's timeline past a week |
 | `spec_router_method:smartrouter_requests_total:rate2m15s`, `…_success_total:rate2m15s`, `…_read_total:rate2m15s` | `method` | the methods tab, errors by method |
 | `spec_endpoint_le:rpc_endpoint_end_to_end_latency_milliseconds_bucket:rate2m15s` | `endpoint_id, le` | upstream latency panels |
 | `spec_endpoint:rpc_endpoint_total_relays_serviced:rate2m15s`, `…_errored:rate2m15s` | `endpoint_id` | roster volume |
@@ -81,7 +81,15 @@ samples are:
   and up read the recorded series.
 
 `GET /api/metrics/reads` reports which case the deployment is in and which
-windows read recorded series right now. `METRICS_RECORDED_FROM=never` holds
+windows read recorded series right now.
+
+The probe sees the newest and the oldest sample, not the minutes between:
+a minute the ruler did not evaluate (the store restarting, say) has no
+recorded sample, and nothing reads it back later, while the raw counters
+for that minute still arrive, late, from the collector. The Errors tab's
+timeline, which is about when errors came, counts the recorded samples in
+each of its stretches (`qRecordedSamplesPerStep`) and reads the stretches
+short of one a minute from the raw counters. `METRICS_RECORDED_FROM=never` holds
 every window on raw reads regardless.
 
 ## The log store's counts

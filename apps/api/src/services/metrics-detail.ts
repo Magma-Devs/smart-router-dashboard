@@ -9,10 +9,15 @@
 import {
   ENDPOINT_METRICS,
   OPTIONAL_METRICS,
+  ERROR_INCIDENTS_RECORDED_ABOVE_SEC,
   detectErrorIncidents,
   errorIncidentsRead,
   qErrorRepliesBySpecProvider,
   qFailedTriesBySpecProvider,
+  qFailedTriesBySpecProviderRecorded,
+  qRecordedSamplesPerStep,
+  RECORDED_INTERVAL_SECONDS,
+  recordedReadsReach,
   type ErrorIncidentKind,
   type ErrorIncidentSeries,
   type ErrorIncidentsReport,
@@ -82,6 +87,15 @@ import { health, toPoints } from "./metrics.js";
 import { CACHED as CACHED_UPSTREAM, LABEL_TOKEN } from "./router-log.js";
 import { RECORDED_OUTCOMES } from "./error-requests.js";
 import { serviceNameClash, serviceNameMatcher } from "./stream-scope.js";
+
+/**
+ * How the error timeline reads raw what its recorded counts miss: one read per
+ * run of stretches the ruler skipped minutes of, runs up to `PATCH_JOIN_SEC`
+ * apart read as one (a store restart is often a few gaps in an afternoon),
+ * and past `PATCH_READS` reads the whole read is raw.
+ */
+const PATCH_READS = 8;
+const PATCH_JOIN_SEC = 6 * 3600;
 
 export class MetricsDetailService {
   constructor(
@@ -175,7 +189,10 @@ export class MetricsDetailService {
    * The Errors tab's incidents (MAG-5263): failed tries and error replies per
    * chain and provider, two range reads at the window's step reaching at
    * least a day back for each series' usual level, batched by
-   * `detectErrorIncidents`. A chain reads one chain's series; a config router
+   * `detectErrorIncidents`. Windows longer than a week read the failed tries
+   * from the recorded series where those reach back far enough
+   * (`failedTriesRecorded`), in the same counts per stretch; error replies
+   * always read raw. A chain reads one chain's series; a config router
    * reads its chain and keeps the providers it declares, and a router the
    * config doesn't name declares none - no lines, as the other routes answer
    * it - without a read.
@@ -184,14 +201,23 @@ export class MetricsDetailService {
     const range = WINDOWS[window].rangeSeconds;
     const { stepSec, readSeconds } = errorIncidentsRead(range);
     const step = `${stepSec}s`;
-    const end = Math.floor(Date.now() / 1000 / stepSec) * stepSec;
+    const nowSec = Date.now() / 1000;
+    const end = Math.floor(nowSec / stepSec) * stepSec;
     const start = end - readSeconds;
     const router = routerId ? (this.configSvc?.getRouters() ?? []).find((r) => r.id === routerId) : undefined;
     if (routerId && !router) return { from: end - range, to: end, stepSec, lines: [], steady: [], available: true, failed: [] };
     const chain = router?.spec ?? spec;
     const declared = router ? new Set(router.nodes.map((n) => n.name.toLowerCase())) : null;
-    const kinds: [ErrorIncidentKind, string][] = [["failed", qFailedTriesBySpecProvider(step, chain)], ["reply", qErrorRepliesBySpecProvider(step, chain)]];
-    const reads = await Promise.all(kinds.map(([, q]) => this.prom.queryRangeOrNull(q, start, end, step)));
+    // Past a week, failed tries from the recorded series where their history
+    // reaches the first point's stretch, the step before `start`.
+    const recorded = range > ERROR_INCIDENTS_RECORDED_ABOVE_SEC && recordedReadsReach(window, Math.ceil(nowSec) - start + stepSec);
+    const kinds: ErrorIncidentKind[] = ["failed", "reply"];
+    const reads = await Promise.all([
+      recorded
+        ? this.failedTriesRecorded(step, stepSec, start, end, chain)
+        : this.prom.queryRangeOrNull(qFailedTriesBySpecProvider(step, chain), start, end, step),
+      this.prom.queryRangeOrNull(qErrorRepliesBySpecProvider(step, chain), start, end, step),
+    ]);
     const series: ErrorIncidentSeries[] = [];
     reads.forEach((rows, i) => {
       for (const r of rows ?? []) {
@@ -200,7 +226,7 @@ export class MetricsDetailService {
         if (chain && s.toUpperCase() !== chain.toUpperCase()) continue;
         if (declared && !declared.has(provider.toLowerCase())) continue;
         series.push({
-          kind: kinds[i]![0], spec: s, provider,
+          kind: kinds[i]!, spec: s, provider,
           points: (r.values ?? []).map(([t, v]) => [Number(t), Number(v)] as [number, number]).filter(([, v]) => Number.isFinite(v)),
         });
       }
@@ -209,8 +235,47 @@ export class MetricsDetailService {
     return {
       from: end - range, to: end, stepSec, lines, steady,
       available: reads.every((r) => r !== null),
-      failed: kinds.filter((_, i) => reads[i] === null).map(([k]) => k),
+      failed: kinds.filter((_, i) => reads[i] === null),
     };
+  }
+
+  /**
+   * Failed tries per chain and provider in each stretch from the recorded
+   * series, with the stretches the ruler skipped minutes of read raw: the
+   * recorded series hold nothing for a minute the ruler didn't evaluate,
+   * while the raw counters do (`qRecordedSamplesPerStep`). The newest
+   * stretch is one of them for a minute or two after it closes, until the
+   * ruler has written it. Null when a read was refused.
+   */
+  private async failedTriesRecorded(step: string, stepSec: number, start: number, end: number, chain?: string): Promise<PromMatrixSample[] | null> {
+    const [rows, samples] = await Promise.all([
+      this.prom.queryRangeOrNull(qFailedTriesBySpecProviderRecorded(step, chain), start, end, step),
+      this.prom.queryRangeOrNull(qRecordedSamplesPerStep(step, chain), start, end, step),
+    ]);
+    if (!rows || !samples) return null;
+    const whole = stepSec / RECORDED_INTERVAL_SECONDS;
+    const seen = new Map((samples[0]?.values ?? []).map(([t, v]) => [Number(t), Number(v)]));
+    const runs: [number, number][] = [];
+    for (let t = start; t <= end; t += stepSec) {
+      if ((seen.get(t) ?? 0) >= whole) continue;
+      const last = runs[runs.length - 1];
+      if (last && t - last[1] <= PATCH_JOIN_SEC) last[1] = t;
+      else runs.push([t, t]);
+    }
+    if (!runs.length) return rows;
+    const raw = qFailedTriesBySpecProvider(step, chain);
+    if (runs.length > PATCH_READS) return this.prom.queryRangeOrNull(raw, start, end, step);
+    const patches = await Promise.all(runs.map(([a, b]) => this.prom.queryRangeOrNull(raw, a, b, step)));
+    if (patches.some((p) => p === null)) return null;
+    const patched = (t: number) => runs.some(([a, b]) => t >= a && t <= b);
+    const key = (r: PromMatrixSample) => `${r.metric.spec ?? ""}|${r.metric.provider_address ?? ""}`;
+    const merged = new Map(rows.map((r) => [key(r), { metric: r.metric, values: r.values.filter(([t]) => !patched(Number(t))) }]));
+    for (const r of patches.flatMap((p) => p ?? [])) {
+      const kept = merged.get(key(r));
+      if (kept) kept.values.push(...r.values);
+      else merged.set(key(r), { metric: r.metric, values: [...r.values] });
+    }
+    return [...merged.values()];
   }
 
   /** ChainDetail metric-switcher bundle (fetched on row expand only). */

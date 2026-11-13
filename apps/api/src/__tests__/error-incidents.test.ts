@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { RECORDED, setRecordedReads } from "@sr/shared";
 import { MetricsDetailService } from "../services/metrics-detail.js";
 import type { PrometheusClient } from "../services/prometheus-client.js";
 
@@ -94,5 +95,50 @@ describe("MetricsDetailService.errorIncidents · the reads behind the timeline",
     expect(reads.map((r) => [r.end - r.start, r.step, r.end % Number.parseInt(r.step, 10)])).toEqual([
       [86_400, "60s", 0], [86_400, "60s", 0], [30 * 86_400, "1800s", 0], [30 * 86_400, "1800s", 0],
     ]);
+  });
+});
+
+describe("MetricsDetailService.errorIncidents · a config router past a week, from recorded series", () => {
+  const NOW = 1_800_000_000;
+  const config = {
+    getRouters: () => [{ id: "eth-prod", spec: "ETH1", localPort: null, nodes: [{ name: "node-a", isBackup: false, endpoints: [] }] }],
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOW * 1000);
+    setRecordedReads({ from: "3h", available: true, historySeconds: 30 * 86_400 + 11 * 3600 });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    setRecordedReads({ from: null, available: false });
+  });
+
+  it("reads its chain's recorded series and keeps the providers it declares", async () => {
+    const reads: string[] = [];
+    const prom = {
+      async queryRangeOrNull(expr: string, start: number, end: number, step: string) {
+        reads.push(expr);
+        const values = (v: (t: number) => string) => {
+          const out: [number, string][] = [];
+          for (let t = start; t <= end; t += Number.parseInt(step, 10)) out.push([t, v(t)]);
+          return out;
+        };
+        if (expr.startsWith("max(count_over_time(")) return [{ metric: {}, values: values(() => "30") }];
+        if (expr.includes(RECORDED.requestsByProvider)) {
+          const hot = (t: number) => (t > NOW - 3600 ? "400" : "0");
+          return [
+            { metric: { spec: "ETH1", provider_address: "Node-A" }, values: values(hot) },
+            { metric: { spec: "ETH1", provider_address: "node-other" }, values: values(hot) },
+          ];
+        }
+        return [];
+      },
+    } as unknown as PrometheusClient;
+    const body = await new MetricsDetailService(prom, config as never).errorIncidents("30d", undefined, "eth-prod");
+    expect(reads.filter((q) => q.includes(":rate2m15s"))).toHaveLength(2);
+    for (const q of reads) expect(q).toContain('{spec="ETH1"}');
+    expect(reads.some((q) => q.includes("smartrouter_requests_failed_total"))).toBe(false);
+    expect(body.lines.map((l) => `${l.kind} ${l.providers.join()} ${l.count}`)).toEqual(["failed Node-A 800"]);
   });
 });

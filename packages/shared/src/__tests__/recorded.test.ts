@@ -6,6 +6,7 @@ import {
   isRecordedMetric,
   recordedReadsFor,
   recordedReadsPolicy,
+  recordedReadsReach,
   recordedSeriesFor,
   recordedWindows,
   setRecordedReads,
@@ -147,6 +148,22 @@ describe("recorded reads policy", () => {
     setRecordedReads({ from: "3h", available: true });
     expect(recordedReadsFor("3h")).toBe(false);
     expect(recordedWindows()).toEqual({ recorded: [], raw: Object.keys(WINDOWS) });
+  });
+
+  it("reads recorded series for a read reaching past whole windows only where the history reaches that far", () => {
+    // A 30-day series whose first point sums the half hour before the window.
+    const reach = 30 * 86_400 + 3600;
+    setRecordedReads({ from: "3h", available: true, historySeconds: 30 * 86_400 });
+    expect(recordedReadsFor("30d")).toBe(true);
+    expect(recordedReadsReach("30d", reach)).toBe(false);
+    setRecordedReads({ from: "3h", available: true, historySeconds: reach });
+    expect(recordedReadsReach("30d", reach)).toBe(true);
+    // The floor and the freshness hold as for whole windows.
+    expect(recordedReadsReach("1h", 3600)).toBe(false);
+    setRecordedReads({ from: "3h", available: false, historySeconds: reach });
+    expect(recordedReadsReach("30d", reach)).toBe(false);
+    setRecordedReads({ from: null, available: true, historySeconds: reach });
+    expect(recordedReadsReach("30d", reach)).toBe(false);
   });
 
   it("applies from the floor window up, only while the series are fresh", () => {
