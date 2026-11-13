@@ -74,15 +74,18 @@ const AUDIT_READ_RATE_LIMIT = {
 /** The filters both read surfaces accept. Named so the export cannot drift
  *  from the feed in what it will answer. */
 const AUDIT_FILTER_PROPS = {
-  from: { type: "string" as const, description: "Only events at or after this RFC 3339 time" },
-  to: { type: "string" as const, description: "Only events at or before this RFC 3339 time" },
+  // Each value is a bound parameter of the read, never SQL text; the caps keep
+  // a filter to the size of what it names.
+  from: { type: "string" as const, maxLength: 64, description: "Only events at or after this RFC 3339 time" },
+  to: { type: "string" as const, maxLength: 64, description: "Only events at or before this RFC 3339 time" },
   actor: {
     type: "string" as const,
+    maxLength: 320,
     description: "Restrict to one person — their user id (UUID) or their email address",
   },
   action: {
     type: "array" as const,
-    items: { type: "string" as const },
+    items: { type: "string" as const, maxLength: 128 },
     description: "Event name, repeatable (e.g. action=signin.failed)",
   },
   group: {
@@ -90,8 +93,8 @@ const AUDIT_FILTER_PROPS = {
     items: { type: "string" as const, enum: [...AUDIT_GROUPS] },
     description: "Event group, repeatable",
   },
-  target_type: { type: "string" as const, description: "Object kind, e.g. endpoint" },
-  target_id: { type: "string" as const, description: "Object id, e.g. ep_8143" },
+  target_type: { type: "string" as const, maxLength: 64, description: "Object kind, e.g. endpoint" },
+  target_id: { type: "string" as const, maxLength: 256, description: "Object id, e.g. ep_8143" },
   order: {
     type: "string" as const,
     enum: ["asc", "desc"],

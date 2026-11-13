@@ -3,6 +3,7 @@ import { DEFAULT_WINDOW, WINDOWS, toMetricWindow, type MetricWindow } from "@sr/
 import { sendApiError } from "../plugins/error-handler.js";
 import { config } from "../config.js";
 import { SnapshotStore } from "../services/snapshot.js";
+import { PARAMS, upstreamParamCheck } from "../services/query-params.js";
 
 /**
  * What an answer carries, which sets how long its snapshot is kept:
@@ -73,20 +74,21 @@ function parseWindow(raw: string | undefined): MetricWindow {
 /** Shared OpenAPI querystring for window+spec routes. */
 const windowQuerySchema = {
   type: "object" as const,
+  // A parameter the schema doesn't declare is dropped before the handler:
+  // only checked values reach a query.
+  additionalProperties: false,
   properties: {
     window: {
       type: "string" as const,
       enum: [...Object.keys(WINDOWS), "24h"],
       description: `Time window (default ${DEFAULT_WINDOW}; 24h is an alias of 1d)`,
     },
-    spec: { type: "string" as const, description: "Chain spec label, e.g. ETH1 (optional)" },
-    router: {
-      type: "string" as const,
-      description:
-        "Restrict to ONE router deployment — a value of the ROUTER_SCOPE_LABEL target label, as listed by GET /api/metrics/routers (optional; omit for cluster-wide)",
-    },
+    // Every value below that reaches a query is checked by its pattern (a 400
+    // before any read) and escaped where it lands (query-params.ts).
+    spec: { ...PARAMS.spec, description: "Chain spec label, e.g. ETH1 (optional)" },
+    router: PARAMS.router,
     routerId: {
-      type: "string" as const,
+      ...PARAMS.routerId,
       description:
         "Restrict to the upstreams ONE config router declares — an id from GET /api/config/routers. A different axis from `router`: this filters rows against the mounted values file, it does not narrow the PromQL. Read by /api/metrics/upstreams and the pulse's health counts (optional)",
     },
@@ -96,6 +98,7 @@ const windowQuerySchema = {
 /** The window+router subset, for routes that don't take a spec. */
 const windowRouterSchema = {
   type: "object" as const,
+  additionalProperties: false,
   properties: {
     window: windowQuerySchema.properties.window,
     router: windowQuerySchema.properties.router,
@@ -161,7 +164,7 @@ export async function metricRoutes(app: FastifyInstance, opts: MetricRoutesOptio
     schema: {
       tags: ["Metrics"],
       summary: "Chains currently emitting metrics",
-      querystring: { type: "object" as const, properties: { router: windowQuerySchema.properties.router } },
+      querystring: { type: "object" as const, additionalProperties: false, properties: { router: windowQuerySchema.properties.router } },
     },
   }, async (request, reply) => {
     const { router } = request.query;
@@ -171,7 +174,7 @@ export async function metricRoutes(app: FastifyInstance, opts: MetricRoutesOptio
   });
 
   // HeroPanel cards (Metrics · Overview tab).
-  app.get<{ Querystring: WindowQuery }>("/api/metrics/dashboard-summary", tag("HeroPanel summary (KPIs + prior-window deltas)", false), async (request, reply) => {
+  app.get<{ Querystring: WindowQuery }>("/api/metrics/dashboard-summary", tag("HeroPanel summary (KPIs + prior-window deltas)"), async (request, reply) => {
     const { spec, router } = request.query;
     const window = parseWindow(request.query.window);
     return snapshot(reply, "live", window, ["dashboard-summary", window, spec ?? null, scopeKey(router)], () =>
@@ -199,6 +202,7 @@ export async function metricRoutes(app: FastifyInstance, opts: MetricRoutesOptio
       summary: "Topbar pulse: router health, upstream health counts, current RPS; under spec, the chain's beside the whole router's (allChains)",
       querystring: {
         type: "object" as const,
+        additionalProperties: false,
         properties: {
           spec: windowQuerySchema.properties.spec,
           router: windowQuerySchema.properties.router,
@@ -256,6 +260,7 @@ export async function metricRoutes(app: FastifyInstance, opts: MetricRoutesOptio
       summary: "Latest block per router deployment and per upstream, with lag in seconds",
       querystring: {
         type: "object" as const,
+        additionalProperties: false,
         properties: {
           spec: windowQuerySchema.properties.spec,
           router: windowQuerySchema.properties.router,
@@ -320,12 +325,13 @@ export async function metricRoutes(app: FastifyInstance, opts: MetricRoutesOptio
       summary: "Every upstream of one chain over the window, a cell per point of the chain's availability grid: tries, failed tries, share of the chain's tries, latest-block polls, and the state they read as",
       querystring: {
         type: "object" as const,
+        additionalProperties: false,
         required: ["spec"],
         properties: {
           window: windowQuerySchema.properties.window,
           router: windowQuerySchema.properties.router,
           routerId: windowQuerySchema.properties.routerId,
-          spec: { type: "string" as const, description: "Chain spec label, e.g. ETH1" },
+          spec: PARAMS.spec,
         },
       },
     },
@@ -347,11 +353,12 @@ export async function metricRoutes(app: FastifyInstance, opts: MetricRoutesOptio
       summary: "Errors batched by when they arrived: incidents, chain-wide, recurring and long-running lines, and the errors always present, from failed tries and error replies per chain and provider",
       querystring: {
         type: "object" as const,
+        additionalProperties: false,
         properties: {
           window: windowQuerySchema.properties.window,
           router: windowQuerySchema.properties.router,
           routerId: windowQuerySchema.properties.routerId,
-          spec: { type: "string" as const, description: "Chain spec label, e.g. ETH1" },
+          spec: PARAMS.spec,
         },
       },
     },
@@ -369,11 +376,12 @@ export async function metricRoutes(app: FastifyInstance, opts: MetricRoutesOptio
       summary: "Requests per second each upstream took on one chain over the window, the relay cache's included, biggest first",
       querystring: {
         type: "object" as const,
+        additionalProperties: false,
         required: ["spec"],
         properties: {
           window: windowQuerySchema.properties.window,
           router: windowQuerySchema.properties.router,
-          spec: { type: "string" as const, description: "Chain spec label, e.g. ETH1" },
+          spec: PARAMS.spec,
         },
       },
     },
@@ -396,11 +404,12 @@ export async function metricRoutes(app: FastifyInstance, opts: MetricRoutesOptio
       summary: "Every upstream of one chain: p95 latency, requests per second and latest block over the window, one series per upstream",
       querystring: {
         type: "object" as const,
+        additionalProperties: false,
         required: ["spec"],
         properties: {
           window: windowQuerySchema.properties.window,
           router: windowQuerySchema.properties.router,
-          spec: { type: "string" as const, description: "Chain spec label, e.g. ETH1" },
+          spec: PARAMS.spec,
         },
       },
     },
@@ -418,17 +427,20 @@ export async function metricRoutes(app: FastifyInstance, opts: MetricRoutesOptio
   // Upstream deep-dive (PMBody). An upstream is a name ON A CHAIN — vendors
   // reuse one node name across every chain they serve — so `spec` is required.
   app.get<{ Querystring: { window?: string; endpointId?: string; spec?: string; router?: string } }>("/api/metrics/upstream-detail", {
+    // A name the values file lists, or a plain token: refused before any hook reads the store.
+    preValidation: upstreamParamCheck("endpointId", () => app.routerConfig),
     schema: {
       tags: ["Metrics"],
       summary: "Upstream deep-dive (stats, series, QoS sub-scores)",
       querystring: {
         type: "object" as const,
+        additionalProperties: false,
         required: ["endpointId", "spec"],
         properties: {
           window: windowQuerySchema.properties.window,
           router: windowQuerySchema.properties.router,
-          endpointId: { type: "string" as const, description: "Backing endpoint id (= upstream name)" },
-          spec: { type: "string" as const, description: "Chain the upstream serves (Lava spec index)" },
+          endpointId: { ...PARAMS.upstream, description: "Backing endpoint id (= upstream name): one the values file lists, or a plain token" },
+          spec: { ...PARAMS.spec, description: "Chain the upstream serves (Lava spec index)" },
         },
       },
     },
@@ -465,7 +477,7 @@ export async function metricRoutes(app: FastifyInstance, opts: MetricRoutesOptio
     schema: {
       tags: ["Metrics"],
       summary: "Chains with every endpoint down",
-      querystring: { type: "object" as const, properties: { router: windowQuerySchema.properties.router } },
+      querystring: { type: "object" as const, additionalProperties: false, properties: { router: windowQuerySchema.properties.router } },
     },
   }, async (request, reply) => {
     const { router } = request.query;

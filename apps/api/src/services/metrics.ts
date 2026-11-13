@@ -71,6 +71,7 @@ import {
 import { WINDOWS, alignedBounds, stepSeconds } from "@sr/shared/constants";
 import type { PrometheusClient, PromVectorSample } from "./prometheus-client.js";
 import type { ConfigurationService } from "./configuration.js";
+import { SCOPE_VALUE } from "./query-params.js";
 import { readUpstreamHealth } from "./upstream-health.js";
 
 export function health(value: number | null): HealthState {
@@ -180,7 +181,9 @@ export class MetricsService {
   async listRouterScopes(label: string): Promise<string[]> {
     if (!isValidScopeLabel(label)) return [];
     const rows = await this.prom.query(promql`count by (${labelName(label)}) (${ROUTER_METRICS.requestsTotal})`);
-    return [...new Set(rows.map((r) => r.metric[label]).filter((v): v is string => Boolean(v)))].sort();
+    // Only values a request can name back (`?router=` takes SCOPE_VALUE): the
+    // filter must not offer one it can't send.
+    return [...new Set(rows.map((r) => r.metric[label]).filter((v): v is string => Boolean(v) && SCOPE_VALUE.test(v!)))].sort();
   }
 
   /** Per-chain health from the ENDPOINT gauge (the router gauge is label-less

@@ -148,18 +148,16 @@ describe("?router= scoping", () => {
     expect(sent.filter((q) => q.includes("router="))).toEqual([]);
   });
 
-  it("ignores a value that could break out of the label matcher", async () => {
+  it("refuses a value that could break out of the label matcher, before any read", async () => {
     app = await buildApp();
 
     const res = await app.inject({
       method: "GET",
       url: `/api/metrics/dashboard-summary?router=${encodeURIComponent('x" or spec="ETH1')}`,
     });
-    // Reads cluster-wide rather than becoming a different query — and the
-    // injection attempt reaches Prometheus nowhere.
-    expect(res.statusCode).toBe(200);
-    expect(sent.filter((q) => q.includes("router="))).toEqual([]);
-    expect(sent.filter((q) => q.includes('or spec="ETH1'))).toEqual([]);
+    // A 400 rather than a different query: the value reaches Prometheus nowhere.
+    expect(res.statusCode).toBe(400);
+    expect(sent).toEqual([]);
   });
 
   it("leaves the presence probes' quoted metric names intact", async () => {
