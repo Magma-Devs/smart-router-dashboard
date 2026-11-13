@@ -54,7 +54,11 @@ using the same four health reads as the roster (gauge, chain rate, success
 and failure events). Chains sharing a window are grouped into PromQL union
 branches; query count is independent of the number of endpoints or chains. The optional
 `spec` and `routerId` filter these counts; `router` scopes all Prometheus
-queries. Headers read the pulse every 30 seconds and make no roster,
+queries. Under `spec` the health and RPS are the chain's too, and
+`allChains` carries the whole router's beside them (two reads more); the
+topbar shows `allChains`, so on a chain's page its status and RPS pill still
+describe every chain and only the provider counts follow the chain (MAG-5295).
+Headers read the pulse every 30 seconds and make no roster,
 histogram or QoS request. They show **Checking health…**
 until the selected scope answers, a warning on fetch errors, and warning
 counts for missing upstream health. Background refresh retains the same
@@ -211,7 +215,7 @@ client requests) against the live router:
 |---|---|
 | `/api/metrics/specs` | `count by (spec) (smartrouter_requests_total)` |
 | `/api/metrics/dashboard-summary` | `qRequestsTotal` + `qAvailability` + `qLatencyQuantile(0.95)` + stale-caught, each **twice** (current + `offset $range` prior); `count by (endpoint_id) (label_replace(smartrouter_csm_provider_blocked, …))`; `smartrouter_overall_health`; retries/cache KPIs only when `qPresence` says the family exists. No cache on this build ⇒ the documented derived "effective read p95" reduces to the node read p95 (the overall router histogram). |
-| `/api/metrics/pulse` | `smartrouter_overall_health` (under a chain filter: `1 - min by (spec) (smartrouter_csm_provider_blocked{spec})`), `qClientRps`, and the four reads of `readUpstreamHealth` — six reads, no window |
+| `/api/metrics/pulse` | `smartrouter_overall_health` (under a chain filter: `1 - min by (spec) (smartrouter_csm_provider_blocked{spec})`), `qClientRps`, and the four reads of `readUpstreamHealth` — six reads, no window. Under a chain filter `allChains` adds `smartrouter_overall_health` and the unfiltered `qClientRps()`: eight |
 | `/api/metrics/dashboard` | `qRpsSeriesExpr`, `qErrorCountSeriesExpr`, `qErrorRateSeriesExpr`, `qAvailabilitySeriesExpr`, `qLatencySeriesExpr(q)`; per-chain `qPerSpecRpsExpr`, per-spec success ratio, per-spec `qPerSpecLatencySeriesExpr(q)` (`sum by (spec, le)` - the one latency query that keeps a series per chain); `qPerProviderRpsExpr`; per-provider p95 `histogram_quantile(0.95, sum by (endpoint_id, le) (rate(rpc_endpoint_…_bucket[step])))`; chain list from `count by (spec)` + `1 - min by (spec) (smartrouter_csm_provider_blocked)` |
 | `/api/metrics/chains` | seven grouped reads, one row per chain, joined on `spec`: `qGroupedClientRequests`, `qGroupedAvailability` (the error rate is `1 −` that ratio, not a second read), `qGroupedLatencyQuantile(0.95)`, `qGroupedQos`, `qGroupedHealth`, `qGroupedLatestBlock`, `qGroupedUpstreams` (`count by (spec, endpoint_id)` — the row count per chain) |
 | `/api/metrics/routers-rollup` | `count by (<scope label>) (smartrouter_requests_total)` to learn which routers the collector tells apart, then the same seven reads as `/chains` `by (spec)` for the routers it cannot split (one shared row per chain) and `by (spec, <scope label>)` for the ones it can (one row per router) — at most 15 reads whatever the router count |
