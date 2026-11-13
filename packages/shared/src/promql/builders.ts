@@ -1066,3 +1066,22 @@ export function qCsm(): string {
 export function qPresence(metricName: string): string {
   return `count({__name__="${metricName}"})`;
 }
+
+/** `{spec="…"}` with the value quoted as a PromQL string, so no value can close the matcher; empty without a spec. */
+function specMatcher(spec?: string): string {
+  return spec ? `{spec=${JSON.stringify(spec)}}` : "";
+}
+
+/**
+ * Failed tries (no usable answer) per chain and provider in each `step`
+ * stretch - the Errors tab's incidents (`detectErrorIncidents`). A `spec`
+ * reads that chain's series only.
+ */
+export function qFailedTriesBySpecProvider(step: string, spec?: string): string {
+  return `sum by (spec, provider_address) (increase(${OPTIONAL_METRICS.requestsFailedTotal}${specMatcher(spec)}[${step}]))`;
+}
+
+/** Provider error replies per chain and provider in each `step` stretch - the incidents' other kind. */
+export function qErrorRepliesBySpecProvider(step: string, spec?: string): string {
+  return `sum by (spec, provider_address) (increase(${OPTIONAL_METRICS.nodeErrorsTotal}${specMatcher(spec)}[${step}]))`;
+}

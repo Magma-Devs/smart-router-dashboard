@@ -292,6 +292,13 @@ table.gw-table tr.gw-logrow.is-open > td:first-child,
 table.gw-table tr.gw-logrow-detail > td { box-shadow: inset 2px 0 0 var(--brand); }
 table.gw-table tr.gw-logrow-detail > td,
 table.gw-table tbody tr.gw-logrow-detail:hover > td { background: var(--bg-2); padding: 0 16px 16px 32px; cursor: default; }
+/* The Errors tab's timeline: a lane per burst, opened like a log row. */
+.gw-lane { cursor: pointer; }
+.gw-lane:hover, .gw-lane.is-open { background: var(--bg-2); }
+.gw-lane.is-open { box-shadow: inset 2px 0 0 var(--brand); }
+.gw-lane:focus-visible, .gw-disclosure:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
+/* A button that reads as text - a disclosure's title row - and keeps its focus ring. */
+.gw-disclosure { all: unset; cursor: pointer; }
 /* "Next step" in an opened request: its own box, so the one thing to do stands apart from the facts. */
 .gw-next-step { display: flex; gap: 10px; align-items: flex-start; border-radius: 6px; padding: 8px 12px; background: color-mix(in srgb, var(--info) 8%, transparent); border: 1px solid color-mix(in srgb, var(--info) 28%, transparent); font-size: 13px; line-height: 1.45; color: var(--text); }
 .gw-next-step-label { flex-shrink: 0; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--info); padding-top: 1px; }

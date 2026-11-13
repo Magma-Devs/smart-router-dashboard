@@ -260,11 +260,13 @@ const narrowSelect: React.CSSProperties = { ...filterSelectStyle, maxWidth: 200 
  * and its reads of them. Held by the tab, so the cards above count the rows
  * the list shows rather than reading the logs again.
  */
-export function useErrorList({ chainFilter, win, upstream, initialRange = null, onPick }: {
+export function useErrorList({ chainFilter, win, upstream, initialRange = null, lineRange = null, onPick }: {
   chainFilter: string | null;
   win: MetricWindow;
   upstream: string;
   initialRange?: ExactRange | null;
+  /** The times of the timeline line opened, if any: on them the read is narrowed to the line's provider too. */
+  lineRange?: ExactRange | null;
   /** Told when the list's times are picked or cleared - the page keeps them in its URL. */
   onPick?: (r: ExactRange | null) => void;
 }) {
@@ -277,7 +279,9 @@ export function useErrorList({ chainFilter, win, upstream, initialRange = null, 
   // On a bar's times with an upstream picked, the read itself is narrowed to
   // that upstream, so the cap applies to the requests the bar counts.
   const onBarRange = initialRange != null && range != null && range.from === initialRange.from && range.to === initialRange.to;
-  const barQ = onBarRange && upstream !== ALL ? `&upstream=${encodeURIComponent(upstream)}` : "";
+  // A timeline line's times likewise: its provider's requests over its minutes, not everyone's.
+  const onLineRange = lineRange != null && range != null && range.from === lineRange.from && range.to === lineRange.to;
+  const barQ = (onBarRange || onLineRange) && upstream !== ALL ? `&upstream=${encodeURIComponent(upstream)}` : "";
   const log = useLogReads<ErrorRequestRow, ErrorRequestsReport>(`/api/error-requests?${rangeQ}${specQ}${routerIdQ}${barQ}`, live);
   const pick = (r: ExactRange | null) => { setRange(r); setLive(rangeIsLive(r)); onPick?.(r); };
   return { log, range, pick, rangeQ, routerIdQ, onBarRange, barQ };
@@ -285,7 +289,7 @@ export function useErrorList({ chainFilter, win, upstream, initialRange = null, 
 
 export type ErrorList = ReturnType<typeof useErrorList>;
 
-export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialRange = null, list }: {
+export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialRange = null, list, groupNonce = 0 }: {
   chainFilter: string | null;
   win: MetricWindow;
   /** Controlled from the tab, so a bar on the Upstreams tab can open its own requests. */
@@ -295,6 +299,8 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
   initialRange?: ExactRange | null;
   /** The list's reads, held by the tab (`useErrorList`). */
   list: ErrorList;
+  /** Bumped when a timeline line is opened: the list groups that line's requests by error. */
+  groupNonce?: number;
 }) {
   const [picked, setResult] = useState<ResultPick | typeof AUTO>(AUTO);
   const [retry, setRetry] = useState<RetryFilter>(ALL);
@@ -305,9 +311,12 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
   // A request named in the URL opens looked up.
   const [lookupId, setLookupId] = useState<string | null>(requestFromUrl);
   const [page, setPage] = useState(0);
-  /* Grouped (the default) or every request; and the one group opened, by key. */
-  const [grouped, setGrouped] = useState(true);
+  /* Every request (the default) or grouped by error - what a timeline line
+     opens on; and the one group opened, by key. */
+  const [grouped, setGrouped] = useState(false);
   const [groupKey, setGroupKey] = useState<string | null>(null);
+  const [seenNonce, setSeenNonce] = useState(groupNonce);
+  if (seenNonce !== groupNonce) { setSeenNonce(groupNonce); setGrouped(true); setGroupKey(null); setPage(0); }
   // Back / Forward: the look-up follows the URL.
   useEffect(() => {
     const onPop = () => setLookupId(requestFromUrl());
@@ -461,8 +470,8 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
             value={grouped ? "grouped" : "every"}
             onChange={(v) => { setGrouped(v === "grouped"); setGroupKey(null); setPage(0); }}
             options={[
-              { key: "grouped", label: "Grouped", title: "One line per way requests failed: the error, who caused it, how many, when." },
               { key: "every", label: "Every request", title: "Every request on its own line, newest first." },
+              { key: "grouped", label: "By error", title: "One line per way requests failed: the error, who caused it, how many, when." },
             ]}
           />
           </span>

@@ -9,6 +9,13 @@
 import {
   ENDPOINT_METRICS,
   OPTIONAL_METRICS,
+  detectErrorIncidents,
+  errorIncidentsRead,
+  qErrorRepliesBySpecProvider,
+  qFailedTriesBySpecProvider,
+  type ErrorIncidentKind,
+  type ErrorIncidentSeries,
+  type ErrorIncidentsReport,
   ROUTER_METRICS,
   buildChainMetaByIndex,
   qAvailabilitySeriesExpr,
@@ -161,6 +168,48 @@ export class MetricsDetailService {
       failed: (["latencyP95", "rps", "latestBlock"] as const).filter((_, i) => reads[i] === null),
       grid,
       upstreams: [...by].map(([upstream, v]) => ({ upstream, ...v })).sort((a, b) => a.upstream.localeCompare(b.upstream)),
+    };
+  }
+
+  /**
+   * The Errors tab's incidents (MAG-5263): failed tries and error replies per
+   * chain and provider, two range reads at the window's step reaching at
+   * least a day back for each series' usual level, batched by
+   * `detectErrorIncidents`. A chain reads one chain's series; a config router
+   * reads its chain and keeps the providers it declares, and a router the
+   * config doesn't name declares none - no lines, as the other routes answer
+   * it - without a read.
+   */
+  async errorIncidents(window: MetricWindow, spec?: string, routerId?: string): Promise<ErrorIncidentsReport> {
+    const range = WINDOWS[window].rangeSeconds;
+    const { stepSec, readSeconds } = errorIncidentsRead(range);
+    const step = `${stepSec}s`;
+    const end = Math.floor(Date.now() / 1000 / stepSec) * stepSec;
+    const start = end - readSeconds;
+    const router = routerId ? (this.configSvc?.getRouters() ?? []).find((r) => r.id === routerId) : undefined;
+    if (routerId && !router) return { from: end - range, to: end, stepSec, lines: [], steady: [], available: true, failed: [] };
+    const chain = router?.spec ?? spec;
+    const declared = router ? new Set(router.nodes.map((n) => n.name.toLowerCase())) : null;
+    const kinds: [ErrorIncidentKind, string][] = [["failed", qFailedTriesBySpecProvider(step, chain)], ["reply", qErrorRepliesBySpecProvider(step, chain)]];
+    const reads = await Promise.all(kinds.map(([, q]) => this.prom.queryRangeOrNull(q, start, end, step)));
+    const series: ErrorIncidentSeries[] = [];
+    reads.forEach((rows, i) => {
+      for (const r of rows ?? []) {
+        const s = r.metric.spec ?? "", provider = r.metric.provider_address ?? "";
+        if (!s || !provider || provider.toLowerCase() === CACHED_UPSTREAM.toLowerCase()) continue;
+        if (chain && s.toUpperCase() !== chain.toUpperCase()) continue;
+        if (declared && !declared.has(provider.toLowerCase())) continue;
+        series.push({
+          kind: kinds[i]![0], spec: s, provider,
+          points: (r.values ?? []).map(([t, v]) => [Number(t), Number(v)] as [number, number]).filter(([, v]) => Number.isFinite(v)),
+        });
+      }
+    });
+    const { lines, steady } = detectErrorIncidents(series, stepSec, start, end, end - range);
+    return {
+      from: end - range, to: end, stepSec, lines, steady,
+      available: reads.every((r) => r !== null),
+      failed: kinds.filter((_, i) => reads[i] === null).map(([k]) => k),
     };
   }
 

@@ -5,6 +5,39 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.66.0]
+
+### Added
+
+- **Error timeline on the Errors tab** (MAG-5263): errors grouped by when
+  they arrived, not by type. One line per burst - errors well above a
+  provider's usual level until they stop for 15 minutes - drawn on one time
+  axis with its waves, its count and whether it is still going. A day of a
+  busy deployment reads as about 20 lines instead of millions of error rows.
+  - **Burst**: one provider, then back to normal.
+  - **Chain-wide**: several providers of one chain at the same time.
+  - **Recurring**: the same provider and chain 3 times or more, each within
+    3 hours of the last.
+  - **Long-running**: 6 hours or more without a break.
+  - A burst needs 3x the provider's usual level and at least 10 failed
+    attempts or 50 error replies in 5 minutes, and 20 or 100 in all, however
+    long the window. **Always present** lists the errors that come in most
+    of the time at their usual level.
+  - Read from the router's counters (`GET /api/metrics/error-incidents`),
+    so a 7-day window costs two range reads, under a second on the largest
+    tenant.
+- Clicking a line narrows the request list to its times and provider (its
+  chain, for a line of several providers) and groups those requests by
+  error. The logs are read for that provider only, and up to now for a line
+  still going. "Back to the timeline", or picking other times, clears it.
+
+### Changed
+
+- The request list opens on "Every request". Grouping by error is the
+  second view, "By error" (it was "Grouped", the default), and what a
+  timeline line opens on: grouped over a whole window, the groups said how
+  much of each error, not when it came.
+
 ## [0.65.9]
 
 ### Fixed

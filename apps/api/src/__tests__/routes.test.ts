@@ -28,6 +28,15 @@ function mockPrometheus(): void {
         { metric: { endpoint_id: "eth-frozen" }, values: [[1, "90"], [2, "NaN"]] },
       ]);
     }
+    // The incidents read: failed tries per chain and provider, a burst at eth-lava.
+    if (new URL(url).pathname.endsWith("/query_range") && query.startsWith("sum by (spec, provider_address) (increase(smartrouter_requests_failed_total")) {
+      const pts = (hot: (t: number) => boolean) => Array.from({ length: 31 }, (_, k) => [k * 60, hot(k * 60) ? "50" : "0"]);
+      return matrix([
+        { metric: { spec: "ETH1", provider_address: "eth-lava" }, values: pts((t) => t >= 1500 && t <= 1680) },
+        { metric: { spec: "BTC", provider_address: "btc-node" }, values: pts((t) => t >= 300 && t <= 420) },
+        { metric: { spec: "ETH1", provider_address: "Cached" }, values: pts(() => true) },
+      ]);
+    }
     // Request volume: short rates averaged over what is there (see qUpstreamRpsByUpstreamSeriesExpr).
     if (new URL(url).pathname.endsWith("/query_range") && query.startsWith("avg_over_time((sum by (provider_address) (rate(")) {
       return matrix([
@@ -359,6 +368,39 @@ describe("api routes", () => {
     expect(cells[1]).toMatchObject({ t: 1200, state: "operational", pollsOk: 1 });
     // Bars the store didn't return are gaps, never a health.
     expect(cells[2].state).toBeNull();
+  });
+
+  it("GET /api/metrics/error-incidents batches one chain's errors by when they arrived", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(1_800_000);
+    let res;
+    try {
+      res = await app.inject({ method: "GET", url: "/api/metrics/error-incidents?spec=ETH1&window=30m" });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body).toMatchObject({ from: 0, to: 1800, stepSec: 60, available: true, failed: [] });
+    // Another chain's burst and the relay cache are left out.
+    expect(body.lines).toHaveLength(1);
+    expect(body.lines[0]).toMatchObject({ kind: "failed", shape: "incident", providers: ["eth-lava"], start: 1500, end: 1680, count: 200, ongoing: false });
+  });
+
+  it("GET /api/metrics/error-incidents?routerId= answers no lines for a router the config does not name", async () => {
+    // No config is mounted in this harness: the filter empties the timeline
+    // rather than ignoring the param. At this clock the store has bursts to show.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(1_800_000);
+    let res;
+    try {
+      expect((await app.inject({ method: "GET", url: "/api/metrics/error-incidents?window=30m" })).json().lines).toHaveLength(2);
+      res = await app.inject({ method: "GET", url: "/api/metrics/error-incidents?window=30m&routerId=eth-prod" });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ lines: [], steady: [], available: true, failed: [] });
   });
 
   it("GET /api/metrics/upstream-peers requires spec; one latency and one tip series per upstream", async () => {
