@@ -137,8 +137,17 @@ export const config = {
       from: envWindow("METRICS_RECORDED_FROM", "3h"),
       staleMs: envInt("METRICS_RECORDED_STALE_MS", 300_000),
       probeMs: envInt("METRICS_RECORDED_PROBE_MS", 60_000),
-      /** How far back the probe looks for the oldest recorded sample; the widest window the dashboard offers. */
-      historyLookback: "30d" as const,
+      /**
+       * How far back the probe looks for the oldest recorded sample. Past the
+       * widest window (30 days): the probe reads on an hourly grid, so it
+       * sees up to an hour less than is there, and a series read on a grid
+       * reaches a step before the window (the Errors tab's timeline: 30
+       * minutes, on a grid that ends up to 30 minutes before now). Under the
+       * fleet store's 31-day limit on one read's span
+       * (`max_partial_query_length`): a probe past it is refused every time,
+       * which reads as no recorded series and turns them off for every window.
+       */
+      historyLookback: "30d12h" as const,
     },
     /**
      * Deployment scope — see `readMetricsScope()`. Read at plugin registration

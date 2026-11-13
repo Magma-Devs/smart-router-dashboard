@@ -89,6 +89,15 @@ export function errorIncidentsRead(rangeSeconds: number): { stepSec: number; rea
   return { stepSec, readSeconds: Math.max(rangeSeconds, 86400) };
 }
 
+/**
+ * Windows longer than this read the failed tries from the store's recorded
+ * series, where it has them for the whole read (`qFailedTriesBySpecProviderRecorded`):
+ * a month of the raw failed counters on a large deployment is a read of
+ * seconds, near the store's timeout. Error replies, and every shorter window,
+ * read the raw counters.
+ */
+export const ERROR_INCIDENTS_RECORDED_ABOVE_SEC = 7 * 86400;
+
 /** The thresholds, named, so the api and the docs say the same. */
 export const ERROR_INCIDENT_RULES = {
   multiplier: 3,

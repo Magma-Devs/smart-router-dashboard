@@ -5,6 +5,31 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.66.2]
+
+### Fixed
+
+- **The error timeline reads 14 to 30 days from recorded series** (MAG-5303).
+  Past 7 days the Errors tab's timeline reads failed tries from the store's
+  recorded relays per provider, a provider's tries minus its successes,
+  rather than every raw failed counter of the window: on a large deployment a
+  month of those is a read of seconds that can pass the store's timeout. It
+  is the same count per stretch, since the router counts each try on the
+  total and on exactly one of success or failed, so the thresholds keep
+  their meaning; a provider with no successes failed every try. The
+  stretches the ruler skipped minutes of are read from the raw counters: a
+  store restart leaves minutes with no recorded sample, and a burst in them
+  would otherwise make no line (`qRecordedSamplesPerStep`). Error replies,
+  windows up to 7 days, and a store whose recorded series don't reach back
+  over the whole read read raw as before.
+- **30-day windows read recorded series where the store has a month of
+  them** (MAG-5303). The api looked for the oldest recorded sample exactly
+  30 days back, on an hourly grid, so it never saw a whole month and every
+  30-day read stayed on the raw families. It looks 30 days 12 hours back
+  now: past a 30-day read and the stretch before its first point, and inside
+  the 31 days the fleet store lets one read span (a probe past that is
+  refused every time, and every window would read raw).
+
 ## [0.66.1]
 
 ### Removed
