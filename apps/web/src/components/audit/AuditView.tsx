@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { AUDIT_GROUPS, type AuditEventRecord } from "@sr/shared";
 import { SideSheet } from "@/components/gateway/SideSheet";
 import {
@@ -30,6 +30,7 @@ import {
   withPageSize,
   type AuditLocation,
 } from "@/components/audit/audit-location";
+import { useFilterTyping, type TextFilter } from "@/components/audit/filter-typing";
 import { apiDownload } from "@/lib/api-client";
 
 /**
@@ -172,35 +173,34 @@ export function AuditView() {
   const { location, go } = useAuditLocation();
   const { filters } = location;
   const feed = useAuditFeed(location);
-
-  // The text filter being typed, if any. Its first keystroke is a history
-  // entry and the rest rewrite it, so Back undoes the word, not one letter.
-  const typing = useRef<string | null>(null);
-  useEffect(() => {
-    const forget = () => {
-      typing.current = null;
-    };
-    window.addEventListener("popstate", forget);
-    return () => window.removeEventListener("popstate", forget);
-  }, []);
+  // Person and Object id reach the URL after a pause in typing, and Person
+  // only once the api would take it — see `filter-typing.ts`.
+  const { typing, drafts } = useFilterTyping(go);
 
   const filtered = useMemo(() => hasAnyFilter(filters), [filters]);
   // A filter change starts again at the newest page: the cursor on screen
   // belongs to the old filter set, and the api refuses it under a new one.
   const set = (patch: Partial<AuditFilters>) => {
-    const keys = Object.keys(patch);
-    const field =
-      keys.length === 1 && (keys[0] === "actor" || keys[0] === "targetId") ? keys[0] : null;
-    const continuing =
-      field !== null && typing.current === field && location.position.kind === "newest";
-    typing.current = field;
-    go(withFilters(location, { ...filters, ...patch }), continuing ? "replace" : "push");
+    typing.endRun();
+    go(withFilters(location, { ...filters, ...patch }), "push");
   };
-  const clear = () => set(EMPTY_FILTERS);
+  const clear = () => {
+    typing.reset();
+    go(withFilters(location, EMPTY_FILTERS), "push");
+  };
   const move = (next: AuditLocation) => {
-    typing.current = null;
+    typing.reset();
     go(next, "push");
   };
+  /** A typed box's props: it shows its draft while there is one. */
+  const typed = (field: TextFilter) => ({
+    value: drafts[field] ?? filters[field],
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) => typing.type(field, e.target.value),
+    onBlur: () => typing.finish(field),
+    onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === "Enter") typing.finish(field);
+    },
+  });
   const atNewest = feed.page?.atNewest ?? location.position.kind === "newest";
 
   return (
@@ -280,18 +280,12 @@ export function AuditView() {
               className="gw-input"
               type="email"
               placeholder="dana@customer.com"
-              value={filters.actor}
-              onChange={(e) => set({ actor: e.target.value })}
+              {...typed("actor")}
             />
           </FilterField>
 
           <FilterField label="Object id">
-            <input
-              className="gw-input"
-              placeholder="ep_8143"
-              value={filters.targetId}
-              onChange={(e) => set({ targetId: e.target.value })}
-            />
+            <input className="gw-input" placeholder="ep_8143" {...typed("targetId")} />
           </FilterField>
 
           <FilterField label="From">
