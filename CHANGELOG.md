@@ -5,6 +5,15 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Removed
+
+- **Three Upstreams roster screenshots that showed a production deployment's
+  upstreams** (MAG-5299): `docs/assets/upstreams-by-upstream-before.png`,
+  `upstreams-by-upstream-after.jpg` and
+  `upstreams-router-disambiguation.jpg`, with the 0.24.1 entry's links to
+  them. That entry, and the comments in `UpstreamsView.tsx`, no longer count
+  that deployment's chains or name its providers.
+
 ## [0.66.0]
 
 ### Added
@@ -2725,10 +2734,9 @@ See [`docs/AUDIT.md`](./docs/AUDIT.md) for the full reference.
   the chain, and the upstream grouping reused it — so a card's rows carried
   role, url, interface and capabilities, and nothing chain-shaped. Node urls are
   masked to scheme+host (the path is where API keys live), so a provider serving
-  every chain off one hostname rendered row after identical row: Lava's 27 all
-  read `https://g.w.lavanet.xyz`, Blockdaemon's the same. Rows now lead with the
-  chain, in a fixed-width slot so one long name can't step the row's other
-  columns out of line down a card of 27.
+  every chain off one hostname rendered row after identical row. Rows now lead
+  with the chain, in a fixed-width slot so one long name can't step the row's
+  other columns out of line down a long card.
 - **A chain served by two routers now names them.** The config allows a staging
   and a production router on one `network`, and a node both declare got a row
   from each — still identical once the chain was named. Those rows carry the
@@ -2736,14 +2744,10 @@ See [`docs/AUDIT.md`](./docs/AUDIT.md) for the full reference.
   pinned per path. Only where the ambiguity is real, and computed from the rows
   the filters leave visible.
 - **The upstream card header no longer names a chain.** It showed the first
-  chain in config order plus a bare "+26" — which read as a primary the config
+  chain in config order plus a bare "+N" — which read as a primary the config
   never declares (that head chain is only whichever router declares the node
   first in the values file), and which is duplication now that every row names
   its own chain. The card is about the upstream; the chains are the rows.
-
-  The roster [before](./docs/assets/upstreams-by-upstream-before.png) and
-  [after](./docs/assets/upstreams-by-upstream-after.jpg), and
-  [two routers on one chain](./docs/assets/upstreams-router-disambiguation.jpg).
 
 ### Known issues
 

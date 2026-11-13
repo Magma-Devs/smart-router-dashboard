@@ -122,7 +122,7 @@ function EndpointRow({
           upstream (and can name only ONE of its chains). A HARD width, not a
           minimum: this card runs to one row per chain served, and a single
           long name ("Fuel Network GraphQL") widening its own slot would step
-          every column on that row out of line down a list of 27. The name
+          every column on that row out of line down a long list. The name
           ellipsises instead, with the full name + spec index on hover. */}
       {showChain && (
         <div
@@ -160,7 +160,7 @@ function EndpointRow({
           gets a row from each — identical even once the chain is named. Sits
           with the internal-path badge below rather than on the left: same job
           (telling apart rows the url can't), and the fixed left columns stay
-          aligned down a card of 27 rows. */}
+          aligned down a long card. */}
       {showRouter && (
         <span
           className="gw-mono"
@@ -484,7 +484,7 @@ export function UpstreamsView() {
                     <div className="gw-row" style={{ gap: 8 }}>
                       <span style={{ fontSize: 13, fontWeight: 600 }}>{pv.name}</span>
                       {/* No chain here. The header used to name the first chain
-                          in config order and summarise the rest as "+26" —
+                          in config order and summarise the rest as "+N" —
                           which read as a primary the config never declared, and
                           is duplication now that every row below names its own
                           chain. The card is about the upstream; the chains are
