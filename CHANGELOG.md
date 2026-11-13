@@ -17,9 +17,10 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   counts, request and failure counts and an incident's date and load, in this
   changelog, `CLAUDE.md`, `docs/RECORDING-RULES.md`, the comments of
   `read-range.ts`, `error-requests.ts` and `loki-client.ts`, and two test
-  comments. Each now says what the figure showed without the number or the
-  deployment: a 4 GB read is still about half an hour of a busy deployment's
-  router lines.
+  comments, and the 0.66.0 entry and `error-incidents.ts` comment on the
+  error timeline. Each now says what the figure showed without the number or
+  the deployment: a 4 GB read is still about half an hour of a busy
+  deployment's router lines.
 - **Real-world identifiers in test fixtures** (MAG-5299): a public client IP
   address (now `203.0.113.64`, from the documentation range), an internal
   Grafana host and dashboard ids (now `example.grafana.net/d/customer/…`) and
@@ -33,7 +34,7 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   they arrived, not by type. One line per burst - errors well above a
   provider's usual level until they stop for 15 minutes - drawn on one time
   axis with its waves, its count and whether it is still going. A day of a
-  busy deployment reads as about 20 lines instead of millions of error rows.
+  busy deployment reads as a short list of lines instead of every error row.
   - **Burst**: one provider, then back to normal.
   - **Chain-wide**: several providers of one chain at the same time.
   - **Recurring**: the same provider and chain 3 times or more, each within

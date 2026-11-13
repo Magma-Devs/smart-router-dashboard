@@ -1,6 +1,6 @@
 /**
- * The Errors tab's incidents: errors batched by when they arrive, so a week
- * of millions of error rows reads as a few lines a day (MAG-5263).
+ * The Errors tab's incidents: errors batched by when they arrive, so a busy
+ * week of error rows reads as a few lines a day (MAG-5263).
  *
  * The model, decided from 7 days of production errors (failed tries and
  * error replies per chain and provider, at 5-minute steps):
