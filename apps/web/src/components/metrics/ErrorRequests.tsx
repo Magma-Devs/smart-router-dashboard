@@ -260,11 +260,13 @@ const narrowSelect: React.CSSProperties = { ...filterSelectStyle, maxWidth: 200 
  * and its reads of them. Held by the tab, so the cards above count the rows
  * the list shows rather than reading the logs again.
  */
-export function useErrorList({ chainFilter, win, upstream, initialRange = null, onPick }: {
+export function useErrorList({ chainFilter, win, upstream, initialRange = null, lineRange = null, onPick }: {
   chainFilter: string | null;
   win: MetricWindow;
   upstream: string;
   initialRange?: ExactRange | null;
+  /** The times of the timeline line opened, if any: on them the read is narrowed to the line's provider too. */
+  lineRange?: ExactRange | null;
   /** Told when the list's times are picked or cleared - the page keeps them in its URL. */
   onPick?: (r: ExactRange | null) => void;
 }) {
@@ -277,7 +279,9 @@ export function useErrorList({ chainFilter, win, upstream, initialRange = null, 
   // On a bar's times with an upstream picked, the read itself is narrowed to
   // that upstream, so the cap applies to the requests the bar counts.
   const onBarRange = initialRange != null && range != null && range.from === initialRange.from && range.to === initialRange.to;
-  const barQ = onBarRange && upstream !== ALL ? `&upstream=${encodeURIComponent(upstream)}` : "";
+  // A timeline line's times likewise: its provider's requests over its minutes, not everyone's.
+  const onLineRange = lineRange != null && range != null && range.from === lineRange.from && range.to === lineRange.to;
+  const barQ = (onBarRange || onLineRange) && upstream !== ALL ? `&upstream=${encodeURIComponent(upstream)}` : "";
   const log = useLogReads<ErrorRequestRow, ErrorRequestsReport>(`/api/error-requests?${rangeQ}${specQ}${routerIdQ}${barQ}`, live);
   const pick = (r: ExactRange | null) => { setRange(r); setLive(rangeIsLive(r)); onPick?.(r); };
   return { log, range, pick, rangeQ, routerIdQ, onBarRange, barQ };

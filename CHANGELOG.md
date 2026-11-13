@@ -25,8 +25,9 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
     so a 7-day window costs two range reads, under a second on the largest
     tenant.
 - Clicking a line narrows the request list to its times and provider (its
-  chain, for a chain-wide line) and groups those requests by error. "Back to
-  the timeline" clears it.
+  chain, for a line of several providers) and groups those requests by
+  error. The logs are read for that provider only, and up to now for a line
+  still going. "Back to the timeline", or picking other times, clears it.
 
 ### Changed
 

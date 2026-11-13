@@ -51,12 +51,18 @@ export function ErrorsBreakdown({ chainFilter, win, focus = null, onFocus }: {
   const [upstream, setUpstream] = useState(focus?.upstream ?? ALL);
   const initialRange = focus?.range ?? null;
   const report = (u: string, range: ExactRange | null) => onFocus?.({ upstream: u === ALL ? null : u, range });
-  /* The timeline line the list is narrowed to, with the times it opened on;
-     a chain-wide line also narrows the list to its chain. */
+  /* The timeline line the list is narrowed to, with the times it opened on.
+     A line of several providers - chain-wide, or one that ran long - also
+     narrows the list to its chain; one provider's, to that provider. Picking
+     other times in the list lets go of the line and of its chain. */
   const [opened, setOpened] = useState<{ line: ErrorIncidentLine; range: ExactRange } | null>(null);
-  const lineSpec = opened?.line.shape === "chain-wide" ? opened.line.chains[0]?.spec ?? null : null;
+  const lineSpec = opened && opened.line.providers.length > 1 ? opened.line.chains[0]?.spec ?? null : null;
+  const onPick = (r: ExactRange | null) => {
+    report(upstream, r);
+    setOpened((o) => (o && r && r.from === o.range.from && r.to === o.range.to ? o : null));
+  };
   // The request list's reads, held here: the "Still failed" card counts its rows.
-  const list = useErrorList({ chainFilter: chainFilter ?? lineSpec, win, upstream, initialRange, onPick: (r) => report(upstream, r) });
+  const list = useErrorList({ chainFilter: chainFilter ?? lineSpec, win, upstream, initialRange, lineRange: opened?.range ?? null, onPick });
   const pickUpstream = (u: string) => { setUpstream(u); report(u, list.range); };
   // Bumped on each line opened: the list then groups that line's requests by error.
   const [groupNonce, setGroupNonce] = useState(0);
@@ -65,7 +71,8 @@ export function ErrorsBreakdown({ chainFilter, win, focus = null, onFocus }: {
   // Still on the line's times: another range picked in the list is no longer the line.
   const onLine = opened && list.range && list.range.from === opened.range.from && list.range.to === opened.range.to ? opened : null;
   const openLine = (line: ErrorIncidentLine, stepSec: number) => {
-    const range = { from: (line.start - stepSec) * 1000, to: Math.min(line.end * 1000, Date.now()) };
+    // A line still going runs to the click, not to its last full stretch: its newest requests are in the read.
+    const range = { from: (line.start - stepSec) * 1000, to: line.ongoing ? Date.now() : Math.min(line.end * 1000, Date.now()) };
     const u = line.providers.length === 1 ? line.providers[0]! : ALL;
     setOpened({ line, range });
     list.pick(range);
