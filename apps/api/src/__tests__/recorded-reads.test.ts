@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { RECORDED, recordedReadsPolicy, setRecordedReads } from "@sr/shared";
 import { buildApp } from "../app.js";
+import { config } from "../config.js";
 import { MetricsService } from "../services/metrics.js";
 import { MetricsDetailService } from "../services/metrics-detail.js";
 import type { PrometheusClient, PromVectorSample } from "../services/prometheus-client.js";
@@ -64,6 +65,23 @@ describe("the freshness probe", () => {
     expect(probeAt).toBeGreaterThanOrEqual(0);
     expect(sent.filter((q) => q.startsWith(PROBE))).toHaveLength(1);
     expect(sent.findIndex((q) => q.startsWith("count by (spec)"))).toBeGreaterThan(probeAt);
+  });
+
+  it("looks for the oldest sample past a 30-day read's first stretch, and inside the store's 31-day span", async () => {
+    const sent = mockStore(40);
+    app = await buildApp();
+    await app.inject({ method: "GET", url: "/api/metrics/specs" });
+    const lookback = config.prometheus.recorded.historyLookback;
+    expect(sent).toContain(`time() - min(min_over_time(timestamp(${RECORDED.requests})[${lookback}:1h]))`);
+    const [, d = "0", h = "0"] = /^(\d+)d(?:(\d+)h)?$/.exec(lookback) ?? [];
+    const seconds = Number(d) * 86_400 + Number(h) * 3600;
+    // The hourly grid sees up to an hour less than the lookback; the error
+    // timeline's 30-day read reaches up to an hour past the window.
+    expect(seconds - 3600).toBeGreaterThanOrEqual(30 * 86_400 + 3600);
+    // The fleet store refuses a read spanning more than 31 days, and reads
+    // 5 minutes before a subquery's first step: past it the probe always
+    // fails and every window reads raw.
+    expect(seconds + 300).toBeLessThan(31 * 86_400);
   });
 
   it("keeps them off when the sample is stale, absent, or the store fails", async () => {

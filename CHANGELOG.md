@@ -5,6 +5,16 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Fixed
+
+- **30-day windows read recorded series where the store has a month of
+  them** (MAG-5303). The api looked for the oldest recorded sample exactly
+  30 days back, on an hourly grid, so it never saw a whole month and every
+  30-day read stayed on the raw families. It looks 30 days 12 hours back
+  now: past a 30-day read and the stretch before its first point, and inside
+  the 31 days the fleet store lets one read span (a probe past that is
+  refused every time, and every window would read raw).
+
 ## [0.66.1]
 
 ### Removed

@@ -63,7 +63,10 @@ nothing reads its series.
 Every builder has its raw form and emits it whenever the policy says so. The
 api asks the store, on the first metrics request and once a minute after,
 how old the newest recorded sample is, how far back the oldest one
-reaches, and how far apart the raw router samples are:
+reaches (looked for 30 days 12 hours back, on an hourly grid: past a
+30-day read and the stretch before its first point, and inside the 31 days
+the fleet store lets one read span), and how far apart the raw router
+samples are:
 
 - no recorded series at all (no rules): every window reads raw;
 - the series exist but the newest sample is older than five minutes (the
