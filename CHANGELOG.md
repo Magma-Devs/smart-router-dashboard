@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.67.0]
+
 ### Removed
 
 - **`GET /api/metrics/query`** (MAG-5284). The route took a PromQL
