@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.66.2]
+
 ### Fixed
 
 - **The error timeline reads 14 to 30 days from recorded series** (MAG-5303).
