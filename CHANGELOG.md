@@ -5,6 +5,21 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Removed
+
+- **Four upstream dialogs nothing opened** (MAG-5290): `AddUpstreamSheet`,
+  `EditUpstreamSheet`, `DeleteConfirm` and `TestModal`. The buttons that
+  opened them left the Upstreams page with its "Add upstream" button and the
+  upstream kebab menu, and no page has imported them since. Gone with them:
+  the add wizard's steps (`components/upstreams/steps/`),
+  `components/upstreams/bits.tsx` (the dialogs' form pieces, and `KebabMenu`
+  and `SheetStepBar`, which had no callers either), the catalogue helpers only
+  the wizard read (the chain guessed from a url, the design's chain palette,
+  its interface and probe tables, the JWT expiry parser, and the catalogue
+  entries' `flow` and `supportsJWT`), `Modal`'s `wide` variant, and the
+  `gw-secret`, `gw-url-preview` and `gw-modal--wide` styles. No screen
+  changes.
+
 ## [0.65.1]
 
 ### Fixed

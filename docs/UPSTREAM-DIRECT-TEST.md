@@ -144,9 +144,6 @@ goes with it: **Compare both** (a refusal beside a real answer measures nothing)
 and, where the row has no url the api can dial on the selected transport,
 **Send** itself — with the same hint on the hover.
 
-The per-upstream **Test connection** modal is pinned the same way, so on a
-backup row it offers no run at all and points here instead.
-
 The tier is read per endpoint row, not per upstream: one node can be primary on
 one chain and backup on another.
 

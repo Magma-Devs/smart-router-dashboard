@@ -13,8 +13,7 @@
  *   validProviders:tatum}
  *
  * The drawer needs that as a fact, not as a failed request. Kept pure and
- * apart from the drawer so it can be tested and so both surfaces that pin
- * (Try-me and the Test-connection modal) read one answer.
+ * apart from the drawer so it can be tested.
  */
 
 /** Which pool the values file puts this endpoint in. */
