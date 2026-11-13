@@ -18,8 +18,9 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
     3 hours of the last.
   - **Long-running**: 6 hours or more without a break.
   - A burst needs 3x the provider's usual level and at least 10 failed
-    attempts or 50 error replies in 5 minutes. **Always present** lists the
-    errors that come in most of the time at their usual level.
+    attempts or 50 error replies in 5 minutes, and 20 or 100 in all, however
+    long the window. **Always present** lists the errors that come in most
+    of the time at their usual level.
   - Read from the router's counters (`GET /api/metrics/error-incidents`),
     so a 7-day window costs two range reads, under a second on the largest
     tenant.

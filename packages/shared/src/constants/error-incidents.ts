@@ -8,6 +8,8 @@
  *    its own usual level (the median over the read) and a floor - 10 failed
  *    tries or 50 error replies per 5 minutes. The multiplier barely changed
  *    the result between 2x and 5x; the floor decided it.
+ *  - A burst holds at least twice that floor in all - 20 failed tries or 100
+ *    error replies - whatever the step it was read at.
  *  - Hot stretches of one provider join, across chains, while the quiet gap
  *    between them is 15 minutes or less: an INCIDENT. 5 minutes split one
  *    problem in two; 30 minutes glued separate ones.
@@ -92,6 +94,8 @@ export const ERROR_INCIDENT_RULES = {
   multiplier: 3,
   /** Per 5 minutes; scaled to the read's step. */
   floorPer5Min: { failed: 10, reply: 50 } as Record<ErrorIncidentKind, number>,
+  /** A burst's least size in all, whatever the step: twice the 5-minute floor. */
+  minCount: { failed: 20, reply: 100 } as Record<ErrorIncidentKind, number>,
   gapSec: 15 * 60,
   repeatSec: 3 * 3600,
   longSec: 6 * 3600,
@@ -111,7 +115,7 @@ interface Episode { kind: ErrorIncidentKind; providers: Set<string>; chains: Map
 
 /**
  * The incident lines and always-present errors in `series`, read at
- * `stepSec` over `[from, to]`. Lines that end before `windowFrom` are left
+ * `stepSec` over `[from, to]`. Lines that end by `windowFrom` are left
  * out: the read may reach further back than the window, for the usual level.
  */
 export function detectErrorIncidents(series: ErrorIncidentSeries[], stepSec: number, from: number, to: number, windowFrom = from): { lines: ErrorIncidentLine[]; steady: SteadyError[] } {
@@ -155,7 +159,9 @@ export function detectErrorIncidents(series: ErrorIncidentSeries[], stepSec: num
     }
     if (cur) episodes.push(cur);
   }
-  const big = episodes.filter((e) => e.count >= 2 * R.floorPer5Min[e.kind] * scale);
+  // A count in all, so it does not shrink with the step: at 1-minute steps
+  // the floor is 2 failed tries a stretch, and 4 of them made a line.
+  const big = episodes.filter((e) => e.count >= R.minCount[e.kind]);
 
   // 2. Two or more providers of one chain at the same time: the chain.
   // Compared on each burst's MAIN chain, never on everything a merged line
@@ -217,7 +223,8 @@ export function detectErrorIncidents(series: ErrorIncidentSeries[], stepSec: num
       const shape: ErrorIncidentShape = waves.some((w) => w.end - w.start + stepSec >= R.longSec) ? "long-running"
         : chainWide ? "chain-wide"
         : waves.length >= R.recurringWaves ? "recurring" : "incident";
-      if (end >= windowFrom) {
+      // A point counts the stretch before it: one at `windowFrom` is all before the window.
+      if (end > windowFrom) {
         lines.push({
           key: `${key}|${start}`, kind: group[0]!.kind, shape, providers: [...providers].sort(),
           chains: [...chains].map(([spec, count]) => ({ spec, count: Math.round(count) })).sort((a, b) => b.count - a.count),

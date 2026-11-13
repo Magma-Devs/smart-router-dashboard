@@ -107,9 +107,29 @@ describe("detectErrorIncidents", () => {
   });
 
   it("scales the floor to the read's step", () => {
-    const one = (v: number) => detectErrorIncidents([{ kind: "failed", spec: "X", provider: "p", points: Array.from({ length: 600 }, (_, k) => [T0 + k * 60, k >= 300 && k < 303 ? v : 0] as [number, number]) }], 60, T0, T0 + 599 * 60);
+    const one = (v: number) => detectErrorIncidents([{ kind: "failed", spec: "X", provider: "p", points: Array.from({ length: 600 }, (_, k) => [T0 + k * 60, k >= 300 && k < 310 ? v : 0] as [number, number]) }], 60, T0, T0 + 599 * 60);
     expect(one(2).lines).toHaveLength(1);
     expect(one(1).lines).toHaveLength(0);
+  });
+
+  it("needs 20 failed tries or 100 error replies in all, whatever the step", () => {
+    // Minutes at 5 failed tries each: hot at a 1-minute step (floor 2), and a line only from 20 in all.
+    const minutes = (kind: "failed" | "reply", n: number, v: number) =>
+      detectErrorIncidents([{ kind, spec: "X", provider: "p", points: Array.from({ length: 600 }, (_, k) => [T0 + k * 60, k >= 300 && k < 300 + n ? v : 0] as [number, number]) }], 60, T0, T0 + 599 * 60).lines;
+    expect(minutes("failed", 3, 5)).toEqual([]);
+    expect(minutes("failed", 4, 5)).toHaveLength(1);
+    expect(minutes("reply", 9, 11)).toEqual([]);
+    expect(minutes("reply", 10, 10)).toHaveLength(1);
+    // At 5-minute steps one hot stretch at the floor is not yet a line; twice the floor is.
+    expect(detect([series("failed", "NEAR", "lava", [[100, 100, 19]])]).lines).toEqual([]);
+    expect(detect([series("failed", "NEAR", "lava", [[100, 100, 20]])]).lines).toHaveLength(1);
+    expect(ERROR_INCIDENT_RULES.minCount).toEqual({ failed: 20, reply: 100 });
+  });
+
+  it("keeps a line that reaches into the window, and leaves out one whose last stretch ends as it opens", () => {
+    const edge = (lastStretch: number) => detect([series("failed", "NEAR", "lava", [[lastStretch - 1, lastStretch, 40]])], at(200)).lines.length;
+    expect(edge(200)).toBe(0);
+    expect(edge(201)).toBe(1);
   });
 });
 
