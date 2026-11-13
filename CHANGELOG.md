@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.65.5]
+
 ### Fixed
 
 - **The account emails state a time the dashboard's way** (MAG-5293). The
