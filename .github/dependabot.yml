@@ -10,10 +10,15 @@ version: 2
 # Dependabot does not edit `overrides` in pnpm-workspace.yaml. A transitive
 # package pinned there moves only when someone edits it by hand.
 #
-# pnpm is pinned twice: `packageManager` in package.json (CI's pnpm/setup
-# reads it) and the ghcr.io/pnpm/pnpm stage in the three Dockerfiles, which
-# the docker updater below moves. A Docker build fails when the two differ,
-# so a pnpm image bump lands together with the matching `packageManager`.
+# Node and pnpm are each pinned twice: `.nvmrc` and `packageManager` (what CI
+# installs) and the Dockerfiles' FROM lines (what the images ship). The docker
+# updater moves only the Dockerfiles, so its Node or pnpm PR fails the quality
+# gate's "pins agree" step (apps/web/scripts/check-pins.mjs) until the same PR
+# moves `.nvmrc` or `packageManager` to match.
+#
+# Majors of Node, the pnpm image and @types/node are not proposed: each is a
+# migration done by hand (Node 25 dropped corepack; pnpm 11 moved every
+# setting). Minor and patch releases, security releases among them, are.
 updates:
   - package-ecosystem: "npm"
     directory: "/"
@@ -22,6 +27,10 @@ updates:
     open-pull-requests-limit: 5
     cooldown:
       default-days: 7
+    ignore:
+      # Follows the Node major in .nvmrc, so it moves with it.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
 
   # Actions are pinned to commit SHAs with the release in a trailing comment
   # (`@<sha> # v7.0.1`); the updater moves both together.
@@ -45,6 +54,19 @@ updates:
     open-pull-requests-limit: 5
     cooldown:
       default-days: 7
+    groups:
+      # One PR per image across the three Dockerfiles, not one per directory:
+      # a Node or pnpm bump is a single PR, where `.nvmrc` or `packageManager`
+      # is then moved to match.
+      images:
+        group-by: dependency-name
+        patterns: ["*"]
+    ignore:
+      - dependency-name: "node"
+        update-types: ["version-update:semver-major"]
+      # ghcr.io/pnpm/pnpm; the name may or may not carry the registry host.
+      - dependency-name: "*pnpm/pnpm"
+        update-types: ["version-update:semver-major"]
 
   # The local and demo stacks: docker-compose.yml, docker-compose.dev.yml,
   # docker-compose.managed.yml.

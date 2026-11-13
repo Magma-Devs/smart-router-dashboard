@@ -35,6 +35,11 @@ jobs:
           cache: true
           require-lockfile: true
 
+      # Dependabot moves the Dockerfiles' node and pnpm images, never .nvmrc
+      # or `packageManager`. Fails until both sides name the same versions.
+      - name: Node and pnpm pins agree
+        run: node apps/web/scripts/check-pins.mjs
+
       - name: Build workspace packages
         run: pnpm --filter @sr/shared build && pnpm --filter @sr/db build
 
