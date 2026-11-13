@@ -5,6 +5,48 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Removed
+
+- **`GET /api/metrics/query`** (MAG-5284). The route took a PromQL
+  expression from the caller and sent it to the store as written; nothing in
+  the web, the e2e suite or the scripts called it. It answers 404 now, and
+  its tests and docs rows are gone. Breaking for a caller of the route: read
+  the documented `/api/metrics/*` routes instead.
+
+### Security
+
+- **The api builds every store query itself, from validated parameters; no
+  route takes query text** (MAG-5284). `PromQL` and `LogQL` are branded
+  strings (`packages/shared/src/promql/query-text.ts`): the Prometheus
+  client's query methods take only `PromQL` and the Loki client's reads only
+  `LogQL`, so a request's string handed to a client fails `pnpm typecheck`.
+  Query text comes from the `promql` / `logql` tagged templates, whose parts
+  must already be query text or numbers, and from one escape helper per
+  place a value sits: `promString`, `promRegex`, `logStreamValue`,
+  `logLineFilter`, `logLineRegex`, `logLabelValue`, `logLabelRegex`; names
+  and durations are validated (`labelName`, `metricName`, `duration`). Every
+  builder, the scope rewriter and every LogQL query the services build go
+  through them, in place of the hand-written quoting before. Lint refuses a
+  cast to either brand outside that file and the scope rewriter, and two
+  tests compile snippets with the TypeScript compiler to pin that a plain
+  string is refused.
+- **Every value a request can put into a query is checked before the read**
+  (MAG-5284). `spec` is a plain token, `router` and `routerId` strict
+  patterns, `endpointId` and `upstream` a node the values file lists or a
+  plain token, the look-up IDs their own pattern: anything else is a 400 and
+  the store is not read. A malformed `router` used to read deployment-wide;
+  it is a 400 now, and `GET /api/metrics/routers` lists only values a
+  request can send back. The HeroPanel summary's `spec` is declared in its
+  schema, and the routes that read the store or the logs drop query
+  parameters they don't declare. The audit filters, bound parameters of a
+  Drizzle read, carry length caps.
+- **Guard tests** (MAG-5284): one walks every registered route and fails on
+  a property named like query text, an unbounded querystring or params
+  string, or a store-reading route that keeps undeclared parameters; one
+  sends quotes, braces, line filters, backslashes, line breaks, regex syntax
+  and over-long values through every route and parameter, each a 400 with
+  no read or one escaped literal in the query the store receives.
+
 ## [0.66.2]
 
 ### Fixed
