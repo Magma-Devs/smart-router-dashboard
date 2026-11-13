@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.65.8]
+
 ### Fixed
 
 - **A router whose id has capitals gets its own Failed requests count and
