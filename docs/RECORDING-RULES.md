@@ -96,7 +96,7 @@ minute into each tenant's org (devops-magmadevs,
 `components/smart-router-fleet-loki/configs/recording-rules.yaml`):
 `smartrouter_final_requests:count1m` and `smartrouter_final_failures:count1m`,
 by `cluster`, `chain` (the router's network, lower case) and `service_name`
-(`<tenant>-<router id>`). The Metrics page's Failed requests card reads
+(`<tenant>-<router id lower-cased>`). The Metrics page's Failed requests card reads
 `sum_over_time` of the failures (`GET /api/error-requests/count`): about a
 second for a month on the largest tenant, where counting the raw lines over
 the same month scans some 1.6 TB. The api looks once a minute at how old the
