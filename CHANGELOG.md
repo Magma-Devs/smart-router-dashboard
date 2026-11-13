@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.65.9]
+
 ### Fixed
 
 - **Page loads no longer share one allowance at the api** (MAG-5297). The
