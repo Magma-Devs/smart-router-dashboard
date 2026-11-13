@@ -251,7 +251,7 @@ export class LokiClient {
   /**
    * Bytes of log lines the streams `selector` picks hold between two unix-ms
    * times, from Loki's index (`index/stats`): no chunk is read, so it answers
-   * in well under a second for a month of the busiest tenant. A line filter
+   * in well under a second for a month of a busy deployment. A line filter
    * does not make a read cheaper - every chunk of the selected streams is
    * still opened - so this is what a read of that stretch scans. Null when
    * Loki didn't answer.

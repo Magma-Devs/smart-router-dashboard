@@ -176,15 +176,14 @@ every chunk of the selected streams is opened, and a filter with few matches
 can't stop early. So one read scans at most `LOG_READ_BUDGET_BYTES` (4 GB,
 `services/read-range.ts`), weighed first from Loki's index (`index/stats`,
 under a second for a month): a range within it is read whole, a heavier one
-from its newest part, and the rest is the next "Load older". On the largest
-tenant (6.7 GB of router lines an hour) that is about half an hour per read;
-on a small one a month reads whole. The Failed requests card reads the counts
+from its newest part, and the rest is the next "Load older". On a busy
+deployment (gigabytes of router lines an hour) that is about half an hour per
+read; on a small one a month reads whole. The Failed requests card reads the counts
 the fleet Loki's ruler records once a minute into the metrics store
 (`smartrouter_final_{requests,failures}:count1m`, `RECORDED_OUTCOMES`), which
 cost the same at any window, and counts the lines only where those are
 missing or stale, and only within the budget. A 14-day read of the raw lines
-pinned the shared Loki for five minutes and timed out every tenant's alert
-rules (2026-10-20).
+can pin a shared Loki and time out every tenant's alert rules.
 
 **Reading one chain or one router.** Where the log agent labels the
 router's streams by `chain` (the spec lower-cased) and `service_name`

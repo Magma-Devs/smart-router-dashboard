@@ -13,6 +13,13 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   `upstreams-router-disambiguation.jpg`, with the 0.24.1 entry's links to
   them. That entry, and the comments in `UpstreamsView.tsx`, no longer count
   that deployment's chains or name its providers.
+- **Figures read off production deployments** (MAG-5299): log volumes, series
+  counts, request and failure counts and an incident's date and load, in this
+  changelog, `CLAUDE.md`, `docs/RECORDING-RULES.md`, the comments of
+  `read-range.ts`, `error-requests.ts` and `loki-client.ts`, and two test
+  comments. Each now says what the figure showed without the number or the
+  deployment: a 4 GB read is still about half an hour of a busy deployment's
+  router lines.
 
 ## [0.66.0]
 
@@ -1191,10 +1198,9 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 - **The Transactions and Errors lists read only what is new when they poll,
   and the viewers of one list on an api process share its read** (MAG-4574).
   A read of the router's logs costs Loki the whole stretch it covers, whatever
-  its filters match: on the largest tenant, which writes 6.7 GB of router
-  lines an hour, a 30-minute Transactions poll scanned about 10 GB, up to
-  27 GB with the reads of each request's other lines, for every viewer every
-  15 s. A list on the page window now keeps its last read on the api, and
+  its filters match: on a busy deployment a 30-minute Transactions poll
+  scanned gigabytes, several times that with the reads of each request's
+  other lines, for every viewer every 15 s. A list on the page window now keeps its last read on the api, and
   the next poll runs the line filters only from a minute before where that
   read ended, merges what they find by request, and reads the rest of a
   request's lines only when it is new or its lines can still come: rows,
@@ -1275,7 +1281,7 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   and answer from that read once it holds the request's `relay_end`. Before,
   every look-up read the whole range, because a request's 5 to 40 lines
   never fill the read's limit, and "Search the last 30 days" read a month:
-  720 hour-long splits in Loki, about 1.6 TB of logs on the largest tenant,
+  720 hour-long splits in Loki, terabytes of logs on a busy deployment,
   from one click and again on every load of a `?request=` link. The 5
   minutes hold the router's longest default processing budget, 3 minutes.
   A link to a request now finds it whatever the page's window. When its
@@ -1319,9 +1325,9 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 - **Long windows no longer stall the shared log store** (MAG-4465). The
   Failed requests card and the Errors and Transactions lists read the raw
   router lines over the whole window, and a line filter doesn't make that
-  cheaper: Loki opens every chunk of the router's streams. On the largest
-  tenant 14 days is about 800 GB; on 2026-10-20 such a read pinned the fleet
-  Loki at 97 % CPU for five minutes and timed out every tenant's alert rules.
+  cheaper: Loki opens every chunk of the router's streams. On a busy
+  deployment 14 days is hundreds of gigabytes, and such a read can pin a
+  shared Loki and time out every tenant's alert rules.
   - The **Failed requests** card reads the counts the fleet Loki's ruler
     records once a minute (`smartrouter_final_failures:count1m`, the
     server-errors alert's count): about a second for a month. A router on a
@@ -1332,7 +1338,7 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   - The **Errors** and **Transactions** lists read at most 4 GB of logs per
     read, weighed first from Loki's index: a range within that is read
     whole (a small deployment's month), a heavier one from its newest part
-    (about half an hour on the largest tenant), and **Load older** reads on.
+    (about half an hour on a busy deployment), and **Load older** reads on.
     An empty part says it is a part.
 
 ## [0.44.0]
@@ -1656,8 +1662,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   (`promql/recorded.ts`: the Mimir ruler's two-minute rates of the request
   counters, the two latency histograms and the upstream relay counters, summed
   per chain and router) instead of scanning the raw families — a per-chain p95
-  over seven days reads 645 series instead of 7,530, and the upstream roster's
-  reads over the 10,620-series endpoint histogram become reads over 1,230.
+  over seven days reads about a tenth of the raw bucket series, and the
+  upstream roster's reads over the endpoint histogram shrink about as much.
   Narrower windows stay raw and exact, and chart lines switch only from 12
   hours up, where a chart point is a two-minute average over the step rather
   than an instantaneous rate. The api probes the series' freshness on

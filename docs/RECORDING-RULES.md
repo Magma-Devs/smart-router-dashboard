@@ -29,10 +29,9 @@ are about 650 series and the same read is a fraction of that.
 The dashboard then reads a window total as `sum_over_time(rule[W]) * 60`, a
 ratio as the ratio of two such sums, a quantile as `histogram_quantile` over
 the summed bucket rates, and the window before as the same read with
-`offset W`. Measured on the largest fleet tenant over six hours against the
-exact counter delta (last sample minus first, no extrapolation): within
-0.1 % on quiet and busy routers alike — a router with 101 requests read
-101.0, one with 745,437 read 745,375. Availability and error rate are ratios
+`offset W`. Measured over six hours against the exact counter delta (last
+sample minus first, no extrapolation): within 0.1 % on quiet and busy routers
+alike. Availability and error rate are ratios
 of the same sums; quantiles follow the buckets. Chart lines switch only from
 12 hours up, where a point is a 2m15s average over the step; below that they
 read raw.
@@ -46,19 +45,13 @@ evaluation grid hits that span (W − 15) / 60 times, each hit worth
 steps at every scrape phase and averages out to the true count; a quiet one
 — a method called every few minutes, a provider relayed to once a minute —
 always meets the grid at the same phase, so every one of its steps counts
-once (0.571) or twice (1.143), at every window, forever. On the largest
-tenant that put a quiet router at 57 % of raw over a backfilled month and
-114 % on the live ruler, and low-volume methods, providers and chains off by
-up to 43 % while headline totals were within 0.1 %. At W = 135 the span is
-exactly two evaluations for every phase, each worth half a step:
-
-| Router, 6 hours | Exact delta | `rate[2m]` | `rate[2m15s]` |
-|---|---|---|---|
-| avalanche-p-mainnet (quiet) | 101 | 115.4 | 101.0 |
-| hedera-testnet | 2,154 | 2,210.3 | 2,155.5 |
-| hedera-mainnet | 2,101 | 2,116.6 | 2,099.5 |
-| near-mainnet | 231,849 | 231,762.9 | 231,865.5 |
-| arbitrum-mainnet | 745,437 | 746,260.7 | 745,375.0 |
+once (0.571) or twice (1.143), at every window, forever. That puts a quiet
+router at 57 % or 114 % of raw, and low-volume methods, providers and chains
+off by up to 43 % while headline totals stay within 0.1 %. At W = 135 the
+span is exactly two evaluations for every phase, each worth half a step: over
+six hours on five routers, from a quiet one to a busy one, `rate[2m]` read the
+quietest 14 % high and `rate[2m15s]` stayed within 0.1 % of the exact counter
+delta on every one.
 
 The one assumption is the 15-second scrape: a store on another interval
 needs W = 2 × 60 s + that interval, and the api reads raw there (below). The
@@ -98,8 +91,8 @@ minute into each tenant's org (devops-magmadevs,
 by `cluster`, `chain` (the router's network, lower case) and `service_name`
 (`<tenant>-<router id lower-cased>`). The Metrics page's Failed requests card reads
 `sum_over_time` of the failures (`GET /api/error-requests/count`): about a
-second for a month on the largest tenant, where counting the raw lines over
-the same month scans some 1.6 TB. The api looks once a minute at how old the
+second for a month, where counting the raw lines over the same month on a
+busy deployment scans terabytes. The api looks once a minute at how old the
 newest sample is and how far back they reach: fresh, every window reads them,
 and a window older than their history says where they start (`since`);
 missing or older than five minutes, the card counts the raw lines, for a
@@ -128,9 +121,8 @@ series carry them; a collector that names the router differently needs the
 #   a quantile              histogram_quantile(q, sum by (…, le) (sum_over_time(bucket[W])))
 #   the window before       the same with `offset W`
 #
-# so a p95 over seven days reads 645 series instead of the 7,530 raw bucket
-# series on the largest tenant, and the upstream latency buckets collapse from
-# 10,620 to 1,230. The war rooms group by (cluster, chain, method) over
+# so a p95 over seven days reads about a tenth of the raw bucket series, and
+# the upstream latency buckets shrink about as much. The war rooms group by (cluster, chain, method) over
 # `$__range`; the method rules carry those too.
 #
 # WHY 2m15s AND NOT 2m. The routers are scraped every 15 s (every tenant's
@@ -140,9 +132,8 @@ series carry them; a collector that names the router differently needs the
 # averages out, but a quiet one — a method called every few minutes, a
 # provider relayed to once a minute — always meets the grid at the same phase,
 # so every one of its steps counts once (0.571 of a step) or twice (1.143).
-# Measured on the largest tenant: a quiet router at 57% of raw over a
-# backfilled month and 114% on the live ruler, low-volume methods and
-# providers off by up to 43% at every window, totals right. With W = 135 the
+# A quiet router reads 57% or 114% of raw, low-volume methods and providers
+# off by up to 43% at every window, totals right. With W = 135 the
 # span is exactly two evaluations for every phase, each worth half a step:
 # over six hours on five routers the sums were within 0.1% of the exact
 # counter delta, quiet and busy alike. The sum over a window therefore counts
