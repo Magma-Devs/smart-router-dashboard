@@ -162,17 +162,6 @@ describe("?router= scoping", () => {
     expect(sent.filter((q) => q.includes('or spec="ETH1'))).toEqual([]);
   });
 
-  it("scopes the raw PromQL passthrough too", async () => {
-    app = await buildApp();
-
-    const res = await app.inject({
-      method: "GET",
-      url: "/api/metrics/query?query=smartrouter_overall_health&router=eth-router",
-    });
-    expect(res.statusCode).toBe(200);
-    expect(sent).toContain('smartrouter_overall_health{router="eth-router"}');
-  });
-
   it("leaves the presence probes' quoted metric names intact", async () => {
     app = await buildApp();
 
@@ -320,15 +309,6 @@ describe("METRICS_SCOPE_LABEL / METRICS_SCOPE_VALUE (deployment scope)", () => {
     const queries = metricQueries().filter((q) => !q.startsWith("count(smartrouter_overall_health{"));
     expect(queries.length).toBeGreaterThan(0);
     expect(queries.filter((q) => !q.includes('router="eth-router"') || !q.includes('zone="eu-west"'))).toEqual([]);
-  });
-
-  it("scopes the raw PromQL passthrough", async () => {
-    setScope("zone", "eu-west");
-    app = await buildApp();
-
-    const res = await app.inject({ method: "GET", url: "/api/metrics/query?query=smartrouter_overall_health" });
-    expect(res.statusCode).toBe(200);
-    expect(sent).toContain('smartrouter_overall_health{zone="eu-west"}');
   });
 
   it("leaves the readiness probe unscoped", async () => {

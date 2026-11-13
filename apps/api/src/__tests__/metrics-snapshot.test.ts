@@ -243,12 +243,9 @@ describe("the metrics routes' snapshot (MAG-4572)", () => {
     }
   });
 
-  it("never snapshots the raw passthrough or the reads report", async () => {
+  it("never snapshots the reads report", async () => {
     const api = await build(15_000);
-    await get(api, "/api/metrics/query?query=up");
-    const res = await get(api, "/api/metrics/query?query=up");
-    expect(res.headers.age).toBeUndefined();
-    expect(sent.filter((q) => q === "up")).toHaveLength(2);
+    expect((await get(api, "/api/metrics/reads")).headers.age).toBeUndefined();
     expect((await get(api, "/api/metrics/reads")).headers.age).toBeUndefined();
   });
 

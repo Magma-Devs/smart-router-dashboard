@@ -232,7 +232,6 @@ client requests) against the live router:
 | `/api/metrics/unavailable` | `qChainDown()` |
 | `/api/metrics/cross-validation` | `qPresence(smartrouter_cross_validation_requests_total)` — the REAL family names are `…cross_validation_{requests,success,failed,failures}_total` (+`provider_{agreements,disagreements}_total`; there is NO bare `…cross_validation_total`). When present: rounds/consensus per spec, `failures_total{reason}` breakdown, disagreements = `reason="no-agreement"`. **Always**: consistency `total` (checks run) + `caught` (`consistency_failed_total`, 0 when never fired) |
 | `/api/metrics/websocket` | `qPresence(smartrouter_ws_subscriptions_total)`; when present: **lifetime totals** (instant `sum(…)`, labelled "since router start") — windowed `increase()` misses a young counter's first increment (counter birth), which read as "0 subscriptions" right after a real one |
-| `/api/metrics/query` | whatever you pass — raw instant query, GET-bounded |
 
 ## Gaps — absent on this build (nulls + `emitted:false`, never invented)
 

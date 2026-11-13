@@ -490,33 +490,4 @@ export async function metricRoutes(app: FastifyInstance, opts: MetricRoutesOptio
     return snapshot(reply, "live", window, ["websocket", window, scopeKey(router)], () =>
       app.scoped(router).metricsDetail.websocket(window));
   });
-
-  // Raw instant PromQL passthrough (used by ad-hoc panels). Never snapshotted:
-  // the query is the caller's. Bounded to GET.
-  app.get<{ Querystring: { query?: string; router?: string } }>("/api/metrics/query", {
-    schema: {
-      tags: ["Metrics"],
-      summary: "Raw instant PromQL passthrough",
-      querystring: {
-        type: "object" as const,
-        required: ["query"],
-        properties: {
-          query: { type: "string" as const },
-          router: windowQuerySchema.properties.router,
-        },
-      },
-    },
-  }, async (request, reply) => {
-    const expr = request.query.query;
-    if (!expr) {
-      sendApiError(reply, 400, "query is required");
-      return reply;
-    }
-    // `router` scopes the passthrough too — the caller asked for one router's
-    // numbers, and the injection understands arbitrary PromQL.
-    const prom = request.query.router
-      ? app.prom.withScope({ label: await app.routerScopeLabel(), value: request.query.router })
-      : app.prom;
-    return { result: await prom.query(expr) };
-  });
 }
