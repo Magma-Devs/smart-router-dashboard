@@ -2,8 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-const { auth } = vi.hoisted(() => ({ auth: vi.fn() }));
+const { auth, requestHeaders } = vi.hoisted(() => ({ auth: vi.fn(), requestHeaders: vi.fn() }));
 vi.mock("@/auth", () => ({ auth }));
+// The request being rendered. Outside one, Next's `headers()` throws.
+vi.mock("next/headers", () => ({ headers: requestHeaders }));
 
 // Loaded once, at module load: see preview-reset.test.ts for why.
 const { readEnrolmentVerdict } = await import("../enrolment-verdict");
@@ -30,18 +32,28 @@ const ME = {
 const respond = (status: number, body: unknown) =>
   vi.fn(async (_url: string, _init?: RequestInit) => new Response(JSON.stringify(body), { status }));
 
+const BROWSER_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/141.0.0.0 Safari/537.36";
+const INTERNAL = "internal-secret-for-tests";
+
 let authMode: string | undefined;
+let internalSecret: string | undefined;
 
 beforeEach(() => {
   authMode = process.env.AUTH_MODE;
+  internalSecret = process.env.INTERNAL_AUTH_SECRET;
   process.env.AUTH_MODE = "enabled";
+  process.env.INTERNAL_AUTH_SECRET = INTERNAL;
   auth.mockResolvedValue({ user: { id: "user-1" }, accessToken: "bearer-for-user-1" });
+  requestHeaders.mockResolvedValue(new Headers({ "user-agent": BROWSER_UA }));
 });
 
 afterEach(() => {
   if (authMode === undefined) delete process.env.AUTH_MODE;
   else process.env.AUTH_MODE = authMode;
+  if (internalSecret === undefined) delete process.env.INTERNAL_AUTH_SECRET;
+  else process.env.INTERNAL_AUTH_SECRET = internalSecret;
   auth.mockReset();
+  requestHeaders.mockReset();
   vi.unstubAllGlobals();
 });
 
@@ -55,6 +67,37 @@ describe("readEnrolmentVerdict", () => {
     expect(url).toBe(`${INTERNAL_API_BASE_URL}/api/account/me`);
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer bearer-for-user-1");
     expect(init?.cache).toBe("no-store");
+  });
+
+  it("vouches for the read, so the api counts it against the reader rather than the web pod", async () => {
+    // Sent bare, every page load by everybody came from this container and
+    // spent one shared allowance; a busy minute left each new page waiting.
+    const fetch = respond(200, ME);
+    vi.stubGlobal("fetch", fetch);
+
+    await readEnrolmentVerdict();
+    const sent = new Headers(fetch.mock.calls[0]![1]?.headers);
+    expect(sent.get("x-internal-auth")).toBe(INTERNAL);
+    expect(sent.get("x-forwarded-client-ua")).toBe(BROWSER_UA);
+    expect(sent.get("authorization")).toBe("Bearer bearer-for-user-1");
+  });
+
+  it("vouches even with nothing to forward — the session decides the allowance, not the address", async () => {
+    requestHeaders.mockResolvedValue(new Headers());
+    const fetch = respond(200, ME);
+    vi.stubGlobal("fetch", fetch);
+
+    await readEnrolmentVerdict();
+    expect(new Headers(fetch.mock.calls[0]![1]?.headers).get("x-internal-auth")).toBe(INTERNAL);
+  });
+
+  it("still asks, unvouched, outside a request", async () => {
+    requestHeaders.mockRejectedValue(new Error("`headers` was called outside a request scope"));
+    const fetch = respond(200, ME);
+    vi.stubGlobal("fetch", fetch);
+
+    expect(await readEnrolmentVerdict()).toEqual({ state: "known", twoFactor: ME.twoFactor });
+    expect(new Headers(fetch.mock.calls[0]![1]?.headers).get("x-internal-auth")).toBeNull();
   });
 
   it("passes on a 'not required' as the api's answer too", async () => {

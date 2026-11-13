@@ -65,6 +65,11 @@ export function clientIpFrom(headers: Headers | null, hops = trustedHops()): str
  * Headers rather than a body field: the api's rate limiter runs before a body
  * exists and keys on this same address, so a deployment's sign-ins do not all
  * share one bucket.
+ *
+ * The secret goes with every call made for a request, even one with nothing to
+ * forward: it is what tells the api the call is a browser's, made from here, and
+ * the api then counts it against that browser's session rather than this
+ * container (`clientRateLimitKey` in the api).
  */
 export function forwardedClientHeaders(headers: Headers | null): Record<string, string> {
   const secret = process.env.INTERNAL_AUTH_SECRET;
@@ -82,11 +87,26 @@ export function forwardedClientHeaders(headers: Headers | null): Record<string, 
 
   const ip = clientIpFrom(headers);
   const userAgent = headers.get("user-agent") ?? undefined;
-  if (!ip && !userAgent) return {};
 
   return {
     "X-Internal-Auth": secret,
     ...(ip ? { "X-Forwarded-Client-Ip": ip } : {}),
     ...(userAgent ? { "X-Forwarded-Client-Ua": userAgent } : {}),
   };
+}
+
+/**
+ * The same headers for the request being rendered, read from Next's ambient
+ * request scope. Empty outside one — a build, a test — where there is nobody
+ * to forward. `next/headers` is loaded here rather than at the top: `proxy.ts`
+ * pulls this module into the edge bundle through `auth.config.ts`, and the
+ * module does not exist there.
+ */
+export async function forwardedForThisRequest(): Promise<Record<string, string>> {
+  try {
+    const { headers } = await import("next/headers");
+    return forwardedClientHeaders(await headers());
+  } catch {
+    return {};
+  }
 }
