@@ -5,6 +5,51 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.66.3]
+
+### Changed
+
+- **Node 26 LTS and pnpm 12, without corepack** (MAG-5298).
+  - Node: the api and web images, `Dockerfile.dev`, `.nvmrc` and CI move
+    from 24.22.3 to 26.13.1 (the 2026-11-10 security release);
+    `engines.node` is `>=26`.
+  - pnpm 10.34.9 → 12.18.0, set up the way pnpm documents it. Node 25 and
+    later do not ship corepack, which every build used to get pnpm, so
+    Dependabot's Node bumps failed at `corepack enable`. CI installs pnpm and
+    Node with `pnpm/setup` (v3.1.2, by commit SHA), which replaces
+    `actions/setup-node`, verifies pnpm against npm's registry signature,
+    installs with `--frozen-lockfile` and caches the pnpm store. The
+    Dockerfiles copy pnpm from `ghcr.io/pnpm/pnpm:12.18.0-alpine` by digest,
+    and fail when it is not the pnpm `packageManager` pins.
+  - `packageManager` is `pnpm@12.18.0`. The lockfile gains a first document
+    with the sha512 of pnpm's binary for each platform, which replaces the
+    hash that `packageManager` carried. The project's 500 resolved packages
+    are unchanged.
+  - pnpm reads its settings only from `pnpm-workspace.yaml`, so the 13
+    `overrides` move there from `package.json`. A package with an install
+    script must now be listed in `allowBuilds`: esbuild's stays off, as
+    pnpm 10 already left it.
+  - The api image's production tree comes from `pnpm deploy --prod` without
+    `--legacy`: under pnpm 12 the legacy path re-resolves and drops the
+    tslib the lockfile pins for the AWS SDK. The tree is the same 160
+    packages as before.
+  - Host dev: install pnpm once (README); it then runs the pinned version.
+  - Dependabot: the docker updater opens one PR per image across the three
+    Dockerfiles (before, Node 25 arrived as #360, #361 and #362), and no
+    longer proposes a major of Node, the pnpm image or `@types/node`: a
+    major is a migration, as this one was. That rule now lives in
+    `.github/dependabot.yml` instead of in Dependabot's own ignore list.
+    Because it moves only the Dockerfiles, a new Quality Gate step,
+    `apps/web/scripts/check-pins.mjs`, fails while `.nvmrc` or
+    `packageManager` names a different Node or pnpm than any Dockerfile;
+    the Dependabot PR passes once it moves them too.
+  - Dependabot's Node 25 bumps (#360, #361, #362) are closed and 25.x
+    ignored.
+- **Five Dependabot updates**, each merged after CI passed on a branch
+  rebased onto main: eslint 10.13.0 → 10.14.0 (#358), next 16.4.1 → 16.4.5
+  (#359), `@fastify/jwt` 10.2.0 → 10.2.7 (#363), `@fastify/swagger-ui`
+  6.1.2 → 6.1.3 (#364), `@next/eslint-plugin-next` 16.4.0 → 16.4.5 (#365).
+
 ## [0.66.2]
 
 ### Fixed
