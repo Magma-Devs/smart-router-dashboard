@@ -5,6 +5,24 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.65.7]
+
+### Fixed
+
+- **On a chain's page the top bar's RPS and router status describe the
+  whole router** (MAG-5295). The top bar reads its pulse for the chain on
+  screen so that its provider count follows the chain (0.62.0), and the RPS
+  pill and "Router operational" followed the chain with it, with nothing on
+  screen saying so. Both describe the router across every chain again; only
+  the provider counts follow the chain.
+
+### Added
+
+- **`allChains` on `GET /api/metrics/pulse`**: the whole router's `health`
+  and `throughputRps`, every chain, beside the chain's own under `spec`
+  (two reads more, eight in all). Without `spec` it repeats the pulse's own
+  values at no extra read. The topbar still makes one call per poll.
+
 ## [0.65.6]
 
 ### Fixed

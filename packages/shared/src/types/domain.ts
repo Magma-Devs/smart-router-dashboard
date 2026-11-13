@@ -231,11 +231,18 @@ export interface Kpi {
  * reads, independent of the chain count.
  */
 export interface DeploymentPulse {
+  /** The router's health gauge; under a chain filter (`spec`), that chain's. */
   health: HealthState;
-  /** Current upstream × chain status, independent of any time window. */
+  /** Current upstream × chain status, independent of any time window; `spec` and `routerId` narrow it. */
   upstreamHealthCounts: { unhealthy: number; unknown: number };
-  /** Client requests per second over the last 5 minutes; null with no traffic. */
+  /** Client requests per second over the last 5 minutes; under a chain filter, that chain's. Null with no traffic. */
   throughputRps: number | null;
+  /**
+   * The whole router's health and RPS, every chain it serves (the `router`
+   * scope still applies): what the topbar's status and RPS pill show. Read
+   * apart from the two above under a chain filter; the same values without one.
+   */
+  allChains: { health: HealthState; throughputRps: number | null };
   lastUpdated: string;
 }
 

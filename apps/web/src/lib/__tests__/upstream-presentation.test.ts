@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import type { DeploymentPulse } from "@sr/shared";
 import {
   deploymentHealthSummary,
+  topbarFigures,
   upstreamHealthNotice,
   upstreamMetricColor,
 } from "../upstream-presentation";
@@ -47,5 +49,33 @@ describe("MAG-4226: current health takes precedence over historical metrics", ()
     expect(deploymentHealthSummary("unhealthy", { unhealthy: 1, unknown: 0 }).color).toBe(
       "var(--err)",
     );
+  });
+});
+
+// MAG-5295: on a chain's page the pulse is read for that chain, so the
+// provider counts are the chain's. The RPS pill and the router's status are
+// the whole router's on every page.
+describe("topbarFigures - what the topbar shows from a pulse", () => {
+  const onChain: DeploymentPulse = {
+    health: "unhealthy",
+    throughputRps: 2,
+    upstreamHealthCounts: { unhealthy: 1, unknown: 0 },
+    allChains: { health: "operational", throughputRps: 50 },
+    lastUpdated: "2026-11-13T00:00:00.000Z",
+  };
+
+  it("shows the whole router's status and RPS beside the chain's provider counts", () => {
+    expect(topbarFigures(onChain)).toEqual({ health: "operational", rps: 50, counts: { unhealthy: 1, unknown: 0 } });
+    expect(deploymentHealthSummary(topbarFigures(onChain).health, topbarFigures(onChain).counts).label)
+      .toBe("Router operational · 1 provider unhealthy");
+  });
+
+  it("falls back to the pulse's own figures from an api that sends no allChains", () => {
+    const { allChains: _dropped, ...older } = onChain;
+    expect(topbarFigures(older as DeploymentPulse)).toEqual({ health: "unhealthy", rps: 2, counts: { unhealthy: 1, unknown: 0 } });
+  });
+
+  it("has nothing to show before the first read", () => {
+    expect(topbarFigures(undefined)).toEqual({ health: undefined, rps: undefined, counts: undefined });
   });
 });
