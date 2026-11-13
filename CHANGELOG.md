@@ -5,6 +5,23 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.65.3]
+
+### Fixed
+
+- **Audit log: typing an address no longer flashes an error** (MAG-5291).
+  Each keystroke in the **Person** filter was a read, and the api refuses an
+  `actor` that is neither a user id nor holds an "@", so "d", "da" … "dana"
+  each drew the error state until the "@". Person and **Object id** now apply
+  once typing pauses (350 ms), and Person only once it is a value the api
+  takes (`actorAccepted`, its rule exactly). Enter or leaving the box applies
+  whatever it holds, so a finished value the api refuses still shows the
+  error. A run of typing in one box is still one history entry, and a filter
+  change still opens the newest page (`components/audit/filter-typing.ts`).
+- **Audit log: the Person filter's placeholder is `name@example.com`**
+  (MAG-5291), on the reserved example domain. The Object id placeholder,
+  `ep_8143`, stays: it names no one.
+
 ## [0.65.2]
 
 ### Removed

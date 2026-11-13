@@ -71,6 +71,13 @@ screen was issued for the old filter set, and the api refuses it under
 another. A link whose cursor the api refuses says so and offers the newest
 entries.
 
+**Person** and **Object id** apply once typing pauses (350 ms), and a run of
+typing in one box is one history entry, so Back undoes the word rather than a
+letter. Person also waits for a value the api takes — a user id (UUID) or
+anything with an "@" — so a half-typed address sends nothing and shows no
+error. Enter, or leaving the box, applies whatever it holds; a value the api
+refuses then shows the error, as the same value in a link does.
+
 ## The pull API
 
 ```

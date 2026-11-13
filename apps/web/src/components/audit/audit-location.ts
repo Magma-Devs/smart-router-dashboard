@@ -185,7 +185,8 @@ const serverSearch = () => "";
 /**
  * The location in the URL, and a way to move it. Back / Forward re-read it.
  * `push` makes a history entry (a page step, a filter picked); `replace`
- * rewrites the one it is on (each keystroke of a filter being typed).
+ * rewrites the one it is on (a typed filter's later values, see
+ * `filter-typing.ts`).
  */
 export function useAuditLocation(): {
   location: AuditLocation;
