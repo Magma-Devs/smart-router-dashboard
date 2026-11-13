@@ -162,6 +162,83 @@ describe("detectErrorIncidents", () => {
   });
 });
 
+describe("detectErrorIncidents · the rules' boundaries", () => {
+  const R = ERROR_INCIDENT_RULES;
+  const one = (s: ErrorIncidentSeries, windowFrom?: number) => detect([s], windowFrom).lines;
+
+  it("is hot from exactly 3x the usual level, and from exactly the floor", () => {
+    // Usually 20 a stretch: 60 is three times that, 59 is not.
+    expect(one(series("failed", "NEAR", "node-a", [[100, 100, 60]], 20))).toHaveLength(1);
+    expect(one(series("failed", "NEAR", "node-a", [[100, 100, 59]], 20))).toEqual([]);
+    // Nothing usual: the floor decides, 10 failed tries or 50 error replies a stretch.
+    expect(one(series("failed", "NEAR", "node-a", [[100, 101, 10]]))).toHaveLength(1);
+    expect(one(series("failed", "NEAR", "node-a", [[100, 101, 9]]))).toEqual([]);
+    expect(one(series("reply", "NEAR", "node-a", [[100, 101, 50]]))).toHaveLength(1);
+    expect(one(series("reply", "NEAR", "node-a", [[100, 101, 49]]))).toEqual([]);
+  });
+
+  it("reads nothing into a series with no errors, or no points, or no series", () => {
+    expect(detect([series("failed", "NEAR", "node-a", [])])).toEqual({ lines: [], steady: [] });
+    expect(detect([{ kind: "failed", spec: "NEAR", provider: "node-a", points: [] }])).toEqual({ lines: [], steady: [] });
+    expect(detect([])).toEqual({ lines: [], steady: [] });
+  });
+
+  it("joins two hot stretches up to 15 minutes apart into one wave; 20 minutes apart are two", () => {
+    const gapStretches = R.gapSec / STEP; // 3
+    const waves = (apart: number) => one(series("failed", "NEAR", "node-a", [[100, 100, 40], [100 + apart, 100 + apart, 40]]))[0]!.waves.length;
+    expect(waves(gapStretches)).toBe(1);
+    expect(waves(gapStretches + 1)).toBe(2);
+  });
+
+  it("keeps a repeat exactly 3 hours after the last wave on its line; a stretch later it is a new line", () => {
+    const repeat = R.repeatSec / STEP; // 36 stretches
+    const lines = (after: number) => one(series("failed", "NEAR", "node-a", [[10, 11, 40], [11 + after, 12 + after, 40]]));
+    expect(lines(repeat).map((l) => l.waves.length)).toEqual([2]);
+    expect(lines(repeat + 1).map((l) => l.waves.length)).toEqual([1, 1]);
+  });
+
+  it("reads two waves as a burst, three as recurring", () => {
+    const shape = (n: number) => one(series("failed", "NEAR", "node-a", Array.from({ length: n }, (_, i) => [10 + 10 * i, 11 + 10 * i, 40] as [number, number, number])))[0]!.shape;
+    expect(shape(R.recurringWaves - 1)).toBe("incident");
+    expect(shape(R.recurringWaves)).toBe("recurring");
+  });
+
+  it("lists a series as always present past half its stretches, not at exactly half", () => {
+    // Under the floor all along: background, never a line.
+    const steady = (present: number) => detect([series("failed", "BASE", "node-a", [[0, present - 1, 1]])]).steady;
+    expect(steady(N / 2)).toEqual([]);
+    expect(steady(N / 2 + 1)).toEqual([{ kind: "failed", spec: "BASE", provider: "node-a", perMinute: 0.2, presence: (N / 2 + 1) / N }]);
+  });
+
+  it("is still going when its last stretch is the newest one or the one before", () => {
+    const ongoing = (last: number) => one(series("failed", "NEAR", "node-a", [[last - 1, last, 40]]))[0]!.ongoing;
+    expect(ongoing(N - 1)).toBe(true);
+    expect(ongoing(N - 2)).toBe(true);
+    expect(ongoing(N - 3)).toBe(false);
+  });
+
+  it("keeps a line that began before the window, from where it began", () => {
+    const [line] = one(series("failed", "NEAR", "node-a", [[190, 210, 40]]), at(200));
+    expect(line).toMatchObject({ start: at(190), end: at(210), count: 21 * 40 });
+  });
+
+  it("is chain-wide only for two providers of one chain, of one kind, at the same time", () => {
+    const shapes = (s: ErrorIncidentSeries[]) => detect(s).lines.map((l) => [l.shape, l.providers.join()]).sort();
+    // Another chain at the same time: two bursts.
+    expect(shapes([series("failed", "NEAR", "node-a", [[100, 101, 40]]), series("failed", "BTC", "node-b", [[100, 101, 40]])]))
+      .toEqual([["incident", "node-a"], ["incident", "node-b"]]);
+    // One chain, an hour apart: two bursts.
+    expect(shapes([series("failed", "NEAR", "node-a", [[100, 101, 40]]), series("failed", "NEAR", "node-b", [[113, 114, 40]])]))
+      .toEqual([["incident", "node-a"], ["incident", "node-b"]]);
+    // One chain at once, but failed tries at one and error replies at the other: two bursts.
+    expect(shapes([series("failed", "NEAR", "node-a", [[100, 101, 40]]), series("reply", "NEAR", "node-b", [[100, 101, 400]])]))
+      .toEqual([["incident", "node-a"], ["incident", "node-b"]]);
+    // A stretch apart still counts as the same time.
+    expect(shapes([series("failed", "NEAR", "node-a", [[100, 101, 40]]), series("failed", "NEAR", "node-b", [[102, 103, 40]])]))
+      .toEqual([["chain-wide", "node-a,node-b"]]);
+  });
+});
+
 describe("errorIncidentsRead", () => {
   it("reads at least a day back, at a step that keeps the read small", () => {
     expect(errorIncidentsRead(1800)).toEqual({ stepSec: 60, readSeconds: 86400 });
