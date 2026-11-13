@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.65.4]
+
 ### Fixed
 
 - **A chart's time axis keeps round local times across a DST change**
