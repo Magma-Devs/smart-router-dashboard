@@ -131,6 +131,35 @@ describe("detectErrorIncidents", () => {
     expect(edge(200)).toBe(0);
     expect(edge(201)).toBe(1);
   });
+
+  it("answers the same whatever order the store lists the series in, ties included", () => {
+    const input = [
+      // node-a errs on two chains as much on each: its main chain is the first by name, NEAR.
+      series("failed", "NEAR", "node-a", [[100, 101, 40]]),
+      series("failed", "SOLANA", "node-a", [[100, 101, 40]]),
+      series("failed", "NEAR", "node-b", [[100, 101, 40]]),
+      // Two lines ending together, and two always-present series at one rate.
+      series("reply", "BTC", "node-c", [[50, 51, 400]]),
+      series("reply", "ETH1", "node-d", [[50, 51, 400]]),
+      series("failed", "BASE", "node-e", [], 3),
+      series("failed", "BASE", "node-f", [], 3),
+    ];
+    const want = detect(input);
+    expect(want.lines.find((l) => l.shape === "chain-wide")).toMatchObject({ providers: ["node-a", "node-b"], chains: [{ spec: "NEAR", count: 160 }, { spec: "SOLANA", count: 80 }] });
+    expect(want.lines.filter((l) => l.kind === "reply").map((l) => l.providers[0])).toEqual(["node-c", "node-d"]);
+    expect(want.steady.map((s) => s.provider)).toEqual(["node-e", "node-f"]);
+    for (const order of [[...input].reverse(), [...input.slice(3), ...input.slice(0, 3)], [input[2]!, input[1]!, input[0]!, ...input.slice(3).reverse()]]) {
+      expect(detect(order)).toEqual(want);
+    }
+  });
+
+  it("reads points on the read's grid only, and answers nothing for a step that is not one", () => {
+    const off = { kind: "failed" as const, spec: "NEAR", provider: "node-a", points: [[at(100) + 7, 500], [at(101) + 7, 500]] as [number, number][] };
+    expect(detect([off]).lines).toEqual([]);
+    const s = series("failed", "NEAR", "node-a", [[100, 101, 40]]);
+    expect(detectErrorIncidents([s], 0, T0, END)).toEqual({ lines: [], steady: [] });
+    expect(detectErrorIncidents([s], STEP, END, T0)).toEqual({ lines: [], steady: [] });
+  });
 });
 
 describe("errorIncidentsRead", () => {

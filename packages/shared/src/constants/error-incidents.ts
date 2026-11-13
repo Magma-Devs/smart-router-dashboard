@@ -103,12 +103,19 @@ export const ERROR_INCIDENT_RULES = {
   steadyPresence: 0.5,
 } as const;
 
-const median = (xs: number[]): number => {
-  if (!xs.length) return 0;
-  const s = [...xs].sort((a, b) => a - b);
+/** The median of a non-empty run of counts (a typed array sorts by value, fast). */
+const median = (xs: Float64Array): number => {
+  const s = xs.slice().sort();
   const m = Math.floor(s.length / 2);
   return s.length % 2 ? s[m]! : (s[m - 1]! + s[m]!) / 2;
 };
+
+/** Plain string order, so ties come out the same whatever order the store listed the series in. */
+const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+/** Chains by count, the most first; a tie by name. */
+const byCount = (a: [string, number], b: [string, number]): number => b[1] - a[1] || cmp(a[0], b[0]);
+/** The chain with the most errors in a burst. */
+const mainOf = (e: { chains: Map<string, number> }): string => [...e.chains].sort(byCount)[0]![0];
 
 interface Hot { t: number; kind: ErrorIncidentKind; spec: string; provider: string; v: number }
 interface Episode { kind: ErrorIncidentKind; providers: Set<string>; chains: Map<string, number>; start: number; end: number; count: number; peak: number }
@@ -117,21 +124,34 @@ interface Episode { kind: ErrorIncidentKind; providers: Set<string>; chains: Map
  * The incident lines and always-present errors in `series`, read at
  * `stepSec` over `[from, to]`. Lines that end by `windowFrom` are left
  * out: the read may reach further back than the window, for the usual level.
+ * A point is read on the grid `from + k * stepSec`; one off it is ignored,
+ * and a stretch with no point counts 0. The answer is the same whatever
+ * order `series` comes in.
  */
 export function detectErrorIncidents(series: ErrorIncidentSeries[], stepSec: number, from: number, to: number, windowFrom = from): { lines: ErrorIncidentLine[]; steady: SteadyError[] } {
   const R = ERROR_INCIDENT_RULES;
+  if (!(stepSec > 0) || !(to >= from)) return { lines: [], steady: [] };
   const stretches = Math.max(1, Math.floor((to - from) / stepSec) + 1);
   const scale = stepSec / 300;
   const hot: Hot[] = [];
   const steady: SteadyError[] = [];
   for (const s of series) {
-    const byT = new Map(s.points.filter(([t]) => t >= from && t <= to));
-    const values: number[] = [];
-    for (let t = from; t <= to; t += stepSec) values.push(byT.get(t) ?? 0);
+    // One slot per stretch of the read: a week of 5-minute stretches over
+    // hundreds of series stays a few milliseconds.
+    const values = new Float64Array(stretches);
+    for (const [t, v] of s.points) {
+      const k = (t - from) / stepSec;
+      if (Number.isInteger(k) && k >= 0 && k < stretches) values[k] = v;
+    }
     const usual = median(values);
     const floor = Math.max(1, R.floorPer5Min[s.kind] * scale);
-    for (const [t, v] of byT) if (v >= floor && v >= R.multiplier * usual) hot.push({ t, kind: s.kind, spec: s.spec, provider: s.provider, v });
-    const presence = values.filter((v) => v > 0).length / stretches;
+    let present = 0;
+    for (let k = 0; k < stretches; k++) {
+      const v = values[k]!;
+      if (v > 0) present++;
+      if (v >= floor && v >= R.multiplier * usual) hot.push({ t: from + k * stepSec, kind: s.kind, spec: s.spec, provider: s.provider, v });
+    }
+    const presence = present / stretches;
     if (presence > R.steadyPresence) steady.push({ kind: s.kind, spec: s.spec, provider: s.provider, perMinute: usual / (stepSec / 60), presence });
   }
 
@@ -168,21 +188,24 @@ export function detectErrorIncidents(series: ErrorIncidentSeries[], stepSec: num
   // has gathered, and never into a long burst: a provider failing on eight
   // chains for days would otherwise swallow every other provider's burst on
   // any of them.
-  const mainOf = (e: { chains: Map<string, number> }) => [...e.chains].sort((a, b) => b[1] - a[1])[0]![0];
   const isLong = (e: Episode) => e.end - e.start + stepSec >= R.longSec;
   const merged: (Episode & { chainWide: boolean })[] = [];
   const used = new Set<number>();
-  big.sort((a, b) => a.start - b.start);
+  // Each burst here is one provider's: its kind and provider break a tie in start.
+  big.sort((a, b) => a.start - b.start || cmp(a.kind, b.kind) || cmp([...a.providers][0]!, [...b.providers][0]!));
   for (let i = 0; i < big.length; i++) {
     if (used.has(i)) continue;
     const first = big[i]!;
     const e = { ...first, providers: new Set(first.providers), chains: new Map(first.chains), chainWide: false };
     if (isLong(first)) { merged.push(e); continue; }
+    const firstMain = mainOf(first);
     for (let j = i + 1; j < big.length; j++) {
       const o = big[j]!;
-      if (used.has(j) || isLong(o) || o.start > e.end + stepSec) continue;
-      const overlap = o.start <= e.end + stepSec && e.start <= o.end + stepSec;
-      const sameChain = mainOf(o) === mainOf(first);
+      // Sorted by start: once one starts past this burst, so does every one after it.
+      if (o.start > e.end + stepSec) break;
+      if (used.has(j) || isLong(o)) continue;
+      const overlap = e.start <= o.end + stepSec;
+      const sameChain = mainOf(o) === firstMain;
       const otherProvider = [...o.providers].some((p) => !e.providers.has(p));
       if (overlap && sameChain && otherProvider && o.kind === e.kind) {
         used.add(j);
@@ -199,9 +222,8 @@ export function detectErrorIncidents(series: ErrorIncidentSeries[], stepSec: num
   }
 
   // 3. The same cause again within a few hours: one line, with waves.
-  const mainChain = (e: { chains: Map<string, number> }) => [...e.chains].sort((a, b) => b[1] - a[1])[0]![0];
   const causeKey = (e: Episode & { chainWide: boolean }) =>
-    e.chainWide ? `${e.kind}|chain|${mainChain(e)}` : `${e.kind}|${[...e.providers].sort().join(",")}|${mainChain(e)}`;
+    e.chainWide ? `${e.kind}|chain|${mainOf(e)}` : `${e.kind}|${[...e.providers].sort().join(",")}|${mainOf(e)}`;
   const byCause = new Map<string, (Episode & { chainWide: boolean })[]>();
   for (const e of merged) (byCause.get(causeKey(e)) ?? byCause.set(causeKey(e), []).get(causeKey(e))!).push(e);
   const lines: ErrorIncidentLine[] = [];
@@ -227,7 +249,7 @@ export function detectErrorIncidents(series: ErrorIncidentSeries[], stepSec: num
       if (end > windowFrom) {
         lines.push({
           key: `${key}|${start}`, kind: group[0]!.kind, shape, providers: [...providers].sort(),
-          chains: [...chains].map(([spec, count]) => ({ spec, count: Math.round(count) })).sort((a, b) => b.count - a.count),
+          chains: [...chains].sort(byCount).map(([spec, count]) => ({ spec, count: Math.round(count) })),
           start, end, count: Math.round(group.reduce((s, e) => s + e.count, 0)), peak: Math.round(Math.max(...group.map((e) => e.peak))),
           waves, ongoing: end >= newest - stepSec,
         });
@@ -241,7 +263,7 @@ export function detectErrorIncidents(series: ErrorIncidentSeries[], stepSec: num
     }
     flush();
   }
-  lines.sort((a, b) => Number(b.ongoing) - Number(a.ongoing) || b.end - a.end);
-  steady.sort((a, b) => b.perMinute - a.perMinute);
+  lines.sort((a, b) => Number(b.ongoing) - Number(a.ongoing) || b.end - a.end || b.start - a.start || cmp(a.key, b.key));
+  steady.sort((a, b) => b.perMinute - a.perMinute || cmp(`${a.kind}|${a.spec}|${a.provider}`, `${b.kind}|${b.spec}|${b.provider}`));
   return { lines, steady };
 }
