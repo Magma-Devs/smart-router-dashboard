@@ -28,6 +28,19 @@ import {
   type LogQL,
   type PromQL,
 } from "../promql/query-text.js";
+import {
+  qBackupShareExpr,
+  qEndpointBlockLagSeriesExpr,
+  qErrorsBy,
+  qFailedTriesBySpecProvider,
+  qPerUpstreamRpsExpr,
+  qPresence,
+  qRequestsTotal,
+  qScoreExpr,
+  qUpstreamRequestsTotal,
+  selector,
+} from "../promql/builders.js";
+import { applyScope } from "../promql/scope.js";
 
 /**
  * Go's `strconv.Unquote` for the escapes `quoted` writes: what Prometheus and
@@ -232,5 +245,54 @@ describe("brands", () => {
     const l: LogQL = logql`{a="b"}`;
     expect(typeof p).toBe("string");
     expect(typeof l).toBe("string");
+  });
+});
+
+/* ── The builders write a value as one literal, whatever it holds ─────────── */
+
+describe("builders", () => {
+  /** The query with every string literal emptied: what a value can't change if it only ever sits inside one. */
+  const structure = (query: string) => query.replace(/"(?:[^"\\]|\\.)*"|`[^`]*`/g, '""');
+
+  it.each(HOSTILE.filter((v) => v !== ""))("selector keeps %j one matcher value", (v) => {
+    const sel = selector({ spec: v, endpoint_id: v });
+    expect(structure(sel)).toBe('{spec="",endpoint_id=""}');
+    const [, spec] = /^\{spec=("(?:[^"\\]|\\.)*"),/.exec(sel) ?? [];
+    expect(unquote(spec!)).toBe(v);
+  });
+
+  it.each(HOSTILE.filter((v) => v !== ""))("every builder that takes a chain or an upstream keeps %j a literal", (v) => {
+    const pairs: [string, string][] = [
+      [qRequestsTotal(v, "1h"), qRequestsTotal("ETH1", "1h")],
+      [qErrorsBy("method", "1h", v), qErrorsBy("method", "1h", "ETH1")],
+      [qUpstreamRequestsTotal({ spec: v, endpointId: v }, "1h"), qUpstreamRequestsTotal({ spec: "ETH1", endpointId: "eth-a" }, "1h")],
+      [qEndpointBlockLagSeriesExpr({ spec: v, endpointId: v }), qEndpointBlockLagSeriesExpr({ spec: "ETH1", endpointId: "eth-a" })],
+      [qBackupShareExpr(v, [v, "b"], "60s"), qBackupShareExpr("ETH1", ["a", "b"], "60s")],
+      [qFailedTriesBySpecProvider("60s", v), qFailedTriesBySpecProvider("60s", "ETH1")],
+      [qPresence(v), qPresence("smartrouter_retries_total")],
+      [qScoreExpr(v, v, v), qScoreExpr("composite", "ETH1", "eth-a")],
+    ];
+    for (const [hostile, plain] of pairs) expect(structure(hostile)).toBe(structure(plain));
+  });
+
+  it("a backup name matches only itself, case aside", () => {
+    const expr = qBackupShareExpr("ETH1", ["eth.a", "b|c"], "60s");
+    const [, value] = /provider_address=~("(?:[^"\\]|\\.)*")/.exec(expr) ?? [];
+    const re = new RegExp(`^${unquote(value!).replace("(?i)", "")}$`, "i");
+    expect(re.test("ETH.A")).toBe(true);
+    expect(re.test("ethXa")).toBe(false);
+    expect(re.test("b")).toBe(false);
+  });
+
+  it("a builder refuses a step or an offset that isn't a duration", () => {
+    expect(() => qPerUpstreamRpsExpr("ETH1", "ETH1")).toThrow(QueryTextError);
+    expect(() => qRequestsTotal("ETH1", "1h", "1d] or up[1d")).toThrow(QueryTextError);
+  });
+
+  it("applyScope writes the scope through the helpers, and ignores one that can't be a matcher", () => {
+    const expr = promql`sum(${metricName("smartrouter_requests_total")})`;
+    expect(applyScope(expr, { label: "router", value: "eth-prod" })).toBe('sum(smartrouter_requests_total{router="eth-prod"})');
+    for (const value of ['x"} or up{a="', "a\\", "a\nb", "{x}"]) expect(applyScope(expr, { label: "router", value })).toBe(expr);
+    expect(applyScope(expr, { label: "router=~", value: "x" })).toBe(expr);
   });
 });
