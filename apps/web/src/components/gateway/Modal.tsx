@@ -11,7 +11,6 @@ export interface ModalProps {
   onClose: () => void;
   title: React.ReactNode;
   children?: React.ReactNode;
-  wide?: boolean;
   md?: boolean;
   footer?: React.ReactNode;
   /** False while the dialog shows something it can show only once, such as a
@@ -25,14 +24,13 @@ export function Modal({
   onClose,
   title,
   children,
-  wide,
   md,
   footer,
   dismissible = true,
 }: ModalProps) {
   const titleId = useId();
   if (!open) return null;
-  const cls = "gw-modal fade-in" + (wide ? " gw-modal--wide" : md ? " gw-modal--md" : "");
+  const cls = "gw-modal fade-in" + (md ? " gw-modal--md" : "");
   return (
     <DialogLayer
       backdropClassName="gw-modal-bg"

@@ -343,8 +343,7 @@ apps/web/                 @sr/web — Next.js 16 App Router (:3000)
                         (a bar opens the Errors tab on the requests
                         that failed at its upstream),
                         volume, latency, latest block)
-      upstreams/        UpstreamsView (3 groupings) · RouterGroups ·
-                        Add/Edit sheets · TestModal · catalog
+      upstreams/        UpstreamsView (3 groupings) · RouterGroups · catalog
       endpoints/        endpoint row model + IfaceTag + detail sheet — the
                         bits the "By router" grouping renders
       team/             InviteModal · ChangeRoleModal · bits

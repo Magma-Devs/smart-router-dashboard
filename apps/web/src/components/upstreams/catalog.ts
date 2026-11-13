@@ -1,11 +1,9 @@
-/* Upstream catalogue + chain-hint helpers — ported verbatim from the design
- * prototype (page-providers.jsx: UPSTREAM_DOMAINS/COLORS/CATALOG,
- * CHAIN_URL_HINTS/parseUrlChain, EVM_CHAINS/CHAIN_IFACES/IFACE_LABEL,
- * parseJwtExpiry, PROBE_CAPS) plus the DESIGN_CHAINS palette from data.jsx.
+/* Upstream catalogue (UPSTREAM_DOMAINS/COLORS/CATALOG, from the design
+ * prototype's page-providers.jsx) and the Upstreams page's view-model.
  *
  * Self-hosted reality: upstreams come from the read-only mounted values
- * file. Catalog entries drive presentation only (logos, "looks like X"
- * hints) — never data. */
+ * file. Catalog entries drive presentation only (an upstream's logo) —
+ * never data. */
 
 import { buildChainMetaByIndex, type HealthState, type UpstreamMetrics, type RouterTopology } from "@sr/shared";
 import type { DirectTarget } from "@/components/try-me/direct-request";
@@ -46,163 +44,23 @@ export const UPSTREAM_COLORS: Record<string, string> = {
 export interface UpstreamCatalogEntry {
   id: string;
   name: string;
-  flow: "A" | "B";
   color: string;
-  supportsJWT: boolean;
   domainPattern?: RegExp;
 }
 
 export const UPSTREAM_CATALOG: UpstreamCatalogEntry[] = [
-  { id: "alchemy",     name: "Alchemy",     flow: "A", color: "#0C4EFF", supportsJWT: true  },
-  { id: "infura",      name: "Infura",      flow: "A", color: "#FF6B2B", supportsJWT: true  },
-  { id: "quicknode",   name: "QuickNode",   flow: "B", color: "#0070F3", supportsJWT: true,  domainPattern: /\.quiknode\.pro/ },
-  { id: "ankr",        name: "Ankr",        flow: "A", color: "#2563EB", supportsJWT: true  },
-  { id: "chainstack",  name: "Chainstack",  flow: "B", color: "#16A34A", supportsJWT: false, domainPattern: /\.p2pify\.com|chainstack/ },
-  { id: "drpc",        name: "dRPC",        flow: "A", color: "#7C3AED", supportsJWT: false },
-  { id: "getblock",    name: "GetBlock",    flow: "B", color: "#D97706", supportsJWT: false, domainPattern: /getblock\.io/ },
-  { id: "blockpi",     name: "BlockPI",     flow: "B", color: "#DB2777", supportsJWT: false, domainPattern: /blockpi\.network/ },
-  { id: "nodereal",    name: "NodeReal",    flow: "A", color: "#0EA5E9", supportsJWT: false },
-  { id: "tatum",       name: "Tatum",       flow: "B", color: "#EF4444", supportsJWT: false, domainPattern: /gateway\.tatum\.io/ },
-  { id: "blockdaemon", name: "Blockdaemon", flow: "B", color: "#1A56DB", supportsJWT: false, domainPattern: /blockdaemon\.com/ },
+  { id: "alchemy",     name: "Alchemy",     color: "#0C4EFF" },
+  { id: "infura",      name: "Infura",      color: "#FF6B2B" },
+  { id: "quicknode",   name: "QuickNode",   color: "#0070F3", domainPattern: /\.quiknode\.pro/ },
+  { id: "ankr",        name: "Ankr",        color: "#2563EB" },
+  { id: "chainstack",  name: "Chainstack",  color: "#16A34A", domainPattern: /\.p2pify\.com|chainstack/ },
+  { id: "drpc",        name: "dRPC",        color: "#7C3AED" },
+  { id: "getblock",    name: "GetBlock",    color: "#D97706", domainPattern: /getblock\.io/ },
+  { id: "blockpi",     name: "BlockPI",     color: "#DB2777", domainPattern: /blockpi\.network/ },
+  { id: "nodereal",    name: "NodeReal",    color: "#0EA5E9" },
+  { id: "tatum",       name: "Tatum",       color: "#EF4444", domainPattern: /gateway\.tatum\.io/ },
+  { id: "blockdaemon", name: "Blockdaemon", color: "#1A56DB", domainPattern: /blockdaemon\.com/ },
 ];
-
-export const CHAIN_URL_HINTS: { chain: string; patterns: RegExp[] }[] = [
-  { chain: "btc",  patterns: [/bitcoin[^-]|btc/i] },
-  { chain: "bch",  patterns: [/bitcoin-cash|bitcoincash|bch/i] },
-  { chain: "xrp",  patterns: [/ripple|xrp/i] },
-  { chain: "eth",  patterns: [/eth|mainnet|ethereum/i] },
-  { chain: "arb",  patterns: [/arb|arbitrum/i] },
-  { chain: "base", patterns: [/base/i] },
-  { chain: "bsc",  patterns: [/bsc|bnb|binance/i] },
-  { chain: "optm", patterns: [/opt|optimism/i] },
-  { chain: "poly", patterns: [/poly|matic/i] },
-  { chain: "avax", patterns: [/avax|avalanche/i] },
-  { chain: "sol",  patterns: [/sol|solana/i] },
-];
-
-export function parseUrlChain(url: string): string | null {
-  for (const h of CHAIN_URL_HINTS) if (h.patterns.some((p) => p.test(url))) return h.chain;
-  return null;
-}
-
-/* ── Chain → supported interfaces (design ids) ── */
-export const EVM_CHAINS = new Set(["eth","arb","base","bsc","optm","poly","avax","zksync","scroll","linea","mantle","celo","ftm"]);
-
-export const CHAIN_IFACES: Record<string, string[]> = {
-  eth: ["jsonrpc","websocket"], arb: ["jsonrpc","websocket"], base: ["jsonrpc","websocket"],
-  bsc: ["jsonrpc","websocket"], optm: ["jsonrpc","websocket"], poly: ["jsonrpc","websocket"],
-  avax: ["jsonrpc","websocket"], zksync: ["jsonrpc","websocket"], scroll: ["jsonrpc","websocket"],
-  linea: ["jsonrpc","websocket"], mantle: ["jsonrpc","websocket"], celo: ["jsonrpc","websocket"],
-  ftm: ["jsonrpc","websocket"], strk: ["jsonrpc","websocket"],
-  sol: ["jsonrpc","websocket"], near: ["jsonrpc"],
-  cosmos: ["rpc","rest","grpc"], axl: ["rpc","rest"],
-  apt: ["rest"], sui: ["jsonrpc"],
-  btc: ["jsonrpc"], bch: ["jsonrpc"], xrp: ["jsonrpc"],
-};
-
-export const IFACE_LABEL: Record<string, string> = {
-  jsonrpc: "JSON-RPC", websocket: "WebSocket",
-  rpc: "RPC", rest: "REST", grpc: "gRPC",
-  /* real config interface on self-hosted (not in the design's mock set) */
-  tendermintrpc: "Tendermint RPC",
-};
-
-export function parseJwtExpiry(token: string): Date | null {
-  try {
-    const payload = JSON.parse(atob((token.split(".")[1] ?? "").replace(/-/g, "+").replace(/_/g, "/"))) as { exp?: number };
-    return payload.exp ? new Date(payload.exp * 1000) : null;
-  } catch { return null; }
-}
-
-/* ─────────────────────────────────────────────
-   Probe capability matrix — design parity only.
-   The self-hosted ProbeStep NEVER fabricates results from this table
-   (kept so the catalog port is complete).
-───────────────────────────────────────────── */
-export const PROBE_CAPS: Record<string, { archive: boolean; debug: boolean; trace: boolean }> = {
-  alchemy:    { archive: true,  debug: true,  trace: true  },
-  infura:     { archive: true,  debug: false, trace: false },
-  quicknode:  { archive: true,  debug: false, trace: true  },
-  ankr:       { archive: true,  debug: false, trace: false },
-  chainstack: { archive: true,  debug: true,  trace: true  },
-  drpc:       { archive: true,  debug: false, trace: false },
-  getblock:   { archive: false, debug: false, trace: false },
-  blockpi:    { archive: true,  debug: false, trace: false },
-  nodereal:   { archive: true,  debug: false, trace: false },
-  tatum:      { archive: false, debug: false, trace: false },
-};
-
-/* ─────────────────────────────────────────────
-   Design chain palette (data.jsx CHAINS, id/name/color only) —
-   resolves parseUrlChain hits in UrlParserPreview.
-───────────────────────────────────────────── */
-export interface DesignChain { id: string; name: string; color: string }
-
-export const DESIGN_CHAINS: DesignChain[] = [
-  { id: "eth",    name: "Ethereum",     color: "#627EEA" },
-  { id: "arb",    name: "Arbitrum One", color: "#28A0F0" },
-  { id: "base",   name: "Base",         color: "#0052FF" },
-  { id: "bsc",    name: "BNB Chain",    color: "#F0B90B" },
-  { id: "optm",   name: "Optimism",     color: "#FF0420" },
-  { id: "poly",   name: "Polygon",      color: "#8247E5" },
-  { id: "avax",   name: "Avalanche",    color: "#E84142" },
-  { id: "sol",    name: "Solana",       color: "#14F195" },
-  { id: "strk",   name: "Starknet",     color: "#EC796B" },
-  { id: "near",   name: "NEAR",         color: "#00C08B" },
-  { id: "cosmos", name: "Cosmos Hub",   color: "#6F7390" },
-  { id: "ftm",    name: "Fantom",       color: "#1969FF" },
-  { id: "axl",    name: "Axelar",       color: "#4B2AE0" },
-  { id: "zksync", name: "zkSync Era",   color: "#8C8DFC" },
-  { id: "scroll", name: "Scroll",       color: "#FFEEDA" },
-  { id: "linea",  name: "Linea",        color: "#61DFFF" },
-  { id: "mantle", name: "Mantle",       color: "#000000" },
-  { id: "celo",   name: "Celo",         color: "#FBCC5C" },
-  { id: "apt",    name: "Aptos",        color: "#00C2FF" },
-  { id: "sui",    name: "Sui",          color: "#4DA2FF" },
-  { id: "btc",    name: "Bitcoin",      color: "#F7931A" },
-  { id: "bch",    name: "Bitcoin Cash", color: "#8DC351" },
-  { id: "xrp",    name: "XRP Ledger",   color: "#346AA9" },
-];
-
-export function designChainById(id: string | null | undefined): DesignChain | null {
-  if (!id) return null;
-  return DESIGN_CHAINS.find((c) => c.id === id) ?? null;
-}
-
-/** Bridge a live Prometheus `spec` label onto the design's chain ids (for
- *  EVM-capability + interface-catalogue lookups). */
-export function specToDesignChainId(spec: string): string | null {
-  const u = spec.toUpperCase();
-  if (u.startsWith("ETH")) return "eth";
-  if (u.startsWith("ARB")) return "arb";
-  if (u.startsWith("BASE")) return "base";
-  if (u.startsWith("BSC") || u.startsWith("BNB")) return "bsc";
-  if (u.startsWith("OPTM") || u.startsWith("OPTIMISM")) return "optm";
-  if (u.startsWith("POLYGON") || u.startsWith("MATIC")) return "poly";
-  if (u.startsWith("AVAX") || u.startsWith("AVALANCHE")) return "avax";
-  if (u.startsWith("SOL")) return "sol";
-  if (u.startsWith("STRK") || u.startsWith("STARK")) return "strk";
-  if (u.startsWith("NEAR")) return "near";
-  if (u.startsWith("COSMOS")) return "cosmos";
-  if (u.startsWith("FTM") || u.startsWith("FANTOM")) return "ftm";
-  if (u.startsWith("AXELAR") || u.startsWith("AXL")) return "axl";
-  if (u.startsWith("ZKSYNC")) return "zksync";
-  if (u.startsWith("SCROLL")) return "scroll";
-  if (u.startsWith("LINEA")) return "linea";
-  if (u.startsWith("MANTLE")) return "mantle";
-  if (u.startsWith("CELO")) return "celo";
-  if (u.startsWith("APT")) return "apt";
-  if (u.startsWith("SUI")) return "sui";
-  if (u.startsWith("BTC") || u.startsWith("BITCOIN")) return "btc";
-  if (u.startsWith("BCH")) return "bch";
-  if (u.startsWith("XRP")) return "xrp";
-  return null;
-}
-
-export function isEvmSpec(spec: string): boolean {
-  const id = specToDesignChainId(spec);
-  return id !== null && EVM_CHAINS.has(id);
-}
 
 /** True for a `ws://` / `wss://` masked host. */
 function isWsHost(urlHost: string): boolean {

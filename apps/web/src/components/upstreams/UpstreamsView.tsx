@@ -5,7 +5,7 @@
  * file (GET /api/config/routers), grouped one card per config node; live
  * stats join from GET /api/metrics/upstreams (endpointId = node name).
  * All mutating flows render the full design UI with their commit buttons
- * disabled (read-only mount); the Test modal fires a real local POST. */
+ * disabled (read-only mount). */
 
 import { useMemo, useState } from "react";
 import {
