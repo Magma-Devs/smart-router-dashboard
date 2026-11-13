@@ -387,6 +387,22 @@ describe("api routes", () => {
     expect(body.lines[0]).toMatchObject({ kind: "failed", shape: "incident", providers: ["eth-lava"], start: 1500, end: 1680, count: 200, ongoing: false });
   });
 
+  it("GET /api/metrics/error-incidents?routerId= answers no lines for a router the config does not name", async () => {
+    // No config is mounted in this harness: the filter empties the timeline
+    // rather than ignoring the param. At this clock the store has bursts to show.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(1_800_000);
+    let res;
+    try {
+      expect((await app.inject({ method: "GET", url: "/api/metrics/error-incidents?window=30m" })).json().lines).toHaveLength(2);
+      res = await app.inject({ method: "GET", url: "/api/metrics/error-incidents?window=30m&routerId=eth-prod" });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ lines: [], steady: [], available: true, failed: [] });
+  });
+
   it("GET /api/metrics/upstream-peers requires spec; one latency and one tip series per upstream", async () => {
     const missing = await app.inject({ method: "GET", url: "/api/metrics/upstream-peers?window=1d" });
     expect(missing.statusCode).toBe(400);

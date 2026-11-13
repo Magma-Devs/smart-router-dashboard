@@ -924,4 +924,11 @@ describe("incident reads", () => {
     expect(qFailedTriesBySpecProvider("300s")).toBe("sum by (spec, provider_address) (increase(smartrouter_requests_failed_total[300s]))");
     expect(qErrorRepliesBySpecProvider("60s")).toBe("sum by (spec, provider_address) (increase(smartrouter_node_errors_total[60s]))");
   });
+
+  it("read one chain's series when given its spec, quoted so no value closes the matcher", () => {
+    expect(qFailedTriesBySpecProvider("300s", "ETH1")).toBe('sum by (spec, provider_address) (increase(smartrouter_requests_failed_total{spec="ETH1"}[300s]))');
+    expect(qErrorRepliesBySpecProvider("60s", "ETH1")).toBe('sum by (spec, provider_address) (increase(smartrouter_node_errors_total{spec="ETH1"}[60s]))');
+    expect(qFailedTriesBySpecProvider("60s", 'X"} or vector(1) #')).toBe('sum by (spec, provider_address) (increase(smartrouter_requests_failed_total{spec="X\\"} or vector(1) #"}[60s]))');
+    expect(qFailedTriesBySpecProvider("60s", "")).toBe("sum by (spec, provider_address) (increase(smartrouter_requests_failed_total[60s]))");
+  });
 });
