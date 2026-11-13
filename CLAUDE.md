@@ -46,7 +46,8 @@ UI → http://localhost:3000 · API → http://localhost:8000 ·
 Prometheus → http://localhost:9090 · router ETH1 jsonrpc → http://localhost:3360
 
 ```bash
-# Host dev (Node 22 + pnpm 10) — needs a Prometheus at PROMETHEUS_URL
+# Host dev (Node 26 + pnpm 10) — needs a Prometheus at PROMETHEUS_URL
+npm install -g corepack@0.36.0 && corepack enable   # Node 26 ships without corepack
 pnpm install
 pnpm --filter @sr/shared build      # api/web read shared's dist
 pnpm dev                            # api :8000, web :3000
@@ -1212,5 +1213,5 @@ Compose / Makefile knobs:
 | Health words | `HealthState` has exactly three states and exactly one wording — `lib/health.ts` / `<HealthTag>`. A panel that maps health to its own labels/colours is a bug, even when the words look nicer locally: the same upstream is read across panels. |
 | BuildKit cache | `make build*` targets use the isolated `srdash-builder` (see Docker / images / isolation). Plain `docker compose up --build` is fine for the stack itself. |
 | `RUN` in a runtime stage | CI builds the arm64 half of each image without QEMU, so a `RUN` in a Dockerfile's runtime stage fails there with `exec format error`. Do the work in the build stage and `COPY --from=builder`. A runtime break on arm64 (a dependency that loads a native binding at boot) shows up in the `smoke-arm64` job instead. |
-| Pinned versions | Every version is exact: package.json, `pnpm.overrides`, `packageManager` (pnpm by hash), actions by commit SHA, and images by tag plus digest. `pnpm install` refuses a release younger than 7 days (`minimumReleaseAge`) and one published with weaker evidence than the package's earlier releases (`ERR_PNPM_TRUST_DOWNGRADE`). Don't get around either with a `^` range or a `--config` flag. Wait, or add the package to `minimumReleaseAgeExclude` / `trustPolicyExclude` in `pnpm-workspace.yaml` with its reason. A new override or dependency goes in as an exact version, and a new `uses:` or image as a SHA or digest. See README → Testing & CI. |
+| Pinned versions | Every version is exact: package.json, `pnpm.overrides`, `packageManager` (pnpm by hash), actions by commit SHA, and images by tag plus digest. corepack, which Node 26 no longer bundles, is installed as `corepack@0.36.0` in the three Dockerfiles and the quality-gate and e2e workflows. Dependabot does not move that pin, so change all five together. `pnpm install` refuses a release younger than 7 days (`minimumReleaseAge`) and one published with weaker evidence than the package's earlier releases (`ERR_PNPM_TRUST_DOWNGRADE`). Don't get around either with a `^` range or a `--config` flag. Wait, or add the package to `minimumReleaseAgeExclude` / `trustPolicyExclude` in `pnpm-workspace.yaml` with its reason. A new override or dependency goes in as an exact version, and a new `uses:` or image as a SHA or digest. See README → Testing & CI. |
 | Image `files` whitelist | The api image ships only what each package's `files` lists (`apps/api`: `dist`; `packages/db`: `dist` + `migrations`; `packages/shared`: `dist`). A runtime asset anywhere else (a template, a file read with `fs`) works in dev and fails only in the published image — put it under `dist` or add it to `files`. |

@@ -31,7 +31,10 @@ jobs:
           node-version-file: .nvmrc
 
       - name: Enable corepack and install dependencies
+        # Node 26 ships without corepack: install it at an exact version, and it
+        # installs the pnpm that `packageManager` pins by sha512.
         run: |
+          npm install -g --no-fund --no-audit corepack@0.36.0
           corepack enable
           pnpm install --frozen-lockfile
 

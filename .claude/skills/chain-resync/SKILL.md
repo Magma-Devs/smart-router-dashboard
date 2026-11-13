@@ -39,7 +39,7 @@ Whatever the lines say, §1 and §8 always apply.
    cd <scratch>/wt-resync && git checkout -b mag-XXXX
    pnpm install --offline --frozen-lockfile && pnpm -r --filter "./packages/**" build
    ```
-   Node 24 (`nvm use 24`). Tests read `packages/*/dist`, hence the build.
+   Node 26 (`nvm use`, from `.nvmrc`). Tests read `packages/*/dist`, hence the build.
 3. **Check out lava-specs `main` into a scratch dir — from the lava-specs repo.**
    `git worktree add` run inside the *dashboard* repo makes a dashboard
    worktree that happens to be called lava-specs; the generators then read

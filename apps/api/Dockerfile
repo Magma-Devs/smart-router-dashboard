@@ -1,8 +1,10 @@
 # The build stage runs on the runner's own architecture whatever the image
 # targets: its output is plain JS and none of the api's runtime dependencies
 # is a native module, so BuildKit runs it once for linux/amd64,linux/arm64.
-FROM --platform=$BUILDPLATFORM node:24.22.3-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5 AS builder
-RUN corepack enable
+FROM --platform=$BUILDPLATFORM node:26.13.1-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5 AS builder
+# Node 26 ships without corepack, so it comes from npm at an exact version.
+# corepack then installs the pnpm that `packageManager` pins by sha512.
+RUN npm install -g --no-fund --no-audit corepack@0.36.0 && corepack enable
 WORKDIR /app
 
 # Lockfile and manifests first, sources after: a code-only commit reuses the
@@ -32,7 +34,7 @@ RUN pnpm --filter @sr/api deploy --legacy --prod /app/deploy
 # Runtime stage, built once per target architecture. Keep it free of RUN:
 # the CI builder has no QEMU, so a RUN here fails on arm64 with "exec format
 # error". COPY, ENV, USER and CMD need no emulation.
-FROM node:24.22.3-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5
+FROM node:26.13.1-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5
 WORKDIR /app
 
 ARG GIT_COMMIT=unknown

@@ -139,7 +139,8 @@ hears about it: Critical calls the on-call engineer. Off by default. Full guide:
 ```bash
 make dev            # hot-reload docker stack (api tsx watch · web next dev · shared tsc --watch)
 
-# or on the host (Node 24 + pnpm 10, needs a Prometheus at PROMETHEUS_URL):
+# or on the host (Node 26 + pnpm 10, needs a Prometheus at PROMETHEUS_URL):
+npm install -g corepack@0.36.0 && corepack enable   # Node 26 ships without corepack
 cp .env.example .env   # optional — every var has a compose default
 pnpm install
 pnpm --filter @sr/shared build && pnpm --filter @sr/db build

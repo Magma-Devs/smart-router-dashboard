@@ -1,5 +1,5 @@
 // Same JSON-import attribute requirement as chains.ts — the compiled dist runs
-// on Node 24, whose ESM loader hard-errors without it.
+// on Node 26, whose ESM loader hard-errors without it.
 import explorerMap from "./chain-explorers.generated.json" with { type: "json" };
 import explorerKinds from "./explorer-kinds.json" with { type: "json" };
 import explorerTx from "./explorer-tx.json" with { type: "json" };

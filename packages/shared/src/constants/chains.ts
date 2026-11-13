@@ -1,4 +1,4 @@
-// The compiled `dist` runs on Node 24, whose ESM loader hard-errors on a JSON
+// The compiled `dist` runs on Node 26, whose ESM loader hard-errors on a JSON
 // import without the `with { type: "json" }` attribute
 // (ERR_IMPORT_ATTRIBUTE_MISSING). The attribute needs module "NodeNext" (set in
 // tsconfig.base.json) — TS rejects it under the older "Node16".
