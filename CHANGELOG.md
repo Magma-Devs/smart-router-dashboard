@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.66.0]
+
 ### Added
 
 - **Error timeline on the Errors tab** (MAG-5263): errors grouped by when
