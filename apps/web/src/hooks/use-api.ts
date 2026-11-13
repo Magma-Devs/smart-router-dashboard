@@ -5,6 +5,7 @@ import useSWR from "swr";
 import { apiGet } from "@/lib/api-client";
 import { getIdleResumes, idlePhaseNow, isPollingPaused, subscribeIdle, watchPoll } from "@/lib/idle-store";
 import { gatedPollMs, pollMsForKey } from "@/lib/poll";
+import { errorRetryDelayMs } from "@/lib/retry";
 
 const noResumes = () => 0;
 
@@ -33,7 +34,9 @@ function pollTimer(ms: number, resumes: number): number | (() => number) {
  * every poll through the idle gate: 4x slower after 10 minutes with nobody at
  * the page, paused after an hour (`lib/idle-store.ts`). While a new path
  * loads, the last path's data stays up unless `keepPreviousData` is false -
- * off where showing one query's data under another would mislead.
+ * off where showing one query's data under another would mislead. A failed
+ * read asks again on SWR's backoff, and a 429 when the api says
+ * (`lib/retry.ts`).
  */
 export function useApi<T>(path: string | null, refreshMs = 15000, { keepPreviousData = true }: { keepPreviousData?: boolean } = {}) {
   const ms = path ? pollMsForKey(path, refreshMs) : 0;
@@ -45,5 +48,10 @@ export function useApi<T>(path: string | null, refreshMs = 15000, { keepPrevious
     isPaused: isPollingPaused,
     revalidateOnFocus: false,
     keepPreviousData,
+    // SWR's own backoff, except that a 429 waits as long as the api asks.
+    onErrorRetry: (err, _key, config, revalidate, opts) => {
+      if (config.errorRetryCount !== undefined && opts.retryCount > config.errorRetryCount) return;
+      setTimeout(() => void revalidate(opts), errorRetryDelayMs(err, opts.retryCount, config.errorRetryInterval));
+    },
   });
 }

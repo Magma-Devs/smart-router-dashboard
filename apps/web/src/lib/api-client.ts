@@ -4,6 +4,8 @@
  * time), falling back to the build-time NEXT_PUBLIC_API_URL. This is what
  * lets a single published web image point at any api host.
  */
+import { parseRetryAfter } from "@/lib/retry";
+
 const BUILD_BASE =
   process.env.NEXT_PUBLIC_API_URL ?? (typeof window !== "undefined" ? "" : "http://localhost:8000");
 
@@ -131,6 +133,9 @@ export class ApiError extends Error {
     message: string,
     /** The api's machine-readable reason, when it gave one. */
     public code?: string,
+    /** On a 429, when the api said to ask again (epoch ms), from its
+     *  `Retry-After`. Absent when it named no time. */
+    public retryAt?: number,
   ) {
     super(message);
   }
@@ -156,7 +161,8 @@ async function failure(
     endingSession = true; // concurrent panels all fail at once; act once
     void import("next-auth/react").then(({ signOut }) => signOut({ redirectTo: "/login" }));
   }
-  return new ApiError(res.status, message, code);
+  const retryAfterMs = res.status === 429 ? parseRetryAfter(res.headers.get("retry-after")) : null;
+  return new ApiError(res.status, message, code, retryAfterMs === null ? undefined : Date.now() + retryAfterMs);
 }
 
 export async function apiGet<T>(path: string): Promise<T> {
