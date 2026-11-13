@@ -279,7 +279,7 @@ export function AuditView() {
             <input
               className="gw-input"
               type="email"
-              placeholder="dana@customer.com"
+              placeholder="name@example.com"
               {...typed("actor")}
             />
           </FilterField>

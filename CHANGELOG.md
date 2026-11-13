@@ -16,6 +16,9 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   whatever it holds, so a finished value the api refuses still shows the
   error. A run of typing in one box is still one history entry, and a filter
   change still opens the newest page (`components/audit/filter-typing.ts`).
+- **Audit log: the Person filter's placeholder is `name@example.com`**
+  (MAG-5291), on the reserved example domain. The Object id placeholder,
+  `ep_8143`, stays: it names no one.
 
 ## [0.65.2]
 
