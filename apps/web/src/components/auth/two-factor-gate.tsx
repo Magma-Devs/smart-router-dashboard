@@ -1,9 +1,10 @@
 "use client";
 
-import { createContext, useContext } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { signOut } from "next-auth/react";
 import { useMe } from "@/hooks/use-me";
 import { gateView, type EnrolmentVerdict } from "@/lib/enrolment-gate";
+import { Spinner } from "@/components/gateway/BusyButton";
 import { EnrolPanel } from "./enrol-panel";
 
 /**
@@ -56,6 +57,71 @@ export function SignOutInstead() {
   );
 }
 
+/** The time now, moved on once a second while `ticking`. */
+function useNow(ticking: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!ticking) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [ticking]);
+  return now;
+}
+
+/**
+ * What the gate shows while neither the server's read nor the browser's has
+ * answered: no chrome to take away, and no enrolment screen shown to somebody
+ * who may not need it — but something on the page, so a wait never reads as a
+ * blank screen. It fades in after a moment, so the usual quick answer shows
+ * nothing at all.
+ *
+ * While the browser's read waits out a 429 it says so, with the api's own
+ * `Retry-After` counting down: a wait that names its end does not look stuck.
+ */
+function GateWaiting({ retrying, retryAt }: { retrying: boolean; retryAt: number | null }) {
+  const now = useNow(retrying && retryAt !== null);
+  const seconds = retryAt === null ? null : Math.ceil((retryAt - now) / 1000);
+  return (
+    <main
+      aria-busy="true"
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "var(--bg)",
+        padding: 24,
+      }}
+    >
+      <div
+        role="status"
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: 10,
+          textAlign: "center",
+          color: "var(--text-2)",
+          fontSize: 13,
+          animation: "fadeIn 220ms ease 400ms both",
+        }}
+      >
+        <Spinner size={18} />
+        <span>Checking your account…</span>
+        {retrying && (
+          <span style={{ color: "var(--text-3)", fontSize: 12 }}>
+            {seconds !== null && seconds > 0
+              ? `Too many requests just now. Trying again in ${seconds} s.`
+              : seconds !== null
+                ? "Trying again…"
+                : "Too many requests just now. Trying again shortly."}
+          </span>
+        )}
+      </div>
+    </main>
+  );
+}
+
 /**
  * The screen a person meets when the dashboard is shut until they enrol.
  *
@@ -67,8 +133,8 @@ export function SignOutInstead() {
  *
  * It decides before the dashboard draws anything. The layout's server-side read
  * of the account (`EnrolmentVerdictProvider`) answers on the first render, the
- * browser's own read takes over once it lands, and with neither the gate draws
- * an empty page rather than guess — `gateView` has the rules. Decided from the
+ * browser's own read takes over once it lands, and with neither the gate shows
+ * a loading state rather than guess — `gateView` has the rules. Decided from the
  * browser's read alone, the dashboard would be drawn for as long as that read
  * takes and then replaced.
  *
@@ -78,13 +144,11 @@ export function SignOutInstead() {
  */
 export function TwoFactorGate({ children }: { children: React.ReactNode }) {
   const verdict = useContext(EnrolmentVerdictContext);
-  const { twoFactor: live, settled, refresh } = useMe();
-  const { view, twoFactor } = gateView(live, verdict, settled);
+  const { twoFactor: live, read, retryAt, refresh } = useMe();
+  const { view, twoFactor } = gateView(live, verdict, read);
 
   if (view === "app") return <>{children}</>;
-  // The page's own background and nothing on it: no chrome to take away, and
-  // no enrolment screen shown to somebody who may not need it.
-  if (view === "wait") return <main aria-busy="true" style={{ minHeight: "100vh", background: "var(--bg)" }} />;
+  if (view === "wait") return <GateWaiting retrying={read === "retrying"} retryAt={retryAt} />;
 
   return (
     <main

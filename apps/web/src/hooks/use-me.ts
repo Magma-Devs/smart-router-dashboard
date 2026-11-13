@@ -2,6 +2,8 @@
 
 import { useSyncExternalStore } from "react";
 import { useApi } from "@/hooks/use-api";
+import { ApiError } from "@/lib/api-client";
+import { liveReadOf, type LiveRead } from "@/lib/enrolment-gate";
 import { getAuthState, getAuthVersion, isAuthReady, subscribeAuth } from "@/lib/auth-store";
 import { roleAtLeast, type Role } from "@sr/shared";
 
@@ -50,9 +52,13 @@ export function useMe(): {
   isAdmin: boolean;
   loading: boolean;
   twoFactor: MeTwoFactor | null;
-  /** The live read has answered or failed, or there is nobody to read for —
-   *  so a null `twoFactor` from here on is final until the next poll. */
-  settled: boolean;
+  /** Where the live read stands (`liveReadOf`): `settled` once it has
+   *  answered or failed, or there is nobody to read for — so a null
+   *  `twoFactor` from then on is final until the next poll; `retrying` while
+   *  it waits out a 429. */
+  read: LiveRead;
+  /** While `retrying`, when it asks again (epoch ms), if the api said. */
+  retryAt: number | null;
   /** Re-read after enrolling, so the gate lifts without a page reload. */
   refresh: () => void;
 } {
@@ -78,6 +84,12 @@ export function useMe(): {
   // change to no key. Without this, a screen with nobody signed in would go on
   // answering for whoever was signed in last.
   const data = bridged ? live : undefined;
+  const read = liveReadOf({
+    authReady,
+    signedIn: !!bridged,
+    answered: data !== undefined,
+    error: bridged ? error : undefined,
+  });
 
   // Fall back to the session while the first read is in flight, so the sidebar
   // does not flicker from a name to a placeholder and back on every navigation.
@@ -106,7 +118,8 @@ export function useMe(): {
     twoFactor: data?.twoFactor ?? null,
     // Not from `isLoading`: on the render where the session first arrives the
     // key has only just been set, and that is not yet a read in flight.
-    settled: authReady && (!bridged || data !== undefined || error !== undefined),
+    read,
+    retryAt: read === "retrying" && error instanceof ApiError ? (error.retryAt ?? null) : null,
     refresh: () => void mutate(),
   };
 }

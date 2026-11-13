@@ -22,6 +22,7 @@ import { authRoutes } from "./routes/auth.js";
 import { teamRoutes, teamPasswordRoutes, teamMemberRoutes } from "./routes/team.js";
 import { accountRoutes } from "./routes/account.js";
 import { announceSetupToken } from "./services/setup.js";
+import { clientRateLimitKey } from "./services/forwarded-client.js";
 import { auditRoutes } from "./routes/audit.js";
 import { auditTokenRoutes } from "./routes/audit-tokens.js";
 
@@ -66,8 +67,18 @@ export async function buildApp(): Promise<FastifyInstance> {
     origin: config.server.corsOrigins,
     credentials: true,
     methods: ["GET", "HEAD", "POST", "PATCH", "DELETE"],
+    // A 429 says when to ask again, but a cross-origin page cannot read a
+    // header the api does not expose, so without this the browser's retry
+    // guesses.
+    exposedHeaders: ["Retry-After"],
   });
-  await app.register(rateLimit, { max: config.server.rateLimitMax, timeWindow: "1 minute" });
+  // Keyed on the person the web vouches for rather than on the web pod: see
+  // `clientRateLimitKey`. The auth plugin's limiter keys the same way.
+  await app.register(rateLimit, {
+    max: config.server.rateLimitMax,
+    timeWindow: "1 minute",
+    keyGenerator: clientRateLimitKey(process.env.INTERNAL_AUTH_SECRET ?? config.auth.internalSecret),
+  });
 
   await app.register(errorHandlerPlugin);
   // Swagger must be registered before the routes so their schemas are collected.

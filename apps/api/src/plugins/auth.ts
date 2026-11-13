@@ -12,6 +12,7 @@ import { roleAtLeast, type Role } from "@sr/shared";
 import type { Session, User } from "@sr/db";
 import { checkSession, touchSession, type SessionRejection } from "../services/sessions.js";
 import { totpKeyConfigured, twoFactorStatus } from "../services/two-factor.js";
+import { clientRateLimitKey } from "../services/forwarded-client.js";
 
 /** Bind session JWTs to a known issuer/audience so another HS256 token
  *  signed with `AUTH_SECRET` can't be confused with a session token. The
@@ -19,6 +20,13 @@ import { totpKeyConfigured, twoFactorStatus } from "../services/two-factor.js";
  *  side; we enforce them on the verify side. */
 export const SESSION_JWT_ISSUER = "smart-router-dashboard-web";
 export const SESSION_JWT_AUDIENCE = "smart-router-dashboard-api";
+
+/**
+ * Requests per caller per minute with accounts on — a second limit beside the
+ * app's `RATE_LIMIT_MAX`. Both count every request, so the lower of the two is
+ * the one a caller meets.
+ */
+export const ACCOUNTS_RATE_LIMIT_MAX = 100;
 
 /** JWT payload — must stay in sync with what Auth.js (web) signs. */
 export interface AuthClaims {
@@ -247,9 +255,12 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
     },
   });
 
+  // Keyed the same way as the app's limiter, so a page load's server-side read
+  // spends the reader's allowance here too rather than the web pod's.
   await app.register(rateLimit, {
-    max: 100,
+    max: ACCOUNTS_RATE_LIMIT_MAX,
     timeWindow: "1 minute",
+    keyGenerator: clientRateLimitKey(process.env.INTERNAL_AUTH_SECRET),
   });
 
   app.decorateRequest("authUser", null);

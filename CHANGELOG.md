@@ -5,6 +5,30 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.65.9]
+
+### Fixed
+
+- **Page loads no longer share one allowance at the api** (MAG-5297). The
+  `(app)` and standalone layouts ask `GET /api/account/me` from the web
+  server on every page load, to decide the two-factor gate before the page
+  is drawn. The api counted those reads against the web pod's address, so
+  everybody signed in shared one per-minute bucket — 100 with accounts on,
+  where a second limiter sits under `RATE_LIMIT_MAX` (300) — and once a busy
+  minute spent it, each new page waited on the browser's own read. The read
+  is now vouched for with `INTERNAL_AUTH_SECRET`, and both limiters count a
+  vouched call against the session it carries, then the forwarded browser
+  address, then the connection (`clientRateLimitKey`). A caller without the
+  secret keys on its connection whatever it forwards, as before.
+- **The two-factor gate shows that it is waiting** (MAG-5297). While neither
+  the server's read nor the browser's has answered, it shows a spinner and
+  "Checking your account…" instead of an empty page. A 429 on the browser's
+  read is no longer taken as a failure that draws the dashboard unasked: the
+  gate keeps waiting, says the api is limiting requests and counts down to
+  its `Retry-After`, then asks again. A "required" from either read still
+  shuts the dashboard. The api now exposes `Retry-After` to the browser, and
+  every read waits it out after a 429 rather than retrying on SWR's backoff.
+
 ## [0.65.8]
 
 ### Fixed

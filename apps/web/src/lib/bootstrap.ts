@@ -1,7 +1,7 @@
 import "server-only";
 import { isRole, type Role } from "@sr/shared";
 import { INTERNAL_API_BASE_URL } from "@/lib/internal-api";
-import { forwardedClientHeaders } from "@/lib/forwarded-client";
+import { forwardedForThisRequest } from "@/lib/forwarded-client";
 
 /**
  * The visitor's address and device, vouched for with INTERNAL_AUTH_SECRET.
@@ -9,17 +9,9 @@ import { forwardedClientHeaders } from "@/lib/forwarded-client";
  * The previews below are fetched from this container, so without these the
  * api's per-IP limit on them keys on the web pod — one bucket of ten a minute
  * for everybody it serves, which anybody can fill by loading a link page ten
- * times. Empty outside a request (a build, a test), where there is nobody to
- * forward.
+ * times.
  */
-async function forwarded(): Promise<Record<string, string>> {
-  try {
-    const { headers } = await import("next/headers");
-    return forwardedClientHeaders(await headers());
-  } catch {
-    return {};
-  }
-}
+const forwarded = forwardedForThisRequest;
 
 /**
  * First-run state, read server-side.

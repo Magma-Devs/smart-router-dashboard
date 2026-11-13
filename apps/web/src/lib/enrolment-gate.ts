@@ -1,4 +1,5 @@
 import type { MeTwoFactor } from "@/hooks/use-me";
+import { isRateLimited } from "@/lib/retry";
 
 /**
  * What the web server learned about the enrolment requirement while it
@@ -7,7 +8,7 @@ import type { MeTwoFactor } from "@/hooks/use-me";
  *  - `none` — nothing was asked: the deployment has no accounts, or the screen
  *    sits under no layout that asks.
  *  - `unknown` — the deployment has accounts and the question went unanswered:
- *    no session token, the api down, slow or refusing.
+ *    no session token, the api down, slow, refusing or rate-limiting.
  *  - `known` — the api's own answer, from the live account row.
  */
 export type EnrolmentVerdict =
@@ -15,8 +16,41 @@ export type EnrolmentVerdict =
   | { state: "unknown" }
   | { state: "known"; twoFactor: MeTwoFactor };
 
-/** What the gate draws: the enrolment screen, the app, or nothing yet. */
+/** What the gate draws: the enrolment screen, the app, or a loading state. */
 export type GateView = "enrol" | "app" | "wait";
+
+/**
+ * Where the browser's own read of `/api/account/me` stands.
+ *
+ *  - `pending` — not answered yet, or not yet asked: the session bridge has
+ *    not run.
+ *  - `retrying` — the api turned it away for now (429) and it asks again when
+ *    the api said to. Still no answer, and one is coming.
+ *  - `settled` — answered, or failed some other way, or there is nobody signed
+ *    in to read for. A missing answer from here on is final until the next poll.
+ */
+export type LiveRead = "pending" | "retrying" | "settled";
+
+/**
+ * The browser read's state, from what `useMe` has. A 429 is not a settled
+ * failure: the api is limiting requests, not refusing this person, and the read
+ * asks again once the api's `Retry-After` has passed (`useApi`).
+ */
+export function liveReadOf(read: {
+  /** The session bridge has run, so whether there is anybody to read for is known. */
+  authReady: boolean;
+  /** Somebody is signed in, so there is a read to make. */
+  signedIn: boolean;
+  /** The read has answered at least once. */
+  answered: boolean;
+  /** Its latest failure, if the latest attempt failed. */
+  error: unknown;
+}): LiveRead {
+  if (!read.authReady) return "pending";
+  if (!read.signedIn || read.answered) return "settled";
+  if (read.error === undefined || read.error === null) return "pending";
+  return isRateLimited(read.error) ? "retrying" : "settled";
+}
 
 /**
  * The gate's decision, kept pure so every combination can be tested.
@@ -26,24 +60,25 @@ export type GateView = "enrol" | "app" | "wait";
  * answer stands in, so a person who must enrol meets the enrolment screen in the
  * first paint rather than after the dashboard has been drawn and taken away.
  *
- * With no answer from either, the gate waits rather than guess, but only while
- * the browser's read can still come back. Once it has failed too, the app
- * renders: the api refuses an unenrolled session on every route but the
- * enrolment pair, so the dashboard shows its errors and nothing else.
+ * With no answer from either, the gate shows a loading state rather than guess,
+ * for as long as the browser's read can still come back — including while it
+ * waits out a 429. Once it has failed some other way, the app renders: the api
+ * refuses an unenrolled session on every route but the enrolment pair, so the
+ * dashboard shows its errors and nothing else.
  *
  * @param live     the browser's read of `/api/account/me`, null until it lands
  * @param verdict  the server's read, from the layout
- * @param settled  the browser's read has answered or failed, or cannot be made
+ * @param read     where the browser's read stands
  */
 export function gateView(
   live: MeTwoFactor | null,
   verdict: EnrolmentVerdict,
-  settled: boolean,
+  read: LiveRead,
 ): { view: GateView; twoFactor: MeTwoFactor | null } {
   const twoFactor = live ?? (verdict.state === "known" ? verdict.twoFactor : null);
   if (twoFactor?.enrolmentRequired) return { view: "enrol", twoFactor };
   if (twoFactor) return { view: "app", twoFactor };
-  if (verdict.state === "unknown" && !settled) return { view: "wait", twoFactor: null };
+  if (verdict.state === "unknown" && read !== "settled") return { view: "wait", twoFactor: null };
   return { view: "app", twoFactor: null };
 }
 
