@@ -5,6 +5,18 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Fixed
+
+- **The account emails state a time the dashboard's way** (MAG-5293). The
+  password-changed notice and the two-factor reset notice wrote their own
+  "13 November 2026 at 09:14 UTC". Both now read `Nov 13, 2026, 09:14 UTC`:
+  the dashboard's date and 24-hour clock, with the zone written out. An email
+  has no browser to report the reader's zone and an account stores none, so it
+  stays in UTC, the zone of the audit log. One helper writes every time an
+  email prints (`emailTime`, `apps/api/src/services/email-time.ts`). The
+  invitation and the reset link state how long they last ("expires in 7
+  days", "in 1 hour"), not a time, and are unchanged.
+
 ## [0.65.4]
 
 ### Fixed

@@ -147,26 +147,13 @@ async function memberRow(id: string): Promise<User> {
   return (await t.db.select().from(users).where(eq(users.id, id)))[0]!;
 }
 
-const MONTHS = [
-  "January",
-  "February",
-  "March",
-  "April",
-  "May",
-  "June",
-  "July",
-  "August",
-  "September",
-  "October",
-  "November",
-  "December",
-];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /** The "When:" line read back into a time, independently of the template. */
 function whenOf(text: string): number {
-  const m = /^When: (\d{1,2}) (\w+) (\d{4}) at (\d{2}):(\d{2}) UTC$/m.exec(text);
+  const m = /^When: (\w{3}) (\d{1,2}), (\d{4}), (\d{2}):(\d{2}) UTC$/m.exec(text);
   expect(m, `no When line in:\n${text}`).not.toBeNull();
-  const [, d, month, y, hh, mm] = m!;
+  const [, month, d, y, hh, mm] = m!;
   return Date.UTC(Number(y), MONTHS.indexOf(month!), Number(d), Number(hh), Number(mm));
 }
 
@@ -191,9 +178,9 @@ describe("the email", () => {
   it("names who did it, and when, in UTC", () => {
     const { text, html } = render();
     expect(text).toContain("Reset by: Victoria Admin (victoria@example.com)\n");
-    expect(text).toContain("When: 11 November 2026 at 14:05 UTC\n");
+    expect(text).toContain("When: Nov 11, 2026, 14:05 UTC\n");
     expect(html).toContain("Victoria Admin (victoria@example.com)");
-    expect(html).toContain("11 November 2026 at 14:05 UTC");
+    expect(html).toContain("<strong>When:</strong> Nov 11, 2026, 14:05 UTC");
   });
 
   it("states the time in UTC, whatever the server's timezone", () => {
@@ -206,7 +193,7 @@ describe("the email", () => {
       resetBy: "x",
       at: new Date("2026-03-05T23:59:00-05:00"),
     });
-    expect(text).toContain("When: 6 March 2026 at 04:59 UTC");
+    expect(text).toContain("When: Mar 6, 2026, 04:59 UTC\n");
   });
 
   it("says they will set it up again, and what to do if they did not ask", () => {
