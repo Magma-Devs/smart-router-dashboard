@@ -14,8 +14,10 @@
  * must degrade to "no data" rather than invent values.
  */
 
+import { metricNames } from "../promql/query-text.js";
+
 /** Router-scope counters/gauges (aggregated across all backing endpoints). */
-export const ROUTER_METRICS = {
+export const ROUTER_METRICS = metricNames({
   requestsTotal: "smartrouter_requests_total",
   requestsSuccessTotal: "smartrouter_requests_success_total",
   requestsReadTotal: "smartrouter_requests_read_total",
@@ -37,10 +39,10 @@ export const ROUTER_METRICS = {
   csmProviderBlocked: "smartrouter_csm_provider_blocked",
   csmReportedProviders: "smartrouter_csm_reported_providers",
   csmStickySessions: "smartrouter_csm_sticky_sessions",
-} as const;
+});
 
 /** Per-endpoint-scope metrics (label `endpoint_id` = the resolved upstream name). */
-export const ENDPOINT_METRICS = {
+export const ENDPOINT_METRICS = metricNames({
   latestBlock: "rpc_endpoint_latest_block",
   selectionScore: "rpc_endpoint_selection_score",
   requestsInFlight: "rpc_endpoint_requests_in_flight",
@@ -57,12 +59,12 @@ export const ENDPOINT_METRICS = {
   latencyBucket: "rpc_endpoint_end_to_end_latency_milliseconds_bucket",
   latencyCount: "rpc_endpoint_end_to_end_latency_milliseconds_count",
   latencySum: "rpc_endpoint_end_to_end_latency_milliseconds_sum",
-} as const;
+});
 
 /** Optimizer-scope selection score (no apiInterface label). */
-export const OPTIMIZER_METRICS = {
+export const OPTIMIZER_METRICS = metricNames({
   selectionScore: "rpc_optimizer_selection_score",
-} as const;
+});
 
 /**
  * `score_type` values carried by `*_selection_score`. This is what makes the
@@ -88,7 +90,7 @@ export const LATENCY_BUCKETS = [
  * `emitted: false` + nulls instead of inventing values; panels light up
  * automatically the first time a family appears.
  */
-export const OPTIONAL_METRICS = {
+export const OPTIONAL_METRICS = metricNames({
   requestsFailedTotal: "smartrouter_requests_failed_total",
   requestsWriteTotal: "smartrouter_requests_write_total",
   requestsBatchTotal: "smartrouter_requests_batch_total",
@@ -139,4 +141,4 @@ export const OPTIONAL_METRICS = {
   wsConnectionsActive: "smartrouter_ws_connections_active",
   wsSubscriptionsTotal: "smartrouter_ws_subscriptions_total",
   wsSubscriptionErrorsTotal: "smartrouter_ws_subscription_errors_total",
-} as const;
+});

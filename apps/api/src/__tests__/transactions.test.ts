@@ -292,8 +292,8 @@ describe("TransactionsService", () => {
         // The two finding reads: newest first, in the range, at most `limit`.
         const inRange = (ls: LokiLine[]) => ls.filter((l) => l.tsMs >= startMs && l.tsMs < endMs).sort((a, b) => b.tsMs - a.tsMs).slice(0, limit);
         if (query.includes('|= `"event":"relay_end"`')) return inRange(lines.filter((l) => l.line.includes('"event":"relay_end"')));
-        if (query.includes('|= "Choosing providers"')) return inRange(lines.filter((l) => l.line.includes("Choosing providers") && l.line.includes('"stateful":"1"')));
-        if (query.includes('|= "Consumer received a new"')) return inRange(lines.filter((l) => l.line.includes("Consumer received") && /sendRawTransaction|sendTransaction|sendrawtransaction/.test(l.line)));
+        if (query.includes('|= `Choosing providers`')) return inRange(lines.filter((l) => l.line.includes("Choosing providers") && l.line.includes('"stateful":"1"')));
+        if (query.includes('|= `Consumer received a new`')) return inRange(lines.filter((l) => l.line.includes("Consumer received") && /sendRawTransaction|sendTransaction|sendrawtransaction/.test(l.line)));
         return [];
       },
     } as unknown as LokiClient;
@@ -312,8 +312,8 @@ describe("TransactionsService", () => {
   it("finds transactions three ways, then reads every line of them by GUID", async () => {
     const { loki, queries } = lokiStub(TXS);
     const r = await new TransactionsService(loki, '{service="router"}', configSvc).report(RANGE);
-    expect(queries[0]).toBe('{service="router"} |= "Choosing providers" |= `"stateful":"1"`');
-    expect(queries[1]).toContain('{service="router"} |= "Consumer received a new" |~ `(eth_sendRawTransaction|');
+    expect(queries[0]).toBe('{service="router"} |= `Choosing providers` |= `"stateful":"1"`');
+    expect(queries[1]).toContain('{service="router"} |= `Consumer received a new` |~ `(eth_sendRawTransaction|');
     expect(queries[2]).toContain('{service="router"} |= `"event":"relay_end"`');
     expect(queries[3]).toContain("10227923066219274059"); // found by method name only
     expect(queries[3]).toContain('"event":"relay_end"'); // and its relay_end, had it one
@@ -477,7 +477,7 @@ describe("GET /api/transactions", () => {
       const q = url.searchParams.get("query") ?? "";
       const lines = q.includes('`"GUID":"(') || q.includes('"(GUID|tx_hash|request_id)":"')
         ? ETH_REJECTED
-        : q.includes('|= "Choosing providers"')
+        : q.includes('|= `Choosing providers`')
           ? ETH_REJECTED.filter((l) => l.line.includes("Choosing providers"))
           : [];
       return Response.json({ status: "success", data: { resultType: "streams", result: [{ stream: { service: "router" }, values: ns(lines) }] } });

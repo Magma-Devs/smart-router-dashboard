@@ -29,6 +29,7 @@
  * again, never wrong.
  */
 import { WINDOWS, type MetricWindow } from "../constants/windows.js";
+import { metricNames } from "./query-text.js";
 
 /** The ruler's evaluation interval. Coupled to `interval: 1m` in the rules file. */
 export const RECORDED_INTERVAL_SECONDS = 60;
@@ -47,7 +48,7 @@ export function scrapeIntervalMatches(seconds: number): boolean {
 }
 
 /** Recorded series names, `level:family:operation`. */
-export const RECORDED = {
+export const RECORDED = metricNames({
   /** Client requests served (histogram _count), by spec, router. */
   clientRequests: "spec_router:smartrouter_end_to_end_latency_milliseconds_count:rate2m15s",
   /** Relays, by spec, router. */
@@ -72,7 +73,7 @@ export const RECORDED = {
   endpointRelays: "spec_endpoint:rpc_endpoint_total_relays_serviced:rate2m15s",
   /** Relays errored per upstream, by spec, router, endpoint_id. */
   endpointErrored: "spec_endpoint:rpc_endpoint_total_errored:rate2m15s",
-} as const;
+});
 
 const RECORDED_NAMES: ReadonlySet<string> = new Set(Object.values(RECORDED));
 

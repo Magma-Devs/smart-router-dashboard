@@ -6,6 +6,9 @@
  */
 import {
   ENDPOINT_METRICS,
+  labelName,
+  promql,
+  type PromQL,
   OPTIONAL_METRICS,
   ROUTER_METRICS,
   buildChainMetaByIndex,
@@ -160,7 +163,7 @@ export class MetricsService {
 
   /** Distinct spec labels currently present on the requests counter. */
   async listSpecs(): Promise<string[]> {
-    const rows = await this.prom.query(`count by (spec) (${ROUTER_METRICS.requestsTotal})`);
+    const rows = await this.prom.query(promql`count by (spec) (${ROUTER_METRICS.requestsTotal})`);
     return rows
       .map((r) => r.metric.spec)
       .filter((s): s is string => Boolean(s))
@@ -176,7 +179,7 @@ export class MetricsService {
    */
   async listRouterScopes(label: string): Promise<string[]> {
     if (!isValidScopeLabel(label)) return [];
-    const rows = await this.prom.query(`count by (${label}) (${ROUTER_METRICS.requestsTotal})`);
+    const rows = await this.prom.query(promql`count by (${labelName(label)}) (${ROUTER_METRICS.requestsTotal})`);
     return [...new Set(rows.map((r) => r.metric[label]).filter((v): v is string => Boolean(v)))].sort();
   }
 
@@ -207,18 +210,18 @@ export class MetricsService {
    */
   async dashboardSummary(window: MetricWindow, spec?: string): Promise<HeroSummary> {
     const r = rangeFor(window);
-    const kpi = async (cur: string, prior: string): Promise<Kpi> => {
+    const kpi = async (cur: PromQL, prior: PromQL): Promise<Kpi> => {
       const [value, p] = await Promise.all([this.prom.scalar(cur), this.prom.scalar(prior)]);
       return { value, prior: p };
     };
     // Answers a cache served, on either tier, over the lookups on the router's
     // own cache: a secondary hit follows a primary miss of the same request,
     // so the primary's lookups are the denominator. `offset` reads the window before.
-    const cacheOffload = (offset?: string): string => {
-      const o = offset ? ` offset ${offset}` : "";
-      const inc = (metric: string, tier?: string) =>
-        `sum(increase(${metric}${selector({ spec, cache_tier: tier })}[${r}]${o}))`;
-      return `${inc(OPTIONAL_METRICS.cacheSuccessTotal)} / ${inc(OPTIONAL_METRICS.cacheRequestsTotal, "primary")}`;
+    const cacheOffload = (offset?: PromQL): PromQL => {
+      const o = offset ? promql` offset ${offset}` : promql``;
+      const inc = (metric: PromQL, tier?: string) =>
+        promql`sum(increase(${metric}${selector({ spec, cache_tier: tier })}[${r}]${o}))`;
+      return promql`${inc(OPTIONAL_METRICS.cacheSuccessTotal)} / ${inc(OPTIONAL_METRICS.cacheRequestsTotal, "primary")}`;
     };
 
     const [
@@ -259,7 +262,7 @@ export class MetricsService {
       // count. Unfiltered, this tile paired a chain-scoped request count with
       // an account-wide upstream count and read "50.0K across 4 upstreams" on
       // a chain that had one (MAG-2710).
-      this.prom.query(`count by (endpoint_id) (${qProviderBlockedByEndpoint(spec)})`),
+      this.prom.query(promql`count by (endpoint_id) (${qProviderBlockedByEndpoint(spec)})`),
       // Same reasoning for health: the ROUTER gauge is label-less, so under a
       // chain filter it reports the whole deployment. chainHealth() reads the
       // spec-labelled endpoint gauge — see chains()/chainFigures(), which has
@@ -715,11 +718,11 @@ export class MetricsService {
       this.prom.query(qOptimizerScoresByEndpoint(spec)),
       // Fallback for a router too old to publish the sampler's gauge. Same
       // numbers, but written only when a relay was routed here.
-      this.prom.query(`${ENDPOINT_METRICS.selectionScore}${sel}`),
+      this.prom.query(promql`${ENDPOINT_METRICS.selectionScore}${sel}`),
       readUpstreamHealth(this.prom, this.configSvc, spec, routerId),
-      this.prom.query(`${ENDPOINT_METRICS.latestBlock}${sel}`),
+      this.prom.query(promql`${ENDPOINT_METRICS.latestBlock}${sel}`),
       this.prom.query(
-        `sum by (endpoint_id, spec) (${ENDPOINT_METRICS.requestsInFlight}${sel})`,
+        promql`sum by (endpoint_id, spec) (${ENDPOINT_METRICS.requestsInFlight}${sel})`,
       ),
       // Per-endpoint p95 latency — the endpoint histogram carries endpoint_id.
       // `spec` stays in the by-clause: one node name serving several chains is
@@ -1071,10 +1074,10 @@ export class MetricsService {
 
     const [writeTotal, batchTotal] = await Promise.all([
       writePresent
-        ? this.prom.scalar(`round(sum(increase(${OPTIONAL_METRICS.requestsWriteTotal}${sel}[${r}])))`)
+        ? this.prom.scalar(promql`round(sum(increase(${OPTIONAL_METRICS.requestsWriteTotal}${sel}[${r}])))`)
         : Promise.resolve(null),
       batchPresent
-        ? this.prom.scalar(`round(sum(increase(${OPTIONAL_METRICS.requestsBatchTotal}${sel}[${r}])))`)
+        ? this.prom.scalar(promql`round(sum(increase(${OPTIONAL_METRICS.requestsBatchTotal}${sel}[${r}])))`)
         : Promise.resolve(null),
     ]);
     // Class totals on the same client-scoped counts as the rows, so the class

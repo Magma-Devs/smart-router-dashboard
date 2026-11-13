@@ -10,6 +10,7 @@
  * a failure is its `outcome` and `error_code`.
  */
 import type { CallFacts, RelayAttempt } from "@sr/shared";
+import { logLabelRegex, logLineFilter, logLineRegex, logql, regex, regexAlt, regexLiteral } from "@sr/shared";
 import { CANCELLED_NOTE, METHOD_REDACTED, scrubUrls, str, type RouterLine } from "./router-log.js";
 
 /** The line filter that selects the event. */
@@ -26,16 +27,15 @@ export const WRONG_OUTCOMES = [...FAILED_OUTCOMES, "node_error", "rate_limited",
  * empty only for one it couldn't. `__error__=""` drops a line cut short before
  * those fields, which would otherwise fail a metric query.
  */
-export const PARSED_PIPELINE = `| json outcome="outcome", method="method", selection="selection" | __error__="" | method!="" or selection!=""`;
+export const PARSED_PIPELINE = logql`| json outcome="outcome", method="method", selection="selection" | __error__="" | method!="" or selection!=""`;
 
 /**
  * The event's failed requests, as a LogQL pipeline: the server-errors alert's
  * leg, so the two count the same requests. The `outcome` line filter only
  * spares the parser lines it would drop anyway: no try takes those values.
  */
-export const FAILED_PIPELINE =
-  `|= \`${RELAY_END}\` |~ \`"outcome":"(${FAILED_OUTCOMES.join("|")})"\` ${PARSED_PIPELINE}` +
-  ` | selection!="subscription" | outcome=~\`${FAILED_OUTCOMES.join("|")}\``;
+const FAILED_OUTCOME_ALT = regexAlt(FAILED_OUTCOMES.map(regexLiteral));
+export const FAILED_PIPELINE = logql`|= ${logLineFilter(RELAY_END)} |~ ${logLineRegex(regex`"outcome":"(${FAILED_OUTCOME_ALT})"`)} ${PARSED_PIPELINE} | selection!="subscription" | outcome=~${logLabelRegex(FAILED_OUTCOME_ALT)}`;
 
 export const isRelayEnd = (l: RouterLine) => l.f.event === "relay_end";
 

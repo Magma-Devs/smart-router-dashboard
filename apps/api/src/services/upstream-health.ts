@@ -1,4 +1,16 @@
-import { ENDPOINT_METRICS, qProviderBlockedByEndpoint, selector, type HealthState } from "@sr/shared";
+import {
+  ENDPOINT_METRICS,
+  duration,
+  joinPromQL,
+  promql,
+  promRegex,
+  qProviderBlockedByEndpoint,
+  regexAlt,
+  regexLiteral,
+  selector,
+  type HealthState,
+  type PromQL,
+} from "@sr/shared";
 import type { ConfigurationService } from "./configuration.js";
 import type { PrometheusClient, PromVectorSample } from "./prometheus-client.js";
 
@@ -39,16 +51,16 @@ export async function readUpstreamHealth(
   // conservative fallback, rather than dividing by zero or assuming a fast chain.
   const [gauges, rates] = await Promise.all([
     prom.query(qProviderBlockedByEndpoint(spec)),
-    prom.query(`max by (spec) (deriv(${ENDPOINT_METRICS.latestBlock}${sel}[1h]))`),
+    prom.query(promql`max by (spec) (deriv(${ENDPOINT_METRICS.latestBlock}${sel}[1h]))`),
   ]);
   const windows = new Map<string, number>();
   for (const sample of rates)
     if (sample.metric.spec && (!spec || sample.metric.spec === spec))
       windows.set(sample.metric.spec, healthWindowSeconds(Number(sample.value[1])));
   const windowFor = (chain: string) => windows.get(chain) ?? FALLBACK_HEALTH_WINDOW;
-  const polls = (metric: string) => {
-    const sum = (labels: string, seconds: number) =>
-      `sum by (endpoint_id, spec, apiInterface, instance) (increase(${metric}${labels}[${seconds}s]))`;
+  const polls = (metric: PromQL): PromQL => {
+    const sum = (labels: PromQL, seconds: number) =>
+      promql`sum by (endpoint_id, spec, apiInterface, instance) (increase(${metric}${labels}[${duration(seconds)}]))`;
     if (spec) return sum(sel, windowFor(spec));
     // Group chains by window, not one request per chain/endpoint. The default
     // branch also includes configured and metric-only chains without a rate.
@@ -59,19 +71,14 @@ export async function readUpstreamHealth(
       chains.push(chain);
       groups.set(seconds, chains);
     }
-    const regex = (chains: string[]) =>
-      JSON.stringify(
-        chains
-          .sort()
-          .map((chain) => chain.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
-          .join("|"),
-      );
+    // Chains as one regex matcher value: each name escaped as a literal.
+    const regex = (chains: string[]) => promRegex(regexAlt([...chains].sort().map(regexLiteral)));
     const other = [...groups.values()].flat();
     const branches = [...groups].map(([seconds, chains]) =>
-      sum(`{spec=~${regex(chains)}}`, seconds),
+      sum(promql`{spec=~${regex(chains)}}`, seconds),
     );
-    branches.push(sum(other.length ? `{spec!~${regex(other)}}` : "", FALLBACK_HEALTH_WINDOW));
-    return branches.join(" or ");
+    branches.push(sum(other.length ? promql`{spec!~${regex(other)}}` : promql``, FALLBACK_HEALTH_WINDOW));
+    return joinPromQL(branches, promql` or `);
   };
   const [successes, failures] = await Promise.all([
     prom.query(polls(ENDPOINT_METRICS.fetchLatestSuccess)),

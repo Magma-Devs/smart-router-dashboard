@@ -32,7 +32,16 @@
  * broadcast are not counted per upstream at all.
  */
 import type { LogUnavailable, RouterTopology, TransactionLookup, TransactionsReport, TxLogRow, TxOutcome, TxResult } from "@sr/shared";
-import { WRITE_UNKNOWN_NOTE } from "@sr/shared";
+import {
+  logLineFilter,
+  logLineRegex,
+  logql,
+  regex,
+  regexAlt,
+  regexLiteral,
+  WRITE_UNKNOWN_NOTE,
+  type LogQL,
+} from "@sr/shared";
 import {
   attemptsOf,
   callFactsOf,
@@ -53,8 +62,6 @@ import type { ConfigurationService } from "./configuration.js";
 import {
   chainOf,
   END_MSG,
-  escapeRe,
-  inRawString,
   LABEL_TOKEN,
   lastWhere,
   linesOfLookup,
@@ -108,7 +115,8 @@ const FAILED_SET: ReadonlySet<string> = new Set(FAILED_OUTCOMES);
  * or inside a batch (`&`) too. The list's read and the chart's count share it,
  * as does the store's recording rule, `smartrouter_transactions:count1m`.
  */
-export const TX_EVENT_FILTER = `|= \`${RELAY_END}\` |~ \`"stateful":true|"method":"([^"]*[&-])?(${TX_METHODS.join("|")})[&"]\``;
+const TX_METHOD_ALT = regexAlt(TX_METHODS.map(regexLiteral));
+export const TX_EVENT_FILTER = logql`|= ${logLineFilter(RELAY_END)} |~ ${logLineRegex(regex`"stateful":true|"method":"([^"]*[&-])?(${TX_METHOD_ALT})[&"]`)}`;
 
 /** What a transaction's `relay_end` says about how it ended - the fields the list and the chart both read. */
 export interface TxEndFacts {
@@ -365,7 +373,7 @@ function emptyReport(available: boolean, reason?: LogUnavailable): TransactionsR
 export class TransactionsService {
   constructor(
     private readonly loki: LokiClient | null,
-    private readonly selector: string,
+    private readonly selector: LogQL,
     private readonly configSvc?: ConfigurationService,
     private readonly cap: number = TX_READ_CAP,
   ) {}
@@ -437,19 +445,18 @@ export class TransactionsService {
       const scoped = await this.scope(loki).narrow(chain, routerId);
       const selector = scoped ?? this.selector;
       const names = scoped ? undefined : this.upstreamsFor(spec, routerId);
-      const safe = names?.filter(inRawString);
-      const narrow = safe?.length
-        ? ` |~ \`"chosenProviders":"([^"]*,)?(${safe.map(escapeRe).join("|")})[,"]\``
-        : "";
+      const narrow = names?.length
+        ? logql` |~ ${logLineRegex(regex`"chosenProviders":"([^"]*,)?(${regexAlt(names.map(regexLiteral))})[,"]`)}`
+        : logql``;
       // A relay_end names its chain: a write by the spec, or a transaction
       // method by name - unlisted (`Default-`) or inside a batch (`&`) too.
-      const eventNarrow = !scoped && chain && LABEL_TOKEN.test(chain) ? ` |= \`"chain":"${chain}"\`` : "";
+      const eventNarrow = !scoped && chain && LABEL_TOKEN.test(chain) ? logql` |= ${logLineFilter(`"chain":"${chain}"`)}` : logql``;
       const index = new UpstreamIndex(routers);
       const got = await readList(loki, selector, {
         finders: [
-          { query: `${selector} |= "${MSG.choosing}" |= \`"stateful":"1"\`${narrow}`, limit: this.cap },
-          { query: `${selector} |= "${MSG.received}" |~ \`(${TX_METHODS.join("|")})\``, limit: this.cap },
-          { query: `${selector} ${TX_EVENT_FILTER}${eventNarrow}`, limit: this.cap },
+          { query: logql`${selector} |= ${logLineFilter(MSG.choosing)} |= ${logLineFilter(`"stateful":"1"`)}${narrow}`, limit: this.cap },
+          { query: logql`${selector} |= ${logLineFilter(MSG.received)} |~ ${logLineRegex(regex`(${TX_METHOD_ALT})`)}`, limit: this.cap },
+          { query: logql`${selector} ${TX_EVENT_FILTER}${eventNarrow}`, limit: this.cap },
         ],
         // A transaction found by its relay_end needs nothing more. One found by
         // its lines needs the rest of them, and its relay_end when it has one:
