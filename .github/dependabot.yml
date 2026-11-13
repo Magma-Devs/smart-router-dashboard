@@ -7,8 +7,13 @@ version: 2
 # version update never proposes a release the install would refuse. Security
 # updates are not delayed by the cooldown.
 #
-# Dependabot does not edit pnpm.overrides in package.json. A transitive
+# Dependabot does not edit `overrides` in pnpm-workspace.yaml. A transitive
 # package pinned there moves only when someone edits it by hand.
+#
+# pnpm is pinned twice: `packageManager` in package.json (CI's pnpm/setup
+# reads it) and the ghcr.io/pnpm/pnpm stage in the three Dockerfiles, which
+# the docker updater below moves. A Docker build fails when the two differ,
+# so a pnpm image bump lands together with the matching `packageManager`.
 updates:
   - package-ecosystem: "npm"
     directory: "/"

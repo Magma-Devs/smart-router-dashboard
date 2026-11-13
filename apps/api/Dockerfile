@@ -1,10 +1,19 @@
+# pnpm comes from its official image, pinned by digest, for the runner's
+# architecture like the build stage that copies it. Its version matches
+# `packageManager` in package.json; Dependabot moves this line, so move the
+# pin with it.
+FROM --platform=$BUILDPLATFORM ghcr.io/pnpm/pnpm:12.18.0-alpine@sha256:937d5b248145cd59aaf3d78dd0fd45f95e65b942585c370a0a11d53ab937ed98 AS pnpm
+
 # The build stage runs on the runner's own architecture whatever the image
 # targets: its output is plain JS and none of the api's runtime dependencies
 # is a native module, so BuildKit runs it once for linux/amd64,linux/arm64.
 FROM --platform=$BUILDPLATFORM node:26.13.1-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5 AS builder
-# Node 26 ships without corepack, so it comes from npm at an exact version.
-# corepack then installs the pnpm that `packageManager` pins by sha512.
-RUN npm install -g --no-fund --no-audit corepack@0.36.0 && corepack enable
+# pnpm's native binary and the node-gyp it uses for native builds. A pnpm
+# that is not the one `packageManager` pins fails the build rather than
+# downloading the pinned one.
+COPY --from=pnpm /opt/pnpm /opt/pnpm
+RUN for bin in pnpm pn pnpx pnx; do ln -s "/opt/pnpm/$bin" "/usr/local/bin/$bin"; done
+ENV pnpm_config_pm_on_fail=error
 WORKDIR /app
 
 # Lockfile and manifests first, sources after: a code-only commit reuses the
@@ -27,9 +36,11 @@ RUN pnpm --filter @sr/shared build && \
 
 # Production tree for the runtime stage: the api's `files` (dist), its
 # workspace packages (@sr/db ships dist + migrations) and their production
-# dependencies; `--legacy` is what pnpm 10 needs for a symlinked workspace.
+# dependencies, at the versions the workspace lockfile pins (deploy writes
+# them to its own pnpm-lock.yaml). Not `--legacy`: under pnpm 12 that path
+# re-resolves and drops the tslib the lockfile gives the AWS SDK.
 # No devDependencies, so NODE_ENV=development (pino-pretty transport) can't boot.
-RUN pnpm --filter @sr/api deploy --legacy --prod /app/deploy
+RUN pnpm --filter @sr/api deploy --prod /app/deploy
 
 # Runtime stage, built once per target architecture. Keep it free of RUN:
 # the CI builder has no QEMU, so a RUN here fails on arm64 with "exec format
