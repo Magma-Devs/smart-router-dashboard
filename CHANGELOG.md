@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.65.6]
+
 ### Fixed
 
 - **The Errors list keeps the filter it opened on** (MAG-5294). The list
