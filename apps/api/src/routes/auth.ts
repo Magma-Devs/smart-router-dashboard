@@ -1,4 +1,3 @@
-import { timingSafeEqual } from "node:crypto";
 import type { FastifyBaseLogger, FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { Database, User } from "@sr/db";
 import {
@@ -14,6 +13,13 @@ import { validatePassword, verifyPasswordOrDecoy } from "../services/password.js
 import { verifyOAuthToken } from "../services/oauth.js";
 import { createSession, revokeSession, type ClientContext } from "../services/sessions.js";
 import { normalizeIp, parseClient } from "../services/client-context.js";
+import {
+  FORWARDED_IP_HEADER,
+  FORWARDED_UA_HEADER,
+  forwardedClientIp,
+  forwardedHeader,
+  vouchedByWeb,
+} from "../services/forwarded-client.js";
 import {
   lookupInvitation,
   redeemInvitation,
@@ -146,14 +152,6 @@ interface OAuthBody {
   token: string;
 }
 
-/** Constant-time comparison that doesn't leak length through early return. */
-function secretsMatch(supplied: string, expected: string): boolean {
-  const a = Buffer.from(supplied);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
-}
-
 /**
  * What the caller looks like, in the two shapes that need it.
  *
@@ -171,36 +169,6 @@ function secretsMatch(supplied: string, expected: string): boolean {
  */
 export interface ResolvedClient extends ClientContext {
   access: { ip: string | null; client: string | null };
-}
-
-/** Set by the web tier beside `X-Internal-Auth`, and believed only with it.
- *  Headers rather than a body field because the rate limiter runs in
- *  `onRequest`, before a body exists, and it has to key on the same address
- *  this records — otherwise every sign-in in the deployment shares one bucket. */
-export const FORWARDED_IP_HEADER = "x-forwarded-client-ip";
-export const FORWARDED_UA_HEADER = "x-forwarded-client-ua";
-
-/** Whether the caller proved it is our web tier. */
-function vouchedByWeb(request: FastifyRequest, expected: string | undefined): boolean {
-  if (!expected) return false;
-  const supplied = request.headers["x-internal-auth"];
-  return typeof supplied === "string" && secretsMatch(supplied, expected);
-}
-
-/** One forwarded header's value, or null when it is absent or empty. */
-function forwardedHeader(request: FastifyRequest, name: string): string | null {
-  const value = request.headers[name];
-  return typeof value === "string" && value ? value : null;
-}
-
-/** The forwarded address, or null when nothing vouches for one. Shared with the
- *  rate limiter so the two cannot disagree about who is calling. */
-export function forwardedClientIp(
-  request: FastifyRequest,
-  expected: string | undefined,
-): string | null {
-  if (!vouchedByWeb(request, expected)) return null;
-  return forwardedHeader(request, FORWARDED_IP_HEADER);
 }
 
 /**
