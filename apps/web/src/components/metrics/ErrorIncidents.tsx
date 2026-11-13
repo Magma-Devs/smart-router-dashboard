@@ -17,7 +17,7 @@ import { Tip } from "@/components/gateway/Tip";
 import { fmtComma } from "@/lib/format";
 import { fmtDay, fmtTime } from "@/lib/datetime";
 import { TT } from "@/lib/tooltips";
-import { providerName } from "./request-log";
+import { providerName, rangeWords } from "./request-log";
 
 /** How many lanes show before "Show all". */
 const FIRST_LANES = 10;
@@ -127,9 +127,9 @@ export function ErrorIncidents({ chainFilter, win, openKey, onOpen }: {
       )}
 
       {data && lines.length > 0 && (
-        <div role="list" aria-label="Error bursts" style={{ borderTop: "1px solid var(--line)" }}>
-          {/* The time axis, over the lanes. */}
-          <div style={{ display: "grid", gridTemplateColumns: `${GUTTER}px 1fr ${RIGHT}px`, fontSize: 10.5, color: "var(--text-4)", padding: "6px 16px 2px" }}>
+        <div style={{ borderTop: "1px solid var(--line)" }}>
+          {/* The time axis, over the lanes; each lane says its own times to a screen reader. */}
+          <div aria-hidden style={{ display: "grid", gridTemplateColumns: `${GUTTER}px 1fr ${RIGHT}px`, fontSize: 10.5, color: "var(--text-4)", padding: "6px 16px 2px" }}>
             <span />
             <div style={{ position: "relative", height: 14 }}>
               {ticks.map((t, i) => (
@@ -140,49 +140,54 @@ export function ErrorIncidents({ chainFilter, win, openKey, onOpen }: {
             </div>
             <span />
           </div>
-          {shown.map((l) => {
-            const maxWave = Math.max(1, ...l.waves.map((w) => w.count));
-            const isOpen = openKey === l.key;
-            const open = () => onOpen(l, step);
-            return (
-              <div key={l.key} role="listitem" tabIndex={0} aria-label={`${SHAPE[l.shape].label}: ${lineTitle(l)}. ${fmtComma(l.count)} ${KIND[l.kind].noun}. Open its requests.`}
-                className={`gw-logrow${isOpen ? " is-open" : ""}`} onClick={open}
-                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } }}
-                style={{ display: "grid", gridTemplateColumns: `${GUTTER}px 1fr ${RIGHT}px`, alignItems: "center", padding: "7px 16px", borderTop: "1px solid var(--line)", cursor: "pointer" }}>
-                <div style={{ minWidth: 0, paddingRight: 12 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-                    <span title={SHAPE[l.shape].hint} style={{ flexShrink: 0, fontSize: 10.5, padding: "1px 6px", borderRadius: 4, border: `1px solid ${KIND[l.kind].color}`, color: KIND[l.kind].color, whiteSpace: "nowrap" }}>
-                      {SHAPE[l.shape].label}
-                    </span>
-                    <span title={lineTitle(l)} style={{ fontSize: 12.5, color: "var(--text)", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{lineTitle(l)}</span>
-                  </div>
-                  <div style={{ fontSize: 11, color: "var(--text-4)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {KIND[l.kind].label}
-                    {l.shape === "chain-wide" ? <> · {l.providers.map(providerName).join(", ")}</> : null}
-                    {l.waves.length > 1 ? <> · {l.waves.length} waves</> : null}
-                    {" · "}{durWords(l.end - l.start + step)}
+          <div role="list" aria-label="Error bursts">
+            {shown.map((l) => {
+              const maxWave = Math.max(1, ...l.waves.map((w) => w.count));
+              const isOpen = openKey === l.key;
+              const open = () => onOpen(l, step);
+              return (
+                <div key={l.key} role="listitem">
+                  <div role="button" tabIndex={0} data-line={l.key} aria-current={isOpen || undefined}
+                    aria-label={`${SHAPE[l.shape].label}: ${lineTitle(l)}. ${fmtComma(l.count)} ${KIND[l.kind].noun}, ${rangeWords({ from: (l.start - step) * 1000, to: l.end * 1000 })}${l.ongoing ? ", still going" : ""}. Open its requests.`}
+                    className={`gw-lane${isOpen ? " is-open" : ""}`} onClick={open}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } }}
+                    style={{ display: "grid", gridTemplateColumns: `${GUTTER}px 1fr ${RIGHT}px`, alignItems: "center", padding: "7px 16px", borderTop: "1px solid var(--line)" }}>
+                    <div style={{ minWidth: 0, paddingRight: 12 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                        <span title={SHAPE[l.shape].hint} style={{ flexShrink: 0, fontSize: 10.5, padding: "1px 6px", borderRadius: 4, border: `1px solid ${KIND[l.kind].color}`, color: KIND[l.kind].color, whiteSpace: "nowrap" }}>
+                          {SHAPE[l.shape].label}
+                        </span>
+                        <span title={lineTitle(l)} style={{ fontSize: 12.5, color: "var(--text)", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{lineTitle(l)}</span>
+                      </div>
+                      <div style={{ fontSize: 11, color: "var(--text-4)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {KIND[l.kind].label}
+                        {l.shape === "chain-wide" ? <> · {l.providers.map(providerName).join(", ")}</> : null}
+                        {l.waves.length > 1 ? <> · {l.waves.length} waves</> : null}
+                        {" · "}{durWords(l.end - l.start + step)}
+                      </div>
+                    </div>
+                    {/* Its waves on the window's clock; one that started before the window runs off the left edge. */}
+                    <div style={{ position: "relative", height: 18, background: "var(--line)", borderRadius: 3 }}>
+                      {l.waves.map((w, i) => {
+                        const left = x(w.start - step), right = x(w.end);
+                        return (
+                          <span key={i} title={`${fmtComma(w.count)} ${KIND[l.kind].noun}, ${durWords(w.end - w.start + step)}`}
+                            style={{ position: "absolute", top: 3, bottom: 3, left: `${left}%`, width: `max(3px, ${right - left}%)`, borderRadius: 2,
+                              background: KIND[l.kind].color, opacity: 0.35 + 0.65 * (w.count / maxWave) }} />
+                        );
+                      })}
+                    </div>
+                    <div style={{ textAlign: "right", paddingLeft: 12 }}>
+                      <div className="gw-tnum" style={{ fontSize: 12.5, color: "var(--text)", fontWeight: 600 }}>{fmtComma(l.count)}</div>
+                      <div style={{ fontSize: 11, color: l.ongoing ? "var(--err)" : "var(--text-4)", whiteSpace: "nowrap" }}>
+                        {l.ongoing ? "● still going" : `ended ${durWords(to - l.end)} ago`}
+                      </div>
+                    </div>
                   </div>
                 </div>
-                {/* Its waves on the window's clock; one that started before the window runs off the left edge. */}
-                <div style={{ position: "relative", height: 18, background: "var(--bg-2, rgba(127,127,127,.06))", borderRadius: 3 }}>
-                  {l.waves.map((w, i) => {
-                    const left = x(w.start - step), right = x(w.end);
-                    return (
-                      <span key={i} title={`${fmtComma(w.count)} ${KIND[l.kind].noun}, ${durWords(w.end - w.start + step)}`}
-                        style={{ position: "absolute", top: 3, bottom: 3, left: `${left}%`, width: `max(3px, ${right - left}%)`, borderRadius: 2,
-                          background: KIND[l.kind].color, opacity: 0.35 + 0.65 * (w.count / maxWave) }} />
-                    );
-                  })}
-                </div>
-                <div style={{ textAlign: "right", paddingLeft: 12 }}>
-                  <div className="gw-tnum" style={{ fontSize: 12.5, color: "var(--text)", fontWeight: 600 }}>{fmtComma(l.count)}</div>
-                  <div style={{ fontSize: 11, color: l.ongoing ? "var(--err)" : "var(--text-4)", whiteSpace: "nowrap" }}>
-                    {l.ongoing ? "● still going" : `ended ${durWords(to - l.end)} ago`}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
           {lines.length > FIRST_LANES && (
             <button className="gw-btn" onClick={() => setAll(!all)} style={{ margin: "8px 16px 10px", padding: "3px 10px", fontSize: 11.5 }}>
               {all ? "Show fewer" : `Show all ${fmtComma(lines.length)}`}
@@ -199,8 +204,8 @@ export function ErrorIncidents({ chainFilter, win, openKey, onOpen }: {
 
       {data && steady.length > 0 && (
         <div style={{ borderTop: "1px solid var(--line)" }}>
-          <button onClick={() => setSteadyOpen(!steadyOpen)} aria-expanded={steadyOpen}
-            style={{ all: "unset", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, padding: "9px 16px", fontSize: 12, color: "var(--text-2)", width: "calc(100% - 32px)" }}>
+          <button className="gw-disclosure" onClick={() => setSteadyOpen(!steadyOpen)} aria-expanded={steadyOpen}
+            style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 16px", fontSize: 12, color: "var(--text-2)", width: "calc(100% - 32px)" }}>
             <span style={{ display: "inline-block", transform: steadyOpen ? "rotate(90deg)" : "none", transition: "transform 80ms" }}>›</span>
             Always present <span className="gw-tnum" style={{ color: "var(--text-4)" }}>{steady.length}</span>
             <span style={{ color: "var(--text-4)" }}>· errors at their usual level most of the time, not bursts</span>

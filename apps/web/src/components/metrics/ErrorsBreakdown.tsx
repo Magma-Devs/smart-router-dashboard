@@ -68,6 +68,7 @@ export function ErrorsBreakdown({ chainFilter, win, focus = null, onFocus }: {
   const [groupNonce, setGroupNonce] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
+  const backRef = useRef<HTMLButtonElement>(null);
   // Still on the line's times: another range picked in the list is no longer the line.
   const onLine = opened && list.range && list.range.from === opened.range.from && list.range.to === opened.range.to ? opened : null;
   const openLine = (line: ErrorIncidentLine, stepSec: number) => {
@@ -79,14 +80,23 @@ export function ErrorsBreakdown({ chainFilter, win, focus = null, onFocus }: {
     setUpstream(u);
     report(u, range);
     setGroupNonce((n) => n + 1);
-    requestAnimationFrame(() => listRef.current?.scrollIntoView({ block: "start", behavior: "smooth" }));
+    // Keyboard focus goes with the eye: to "Back to the timeline", above the line's requests.
+    requestAnimationFrame(() => {
+      backRef.current?.focus({ preventScroll: true });
+      listRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+    });
   };
   const closeLine = () => {
+    const key = opened?.line.key;
     setOpened(null);
     list.pick(null);
     setUpstream(ALL);
     report(ALL, null);
-    timelineRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+    // And back to the line it opened, once the timeline is in view again.
+    requestAnimationFrame(() => {
+      if (key) timelineRef.current?.querySelector<HTMLElement>(`[data-line="${CSS.escape(key)}"]`)?.focus({ preventScroll: true });
+      timelineRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+    });
   };
 
   const specQ = chainFilter ? `&spec=${encodeURIComponent(chainFilter)}` : "";
@@ -160,7 +170,7 @@ export function ErrorsBreakdown({ chainFilter, win, focus = null, onFocus }: {
             <span style={{ color: KIND[onLine.line.kind].color }}>{SHAPE[onLine.line.shape].label}</span>
             <span style={{ color: "var(--text)", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{lineTitle(onLine.line)}</span>
             <span className="gw-tnum" style={{ color: "var(--text-4)", whiteSpace: "nowrap" }}>{rangeWords(onLine.range)}</span>
-            <button className="gw-btn" style={{ marginLeft: "auto", padding: "3px 10px", fontSize: 11.5, whiteSpace: "nowrap" }} onClick={closeLine}>← Back to the timeline</button>
+            <button ref={backRef} className="gw-btn" style={{ marginLeft: "auto", padding: "3px 10px", fontSize: 11.5, whiteSpace: "nowrap" }} onClick={closeLine}>← Back to the timeline</button>
           </div>
         )}
         <ErrorRequests chainFilter={chainFilter ?? lineSpec} win={win} upstream={upstream} onUpstream={pickUpstream}
