@@ -80,6 +80,21 @@ describe("detectErrorIncidents", () => {
     expect(lines.map((l) => [l.shape, l.providers.join()]).sort()).toEqual([["incident", "lava"], ["long-running", "tatum"]]);
   });
 
+  it("is long-running from exactly 6 hours, counting the first stretch's own 5 minutes", () => {
+    const stretches = ERROR_INCIDENT_RULES.longSec / STEP; // 72 stretches of 5 minutes = 6 hours
+    const shape = (n: number) => detect([series("failed", "NEAR", "lava", [[10, 10 + n - 1, 40]])]).lines.map((l) => l.shape);
+    expect(shape(stretches)).toEqual(["long-running"]);
+    expect(shape(stretches - 1)).toEqual(["incident"]);
+  });
+
+  it("a line with a 6-hour wave is long-running, even when a short repeat joins it", () => {
+    const long = ERROR_INCIDENT_RULES.longSec / STEP;
+    const { lines } = detect([series("failed", "NEAR", "lava", [[10, 10 + long, 40], [10 + long + 20, 10 + long + 21, 40]])]);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]!.waves).toHaveLength(2);
+    expect(lines[0]!.shape).toBe("long-running");
+  });
+
   it("keeps failed tries and error replies apart", () => {
     const { lines } = detect([series("failed", "NEAR", "blockdaemon", [[100, 101, 40]]), series("reply", "NEAR", "blockdaemon", [[100, 101, 400]])]);
     expect(lines.map((l) => l.kind).sort()).toEqual(["failed", "reply"]);

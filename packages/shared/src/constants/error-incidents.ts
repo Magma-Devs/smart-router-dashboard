@@ -213,7 +213,8 @@ export function detectErrorIncidents(series: ErrorIncidentSeries[], stepSec: num
       const start = group[0]!.start, end = Math.max(...group.map((e) => e.end));
       const waves = group.map((e) => ({ start: e.start, end: e.end, count: Math.round(e.count) }));
       const chainWide = group.some((e) => e.chainWide);
-      const shape: ErrorIncidentShape = waves.length === 1 && end - start + stepSec >= R.longSec ? "long-running"
+      // A wave of 6 hours or more makes the line long-running, whatever waves came with it.
+      const shape: ErrorIncidentShape = waves.some((w) => w.end - w.start + stepSec >= R.longSec) ? "long-running"
         : chainWide ? "chain-wide"
         : waves.length >= R.recurringWaves ? "recurring" : "incident";
       if (end >= windowFrom) {
