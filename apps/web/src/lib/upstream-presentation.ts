@@ -17,6 +17,21 @@ export function upstreamHealthNotice(health: HealthState, reason?: string): stri
   return `${status} ${evidence} Request metrics below describe the selected time window.`;
 }
 
+/**
+ * What the topbar shows from a pulse: the router's status and RPS across
+ * every chain (`allChains`) on every page, beside provider counts that
+ * follow the page's chain. A pulse without `allChains` - an api image older
+ * than the web's, mid-rollout - gives its own figures.
+ */
+export function topbarFigures(pulse: DeploymentPulse | undefined): {
+  health: HealthState | undefined;
+  rps: number | null | undefined;
+  counts: DeploymentPulse["upstreamHealthCounts"] | undefined;
+} {
+  const wide = pulse?.allChains ?? pulse;
+  return { health: wide?.health, rps: wide?.throughputRps, counts: pulse?.upstreamHealthCounts };
+}
+
 /** Router availability and the health of every backing upstream are separate facts. */
 export function deploymentHealthSummary(
   health: HealthState | undefined,

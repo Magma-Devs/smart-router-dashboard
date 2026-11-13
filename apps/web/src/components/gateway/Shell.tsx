@@ -11,6 +11,7 @@ import { CHAIN_DRAWER_PATH, ChainDrawer, ChainDrawerProvider, useChainDrawer } f
 import { IconMenuCollapse, IconMenuExpand, IconMoon, IconSun, type IconProps } from "./icons";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 import { DeploymentHealthBadge, useDeploymentPulse } from "./DeploymentHealth";
+import { topbarFigures } from "@/lib/upstream-presentation";
 import { fmtNum } from "@/lib/format";
 import { getAuthVersion, subscribeAuth } from "@/lib/auth-store";
 import { useMe } from "@/hooks/use-me";
@@ -236,9 +237,11 @@ function SidebarUser() {
 function Topbar({ here, sub, incidentsEnabled }: { here: string; sub: string | null; incidentsEnabled: boolean }) {
   // Live throughput + health for the top-bar stats (real data; CU/mo is a
   // Lava-consumer concept the router doesn't emit, so it's omitted here).
-  // Scoped like every other panel, so the pills describe the selected router.
+  // The RPS pill and the router's status describe the selected router across
+  // every chain it serves; on a chain's page only the provider counts follow
+  // the chain (`topbarFigures`).
   const { data, isLoading, error } = useDeploymentPulse();
-  const rps = data?.throughputRps;
+  const { rps, health, counts } = topbarFigures(data);
   return (
     <header className="gw-top">
       <div className="gw-top__crumbs">
@@ -267,7 +270,7 @@ function Topbar({ here, sub, incidentsEnabled }: { here: string; sub: string | n
         <span className="pill gw-mono" title="Live throughput">
           {fmtNum(rps)} RPS
         </span>
-        <DeploymentHealthBadge health={data?.health} counts={data?.upstreamHealthCounts} loading={!data && isLoading && !error} error={Boolean(error)} />
+        <DeploymentHealthBadge health={health} counts={counts} loading={!data && isLoading && !error} error={Boolean(error)} />
         {/* Router scope — global, so it sits next to the theme toggle rather
             than in any one page's header. Hides itself when the metrics can't
             be split per router. */}

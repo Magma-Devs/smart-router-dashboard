@@ -3,7 +3,7 @@
 import type { DeploymentPulse, HealthState } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { useFilters } from "./FiltersProvider";
-import { deploymentHealthSummary } from "@/lib/upstream-presentation";
+import { deploymentHealthSummary, topbarFigures } from "@/lib/upstream-presentation";
 
 export function DeploymentHealthBadge({
   health,
@@ -44,12 +44,14 @@ export function DeploymentHealthBadge({
 /**
  * The topbar's pulse — health, upstream health counts, current RPS — polled
  * on every page. Its own endpoint: six reads, whatever the chain count
- * (MAG-4296).
+ * (MAG-4296); eight on a chain's page, where it also reads the whole
+ * router's figures (`allChains`), which are what the topbar shows.
  */
 export function useDeploymentPulse() {
   const { withScope, routerId, chain } = useFilters();
-  // On a chain's page the badge speaks for that chain: counting every chain's
-  // providers beside one chain's name read as that chain's own trouble.
+  // On a chain's page the provider counts speak for that chain: counting every
+  // chain's providers beside one chain's name read as that chain's own trouble.
+  // The router's status and RPS stay the whole router's (`topbarFigures`).
   const params = [
     ...(chain ? [`spec=${encodeURIComponent(chain)}`] : []),
     ...(routerId ? [`routerId=${encodeURIComponent(routerId)}`] : []),
@@ -61,10 +63,11 @@ export function useDeploymentPulse() {
 
 export function DeploymentHealth() {
   const { data, isLoading, error } = useDeploymentPulse();
+  const { health, counts } = topbarFigures(data);
   return (
     <DeploymentHealthBadge
-      health={data?.health}
-      counts={data?.upstreamHealthCounts}
+      health={health}
+      counts={counts}
       loading={!data && isLoading && !error}
       error={Boolean(error)}
     />
