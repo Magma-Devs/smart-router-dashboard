@@ -181,8 +181,15 @@ layouts ask `GET /api/account/me` from the web server with the session's Bearer
 while they render (`lib/enrolment-verdict.ts`), so the first HTML is already the
 enrolment screen for somebody who must enrol. The browser's own read of the
 same route takes over once it lands, and that is what lifts the block after
-enrolment. If the server's read fails, the gate draws an empty page until the
+enrolment. If the server's read fails, the gate shows a loading state until the
 browser's read answers, and the app only if that fails too (`lib/enrolment-gate.ts`).
+A 429 on the browser's read is not a failure: it asks again when the api's
+`Retry-After` says, and the loading state counts down to it.
+
+The server's read is vouched for with `INTERNAL_AUTH_SECRET`, so the api counts
+it against the reader's own session rather than the web pod's address
+(`clientRateLimitKey`). Unvouched, every page load by everybody spent one
+allowance, and a busy minute left each new page waiting on the browser.
 The browser's read alone comes too late to decide: it starts only once Auth.js
 has handed the page a token, and anything drawn before it answers is the
 dashboard.

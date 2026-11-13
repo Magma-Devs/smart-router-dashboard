@@ -1128,6 +1128,19 @@ The server-rendered previews (`/invite/<token>`, `/reset/<token>`) forward
 the same headers, so their per-IP limit counts visitors rather than the web
 pod.
 
+The `(app)` and standalone layouts' read of `/api/account/me`, which decides
+the two-factor gate before the page is drawn, is vouched for too. On routes
+without a limit of their own, the api's per-minute limits (`RATE_LIMIT_MAX`
+and, with accounts on, a second one of 100) key a vouched call on the
+**session** it carries, then on the forwarded address, and only then on the
+connection (`clientRateLimitKey` in `services/forwarded-client.ts`). The
+session comes first because the api resolved it from its own table on this
+request, while the forwarded address depends on `TRUST_PROXY_HOPS`: `0`
+forwards none, and a count set too low names a proxy for everybody. Without a
+vouched key that read put every signed-in person in the web pod's bucket, one
+read per page load. A caller that cannot present the secret keys on its
+connection whatever it forwards.
+
 Both values are the caller's to write, so both are cut to what their
 columns take before any insert: a browser version longer than four
 digits is dropped from the device string, and an address `inet` would
