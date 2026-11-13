@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.65.7]
+
 ### Fixed
 
 - **On a chain's page the top bar's RPS and router status describe the
