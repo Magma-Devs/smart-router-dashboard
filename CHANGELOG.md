@@ -5,6 +5,20 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Fixed
+
+- **A chart's time axis keeps round local times across a DST change**
+  (MAG-5292). `timeTicks` (`apps/web/src/lib/chart-time.ts`, the axis of the
+  Upstreams tab's charts, the Transactions chart and the availability blocks)
+  aligned every tick using the reader's UTC offset at the window's end. On a
+  window that crossed a change, the ticks before it sat an hour off: a 7-day
+  axis across the spring change put its ticks at 23:00 instead of midnight,
+  each labelled with the day that was ending, and skipped the day of the
+  change ("Mar 26", then "Mar 28"); a 3-day axis read 23:00 · 11:00 where it
+  meant the date · 12:00. Each tick now uses the offset in force at its own
+  time, so the ticks on both sides of a change sit on 00:00, 12:00 and so on,
+  and an hour the clock skips gets no tick.
+
 ## [0.65.3]
 
 ### Fixed

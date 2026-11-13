@@ -16,22 +16,37 @@ export function gridTimes(grid: ChartGrid | undefined): number[] {
 /** Tick spacings for a time axis: the clock's own, a minute to a week. */
 const TICK_STEPS = [60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600, 43200, 86400, 172800, 259200, 604800];
 
+/** The reader's UTC offset at `t` (unix seconds), in seconds: 7200 in Tel Aviv in winter. */
+const offsetAt = (t: number) => -new Date(t * 1000).getTimezoneOffset() * 60;
+
 /** Labels at round local times across [from, to] (unix seconds), seven at
  *  most: 00:00 · 06:00 · 12:00 · 18:00 across a day, a date a day across a
- *  week. The evenly spaced labels this replaced landed on 00:37 and 06:45. */
+ *  week. The evenly spaced labels this replaced landed on 00:37 and 06:45.
+ *
+ *  A round time is a multiple of the step on the reader's clock: unix time
+ *  plus the offset the zone is on at that moment. A window across a DST
+ *  change has two offsets, so each one's round times are kept only where the
+ *  zone is on it. The ticks on either side of the change then sit on round
+ *  times of their own (00:00 before it and after it), and a time the clock
+ *  skips when it goes forward gets no tick. */
 export function timeTicks(dom: [number, number] | undefined): XTick[] | undefined {
   if (!dom) return undefined;
   const [from, to] = dom;
   const span = to - from;
   const step = TICK_STEPS.find((sec) => span / sec <= 7) ?? 604800;
-  const tz = -new Date(to * 1000).getTimezoneOffset() * 60;
-  const out: XTick[] = [];
-  for (let t = Math.ceil((from + tz) / step) * step - tz; t <= to; t += step) {
+  const offsets = new Set([offsetAt(to)]);
+  for (let t = from; t < to; t += step) offsets.add(offsetAt(t));
+  const at: number[] = [];
+  for (const tz of offsets) {
+    for (let t = Math.ceil((from + tz) / step) * step - tz; t <= to; t += step) {
+      if (offsetAt(t) === tz) at.push(t);
+    }
+  }
+  return at.sort((a, b) => a - b).map((t) => {
     const d = new Date(t * 1000);
     const midnight = d.getHours() === 0 && d.getMinutes() === 0;
-    out.push({ at: t, label: step >= 86400 || (span > 86400 && midnight) ? fmtDay(t * 1000) : fmtTime(t * 1000) });
-  }
-  return out;
+    return { at: t, label: step >= 86400 || (span > 86400 && midnight) ? fmtDay(t * 1000) : fmtTime(t * 1000) };
+  });
 }
 
 /** "10 minutes", "an hour", "6 hours", "a day" - one bar's span. */
