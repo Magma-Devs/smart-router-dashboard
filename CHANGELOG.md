@@ -5,6 +5,19 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Fixed
+
+- **The Errors list keeps the filter it opened on** (MAG-5294). The list
+  opens on "Reached the client" when such a request exists and on All
+  otherwise, and it made that choice again on every refresh, so it switched
+  between the two by itself as requests arrived or aged out of the window.
+  The choice is now made once, from the list's first read, and again only
+  when the window (or the exact times picked in the list), the chain or the
+  router changes; after that only the reader changes it. A list that opened
+  on "Reached the client" stays on it when those requests age out, empty,
+  as it would on that filter picked by hand. Opened from a bar on the
+  Upstreams tab, the list still opens on All (`hooks/use-opening.ts`).
+
 ## [0.65.5]
 
 ### Fixed
