@@ -13,6 +13,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { WINDOWS, WRITE_UNKNOWN_NOTE, buildChainMetaByIndex, explainRouterError, type ErrorRequestRow, type ErrorRequestsReport, type MetricWindow, type RequestLookup } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { useLogReads } from "@/hooks/use-log-reads";
+import { useOpening } from "@/hooks/use-opening";
 import { useRouterFilter } from "@/hooks/use-router-options";
 import { Refreshing, SkelLine, SkelRows } from "@/components/gateway/Skel";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
@@ -94,7 +95,8 @@ const RESULT_ORDER: ErrorRequestRow["result"][] = ["recovered", "error-reply", "
 /** The list's opening filter, before anyone picks one: the requests whose
  *  error reached the client when there are any, else every request. Someone
  *  debugging asks first what the client saw, and a list that opens on
- *  hundreds of recovered requests buries it. */
+ *  hundreds of recovered requests buries it. Chosen once per list
+ *  (`useOpening`): a later read never changes it. */
 const AUTO = "auto";
 /** The pill for every result the client received as an error or without a clear end. */
 const REACHED = "reached";
@@ -355,7 +357,11 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
   const reachedCount = narrowed.filter((r) => REACHED_CLIENT.has(r.result)).length;
   // On a bar's times with its provider picked, the list opens on every request the bar counts.
   const fromBar = onBarRange && upstream !== ALL;
-  const result: ResultPick = picked === AUTO ? openingResult(reachedCount, fromBar) : picked;
+  // Chosen from the first read that answers, again only for new times, a new
+  // chain or a new router: a poll that brings or ages out a request must not
+  // flip the list under the reader.
+  const opening = useOpening(`${rangeQ}|${scopeKey}`, !!head?.available, () => openingResult(reachedCount, fromBar));
+  const result: ResultPick = picked === AUTO ? (opening ?? ALL) : picked;
   const inResult = (r: ErrorRequestRow) => result === ALL || (result === REACHED ? REACHED_CLIENT.has(r.result) : r.result === result);
   const filtered = narrowed.filter(inResult);
   // 300 rows a read: grouping them on each render costs about 3 ms (11 ms
@@ -373,8 +379,10 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
   const byResult = (k: ErrorRequestRow["result"]) => narrowed.filter((r) => r.result === k).length;
   const kinds = byDropdowns.filter(inResult).map(retryKinds);
   /* Nothing reached the client, and nobody has picked a result: the list
-     says so above the requests it then shows. */
-  const allRecovered = !!head && picked === AUTO && reachedCount === 0 && narrowed.length > 0;
+     says so above the requests it then shows, every request. A list that
+     opened on "Reached the client" keeps it once those requests age out,
+     empty, as it would on that filter picked by hand. */
+  const allRecovered = !!head && picked === AUTO && result === ALL && reachedCount === 0 && narrowed.length > 0;
   const dropdowns = retry !== ALL || errType !== ALL || customer !== ALL || method !== ALL || upstream !== ALL;
 
   const pageCount = Math.max(1, Math.ceil(rows.length / PER_PAGE));
