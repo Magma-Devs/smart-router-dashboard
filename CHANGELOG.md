@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.65.2]
+
 ### Removed
 
 - **Four upstream dialogs nothing opened** (MAG-5290): `AddUpstreamSheet`,
