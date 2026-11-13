@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.66.1]
+
 ### Removed
 
 - **Three Upstreams roster screenshots that showed a production deployment's
