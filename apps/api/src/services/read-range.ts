@@ -4,7 +4,7 @@
  * page's window back from now by default; an exact from-to when the caller
  * picks one, which Prometheus-backed panels can't follow but a log read can.
  */
-import { DEFAULT_WINDOW, WINDOWS, toMetricWindow, type MetricWindow } from "@sr/shared";
+import { DEFAULT_WINDOW, WINDOWS, toMetricWindow, type LogQL, type MetricWindow } from "@sr/shared";
 import type { LokiClient } from "./loki-client.js";
 
 /** Unix ms. */
@@ -89,7 +89,7 @@ const SIZING_ROUNDS = 3;
  */
 export async function readStart(
   loki: LokiClient,
-  selector: string,
+  selector: LogQL,
   range: ReadRange,
   endMs: number,
   budget = LOG_READ_BUDGET_BYTES,

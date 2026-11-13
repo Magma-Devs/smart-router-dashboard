@@ -7,7 +7,7 @@
  * read exactly like a quiet router.
  */
 import { createHash } from "node:crypto";
-import { applyScope, durationSeconds, isValidScope, type MetricScope } from "@sr/shared";
+import { applyScope, durationSeconds, isValidScope, promql, type MetricScope, type PromQL } from "@sr/shared";
 import { config } from "../config.js";
 import { noteRefusedRead } from "./read-health.js";
 
@@ -184,7 +184,7 @@ export class PrometheusClient {
   }
 
   /** Deployment scope first, router scope on top — each selector gets both. */
-  private scoped(expr: string): string {
+  private scoped(expr: PromQL): PromQL {
     return applyScope(applyScope(expr, this.baseScope, { cache: true }), this.scope);
   }
 
@@ -317,8 +317,11 @@ export class PrometheusClient {
     }
   }
 
-  /** Instant query → vector. */
-  async query(expr: string): Promise<PromVectorSample[]> {
+  /**
+   * Instant query → vector. Every query method takes only `PromQL`: text the
+   * builders and the `promql` template made, never a request's string.
+   */
+  async query(expr: PromQL): Promise<PromVectorSample[]> {
     const r = await this.get<PromVectorSample[]>("api/v1/query", {
       query: this.scoped(expr),
     });
@@ -327,7 +330,7 @@ export class PrometheusClient {
 
   /** Range query → matrix. */
   async queryRange(
-    expr: string,
+    expr: PromQL,
     startSeconds: number,
     endSeconds: number,
     step: string,
@@ -342,7 +345,7 @@ export class PrometheusClient {
   }
 
   /** Instant query at `timeSeconds` → vector; null when the store didn't answer. */
-  async queryAtOrNull(expr: string, timeSeconds: number): Promise<PromVectorSample[] | null> {
+  async queryAtOrNull(expr: PromQL, timeSeconds: number): Promise<PromVectorSample[] | null> {
     const r = await this.get<PromVectorSample[]>("api/v1/query", {
       query: this.scoped(expr),
       time: String(timeSeconds),
@@ -352,7 +355,7 @@ export class PrometheusClient {
 
   /** Range query → matrix; null when the store didn't answer, so "no series" and "no answer" stay apart. */
   async queryRangeOrNull(
-    expr: string,
+    expr: PromQL,
     startSeconds: number,
     endSeconds: number,
     step: string,
@@ -367,7 +370,7 @@ export class PrometheusClient {
   }
 
   /** First scalar value of an instant query, or null when no sample. */
-  async scalar(expr: string): Promise<number | null> {
+  async scalar(expr: PromQL): Promise<number | null> {
     const result = await this.query(expr);
     const first = result[0];
     if (!first) return null;
@@ -383,7 +386,7 @@ export class PrometheusClient {
    * query also exercises the credential, so a 401 shows up here first.
    */
   async ping(): Promise<boolean> {
-    const r = await this.get<PromVectorSample[]>("api/v1/query", { query: "vector(1)" }, { live: true });
+    const r = await this.get<PromVectorSample[]>("api/v1/query", { query: promql`vector(1)` }, { live: true });
     return r.status === "success";
   }
 }

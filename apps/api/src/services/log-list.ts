@@ -22,6 +22,7 @@
  * read may start later than the window (`wholeFrom`); its polls keep the
  * stretch before as the next, older read's.
  */
+import type { LogQL } from "@sr/shared";
 import { liveWindow, readEnd, readOnFrom, type ReadRange } from "./read-range.js";
 import { isRelayEnd } from "./relay-end.js";
 import type { LokiClient, LokiLine } from "./loki-client.js";
@@ -57,7 +58,7 @@ export const HEADS_KEPT = 8;
 
 /** A line filter that finds a list's requests; a read returns its newest `limit` lines. */
 export interface Finder {
-  query: string;
+  query: LogQL;
   limit: number;
 }
 
@@ -193,7 +194,7 @@ function merged(head: Head<unknown>, fresh: Seen[][], finders: Finder[], startMs
  */
 export async function readList<Row extends { guid: string; time: number }>(
   loki: LokiClient,
-  selector: string,
+  selector: LogQL,
   plan: ListPlan<Row>,
   range: ReadRange,
   last: Head<Row> | null = null,

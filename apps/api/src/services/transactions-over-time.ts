@@ -32,7 +32,19 @@
  * so its transactions are in the list and not in these bars.
  */
 import type { MetricWindow, RouterTopology, TransactionsOverTime, TxResult } from "@sr/shared";
-import { bucketGrid, WINDOWS } from "@sr/shared";
+import {
+  bucketGrid,
+  duration,
+  labelList,
+  logDuration,
+  logLineFilter,
+  logql,
+  metricName,
+  promql,
+  promString,
+  WINDOWS,
+  type LogQL,
+} from "@sr/shared";
 import type { PrometheusClient } from "./prometheus-client.js";
 import type { LokiClient, LokiSeries } from "./loki-client.js";
 import { ROUTER_LABEL, serviceNameOf, withMatcher } from "./stream-scope.js";
@@ -41,14 +53,14 @@ import { LABEL_TOKEN } from "./router-log.js";
 import { TX_EVENT_FILTER, txResultOf } from "./transactions.js";
 
 /** The store's per-minute transaction counts. */
-export const RECORDED_TX = "smartrouter_transactions:count1m";
+export const RECORDED_TX = metricName("smartrouter_transactions:count1m");
 
 /**
  * The family the fleet's Loki ruler records beside RECORDED_TX, from the same
  * rules file, for every tenant whose routers log: a sample of it says the
  * store has the ruler, so a scope with no transactions recorded had none.
  */
-export const RULER_FAMILY = "smartrouter_final_requests:count1m";
+export const RULER_FAMILY = metricName("smartrouter_final_requests:count1m");
 
 /** How long the ruler check is kept: whether a store has the ruler changes with a deploy, not a poll. */
 export const RULER_TTL_MS = 300_000;
@@ -69,9 +81,7 @@ const RULE_INTERVAL_SEC = 60;
 const BY = ["cluster", "service_name", "api_interface", "outcome", "tx_status", "tx_refused"] as const;
 
 /** The same labels from the logs: `tx_refused` when the reply named a `tx_code` other than 0. */
-const LOG_PIPELINE =
-  `| json outcome="outcome", tx_status="tx_status", tx_code="tx_code", api_interface="api_interface" | __error__=""` +
-  ' | label_format tx_refused=`{{ if and .tx_code (ne .tx_code "0") }}true{{ end }}`';
+const LOG_PIPELINE = logql`| json outcome="outcome", tx_status="tx_status", tx_code="tx_code", api_interface="api_interface" | __error__="" | label_format tx_refused=\`{{ if and .tx_code (ne .tx_code "0") }}true{{ end }}\``;
 
 /** How long a chart is kept before it is read again - a failed read too. */
 export const OVER_TIME_TTL_MS = 30_000;
@@ -97,7 +107,7 @@ export class TransactionsOverTimeService {
   constructor(
     private readonly prom: PrometheusClient | null,
     private readonly loki: LokiClient | null,
-    private readonly selector: string,
+    private readonly selector: LogQL,
     private readonly configSvc?: ConfigurationService,
   ) {}
 
@@ -222,8 +232,8 @@ export class TransactionsOverTimeService {
     const prom = this.prom!;
     const { grid } = bars;
     const step = grid.stepSec;
-    const sel = `${RECORDED_TX}${chain ? `{chain="${chain.toLowerCase()}"}` : ""}`;
-    const sum = (range: number) => `sum by (${BY.join(", ")}) (sum_over_time(${sel}[${range}s]))`;
+    const sel = promql`${RECORDED_TX}${chain ? promql`{chain=${promString(chain.toLowerCase())}}` : promql``}`;
+    const sum = (range: number) => promql`sum by (${labelList(BY)}) (sum_over_time(${sel}[${duration(range)}]))`;
     const lagFrom = Math.floor((nowSec - RECORDED_LAG_SEC) / 60) * 60;
     const lastWhole = Math.floor(lagFrom / step) * step;
     // The running part starts where the whole bars end, or where the first bar starts.
@@ -234,7 +244,7 @@ export class TransactionsOverTimeService {
         ? prom.queryRangeOrNull(sum(step), grid.start + SAMPLE_SHIFT_SEC, lastWhole + SAMPLE_SHIFT_SEC, `${step}s`)
         : Promise.resolve([]),
       lagFrom > partFrom ? prom.queryAtOrNull(sum(lagFrom - partFrom), readAt) : Promise.resolve([]),
-      prom.queryAtOrNull(`max(timestamp(${sel}))`, readAt),
+      prom.queryAtOrNull(promql`max(timestamp(${sel}))`, readAt),
     ]);
     if (whole === null || part === null || stamp === null) return null;
     const written = Number(stamp[0]?.value[1]);
@@ -260,7 +270,7 @@ export class TransactionsOverTimeService {
     const lookback = rulerLookbackSec(window);
     const kept = this.ruler.get(lookback);
     if (kept && Date.now() - kept.at < RULER_TTL_MS) return kept.present;
-    const r = await this.prom!.queryAtOrNull(`count(present_over_time(${RULER_FAMILY}[${lookback}s]))`, nowSec);
+    const r = await this.prom!.queryAtOrNull(promql`count(present_over_time(${RULER_FAMILY}[${duration(lookback)}]))`, nowSec);
     if (r === null) return null;
     const present = Number(r[0]?.value[1]) > 0;
     this.ruler.set(lookback, { at: Date.now(), present });
@@ -268,13 +278,13 @@ export class TransactionsOverTimeService {
   }
 
   /** The log count's query over `range` seconds, split by the labels the recorded counts carry. */
-  private logCount(selector: string, chain: string | undefined, range: number): string {
-    const chainFilter = chain ? ` |= \`"chain":"${chain}"\`` : "";
-    return `sum by (api_interface, outcome, tx_status, tx_refused) (count_over_time(${selector} ${TX_EVENT_FILTER}${chainFilter} ${LOG_PIPELINE} [${range}s]))`;
+  private logCount(selector: LogQL, chain: string | undefined, range: number): LogQL {
+    const chainFilter = chain ? logql` |= ${logLineFilter(`"chain":"${chain}"`)}` : logql``;
+    return logql`sum by (api_interface, outcome, tx_status, tx_refused) (count_over_time(${selector} ${TX_EVENT_FILTER}${chainFilter} ${LOG_PIPELINE} [${logDuration(range)}]))`;
   }
 
   /** The lines from `fromSec` to now, from the logs: a minute at a time from a range read, the rest from an instant read. Null when Loki didn't answer. */
-  private async readTail(selector: string, chain: string | undefined, fromSec: number, nowSec: number): Promise<LokiSeries[] | null> {
+  private async readTail(selector: LogQL, chain: string | undefined, fromSec: number, nowSec: number): Promise<LokiSeries[] | null> {
     const loki = this.loki!;
     const lastMinute = fromSec + Math.floor((nowSec - fromSec) / 60) * 60;
     const [minutes, running] = await Promise.all([

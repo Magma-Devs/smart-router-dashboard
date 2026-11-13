@@ -290,6 +290,9 @@ packages/shared/          @sr/shared — domain types, metric catalog, PromQL bu
     constants/windows.ts    WINDOWS — 13-window catalog (5m..30d) → PromQL range + step;
                             alignedBounds — a range read's window, on step boundaries
     promql/builders.ts      typed query builders shared by api (+ docs)
+    promql/query-text.ts    PromQL / LogQL brands, the tagged templates and
+                            one escape helper per query context (see
+                            "Query text")
     constants/roles.ts      ROLES + roleAtLeast — four cumulative roles
     constants/audit-events.ts  the audit log's verb set (see "Audit log")
     constants/error-codes.ts   every router error code → source, meaning, what to do,
@@ -586,9 +589,9 @@ boot. Set `job` for a scrape config that names jobs per router.
   (one static target, or a mislabelled `ROUTER_SCOPE_LABEL`): "can't split",
   never "no routers" — the config still knows the routers, which is why the
   filter is built on the config list and treats a scrape value as a bonus.
-- **Every `/api/metrics/*` route takes `?router=<value>`**, including the raw
-  `/query` passthrough. An absent or malformed value reads cluster-wide
-  rather than silently becoming a different query.
+- **Every `/api/metrics/*` route takes `?router=<value>`**. An absent value
+  reads cluster-wide; a malformed one is a 400 before any read (see "Query
+  text").
 - The scope is injected into the finished PromQL by `applyScope`
   (`packages/shared/src/promql/scope.ts`) rather than threaded through ~40
   builders: every vector selector gains the matcher. It is a small PromQL
@@ -666,12 +669,15 @@ deployment to one label value:
   builds (`plugins/prometheus.ts`), so every query carries it — `cache_*`
   included (the deployment owns its cache, unlike a router), the
   `count by (label)` behind `GET /api/metrics/routers` (the filter then lists
-  only this deployment's routers), and the raw `/query` passthrough. The
-  per-request `?router=` scope stacks on top: each selector ends up with both
-  matchers.
+  only this deployment's routers). The per-request `?router=` scope stacks on
+  top: each selector ends up with both matchers.
 - Same `applyScope` walker, run twice (`{ cache: true }` for the base pass).
-  Only the catalog + prefix families are reached, so a passthrough over some
-  foreign metric name stays unscoped — the label is not a query rewrite.
+  Only the catalog + prefix families are reached; every query the api sends
+  is one its own builders made (see "Query text").
+- The scope is a display filter, not a security boundary: the api's store
+  credential reads whatever the store holds. Keeping customers apart needs a
+  store-side boundary - a per-tenant org (`PROMETHEUS_ORG_ID`, or a read
+  proxy that pins the org from the credential) or a separate store.
 - Half a pair, or a label/value that cannot sit in a matcher, **throws at
   boot** (`readMetricsScope()` in `config.ts`). Ignoring it would read the
   whole store under a scoped name — the exact failure the pair exists to
@@ -911,9 +917,10 @@ every route is public; with `AUTH_MODE=enabled` the `/api/*` routes require a
 valid Bearer JWT (health/version and `/auth/*` stay public). See [`docs/AUTH.md`](docs/AUTH.md).
 
 Every `/api/metrics/*` route also accepts **`router?`** — the router scope
-(see "Router scope" above); omitted = cluster-wide. Every one but `/query` and
-`/reads` answers from a per-process snapshot and says how old the answer is in
-`Age` (see "Response snapshot" below).
+(see "Router scope" above); omitted = cluster-wide. Every one but `/reads`
+answers from a per-process snapshot and says how old the answer is in `Age`
+(see "Response snapshot" below). No route takes query text, and every value a
+request can put into a query is checked first (see "Query text" below).
 
 | Endpoint | Params | Returns |
 |---|---|---|
@@ -960,7 +967,6 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 | `GET /api/metrics/unavailable` | — | `{ unavailable: UnavailableChain[] }` — chains whose **every** backing endpoint reports down (`sinceSeconds` null for now) |
 | `GET /api/metrics/cross-validation` | `window` | `CrossValidationReport` - `emitted:false` + nulls until `cross_validation_*` fires; **`consistency` (total/caught) is real either way**, but **no web consumer**: MAG-2527 removed the strip that rendered `consistency` (consistency checks are head-freshness verification, not cross-validation), and the Traffic tab that rendered the rest is gone. `caught` still surfaces as the hero's `staleCaught` |
 | `GET /api/metrics/websocket` | `window` | `WebSocketReport` - `emitted:false` + nulls until `ws_*` fires (first subscription). **No web consumer**; kept as a documented read surface |
-| `GET /api/metrics/query` | **`query`** (required) | Raw **instant** PromQL passthrough — `{ result }`. 400 without `query` |
 | `GET /api/config/routers` | — | `{ routers: RouterTopology[] }` — live topology from the mounted values file (either format), node URLs masked to scheme+host. Each endpoint also carries `index` (the handle the relay below resolves) + `directable` |
 | `GET /api/error-requests` | `window` **or** `from` + `to` (unix ms, in the past, ≤30 days; 400 otherwise), `before?`, `spec?`, `routerId?`, `upstream?` | `ErrorRequestsReport` - the Errors tab's request list, from the router's logs in Loki (not Prometheus): every request that hit an error, newest first - `attempts[]` in order (`upstream`, `batch` (tries sent together share one), `outcome` ∈ ok/failed/skipped/cancelled/no-result, `replied`, the router's `code` and `retryable` verdict, the node's `message` word for word, the router's `note`, `atMs` / `endMs`), `result` ∈ recovered/error-reply/failed/write-unknown/unknown (`write-unknown`: a write the router couldn't settle, or a transaction it gave up on after sending it to a provider - the Transactions tab's `unknown`; `unknown`: the logs show no end), `resolvedBy`, `retried`, `stopReason` (the router's own), `exhausted`, `totalMs`, `error` (what the client got, for `failed` and `write-unknown`), `errorCode` (the request's own code from `relay_end`, e.g. `NODE_GATEWAY_TIMEOUT` on a `write-unknown`; null on the old lines), the caller's fields where the router wrote them (`customer`, `requestId`, `taskId`, `txId`, `requestBytes`, `replyBytes`, `requestedBlock`, `seenBlock`) and a try's `nodeCode`, `spec` (null + `specs` when its upstreams serve several chains). At most 300 requests per read, and at most `LOG_READ_BUDGET_BYTES` (4 GB) of logs, newest first: `more` + `nextBefore` say where to read on (`before=`). A chain or router narrows the read to its upstreams' names; `upstream` (an errors-over-time bar's) narrows it to that one and keeps the requests whose try there failed. Node urls in messages are cut to scheme+host. `available:false` + `reason` (`unconfigured` / `unreachable`) without `LOKI_URL` or when Loki doesn't answer. One read per key in flight on a process, its answer kept 15 s (a range that ended over a minute ago 5 minutes, a read Loki didn't answer 30 s); a poll of a page window reads only what is new since the last (see the Loki section) |
 | `GET /api/error-requests/count` | `window`, `spec?`, `routerId?` | `FailedRequests` - `{ available, reason?, value, since? }`: client requests the router **could not serve** (nothing, or nothing usable, came back from the upstreams, so the router returned its own error, typically "insufficient results") in the window. Read from the counts the fleet Loki's ruler records once a minute into the tenant's metrics store (`smartrouter_final_failures:count1m`, the server-errors alert's count) while they are fresh (newest under 5 min; looked at once a minute): any window, one cheap read; a chain is `chain="<spec lower-cased>"`, a config router `service_name=~".+-<id lower-cased>"`, so a router on a shared chain has its own count unless another router id of the chain ends in its, compared lower-cased (`shared-chain`). When the recorded counts start inside the window, `since` (ISO) says where. Without them it counts the lines in Loki: the line the router ends each such request with (`message` = "failed getting responses from RPC endpoints" when nothing came back, "failed processing responses from RPC endpoints" when nothing usable did; its own relays log "[-] failed sending init relay" instead), plus each failed `relay_end` on a router on smart-router #543 or later (parsed, not a subscription, `outcome` `no_answer` / `write_unknown` / `rejected_before_dispatch` / `router_error`); a chain narrows it by the listener that logged it (`<spec><interface>`), or by the event's `chain`; a router on a shared chain answers `shared-chain`; a window heavier than `LOG_READ_BUDGET_BYTES` answers `too-large` - the count reads the whole window at once. A chain the values file doesn't serve is 0 without a read. Kept 30 s per window, chain and router, a failed read too, one read in flight per key. No metric has this number: `smartrouter_requests_{total,success,failed}_total` move once per TRY, and the one per-request series, the end-to-end latency histogram, is only observed on success. The Metrics page's "Failed requests" card |
@@ -982,6 +988,54 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 | `POST /api/audit/tokens` | body `{ name }` | **admin only**. Mints a read-only pull token and returns `{ token, secret }` — the **only** time the value exists. Stored as SHA-256; lost means revoke and re-issue |
 | `DELETE /api/audit/tokens/:id` | — | **admin only**. Revokes; the token stops working on the next request. 404 when already revoked or unknown — the two are one answer so an id can't be confirmed by guessing |
 
+### Query text
+
+No route takes query text: the api builds every PromQL and LogQL query
+itself, from validated parameters.
+
+- **Types.** `PromQL` and `LogQL` are branded strings
+  (`packages/shared/src/promql/query-text.ts`). The Prometheus client's query
+  methods take only `PromQL` and the Loki client's reads only `LogQL`, so a
+  request's string handed to a client fails `pnpm typecheck`. Query text
+  comes from the `promql` / `logql` tagged templates, whose parts must
+  already be query text (a builder's output, a catalog metric name -
+  `metricNames()` types the catalogs as selectors) or finite numbers; from
+  the escape helpers below; and from `trustedLogQL`, which brands the one
+  configured piece, `LOKI_ROUTER_SELECTOR`, in `plugins/loki.ts`. Lint
+  refuses a cast to either brand outside `query-text.ts` and the scope
+  rewriter (`applyScope`: PromQL in, PromQL out). `pnpm typecheck` skips test
+  files, so `query-text-types.test.ts` and `store-client-types.test.ts`
+  compile snippets with the TypeScript compiler to pin that a plain string is
+  refused.
+- **One escape helper per context**, each writing a value as one literal in
+  the escapes Prometheus and Loki read back: `promString` (PromQL
+  `label="…"`), `promRegex(regexLiteral(v))` (PromQL `label=~"…"`),
+  `logStreamValue` (a LogQL stream matcher), `logLineFilter` /
+  `logLineRegex` (`|=` / `|~`: a raw string where it holds the value, else
+  the quoted form), `logLabelValue` / `logLabelRegex` (a label filter after
+  `| json`). A pattern put together from fixed syntax and escaped values is a
+  `regex` tagged template. Names and durations are validated, never escaped:
+  `labelName`, `metricName`, `duration`.
+- **Checked before the read.** Every request value that reaches a query is
+  checked by its route's schema, so anything else is a 400 before any read
+  (`services/query-params.ts`): `spec` a plain token, `router` and `routerId`
+  strict patterns, the look-up IDs `LOOKUP_ID`, and `endpointId` /
+  `upstream` a node the values file lists or a plain token - a
+  `preValidation` hook, ahead of every hook that may read the store. The
+  routes that read the store or the logs drop query parameters their schema
+  doesn't declare. `GET /api/metrics/routers` lists only scope values a
+  request can send back.
+- **SQL** is Drizzle: every value is a bound parameter (`sql` templates bind
+  theirs; there is no `sql.raw`). The audit filters carry length caps.
+- **Guards.** `no-query-text.test.ts` walks every registered route and fails
+  on a property named like query text, an unbounded querystring or params
+  string, or a store-reading route that keeps undeclared parameters, and pins
+  `trustedLogQL`'s one caller. `store-params.test.ts` sends quotes, braces,
+  line filters, backslashes, line breaks, regex syntax and over-long values
+  through every route and parameter: each is a 400 with no read, and a
+  configured name with any of them reaches the store as one literal, the
+  query around it unchanged.
+
 ### Response snapshot
 
 Every `/api/metrics/*` route that reads the store answers from a snapshot: one
@@ -990,8 +1044,7 @@ answer per route and query, shared by every caller of the process
 Without it every viewer re-runs its page's whole read set on every poll,
 N viewers N times that, and neither Mimir (its results cache covers range
 queries only) nor the client's 10 s answer cache, which sits under the 15 s
-poll, shares them. `/api/metrics/query` (the caller's own PromQL) and
-`/api/metrics/reads` (process state) always answer live.
+poll, shares them. `/api/metrics/reads` (process state) always answers live.
 
 - The key is the route and the parameters it reads, as parsed: the window
   after `toMetricWindow` (`24h` and `1d` share an answer), `spec`, `router`,
@@ -1059,7 +1112,7 @@ API (`apps/api/src/config.ts` is the source of truth):
 | `PROMETHEUS_USERNAME` / `PROMETHEUS_PASSWORD` | unset | Basic auth on every Prometheus call — for a per-tenant read proxy or Mimir behind an auth gateway. Both or neither: one half alone sends no header |
 | `PROMETHEUS_ORG_ID` | unset | Sent as `X-Scope-OrgID`, for a multi-tenant store that takes the org from the client. The fleet's read proxy pins the org from the credential and ignores this |
 | `ROUTER_SCOPE_LABEL` | unset | Target label carrying the router identity for `?router=`. Unset: resolved on first use — `router` (the fleet's collector and the chart's ServiceMonitor from 6.20.0 stamp it from the pod label `app.smart-router-id`), else `service` (the Prometheus Operator's automatic label, the router's Service name); never probed at boot, remembered once found. Set `job` for a scrape config that names jobs per router. Parsed at import — a change needs a restart |
-| `METRICS_SCOPE_LABEL` / `METRICS_SCOPE_VALUE` | unset | Deployment scope: a `label="value"` matcher EVERY metrics query carries (`cache_*`, router discovery and the `/query` passthrough included), for one dashboard per zone / tenant against a shared store. Both or neither — half a pair, a value that cannot sit in a matcher, or a label equal to `ROUTER_SCOPE_LABEL` refuses the boot. A scope that selects no router series warns at boot. Unset = the whole store, as before. See "The deployment scope" |
+| `METRICS_SCOPE_LABEL` / `METRICS_SCOPE_VALUE` | unset | Deployment scope: a `label="value"` matcher EVERY metrics query carries (`cache_*` and router discovery included), for one dashboard per zone / tenant against a shared store. Both or neither — half a pair, a value that cannot sit in a matcher, or a label equal to `ROUTER_SCOPE_LABEL` refuses the boot. A scope that selects no router series warns at boot. Unset = the whole store, as before. See "The deployment scope" |
 | `CORS_ORIGINS` | all | comma list or JSON array |
 | `RATE_LIMIT_MAX` | `300` | per caller per minute. With `AUTH_MODE=enabled` a second, fixed limit of 100 (`ACCOUNTS_RATE_LIMIT_MAX` in `plugins/auth.ts`) counts the same requests, so 100 is the one met. Both key on the connection's address, except a call the web vouches for (`X-Internal-Auth`), which spends the reader's session, else the forwarded browser address (`clientRateLimitKey`) — the layouts' per-page-load `/api/account/me` read would otherwise put every signed-in person in the web pod's bucket |
 | `TRUST_PROXY` | `1` | how far `X-Forwarded-For` is believed when deriving `request.ip` (hop count, proxy IP/CIDR list, or `false`). Not `true` — this api is public, and trusting every hop lets any caller choose their apparent address |

@@ -98,6 +98,28 @@ export default tseslint.config(
     },
   },
 
+  // Store query text (PromQL, LogQL) is made only by the tagged templates and
+  // escape helpers in `packages/shared/src/promql/query-text.ts`: a cast would
+  // let a request's string through as a query. The scope rewriter turns
+  // PromQL into PromQL and is the one other place that brands its output.
+  {
+    files: ["apps/**/*.{ts,tsx}", "packages/**/*.{ts,tsx}"],
+    ignores: ["packages/shared/src/promql/query-text.ts", "packages/shared/src/promql/scope.ts", "**/__tests__/**"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "TSAsExpression[typeAnnotation.typeName.name=/^(PromQL|LogQL|RegexSource)$/]",
+          message: "Build query text with promql`…` / logql`…` and the escape helpers in query-text.ts, never a cast.",
+        },
+        {
+          selector: "TSTypeAssertion[typeAnnotation.typeName.name=/^(PromQL|LogQL|RegexSource)$/]",
+          message: "Build query text with promql`…` / logql`…` and the escape helpers in query-text.ts, never a cast.",
+        },
+      ],
+    },
+  },
+
   // Keep ESLint out of Prettier's lane — must be LAST so it can turn off
   // any stylistic rules the presets enabled.
   prettier,

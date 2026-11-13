@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { toMetricWindow } from "@sr/shared";
 import { RANGE_QUERY_PROPERTIES, readRange, type RangeQuery } from "../services/read-range.js";
 import { LOOKUP_ID } from "../services/error-requests.js";
+import { PARAMS, upstreamParamCheck } from "../services/query-params.js";
 import { sendApiError } from "../plugins/error-handler.js";
 
 interface ErrorRequestsQuery extends RangeQuery {
@@ -15,24 +16,25 @@ export async function errorRequestRoutes(app: FastifyInstance) {
   // router's logs (Loki). Its count cards are GET /api/metrics/retries and
   // GET /api/metrics/errors.
   app.get<{ Querystring: ErrorRequestsQuery }>("/api/error-requests", {
+    // A name the values file lists, or a plain token: refused before any read.
+    preValidation: upstreamParamCheck("upstream", () => app.routerConfig),
     schema: {
       tags: ["Errors"],
       summary:
         "Requests that hit an error, from the router's logs (Loki): each try's upstream, error and retryability, who answered, why the router stopped; available:false without LOKI_URL",
       querystring: {
         type: "object" as const,
+        additionalProperties: false,
         properties: {
           ...RANGE_QUERY_PROPERTIES,
-          spec: { type: "string" as const, description: "Chain spec label, e.g. ETH1 (optional)" },
+          spec: { ...PARAMS.spec, description: "Chain spec label, e.g. ETH1 (optional)" },
           routerId: {
-            type: "string" as const,
+            ...PARAMS.routerId,
             description: "Only requests that tried an upstream this config router declares - an id from GET /api/config/routers (optional)",
           },
           upstream: {
-            type: "string" as const,
-            // Spliced into the LogQL as a literal: no backtick (see inRawString).
-            pattern: "^[^`]{1,128}$",
-            description: "Only requests whose try at this upstream failed - what its errors-over-time bars count (optional)",
+            ...PARAMS.upstream,
+            description: "Only requests whose try at this upstream failed - what its errors-over-time bars count: a node the values file lists, or a plain token (optional)",
           },
         },
       },
@@ -56,12 +58,12 @@ export async function errorRequestRoutes(app: FastifyInstance) {
         "Client requests the router could not serve (nothing, or nothing usable, came back from the upstreams, so the router returned its own error) in the window, from the router's logs; kept 30 s; available:false with a reason when the logs can't be read or a router can't be told apart",
       querystring: {
         type: "object" as const,
+        additionalProperties: false,
         properties: {
           window: RANGE_QUERY_PROPERTIES.window,
-          // Spliced into the LogQL: a plain token or a 400 (see LABEL_TOKEN).
-          spec: { type: "string" as const, pattern: "^[A-Za-z0-9_-]{1,64}$", description: "Chain spec label, e.g. ETH1 (optional)" },
+          spec: { ...PARAMS.spec, description: "Chain spec label, e.g. ETH1 (optional)" },
           routerId: {
-            type: "string" as const,
+            ...PARAMS.routerId,
             description: "Only this config router's requests - an id from GET /api/config/routers (optional). `shared-chain` when other routers serve its chain",
           },
         },
@@ -76,8 +78,8 @@ export async function errorRequestRoutes(app: FastifyInstance) {
     schema: {
       tags: ["Errors"],
       summary: "One request by its ID (the router's GUID), its transaction hash or the caller's request ID, from its logs: every try, what each upstream answered, what the app got; matches = how many requests carry the value",
-      params: { type: "object" as const, properties: { guid: { type: "string" as const, description: "The request ID (the GUID the router puts in its errors), the transaction hash, or the caller's X-Request-Id" } } },
-      querystring: { type: "object" as const, properties: { ...RANGE_QUERY_PROPERTIES } },
+      params: { type: "object" as const, additionalProperties: false, properties: { guid: PARAMS.lookupId } },
+      querystring: { type: "object" as const, additionalProperties: false, properties: { ...RANGE_QUERY_PROPERTIES } },
     },
   }, async (request, reply) => {
     const { guid } = request.params;

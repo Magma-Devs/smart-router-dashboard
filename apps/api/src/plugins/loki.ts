@@ -1,5 +1,6 @@
 import fp from "fastify-plugin";
 import type { FastifyInstance } from "fastify";
+import { trustedLogQL } from "@sr/shared";
 import { LokiClient } from "../services/loki-client.js";
 import { TransactionsService } from "../services/transactions.js";
 import { ErrorRequestsService } from "../services/error-requests.js";
@@ -31,7 +32,8 @@ export const lokiPlugin = fp(async (app: FastifyInstance) => {
     orgId: live("LOKI_ORG_ID") ?? config.loki.orgId,
   };
   const loki = url ? new LokiClient(url, config.loki.timeoutMs, app.log, auth) : null;
-  const selector = process.env.LOKI_ROUTER_SELECTOR?.trim() || config.loki.routerSelector;
+  // Operator configuration, the one LogQL the api doesn't build: every query starts from it.
+  const selector = trustedLogQL(process.env.LOKI_ROUTER_SELECTOR?.trim() || config.loki.routerSelector);
   app.decorate("transactions", new TransactionsService(loki, selector, app.routerConfig));
   app.decorate("transactionsOverTime", new TransactionsOverTimeService(app.prom, loki, selector, app.routerConfig));
   // The Failed requests card reads the counts the fleet Loki's ruler records

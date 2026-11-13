@@ -45,7 +45,24 @@ import type {
   RequestLookup,
   RouterTopology,
 } from "@sr/shared";
-import { WINDOWS } from "@sr/shared";
+import {
+  duration,
+  joinPromQL,
+  logDuration,
+  logLabelRegex,
+  logLineFilter,
+  logLineRegex,
+  logql,
+  metricNames,
+  promql,
+  promString,
+  regex,
+  regexAlt,
+  regexLiteral,
+  WINDOWS,
+  type LogQL,
+  type PromQL,
+} from "@sr/shared";
 import {
   attemptsOf,
   callFactsOf,
@@ -72,8 +89,6 @@ import { isTransaction } from "./transactions.js";
 import {
   chainOf,
   END_MSG,
-  escapeRe,
-  inRawString,
   LABEL_TOKEN,
   lastWhere,
   listenerPattern,
@@ -250,7 +265,7 @@ function rowOfEvent(e: RouterLine, guid: string, index: UpstreamIndex, every: bo
  * write whose outcome is unknown after a partial reply is in neither. A router
  * on #543 writes neither: its failed requests are `relay_end` events.
  */
-export const GAVE_UP = `failed (getting|processing) responses from RPC endpoints`;
+export const GAVE_UP = regex`failed (getting|processing) responses from RPC endpoints`;
 
 /** How long a failed-request count is kept before Loki is asked again - a failed read too. */
 export const COUNT_TTL_MS = 30_000;
@@ -271,10 +286,10 @@ const COUNT_KEEP = 256;
  * the same minutes. Reading them costs
  * the same at a month as at five minutes; reading the logs costs the window.
  */
-export const RECORDED_OUTCOMES = {
+export const RECORDED_OUTCOMES = metricNames({
   requests: "smartrouter_final_requests:count1m",
   failures: "smartrouter_final_failures:count1m",
-} as const;
+});
 
 /** The newest recorded count may be this old before the counts are read from the logs instead. */
 const RECORDED_STALE_SEC = 300;
@@ -296,7 +311,7 @@ const unavailable = <R extends string>(reason: R) => ({ available: false as cons
 export class ErrorRequestsService {
   constructor(
     private readonly loki: LokiClient | null,
-    private readonly selector: string,
+    private readonly selector: LogQL,
     private readonly configSvc?: ConfigurationService,
     private readonly cap: number = ERROR_READ_CAP,
     /** The metrics store holding RECORDED_OUTCOMES; null reads the count from the logs. */
@@ -327,8 +342,8 @@ export class ErrorRequestsService {
     if (this.probed && Date.now() - this.probed.at < RECORDED_PROBE_MS) return this.probed.state;
     const requests = RECORDED_OUTCOMES.requests;
     const state = Promise.all([
-      prom.scalar(`time() - max(timestamp(${requests}))`).catch(() => null),
-      prom.scalar(`time() - min(min_over_time(timestamp(${requests})[30d:1h]))`).catch(() => null),
+      prom.scalar(promql`time() - max(timestamp(${requests}))`).catch(() => null),
+      prom.scalar(promql`time() - min(min_over_time(timestamp(${requests})[30d:1h]))`).catch(() => null),
     ]).then(([ageSec, historySec]) => ({
       fresh: ageSec !== null && ageSec <= RECORDED_STALE_SEC,
       historySec: historySec !== null && Number.isFinite(historySec) ? historySec : null,
@@ -414,14 +429,14 @@ export class ErrorRequestsService {
     if (bytes === null) return { ...unavailable("unreachable"), value: null };
     if (bytes > LOG_READ_BUDGET_BYTES) return { ...unavailable("too-large"), value: null };
 
-    const r = `${seconds}s`;
-    const byChain = chain ? ` | ep=~\`${escapeRe(chain)}(jsonrpc|rest|tendermintrpc|grpc)\`` : "";
-    const eventChain = chain ? ` |= \`"chain":"${chain}"\`` : "";
+    const r = logDuration(seconds);
+    const byChain = chain ? logql` | ep=~${logLabelRegex(regex`${regexLiteral(chain)}(jsonrpc|rest|tendermintrpc|grpc)`)}` : logql``;
+    const eventChain = chain ? logql` |= ${logLineFilter(`"chain":"${chain}"`)}` : logql``;
     // Each leg summed on its own, then added: `or vector(0)` keeps a leg with
     // no lines from emptying the total.
-    const lines = `sum(count_over_time(${this.selector} |~ \`${GAVE_UP}\` | json msg="message", ep="endpoint" | msg=~\`${GAVE_UP}\`${byChain} [${r}]))`;
-    const events = `sum(count_over_time(${this.selector}${eventChain} ${FAILED_PIPELINE} [${r}]))`;
-    const value = await loki.count(`(${lines} or vector(0)) + (${events} or vector(0))`);
+    const lines = logql`sum(count_over_time(${this.selector} |~ ${logLineRegex(GAVE_UP)} | json msg="message", ep="endpoint" | msg=~${logLabelRegex(GAVE_UP)}${byChain} [${r}]))`;
+    const events = logql`sum(count_over_time(${this.selector}${eventChain} ${FAILED_PIPELINE} [${r}]))`;
+    const value = await loki.count(logql`(${lines} or vector(0)) + (${events} or vector(0))`);
     return value === null ? { ...unavailable("unreachable"), value: null } : { available: true, value };
   }
 
@@ -433,8 +448,8 @@ export class ErrorRequestsService {
     router: RouterTopology | undefined,
     routers: RouterTopology[],
   ): Promise<FailedRequests> {
-    const matchers: string[] = [];
-    if (chain) matchers.push(`chain="${chain.toLowerCase()}"`);
+    const matchers: PromQL[] = [];
+    if (chain) matchers.push(promql`chain=${promString(chain.toLowerCase())}`);
     if (router) {
       // `service_name` is `<tenant>-<router id lower-cased>`, and the tenant
       // isn't known here: the id is matched as its end. Another router of the
@@ -447,7 +462,7 @@ export class ErrorRequestsService {
     }
     // `or vector(0)`: an answer always has a sample, so none means the store didn't answer.
     const value = await prom
-      .scalar(`sum(sum_over_time(${RECORDED_OUTCOMES.failures}{${matchers.join(", ")}}[${seconds}s])) or vector(0)`)
+      .scalar(promql`sum(sum_over_time(${RECORDED_OUTCOMES.failures}{${joinPromQL(matchers, promql`, `)}}[${duration(seconds)}])) or vector(0)`)
       .catch(() => null);
     if (value === null) return { ...unavailable("unreachable"), value: null };
     const short = historySec !== null && historySec + HISTORY_GRID_SEC < seconds;
@@ -513,23 +528,23 @@ export class ErrorRequestsService {
       // A request no upstream could be chosen for names none: its end line names the chain's listener.
       const chain = upstream || scoped ? undefined : (router?.spec ?? spec);
       const alts = [
-        ...(names?.filter(inRawString).map(escapeRe) ?? []),
+        ...(names?.map(regexLiteral) ?? []),
         ...(names && chain && LABEL_TOKEN.test(chain) ? [listenerPattern(chain)] : []),
       ];
-      const narrow = alts.length ? ` |~ \`${alts.join("|")}\`` : "";
+      const narrow = alts.length ? logql` |~ ${logLineRegex(regexAlt(alts))}` : logql``;
       // A relay_end is one line per request and names its chain and its tries' upstreams.
       const eventNarrow = upstream
-        ? inRawString(upstream) ? ` |= \`"upstream":"${upstream}"\`` : ""
-        : chain && LABEL_TOKEN.test(chain) ? ` |= \`"chain":"${chain}"\`` : "";
+        ? logql` |= ${logLineFilter(`"upstream":${JSON.stringify(upstream)}`)}`
+        : chain && LABEL_TOKEN.test(chain) ? logql` |= ${logLineFilter(`"chain":"${chain}"`)}` : logql``;
       const index = new UpstreamIndex(routers);
       const got = await readList(loki, selector, {
         finders: [
           {
-            query: `${selector} |~ \`${FOUND_BY.map(escapeRe).join("|")}\` !~ \`PROTOCOL_CONTEXT_CANCELED|context canceled\`${narrow}`,
+            query: logql`${selector} |~ ${logLineRegex(regexAlt(FOUND_BY.map(regexLiteral)))} !~ \`PROTOCOL_CONTEXT_CANCELED|context canceled\`${narrow}`,
             limit: this.cap * 4,
           },
           {
-            query: `${selector} |= \`${RELAY_END}\` != \`"selection":"subscription"\` |~ \`"outcome":"(${WRONG_OUTCOMES.join("|")})"\`${eventNarrow} ${PARSED_PIPELINE}`,
+            query: logql`${selector} |= ${logLineFilter(RELAY_END)} != \`"selection":"subscription"\` |~ ${logLineRegex(regex`"outcome":"(${regexAlt(WRONG_OUTCOMES.map(regexLiteral))})"`)}${eventNarrow} ${PARSED_PIPELINE}`,
             limit: this.cap,
           },
         ],

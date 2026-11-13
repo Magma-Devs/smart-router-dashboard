@@ -26,8 +26,17 @@
  * capitals and all: the chart's own default ids are `Ethereum` and `CosmosHub`.
  */
 
+import {
+  labelName,
+  promql,
+  promRegex,
+  regex,
+  regexLiteral,
+  withStreamMatcher,
+  type LogQL,
+  type PromQL,
+} from "@sr/shared";
 import type { LokiClient } from "./loki-client.js";
-import { escapeRe } from "./router-log.js";
 
 export const CHAIN_LABEL = "chain";
 export const ROUTER_LABEL = "service_name";
@@ -39,10 +48,14 @@ const KEEP_MS = 10 * 60_000;
 /** A label value spliced into a selector: a plain token only. */
 export const SAFE_VALUE = /^[A-Za-z0-9_.:-]{1,128}$/;
 
-/** The router's selector with one more label matcher; null when it isn't a plain `{…}` selector. */
-export function withMatcher(selector: string, label: string, value: string): string | null {
-  if (!SAFE_VALUE.test(value) || !/\}\s*$/.test(selector)) return null;
-  return selector.replace(/\}\s*$/, `, ${label}="${value}"}`);
+/**
+ * The router's selector with one more label matcher; null when it isn't a
+ * plain `{…}` selector or the value isn't a plain token. The value is escaped
+ * as one string literal (`withStreamMatcher`) whatever it holds.
+ */
+export function withMatcher(selector: LogQL, label: string, value: string): LogQL | null {
+  if (!SAFE_VALUE.test(value)) return null;
+  return withStreamMatcher(selector, label, value);
 }
 
 /** A router id as `service_name` carries it: lower-cased, as the chart labels the router's pods. */
@@ -69,15 +82,14 @@ export function serviceNameClash(routerId: string, others: readonly string[]): b
 }
 
 /**
- * The matcher for one router's series or streams where the tenant isn't
- * known, in PromQL or LogQL: `service_name=~".+-<id>"`, the id lower-cased
- * and regex-escaped (a `.` in it matches only a dot), then escaped again for
- * the quoted string. Null for an id that isn't a plain token.
+ * The matcher for one router's series where the tenant isn't known:
+ * `service_name=~".+-<id>"`, the id lower-cased and regex-escaped (a `.` in
+ * it matches only a dot), then escaped again for the quoted string
+ * (`promRegex`). Null for an id that isn't a plain token.
  */
-export function serviceNameMatcher(routerId: string): string | null {
+export function serviceNameMatcher(routerId: string): PromQL | null {
   if (!SAFE_VALUE.test(routerId)) return null;
-  const regex = `.+-${escapeRe(serviceNameId(routerId))}`;
-  return `${ROUTER_LABEL}=~"${regex.replace(/\\/g, "\\\\")}"`;
+  return promql`${labelName(ROUTER_LABEL)}=~${promRegex(regex`.+-${regexLiteral(serviceNameId(routerId))}`)}`;
 }
 
 /** The tenant the selector pins, when it names one: `service_name` is `<tenant>-<router id lower-cased>`. */
@@ -88,7 +100,7 @@ export class StreamScope {
 
   constructor(
     private readonly loki: LokiClient,
-    private readonly selector: string,
+    private readonly selector: LogQL,
     private readonly now: () => number = Date.now,
   ) {}
 
@@ -108,7 +120,7 @@ export class StreamScope {
    * to one chain (`chain`, the spec lower-cased, as the recorded counts match
    * it); null when the streams can't be narrowed that way.
    */
-  async narrow(spec?: string, routerId?: string): Promise<string | null> {
+  async narrow(spec?: string, routerId?: string): Promise<LogQL | null> {
     if (routerId) {
       // <tenant>-<id lower-cased>, exactly where the selector names the tenant, else the one value ending in -<id>.
       const cluster = clusterOf(this.selector);

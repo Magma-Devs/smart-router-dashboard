@@ -9,6 +9,7 @@
  * matching lines" - so the caller can say which. Failures are logged at warn,
  * one line per distinct failure per minute, like the Prometheus client.
  */
+import type { LogQL } from "@sr/shared";
 import { config } from "../config.js";
 import { buildAuthHeaders, type PromAuth, type PromLogger } from "./prometheus-client.js";
 
@@ -85,9 +86,13 @@ export class LokiClient {
     this.logger.warn(obj, msg);
   }
 
-  /** Lines matching `query` between two unix-ms times, at most `limit` of them. */
+  /**
+   * Lines matching `query` between two unix-ms times, at most `limit` of them.
+   * Every read takes only `LogQL`: text the api's builders and the `logql`
+   * template made, never a request's string.
+   */
   async queryRange(
-    query: string,
+    query: LogQL,
     startMs: number,
     endMs: number,
     limit: number,
@@ -130,7 +135,7 @@ export class LokiClient {
   }
 
   /** A metric query's series, read from `url`; null when Loki didn't answer. */
-  private async metric(url: URL, query: string): Promise<LokiSeries[] | null> {
+  private async metric(url: URL, query: LogQL): Promise<LokiSeries[] | null> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
@@ -165,7 +170,7 @@ export class LokiClient {
   }
 
   /** A metric query (`sum by (…) (count_over_time(…))`) from `startSec` to `endSec`, a point each `stepSec`. */
-  async metricRange(query: string, startSec: number, endSec: number, stepSec: number): Promise<LokiSeries[] | null> {
+  async metricRange(query: LogQL, startSec: number, endSec: number, stepSec: number): Promise<LokiSeries[] | null> {
     const url = this.endpoint("loki/api/v1/query_range");
     url.searchParams.set("query", query);
     url.searchParams.set("start", String(startSec));
@@ -175,7 +180,7 @@ export class LokiClient {
   }
 
   /** A metric query at `timeSec`: one point per series. */
-  async metricAt(query: string, timeSec: number): Promise<LokiSeries[] | null> {
+  async metricAt(query: LogQL, timeSec: number): Promise<LokiSeries[] | null> {
     const url = this.endpoint("loki/api/v1/query");
     url.searchParams.set("query", query);
     url.searchParams.set("time", String(timeSec));
@@ -185,7 +190,7 @@ export class LokiClient {
   /** One number from a metric query (`sum(count_over_time(…))`), now: the
    *  vector's values added up - 0 when nothing matched, null when Loki
    *  didn't answer. */
-  async count(query: string): Promise<number | null> {
+  async count(query: LogQL): Promise<number | null> {
     const base = new URL(this.baseUrl);
     if (!base.pathname.endsWith("/")) base.pathname += "/";
     const url = new URL("loki/api/v1/query", base);
@@ -220,7 +225,7 @@ export class LokiClient {
    * two unix-ms times, from Loki's index: no chunk is read. Null when Loki
    * didn't answer.
    */
-  async labelValues(label: string, selector: string, startMs: number, endMs: number): Promise<string[] | null> {
+  async labelValues(label: string, selector: LogQL, startMs: number, endMs: number): Promise<string[] | null> {
     const base = new URL(this.baseUrl);
     if (!base.pathname.endsWith("/")) base.pathname += "/";
     const url = new URL(`loki/api/v1/label/${encodeURIComponent(label)}/values`, base);
@@ -256,7 +261,7 @@ export class LokiClient {
    * still opened - so this is what a read of that stretch scans. Null when
    * Loki didn't answer.
    */
-  async volume(selector: string, startMs: number, endMs: number): Promise<number | null> {
+  async volume(selector: LogQL, startMs: number, endMs: number): Promise<number | null> {
     const base = new URL(this.baseUrl);
     if (!base.pathname.endsWith("/")) base.pathname += "/";
     const url = new URL("loki/api/v1/index/stats", base);

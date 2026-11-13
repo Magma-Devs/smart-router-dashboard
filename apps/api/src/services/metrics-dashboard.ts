@@ -32,6 +32,8 @@ import {
   type DashboardUpstreamSeries,
   type Kpi,
   type MetricWindow,
+  promql,
+  type PromQL,
 } from "@sr/shared";
 import { WINDOWS, alignedBounds, stepSeconds } from "@sr/shared/constants";
 import type { PromMatrixSample, PrometheusClient } from "./prometheus-client.js";
@@ -88,16 +90,16 @@ export class MetricsDashboardService {
     const sel = selector({ spec });
 
     // KPI value + its prior-window counterpart (offset PromQL range).
-    const kpi = async (cur: string, prior: string): Promise<Kpi> => {
+    const kpi = async (cur: PromQL, prior: PromQL): Promise<Kpi> => {
       const [value, p] = await Promise.all([this.prom.scalar(cur), this.prom.scalar(prior)]);
       return { value, prior: p };
     };
-    const range = (expr: string) => this.prom.queryRange(expr, start, end, step);
+    const range = (expr: PromQL) => this.prom.queryRange(expr, start, end, step);
 
     // Per-chain availability-ratio series (success/total grouped by spec).
-    const perSpecSrExpr = `clamp_max(sum by (spec) (rate(${ROUTER_METRICS.requestsSuccessTotal}[${rateRange(step)}])) / sum by (spec) (rate(${ROUTER_METRICS.requestsTotal}[${rateRange(step)}])), 1)`;
+    const perSpecSrExpr = promql`clamp_max(sum by (spec) (rate(${ROUTER_METRICS.requestsSuccessTotal}[${rateRange(step)}])) / sum by (spec) (rate(${ROUTER_METRICS.requestsTotal}[${rateRange(step)}])), 1)`;
     // Per-upstream p95 — the endpoint histogram carries endpoint_id.
-    const perUpstreamLatencyExpr = `histogram_quantile(0.95, sum by (endpoint_id, le) (rate(${ENDPOINT_METRICS.latencyBucket}${sel}[${rateRange(step)}])))`;
+    const perUpstreamLatencyExpr = promql`histogram_quantile(0.95, sum by (endpoint_id, le) (rate(${ENDPOINT_METRICS.latencyBucket}${sel}[${rateRange(step)}])))`;
 
     const [successRate, p95Ms, rps, errorsNow, errorsPrior] = await Promise.all([
       kpi(qAvailability(spec, window), qAvailability(spec, window, r)),
@@ -108,7 +110,7 @@ export class MetricsDashboardService {
       // reported non-zero req/s on a chain nobody was calling (MAG-2738).
       kpi(
         qClientRps(spec),
-        `sum(rate(${ROUTER_METRICS.latencyCount}${sel}[5m] offset ${r}))`,
+        promql`sum(rate(${ROUTER_METRICS.latencyCount}${sel}[5m] offset ${r}))`,
       ),
       this.prom.scalar(qErrorCount(spec, window)),
       this.prom.scalar(qErrorCount(spec, window, r)),
@@ -149,7 +151,7 @@ export class MetricsDashboardService {
       range(qPerSpecLatencySeriesExpr(0.99, step)),
       range(qPerUpstreamRpsExpr(step, spec)),
       range(perUpstreamLatencyExpr),
-      this.prom.query(`count by (spec) (${ROUTER_METRICS.requestsTotal})`),
+      this.prom.query(promql`count by (spec) (${ROUTER_METRICS.requestsTotal})`),
       this.prom.query(qPerSpecHealth()),
     ]);
 

@@ -5,7 +5,7 @@ import { MetricsService } from "../services/metrics.js";
 import { MetricsDetailService } from "../services/metrics-detail.js";
 import { MetricsDashboardService } from "../services/metrics-dashboard.js";
 import { ConfigurationService } from "../services/configuration.js";
-import { RECORDED, RECORDED_CHART_FLOOR, ROUTER_METRICS, recordedReadsPolicy, recordedWindows, scrapeIntervalMatches, setRecordedReads, type RecordedReadsState } from "@sr/shared";
+import { RECORDED, RECORDED_CHART_FLOOR, ROUTER_METRICS, duration, promql, recordedReadsPolicy, recordedWindows, scrapeIntervalMatches, setRecordedReads, type RecordedReadsState } from "@sr/shared";
 import { ROUTER_SCOPE_CANDIDATES, config, readMetricsScope } from "../config.js";
 
 /** Services bound to one router scope (or to the whole cluster when unset). */
@@ -85,7 +85,7 @@ export const prometheusPlugin = fp(async (app: FastifyInstance) => {
     // a zero here means the scope selects no router. Advisory: a zone still
     // provisioning is also zero, and readiness must not hinge on it.
     app.addHook("onReady", async () => {
-      const routers = await prom.scalar(`count(${ROUTER_METRICS.overallHealth})`);
+      const routers = await prom.scalar(promql`count(${ROUTER_METRICS.overallHealth})`);
       if (!routers) {
         app.log.warn(
           { scope: baseScope, probe: ROUTER_METRICS.overallHealth },
@@ -117,9 +117,9 @@ export const prometheusPlugin = fp(async (app: FastifyInstance) => {
     // exactly for a 15-second scrape and is phase-biased for any other. A
     // store that cannot answer the first is a store without fresh series.
     const [ageSec, historySec, scrapeSec] = await Promise.all([
-      prom.scalar(`time() - max(timestamp(${RECORDED.requests}))`).catch(() => null),
-      prom.scalar(`time() - min(min_over_time(timestamp(${RECORDED.requests})[${recorded.historyLookback}:1h]))`).catch(() => null),
-      prom.scalar(`600 / max(count_over_time(${ROUTER_METRICS.requestsTotal}[10m]))`).catch(() => null),
+      prom.scalar(promql`time() - max(timestamp(${RECORDED.requests}))`).catch(() => null),
+      prom.scalar(promql`time() - min(min_over_time(timestamp(${RECORDED.requests})[${duration(recorded.historyLookback)}:1h]))`).catch(() => null),
+      prom.scalar(promql`600 / max(count_over_time(${ROUTER_METRICS.requestsTotal}[10m]))`).catch(() => null),
     ]);
     const fresh = ageSec !== null && Number.isFinite(ageSec) && ageSec * 1000 <= recorded.staleMs;
     // No router series at all is not a wrong interval — there is nothing to be wrong about yet.

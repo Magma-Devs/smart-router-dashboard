@@ -79,6 +79,11 @@ import {
   type TimePoint,
   type UnavailableChain,
   type WebSocketReport,
+  duration,
+  labelName,
+  promql,
+  promString,
+  type PromQL,
 } from "@sr/shared";
 import { WINDOWS, alignedBounds, bucketGrid, chartSampling, errorBuckets, stepSeconds } from "@sr/shared/constants";
 import type { PrometheusClient, PromMatrixSample, PromVectorSample } from "./prometheus-client.js";
@@ -127,14 +132,14 @@ export class MetricsDetailService {
     return { ...alignedBounds(WINDOWS[window].rangeSeconds, stepSec, Date.now() / 1000), stepSec };
   }
 
-  private async seriesOn(expr: string, grid: ChartGrid): Promise<TimePoint[]> {
+  private async seriesOn(expr: PromQL, grid: ChartGrid): Promise<TimePoint[]> {
     const matrix = await this.prom.queryRange(expr, grid.start, grid.end, `${grid.stepSec}s`);
     return toPoints(matrix[0]?.values);
   }
 
   /** One errors-over-time series: the whole bars from a range read, then the
    *  bar still filling from one instant read over the seconds it has run. */
-  private async barsOf(exprFor: (step: string, single: boolean) => string, step: string, bars: ReturnType<typeof bucketGrid>): Promise<TimePoint[]> {
+  private async barsOf(exprFor: (step: string, single: boolean) => PromQL, step: string, bars: ReturnType<typeof bucketGrid>): Promise<TimePoint[]> {
     const { grid, lastFull, partialSec } = bars;
     const [whole, filling] = await Promise.all([
       lastFull >= grid.start ? this.seriesOn(exprFor(step, false), { ...grid, end: lastFull }) : Promise.resolve([] as TimePoint[]),
@@ -143,7 +148,7 @@ export class MetricsDetailService {
     return filling == null ? whole : [...whole, { t: grid.end, v: filling }];
   }
 
-  private async series(expr: string, window: MetricWindow): Promise<TimePoint[]> {
+  private async series(expr: PromQL, window: MetricWindow): Promise<TimePoint[]> {
     const { start, end, step } = this.windowBounds(window);
     const matrix = await this.prom.queryRange(expr, start, end, step);
     return toPoints(matrix[0]?.values);
@@ -160,7 +165,7 @@ export class MetricsDetailService {
     // chartSampling): dense, smooth lines rather than a few coarse steps.
     const { stepSec, step, lookback, rateWindow } = chartSampling(window);
     const grid = this.grid(window, stepSec);
-    const range = (expr: string) => this.prom.queryRangeOrNull(expr, grid.start, grid.end, step);
+    const range = (expr: PromQL) => this.prom.queryRangeOrNull(expr, grid.start, grid.end, step);
     const reads = await Promise.all([
       range(qEndpointLatencyByEndpointSeriesExpr(0.95, spec, lookback, rateWindow, window)),
       range(qUpstreamRpsByUpstreamSeriesExpr(spec, lookback, rateWindow, step, window)),
@@ -345,7 +350,7 @@ export class MetricsDetailService {
     const step = errorBuckets(window).step;
     // The whole bars from a range read, then the bar still filling from one read at now over the
     // seconds it has run, laid at its end - as `barsOf` reads the errors-over-time bars.
-    const range = async (exprFor: (step: string) => string): Promise<PromMatrixSample[] | null> => {
+    const range = async (exprFor: (step: string) => PromQL): Promise<PromMatrixSample[] | null> => {
       const [whole, filling] = await Promise.all([
         lastFull >= start ? this.prom.queryRangeOrNull(exprFor(step), start, lastFull, step) : Promise.resolve([] as PromMatrixSample[]),
         partialSec > 0 ? this.prom.queryRangeOrNull(exprFor(`${partialSec}s`), asOf, asOf, step) : Promise.resolve([] as PromMatrixSample[]),
@@ -377,9 +382,9 @@ export class MetricsDetailService {
     const siblings = (this.configSvc?.getRouters() ?? []).filter((r) => r.spec === spec && r.id !== routerId).map((r) => r.id);
     const byRouter = router ? serviceNameMatcher(router.id) : null;
     const splittable = !router || (byRouter !== null && !serviceNameClash(router.id, siblings));
-    const outcomeSel = `{chain="${spec.toLowerCase()}"${byRouter ? `, ${byRouter}` : ""}}`;
+    const outcomeSel = promql`{chain=${promString(spec.toLowerCase())}${byRouter ? promql`, ${byRouter}` : promql``}}`;
     const [requested, unserved] = LABEL_TOKEN.test(spec) && splittable
-      ? await Promise.all([RECORDED_OUTCOMES.requests, RECORDED_OUTCOMES.failures].map((m) => range((st) => `sum(sum_over_time(${m}${outcomeSel}[${st}]))`)))
+      ? await Promise.all([RECORDED_OUTCOMES.requests, RECORDED_OUTCOMES.failures].map((m) => range((st) => promql`sum(sum_over_time(${m}${outcomeSel}[${duration(st)}]))`)))
       : [null, null];
     const byTime = (m: typeof requested) => new Map(toPoints(m?.[0]?.values).map((p) => [p.t, p.v]));
     const reqAt = byTime(requested);
@@ -502,7 +507,7 @@ export class MetricsDetailService {
     const provSel = upstreamProviderSelector(ref);
 
     // One blocked gauge per api interface; blocked on any of them is the upstream's health.
-    const healthVal = await this.prom.scalar(`1 - max(${ROUTER_METRICS.csmProviderBlocked}${provSel})`);
+    const healthVal = await this.prom.scalar(promql`1 - max(${ROUTER_METRICS.csmProviderBlocked}${provSel})`);
 
     const [
       requests,
@@ -517,14 +522,14 @@ export class MetricsDetailService {
       blockLagNow,
     ] = await Promise.all([
       this.prom.scalar(qUpstreamRequestsTotal(ref, window)),
-      this.prom.scalar(`sum(rate(${ROUTER_METRICS.requestsTotal}${provSel}[5m]))`),
+      this.prom.scalar(promql`sum(rate(${ROUTER_METRICS.requestsTotal}${provSel}[5m]))`),
       this.prom.scalar(qUpstreamAvailability(ref, window)),
       this.prom.scalar(qUpstreamErrorRate(ref, window)),
       this.prom.scalar(qEndpointLatencyQuantile(0.5, ref, window)),
       this.prom.scalar(qEndpointLatencyQuantile(0.95, ref, window)),
       this.prom.scalar(qEndpointLatencyQuantile(0.99, ref, window)),
-      this.prom.scalar(`sum(${ENDPOINT_METRICS.requestsInFlight}${epSel})`),
-      this.prom.query(`${ENDPOINT_METRICS.selectionScore}${epSel}`),
+      this.prom.scalar(promql`sum(${ENDPOINT_METRICS.requestsInFlight}${epSel})`),
+      this.prom.query(promql`${ENDPOINT_METRICS.selectionScore}${epSel}`),
       this.prom.scalar(qEndpointBlockLagSeriesExpr(ref)),
     ]);
 
@@ -584,24 +589,24 @@ export class MetricsDetailService {
       this.prom.scalar(qUpstreamFailedCount(ref, window)),
       nodeErrs
         ? this.prom.scalar(
-            `round(sum(increase(${OPTIONAL_METRICS.nodeErrorsTotal}${provSel}[${r}])))`,
+            promql`round(sum(increase(${OPTIONAL_METRICS.nodeErrorsTotal}${provSel}[${r}])))`,
           )
         : Promise.resolve(0),
       protoErrs
         ? this.prom.scalar(
-            `round(sum${increaseFromBirth(`${OPTIONAL_METRICS.protocolErrorsTotal}${provSel}`, r)})`,
+            promql`round(sum${increaseFromBirth(promql`${OPTIONAL_METRICS.protocolErrorsTotal}${provSel}`, r)})`,
           )
         : Promise.resolve(0),
       nodeErrs
         ? this.prom.query(
-            `round(sum by (method) (increase(${OPTIONAL_METRICS.nodeErrorsTotal}${provSel}[${r}])))`,
+            promql`round(sum by (method) (increase(${OPTIONAL_METRICS.nodeErrorsTotal}${provSel}[${r}])))`,
           )
         : Promise.resolve([] as Awaited<ReturnType<PrometheusClient["query"]>>),
       this.prom.scalar(
-        `round(sum(increase(${OPTIONAL_METRICS.crossValidationAgreementsTotal}${provSel}[${r}])))`,
+        promql`round(sum(increase(${OPTIONAL_METRICS.crossValidationAgreementsTotal}${provSel}[${r}])))`,
       ),
       this.prom.scalar(
-        `round(sum(increase(${OPTIONAL_METRICS.crossValidationDisagreementsTotal}${provSel}[${r}])))`,
+        promql`round(sum(increase(${OPTIONAL_METRICS.crossValidationDisagreementsTotal}${provSel}[${r}])))`,
       ),
     ]);
 
@@ -713,7 +718,7 @@ export class MetricsDetailService {
     const clSel = selector({ chain_id: spec });
     const clQ = (by: string) =>
       this.prom.query(
-        `round(sum by (${by}) (increase(${OPTIONAL_METRICS.errorsClassifiedTotal}${clSel}[${rr}])))`,
+        promql`round(sum by (${labelName(by)}) (increase(${OPTIONAL_METRICS.errorsClassifiedTotal}${clSel}[${rr}])))`,
       );
     const [byName, byCategory, byRetryable] = classifiedPresent
       ? await Promise.all([clQ("error_name"), clQ("error_category"), clQ("retryable")])
@@ -741,17 +746,17 @@ export class MetricsDetailService {
     const [nodeTotal, protoTotal, nodeByPairMethod] = await Promise.all([
       nodePresent
         ? this.prom.scalar(
-            `round(sum(increase(${OPTIONAL_METRICS.nodeErrorsTotal}${sel}[${rr}])))`,
+            promql`round(sum(increase(${OPTIONAL_METRICS.nodeErrorsTotal}${sel}[${rr}])))`,
           )
         : Promise.resolve(0),
       protoPresent
         ? this.prom.scalar(
-            `round(sum${increaseFromBirth(`${OPTIONAL_METRICS.protocolErrorsTotal}${sel}`, rr)})`,
+            promql`round(sum${increaseFromBirth(promql`${OPTIONAL_METRICS.protocolErrorsTotal}${sel}`, rr)})`,
           )
         : Promise.resolve(0),
       nodePresent
         ? this.prom.query(
-            `round(sum by (spec, provider_address, method) (increase(${OPTIONAL_METRICS.nodeErrorsTotal}${sel}[${rr}])))`,
+            promql`round(sum by (spec, provider_address, method) (increase(${OPTIONAL_METRICS.nodeErrorsTotal}${sel}[${rr}])))`,
           )
         : Promise.resolve([] as Awaited<ReturnType<PrometheusClient["query"]>>),
     ]);
@@ -948,10 +953,10 @@ export class MetricsDetailService {
     // consistency_failed_total family means zero failures since boot).
     // consistency_success_total counts checks that PASSED — never "caught".
     const [consTotal, consCaught] = await Promise.all([
-      this.prom.scalar(`round(sum(increase(${ROUTER_METRICS.consistencyTotal}[${r}])))`),
+      this.prom.scalar(promql`round(sum(increase(${ROUTER_METRICS.consistencyTotal}[${r}])))`),
       consistencyFailedPresent
         ? this.prom.scalar(
-            `round(sum(increase(${OPTIONAL_METRICS.consistencyFailedTotal}[${r}])))`,
+            promql`round(sum(increase(${OPTIONAL_METRICS.consistencyFailedTotal}[${r}])))`,
           )
         : Promise.resolve(0),
     ]);
@@ -971,22 +976,22 @@ export class MetricsDetailService {
 
     const [rounds, ok, reasonRows, bySpecRounds, bySpecOk, bySpecNoAgree] = await Promise.all([
       this.prom.scalar(
-        `round(sum(increase(${OPTIONAL_METRICS.crossValidationRequestsTotal}[${r}])))`,
+        promql`round(sum(increase(${OPTIONAL_METRICS.crossValidationRequestsTotal}[${r}])))`,
       ),
       this.prom.scalar(
-        `round(sum(increase(${OPTIONAL_METRICS.crossValidationSuccessTotal}[${r}])))`,
+        promql`round(sum(increase(${OPTIONAL_METRICS.crossValidationSuccessTotal}[${r}])))`,
       ),
       this.prom.query(
-        `round(sum by (reason) (increase(${OPTIONAL_METRICS.crossValidationFailuresTotal}[${r}])))`,
+        promql`round(sum by (reason) (increase(${OPTIONAL_METRICS.crossValidationFailuresTotal}[${r}])))`,
       ),
       this.prom.query(
-        `round(sum by (spec) (increase(${OPTIONAL_METRICS.crossValidationRequestsTotal}[${r}])))`,
+        promql`round(sum by (spec) (increase(${OPTIONAL_METRICS.crossValidationRequestsTotal}[${r}])))`,
       ),
       this.prom.query(
-        `round(sum by (spec) (increase(${OPTIONAL_METRICS.crossValidationSuccessTotal}[${r}])))`,
+        promql`round(sum by (spec) (increase(${OPTIONAL_METRICS.crossValidationSuccessTotal}[${r}])))`,
       ),
       this.prom.query(
-        `round(sum by (spec) (increase(${OPTIONAL_METRICS.crossValidationFailuresTotal}{reason="no-agreement"}[${r}])))`,
+        promql`round(sum by (spec) (increase(${OPTIONAL_METRICS.crossValidationFailuresTotal}{reason="no-agreement"}[${r}])))`,
       ),
     ]);
 
@@ -1050,13 +1055,13 @@ export class MetricsDetailService {
     }
     const [active, subs, errs, byChainRows, errsByChainRows, activeByChainRows] =
       await Promise.all([
-        this.prom.scalar(`sum(${OPTIONAL_METRICS.wsConnectionsActive})`),
-        this.prom.scalar(`round(sum(${OPTIONAL_METRICS.wsSubscriptionsTotal}))`),
-        this.prom.scalar(`round(sum(${OPTIONAL_METRICS.wsSubscriptionErrorsTotal}))`),
-        this.prom.query(`round(sum by (spec) (${OPTIONAL_METRICS.wsSubscriptionsTotal}))`),
-        this.prom.query(`round(sum by (spec) (${OPTIONAL_METRICS.wsSubscriptionErrorsTotal}))`),
+        this.prom.scalar(promql`sum(${OPTIONAL_METRICS.wsConnectionsActive})`),
+        this.prom.scalar(promql`round(sum(${OPTIONAL_METRICS.wsSubscriptionsTotal}))`),
+        this.prom.scalar(promql`round(sum(${OPTIONAL_METRICS.wsSubscriptionErrorsTotal}))`),
+        this.prom.query(promql`round(sum by (spec) (${OPTIONAL_METRICS.wsSubscriptionsTotal}))`),
+        this.prom.query(promql`round(sum by (spec) (${OPTIONAL_METRICS.wsSubscriptionErrorsTotal}))`),
         // Live per-chain connections — the gauge carries `spec`.
-        this.prom.query(`sum by (spec) (${OPTIONAL_METRICS.wsConnectionsActive})`),
+        this.prom.query(promql`sum by (spec) (${OPTIONAL_METRICS.wsConnectionsActive})`),
       ]);
     const errsBySpec = new Map(
       errsByChainRows.map((s) => [s.metric.spec ?? "", Number(s.value[1]) || 0]),

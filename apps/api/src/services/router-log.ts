@@ -7,7 +7,20 @@
  * smart-router #543 or later also ends each request in one `relay_end` event,
  * which is an interface (relay-end.ts): a request with one is read from it alone.
  */
-import { guidMintedSecond, WINDOWS, type RelayAttempt, type RouterTopology } from "@sr/shared";
+import {
+  guidMintedSecond,
+  logLineFilter,
+  logLineRegex,
+  logql,
+  regex,
+  regexAlt,
+  regexLiteral,
+  WINDOWS,
+  type LogQL,
+  type RegexSource,
+  type RelayAttempt,
+  type RouterTopology,
+} from "@sr/shared";
 import type { LokiClient, LokiLine } from "./loki-client.js";
 import type { ReadRange } from "./read-range.js";
 
@@ -110,14 +123,10 @@ export const REQUEST_ID = /^[A-Za-z0-9_-]{1,64}$/;
  */
 export const LOOKUP_ID = /^[A-Za-z0-9_.:+=@-]{1,128}$/;
 
-/** A request value spliced into a LogQL pattern (a chain's spec) must be a
- *  plain token: LogQL raw strings are backtick-quoted and can't escape one,
- *  so a backtick would end the string and let the rest run as LogQL. */
+/** A chain's spec as a request names it: a plain token, checked before any
+ *  read. Where it reaches a query it is escaped as well (`query-text.ts`). */
 export const LABEL_TOKEN = /^[A-Za-z0-9_-]{1,64}$/;
 
-/** A config value (an upstream's name) that can sit in a backtick-quoted
- *  LogQL string; one that can't is left out of the query, not spliced in. */
-export const inRawString = (s: string) => !s.includes("`");
 
 /**
  * Every line of the requests a look-up names, in a range: the request with
@@ -127,13 +136,13 @@ export const inRawString = (s: string) => !s.includes("`");
  */
 export async function linesOfRequest(
   loki: LokiClient,
-  selector: string,
+  selector: LogQL,
   id: string,
   fromMs: number,
   toMs: number,
 ): Promise<RouterLine[] | null> {
   const found = await loki.queryRange(
-    `${selector} |= \`${id}\` |~ \`"(GUID|tx_hash|request_id)":"${escapeRe(id)}"\``,
+    logql`${selector} |= ${logLineFilter(id)} |~ ${logLineRegex(regex`"(GUID|tx_hash|request_id)":"${regexLiteral(id)}"`)}`,
     fromMs,
     toMs,
     1000,
@@ -179,7 +188,7 @@ const isEnd = (l: RouterLine) => l.f.event === "relay_end";
  */
 export async function linesOfLookup(
   loki: LokiClient,
-  selector: string,
+  selector: LogQL,
   id: string,
   range: ReadRange,
   nowMs: number = Date.now(),
@@ -431,7 +440,7 @@ const LISTENER = /^(.+?)(jsonrpc|rest|tendermintrpc|grpc)$/;
 const END_LINES: ReadonlySet<string> = new Set(Object.values(END_MSG));
 
 /** The LogQL pattern of a chain's listener on the lines that end a request (`"endpoint":"ETH1jsonrpc"`). */
-export const listenerPattern = (spec: string) => `"endpoint":"${escapeRe(spec)}(jsonrpc|rest|tendermintrpc|grpc)"`;
+export const listenerPattern = (spec: string): RegexSource => regex`"endpoint":"${regexLiteral(spec)}(jsonrpc|rest|tendermintrpc|grpc)"`;
 
 /**
  * A request's chain: the one its lines name (`chain_id`, or the listener on
@@ -478,7 +487,6 @@ export function ownRow(
   return sent.some((a) => own.has(a.upstream));
 }
 
-export const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** GUIDs per follow-up query - they go into one regex alternation. */
 const GUID_BATCH = 100;
@@ -501,7 +509,7 @@ export interface GuidLines {
  */
 export async function linesForGuids(
   loki: LokiClient,
-  selector: string,
+  selector: LogQL,
   guids: string[],
   fromMs: number,
   messages: string[],
@@ -512,11 +520,11 @@ export async function linesForGuids(
   const ids = guids.filter((g) => REQUEST_ID.test(g));
   const batches: string[][] = [];
   for (let i = 0; i < ids.length; i += GUID_BATCH) batches.push(ids.slice(i, i + GUID_BATCH));
-  const pattern = messages.map(escapeRe).join("|");
+  const pattern = logLineRegex(regexAlt(messages.map(regexLiteral)));
   const results = await Promise.all(
     batches.map((batch) =>
       loki.queryRange(
-        `${selector} |~ \`"GUID":"(${batch.join("|")})"\` |~ \`${pattern}\``,
+        logql`${selector} |~ ${logLineRegex(regex`"GUID":"(${regexAlt(batch.map(regexLiteral))})"`)} |~ ${pattern}`,
         fromMs,
         toMs,
         GUID_BATCH * perGuid,

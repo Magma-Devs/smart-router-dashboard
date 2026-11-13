@@ -204,9 +204,11 @@ describe("api routes", () => {
     expect(body.health).toBe("operational");
   });
 
-  it("GET /api/metrics/query requires a query param", async () => {
-    const res = await app.inject({ method: "GET", url: "/api/metrics/query" });
-    expect(res.statusCode).toBe(400);
+  it("GET /api/metrics/query is not a route: no route takes query text", async () => {
+    for (const url of ["/api/metrics/query", "/api/metrics/query?query=up", "/api/metrics/query?query=up&router=eth-router"]) {
+      const res = await app.inject({ method: "GET", url });
+      expect(res.statusCode, url).toBe(404);
+    }
   });
 
   it("GET /api/metrics/chains → array shape", async () => {

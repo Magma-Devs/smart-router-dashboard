@@ -11,30 +11,35 @@ import {
 } from "../constants/metrics.js";
 import { DEFAULT_WINDOW, MIN_RATE_RANGE_SEC, WINDOWS, durationSeconds, type MetricWindow } from "../constants/windows.js";
 import type { UpstreamRef } from "../types/domain.js";
+import { duration, joinPromQL, labelList, labelName, promql, promRegex, promString, regex, regexAlt, regexLiteral, type PromQL } from "./query-text.js";
 import { RECORDED, RECORDED_INTERVAL_SECONDS, SCRAPE_INTERVAL_SECONDS, recordedReadsFor, recordedSeriesFor } from "./recorded.js";
 
-/** Build a `{spec="ETH1",...}` label selector; empty string for no filters. */
-export function selector(labels: Record<string, string | undefined>): string {
+/**
+ * Build a `{spec="ETH1",...}` label selector; empty for no filters. Each value
+ * is one escaped string literal (`promString`), so no value can close the
+ * matcher; each name must be a label name.
+ */
+export function selector(labels: Record<string, string | undefined>): PromQL {
   const parts = Object.entries(labels)
-    .filter(([, v]) => v !== undefined && v !== "")
-    .map(([k, v]) => `${k}="${v}"`);
-  return parts.length ? `{${parts.join(",")}}` : "";
+    .filter((e): e is [string, string] => e[1] !== undefined && e[1] !== "")
+    .map(([k, v]) => promql`${labelName(k)}=${promString(v)}`);
+  return parts.length ? promql`{${joinPromQL(parts, promql`,`)}}` : promql``;
 }
 
-export function rangeFor(window: MetricWindow): string {
-  return `${WINDOWS[window].rangeSeconds}s`;
+export function rangeFor(window: MetricWindow): PromQL {
+  return duration(WINDOWS[window].rangeSeconds);
 }
 
 /** ` offset 86400s` suffix for prior-window comparisons; empty when unset. */
-function off(offset?: string): string {
-  return offset ? ` offset ${offset}` : "";
+function off(offset?: string): PromQL {
+  return offset ? promql` offset ${duration(offset)}` : promql``;
 }
 
 /* ── Ranges for series drawn every `step` ────────────────────────────────── */
 
 /** The range a rate line drawn every `step` reads: the step, or a minute when the step is shorter. */
-export function rateRange(step: string): string {
-  return durationSeconds(step) < MIN_RATE_RANGE_SEC ? "1m" : step;
+export function rateRange(step: string): PromQL {
+  return durationSeconds(step) < MIN_RATE_RANGE_SEC ? promql`1m` : duration(step);
 }
 
 /**
@@ -59,34 +64,34 @@ export function countRangeSec(step: string, single = false): number {
 }
 
 /** The count per point of a series drawn every `step` (errors, volume); see `countRangeSec`. */
-export function countOverStep(series: string, step: string, single = false): string {
+export function countOverStep(series: PromQL, step: string, single = false): PromQL {
   const sec = durationSeconds(step);
-  if (!(sec > 0)) return `increase(${series}[${step}])`;
-  return `(rate(${series}[${countRangeSec(step, single)}s]) * ${sec})`;
+  if (!(sec > 0)) return promql`increase(${series}[${duration(step)}])`;
+  return promql`(rate(${series}[${duration(countRangeSec(step, single))}]) * ${sec})`;
 }
 
 /** `round()` where a counter step lands in one point; a point holding shares of steps stays as it is. */
-function roundWhole(expr: string, step: string, single = false): string {
-  return countPointsPerStep(step, single) === 1 ? `round(${expr})` : expr;
+function roundWhole(expr: PromQL, step: string, single = false): PromQL {
+  return countPointsPerStep(step, single) === 1 ? promql`round(${expr})` : expr;
 }
 
 /* ── Recorded-series forms (see recorded.ts) ─────────────────────────────── */
 
 /** Per-minute rate samples summed over a range: a count once scaled by `K`. */
-function sot(series: string, range: string, offset?: string): string {
-  return `sum_over_time(${series}[${range}]${off(offset)})`;
+function sot(series: PromQL, range: string, offset?: string): PromQL {
+  return promql`sum_over_time(${series}[${duration(range)}]${off(offset)})`;
 }
 
 /** Per-minute rate samples averaged over a range: the mean rate across it. */
-function aot(series: string, range: string): string {
-  return `avg_over_time(${series}[${range}])`;
+function aot(series: PromQL, range: string): PromQL {
+  return promql`avg_over_time(${series}[${duration(range)}])`;
 }
 
 /** The seconds each recorded sample stands for. */
 const K = RECORDED_INTERVAL_SECONDS;
 
 /** The recorded relay pair a grouping reads: the family that carries that label. */
-function recordedPair(by: ErrorsGroupBy): { total: string; ok: string } {
+function recordedPair(by: ErrorsGroupBy): { total: PromQL; ok: PromQL } {
   if (by === "provider_address") return { total: RECORDED.requestsByProvider, ok: RECORDED.successByProvider };
   if (by === "method") return { total: RECORDED.requestsByMethod, ok: RECORDED.successByMethod };
   return { total: RECORDED.requests, ok: RECORDED.success };
@@ -106,14 +111,14 @@ export function qRequestsTotal(
   spec?: string,
   window: MetricWindow = DEFAULT_WINDOW,
   offset?: string,
-): string {
+): PromQL {
   if (recordedReadsFor(window, offset ? 2 : 1)) {
-    return `round(sum(${sot(`${RECORDED.requests}${selector({ spec })}`, rangeFor(window), offset)}) * ${K})`;
+    return promql`round(sum(${sot(promql`${RECORDED.requests}${selector({ spec })}`, rangeFor(window), offset)}) * ${K})`;
   }
   // round(): increase() extrapolates to the window edges and returns a float, so
   // a young counter yields e.g. 239.1 "requests" — a request count is inherently
   // a whole number, so round it back to an integer.
-  return `round(sum(increase(${ROUTER_METRICS.requestsTotal}${selector({ spec })}[${rangeFor(window)}]${off(offset)})))`;
+  return promql`round(sum(increase(${ROUTER_METRICS.requestsTotal}${selector({ spec })}[${rangeFor(window)}]${off(offset)})))`;
 }
 
 /* ── Client-scoped request counts (latency-histogram _count) ─────────────── */
@@ -123,11 +128,11 @@ export function qClientRequestsTotal(
   spec?: string,
   window: MetricWindow = DEFAULT_WINDOW,
   offset?: string,
-): string {
+): PromQL {
   if (recordedReadsFor(window, offset ? 2 : 1)) {
-    return `round(sum(${sot(`${RECORDED.clientRequests}${selector({ spec })}`, rangeFor(window), offset)}) * ${K})`;
+    return promql`round(sum(${sot(promql`${RECORDED.clientRequests}${selector({ spec })}`, rangeFor(window), offset)}) * ${K})`;
   }
-  return `round(sum(increase(${ROUTER_METRICS.latencyCount}${selector({ spec })}[${rangeFor(window)}]${off(offset)})))`;
+  return promql`round(sum(increase(${ROUTER_METRICS.latencyCount}${selector({ spec })}[${rangeFor(window)}]${off(offset)})))`;
 }
 
 /** Client requests grouped by a label (`spec` or `function` = method). The
@@ -136,24 +141,24 @@ export function qClientRequestsBy(
   by: "spec" | "function",
   window: MetricWindow = DEFAULT_WINDOW,
   spec?: string,
-): string {
+): PromQL {
   if (by === "spec" && recordedReadsFor(window)) {
-    return `round(sum by (spec) (${sot(`${RECORDED.clientRequests}${selector({ spec })}`, rangeFor(window))}) * ${K})`;
+    return promql`round(sum by (spec) (${sot(promql`${RECORDED.clientRequests}${selector({ spec })}`, rangeFor(window))}) * ${K})`;
   }
-  return `round(sum by (${by}) (increase(${ROUTER_METRICS.latencyCount}${selector({ spec })}[${rangeFor(window)}])))`;
+  return promql`round(sum by (${labelName(by)}) (increase(${ROUTER_METRICS.latencyCount}${selector({ spec })}[${rangeFor(window)}])))`;
 }
 
 /** Instant client requests/sec (rate over the last 5m). */
-export function qClientRps(spec?: string): string {
-  return `sum(rate(${ROUTER_METRICS.latencyCount}${selector({ spec })}[5m]))`;
+export function qClientRps(spec?: string): PromQL {
+  return promql`sum(rate(${ROUTER_METRICS.latencyCount}${selector({ spec })}[5m]))`;
 }
 
 /** Client RPS series. `window` lets a long window read the recorded series. */
-export function qClientRpsSeriesExpr(step: string, spec?: string, window?: MetricWindow): string {
+export function qClientRpsSeriesExpr(step: string, spec?: string, window?: MetricWindow): PromQL {
   if (recordedSeriesFor(window)) {
-    return `sum(${aot(`${RECORDED.clientRequests}${selector({ spec })}`, step)})`;
+    return promql`sum(${aot(promql`${RECORDED.clientRequests}${selector({ spec })}`, step)})`;
   }
-  return `sum(rate(${ROUTER_METRICS.latencyCount}${selector({ spec })}[${rateRange(step)}]))`;
+  return promql`sum(rate(${ROUTER_METRICS.latencyCount}${selector({ spec })}[${rateRange(step)}]))`;
 }
 
 /** Per-method p95/p50/… — the histogram DOES carry the method (as `function`). */
@@ -161,8 +166,8 @@ export function qMethodLatencyQuantile(
   quantile: number,
   window: MetricWindow = DEFAULT_WINDOW,
   spec?: string,
-): string {
-  return `histogram_quantile(${quantile}, sum by (function, le) (rate(${ROUTER_METRICS.latencyBucket}${selector({ spec })}[${rangeFor(window)}])))`;
+): PromQL {
+  return promql`histogram_quantile(${quantile}, sum by (function, le) (rate(${ROUTER_METRICS.latencyBucket}${selector({ spec })}[${rangeFor(window)}])))`;
 }
 
 /** success / total over the window → availability ratio (0..1).
@@ -177,14 +182,14 @@ export function qAvailability(
   spec?: string,
   window: MetricWindow = DEFAULT_WINDOW,
   offset?: string,
-): string {
+): PromQL {
   const sel = selector({ spec });
   const r = rangeFor(window);
   const o = off(offset);
   if (recordedReadsFor(window, offset ? 2 : 1)) {
-    return `clamp_max(sum(${sot(`${RECORDED.success}${sel}`, r, offset)}) / sum(${sot(`${RECORDED.requests}${sel}`, r, offset)}), 1)`;
+    return promql`clamp_max(sum(${sot(promql`${RECORDED.success}${sel}`, r, offset)}) / sum(${sot(promql`${RECORDED.requests}${sel}`, r, offset)}), 1)`;
   }
-  return `clamp_max(sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${r}]${o})) / sum(increase(${ROUTER_METRICS.requestsTotal}${sel}[${r}]${o})), 1)`;
+  return promql`clamp_max(sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${r}]${o})) / sum(increase(${ROUTER_METRICS.requestsTotal}${sel}[${r}]${o})), 1)`;
 }
 
 /** 1 - success/total → error rate (0..1). */
@@ -192,8 +197,8 @@ export function qErrorRate(
   spec?: string,
   window: MetricWindow = DEFAULT_WINDOW,
   offset?: string,
-): string {
-  return `1 - (${qAvailability(spec, window, offset)})`;
+): PromQL {
+  return promql`1 - (${qAvailability(spec, window, offset)})`;
 }
 
 /**
@@ -207,50 +212,50 @@ export function qLatencyQuantile(
   spec?: string,
   window: MetricWindow = DEFAULT_WINDOW,
   offset?: string,
-): string {
+): PromQL {
   const sel = selector({ spec });
   const r = rangeFor(window);
   if (recordedReadsFor(window, offset ? 2 : 1)) {
-    return `histogram_quantile(${quantile}, sum by (le) (${sot(`${RECORDED.latencyBucket}${sel}`, r, offset)}))`;
+    return promql`histogram_quantile(${quantile}, sum by (le) (${sot(promql`${RECORDED.latencyBucket}${sel}`, r, offset)}))`;
   }
-  return `histogram_quantile(${quantile}, sum by (le) (rate(${ROUTER_METRICS.latencyBucket}${sel}[${r}]${off(offset)})))`;
+  return promql`histogram_quantile(${quantile}, sum by (le) (rate(${ROUTER_METRICS.latencyBucket}${sel}[${r}]${off(offset)})))`;
 }
 
 /** Instant requests/sec (rate over the last 5m). */
-export function qRps(spec?: string): string {
-  return `sum(rate(${ROUTER_METRICS.requestsTotal}${selector({ spec })}[5m]))`;
+export function qRps(spec?: string): PromQL {
+  return promql`sum(rate(${ROUTER_METRICS.requestsTotal}${selector({ spec })}[5m]))`;
 }
 
 /** Latest observed block per chain (instant gauge). */
-export function qLatestBlock(spec?: string): string {
-  return `max by (spec) (${ROUTER_METRICS.latestBlock}${selector({ spec })})`;
+export function qLatestBlock(spec?: string): PromQL {
+  return promql`max by (spec) (${ROUTER_METRICS.latestBlock}${selector({ spec })})`;
 }
 
 /** Per-chain health gauge (1/0). */
-export function qOverallHealth(): string {
+export function qOverallHealth(): PromQL {
   return ROUTER_METRICS.overallHealth;
 }
 
 /** Per-endpoint composite QoS (selection_score), instant. */
-export function qEndpointScore(scoreType: string, spec?: string): string {
-  return `${ENDPOINT_METRICS.selectionScore}${selector({ spec, score_type: scoreType })}`;
+export function qEndpointScore(scoreType: string, spec?: string): PromQL {
+  return promql`${ENDPOINT_METRICS.selectionScore}${selector({ spec, score_type: scoreType })}`;
 }
 
 /** Per-endpoint request totals over the window, grouped by endpoint_id. */
-export function qEndpointRequests(spec?: string, window: MetricWindow = DEFAULT_WINDOW): string {
+export function qEndpointRequests(spec?: string, window: MetricWindow = DEFAULT_WINDOW): PromQL {
   if (recordedReadsFor(window)) {
-    return `sum by (endpoint_id) (${sot(`${RECORDED.endpointRelays}${selector({ spec })}`, rangeFor(window))}) * ${K}`;
+    return promql`sum by (endpoint_id) (${sot(promql`${RECORDED.endpointRelays}${selector({ spec })}`, rangeFor(window))}) * ${K}`;
   }
-  return `sum by (endpoint_id) (increase(${ENDPOINT_METRICS.totalRelaysServiced}${selector({ spec })}[${rangeFor(window)}]))`;
+  return promql`sum by (endpoint_id) (increase(${ENDPOINT_METRICS.totalRelaysServiced}${selector({ spec })}[${rangeFor(window)}]))`;
 }
 
 /** Relays served per (upstream, chain) over the window — the roster's volume column. */
-export function qEndpointRelaysBySpec(window: MetricWindow = DEFAULT_WINDOW, spec?: string): string {
+export function qEndpointRelaysBySpec(window: MetricWindow = DEFAULT_WINDOW, spec?: string): PromQL {
   const sel = selector({ spec });
   if (recordedReadsFor(window)) {
-    return `sum by (endpoint_id, spec) (${sot(`${RECORDED.endpointRelays}${sel}`, rangeFor(window))}) * ${K}`;
+    return promql`sum by (endpoint_id, spec) (${sot(promql`${RECORDED.endpointRelays}${sel}`, rangeFor(window))}) * ${K}`;
   }
-  return `sum by (endpoint_id, spec) (increase(${ENDPOINT_METRICS.totalRelaysServiced}${sel}[${rangeFor(window)}]))`;
+  return promql`sum by (endpoint_id, spec) (increase(${ENDPOINT_METRICS.totalRelaysServiced}${sel}[${rangeFor(window)}]))`;
 }
 
 /** A latency quantile per (upstream, chain) over the window — the roster's p95. */
@@ -258,12 +263,12 @@ export function qEndpointLatencyQuantileBySpec(
   quantile: number,
   window: MetricWindow = DEFAULT_WINDOW,
   spec?: string,
-): string {
+): PromQL {
   const sel = selector({ spec });
   if (recordedReadsFor(window)) {
-    return `histogram_quantile(${quantile}, sum by (endpoint_id, spec, le) (${sot(`${RECORDED.endpointLatencyBucket}${sel}`, rangeFor(window))}))`;
+    return promql`histogram_quantile(${quantile}, sum by (endpoint_id, spec, le) (${sot(promql`${RECORDED.endpointLatencyBucket}${sel}`, rangeFor(window))}))`;
   }
-  return `histogram_quantile(${quantile}, sum by (endpoint_id, spec, le) (rate(${ENDPOINT_METRICS.latencyBucket}${sel}[${rangeFor(window)}])))`;
+  return promql`histogram_quantile(${quantile}, sum by (endpoint_id, spec, le) (rate(${ENDPOINT_METRICS.latencyBucket}${sel}[${rangeFor(window)}])))`;
 }
 
 /**
@@ -271,8 +276,8 @@ export function qEndpointLatencyQuantileBySpec(
  * traffic; 0 = serving), keyed by `endpoint_id` like the per-endpoint
  * families: `provider_address` carries the same configured name.
  */
-export function qProviderBlockedByEndpoint(spec?: string): string {
-  return `label_replace(${ROUTER_METRICS.csmProviderBlocked}${selector({ spec })}, "endpoint_id", "$1", "provider_address", "(.*)")`;
+export function qProviderBlockedByEndpoint(spec?: string): PromQL {
+  return promql`label_replace(${ROUTER_METRICS.csmProviderBlocked}${selector({ spec })}, "endpoint_id", "$1", "provider_address", "(.*)")`;
 }
 
 /* ── Derived error math (real: total − success, clamped ≥ 0) ─────────────── */
@@ -282,14 +287,14 @@ export function qErrorCount(
   spec?: string,
   window: MetricWindow = DEFAULT_WINDOW,
   offset?: string,
-): string {
+): PromQL {
   const sel = selector({ spec });
   const r = rangeFor(window);
   const o = off(offset);
   if (recordedReadsFor(window, offset ? 2 : 1)) {
-    return `round(clamp_min((sum(${sot(`${RECORDED.requests}${sel}`, r, offset)}) - sum(${sot(`${RECORDED.success}${sel}`, r, offset)})) * ${K}, 0))`;
+    return promql`round(clamp_min((sum(${sot(promql`${RECORDED.requests}${sel}`, r, offset)}) - sum(${sot(promql`${RECORDED.success}${sel}`, r, offset)})) * ${K}, 0))`;
   }
-  return `round(clamp_min(sum(increase(${ROUTER_METRICS.requestsTotal}${sel}[${r}]${o})) - sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${r}]${o})), 0))`;
+  return promql`round(clamp_min(sum(increase(${ROUTER_METRICS.requestsTotal}${sel}[${r}]${o})) - sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${r}]${o})), 0))`;
 }
 
 export type ErrorsGroupBy = "spec" | "provider_address" | "method";
@@ -302,71 +307,71 @@ export function qErrorsBy(
   by: ErrorsGroupBy,
   window: MetricWindow = DEFAULT_WINDOW,
   spec?: string,
-): string {
+): PromQL {
   const sel = selector({ spec });
   const r = rangeFor(window);
   if (recordedReadsFor(window)) {
     const pair = recordedPair(by);
-    const tot = `sum by (${by}) (${sot(`${pair.total}${sel}`, r)})`;
-    const ok = `sum by (${by}) (${sot(`${pair.ok}${sel}`, r)})`;
-    return `round(clamp_min((${tot} - (${ok} or ${tot} * 0)) * ${K}, 0))`;
+    const tot = promql`sum by (${labelName(by)}) (${sot(promql`${pair.total}${sel}`, r)})`;
+    const ok = promql`sum by (${labelName(by)}) (${sot(promql`${pair.ok}${sel}`, r)})`;
+    return promql`round(clamp_min((${tot} - (${ok} or ${tot} * 0)) * ${K}, 0))`;
   }
-  const tot = `sum by (${by}) (increase(${ROUTER_METRICS.requestsTotal}${sel}[${r}]))`;
-  const ok = `sum by (${by}) (increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${r}]))`;
-  return `round(clamp_min(${tot} - (${ok} or ${tot} * 0), 0))`;
+  const tot = promql`sum by (${labelName(by)}) (increase(${ROUTER_METRICS.requestsTotal}${sel}[${r}]))`;
+  const ok = promql`sum by (${labelName(by)}) (increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${r}]))`;
+  return promql`round(clamp_min(${tot} - (${ok} or ${tot} * 0), 0))`;
 }
 
 /**
  * Failed relays per (chain × upstream) - `qErrorsBy` with both labels on one
  * vector, the pair the Errors hotspots and the Retry upstream panel list.
  */
-export function qErrorsByUpstream(window: MetricWindow = DEFAULT_WINDOW, spec?: string): string {
+export function qErrorsByUpstream(window: MetricWindow = DEFAULT_WINDOW, spec?: string): PromQL {
   const sel = selector({ spec });
   const r = rangeFor(window);
   if (recordedReadsFor(window)) {
-    const tot = `sum by (spec, provider_address) (${sot(`${RECORDED.requestsByProvider}${sel}`, r)})`;
-    const ok = `sum by (spec, provider_address) (${sot(`${RECORDED.successByProvider}${sel}`, r)})`;
-    return `round(clamp_min((${tot} - (${ok} or ${tot} * 0)) * ${K}, 0))`;
+    const tot = promql`sum by (spec, provider_address) (${sot(promql`${RECORDED.requestsByProvider}${sel}`, r)})`;
+    const ok = promql`sum by (spec, provider_address) (${sot(promql`${RECORDED.successByProvider}${sel}`, r)})`;
+    return promql`round(clamp_min((${tot} - (${ok} or ${tot} * 0)) * ${K}, 0))`;
   }
-  const tot = `sum by (spec, provider_address) (increase(${ROUTER_METRICS.requestsTotal}${sel}[${r}]))`;
-  const ok = `sum by (spec, provider_address) (increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${r}]))`;
-  return `round(clamp_min(${tot} - (${ok} or ${tot} * 0), 0))`;
+  const tot = promql`sum by (spec, provider_address) (increase(${ROUTER_METRICS.requestsTotal}${sel}[${r}]))`;
+  const ok = promql`sum by (spec, provider_address) (increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${r}]))`;
+  return promql`round(clamp_min(${tot} - (${ok} or ${tot} * 0), 0))`;
 }
 
 /** Relays per (chain × upstream) over the window, whole numbers — the pair the Errors hotspots divide by. */
-export function qRequestsByUpstream(window: MetricWindow = DEFAULT_WINDOW, spec?: string): string {
+export function qRequestsByUpstream(window: MetricWindow = DEFAULT_WINDOW, spec?: string): PromQL {
   const sel = selector({ spec });
   if (recordedReadsFor(window)) {
-    return `round(sum by (spec, provider_address) (${sot(`${RECORDED.requestsByProvider}${sel}`, rangeFor(window))}) * ${K})`;
+    return promql`round(sum by (spec, provider_address) (${sot(promql`${RECORDED.requestsByProvider}${sel}`, rangeFor(window))}) * ${K})`;
   }
-  return `round(sum by (spec, provider_address) (increase(${ROUTER_METRICS.requestsTotal}${sel}[${rangeFor(window)}])))`;
+  return promql`round(sum by (spec, provider_address) (increase(${ROUTER_METRICS.requestsTotal}${sel}[${rangeFor(window)}])))`;
 }
 
 /** Relays per (upstream, chain) over the window — the roster's denominator, unrounded. */
-export function qUpstreamRelays(window: MetricWindow = DEFAULT_WINDOW, spec?: string): string {
+export function qUpstreamRelays(window: MetricWindow = DEFAULT_WINDOW, spec?: string): PromQL {
   const sel = selector({ spec });
   if (recordedReadsFor(window)) {
-    return `sum by (provider_address, spec) (${sot(`${RECORDED.requestsByProvider}${sel}`, rangeFor(window))}) * ${K}`;
+    return promql`sum by (provider_address, spec) (${sot(promql`${RECORDED.requestsByProvider}${sel}`, rangeFor(window))}) * ${K}`;
   }
-  return `sum by (provider_address, spec) (increase(${ROUTER_METRICS.requestsTotal}${sel}[${rangeFor(window)}]))`;
+  return promql`sum by (provider_address, spec) (increase(${ROUTER_METRICS.requestsTotal}${sel}[${rangeFor(window)}]))`;
 }
 
 /** Successful relays per (upstream, chain) over the window — the roster's numerator, unrounded. */
-export function qUpstreamSuccesses(window: MetricWindow = DEFAULT_WINDOW, spec?: string): string {
+export function qUpstreamSuccesses(window: MetricWindow = DEFAULT_WINDOW, spec?: string): PromQL {
   const sel = selector({ spec });
   if (recordedReadsFor(window)) {
-    return `sum by (provider_address, spec) (${sot(`${RECORDED.successByProvider}${sel}`, rangeFor(window))}) * ${K}`;
+    return promql`sum by (provider_address, spec) (${sot(promql`${RECORDED.successByProvider}${sel}`, rangeFor(window))}) * ${K}`;
   }
-  return `sum by (provider_address, spec) (increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${rangeFor(window)}]))`;
+  return promql`sum by (provider_address, spec) (increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${rangeFor(window)}]))`;
 }
 
 /** Read relays per method over the window — the methods tab's read column. */
-export function qReadRequestsByMethod(window: MetricWindow = DEFAULT_WINDOW, spec?: string): string {
+export function qReadRequestsByMethod(window: MetricWindow = DEFAULT_WINDOW, spec?: string): PromQL {
   const sel = selector({ spec });
   if (recordedReadsFor(window)) {
-    return `sum by (method) (${sot(`${RECORDED.readByMethod}${sel}`, rangeFor(window))}) * ${K}`;
+    return promql`sum by (method) (${sot(promql`${RECORDED.readByMethod}${sel}`, rangeFor(window))}) * ${K}`;
   }
-  return `sum by (method) (increase(${ROUTER_METRICS.requestsReadTotal}${sel}[${rangeFor(window)}]))`;
+  return promql`sum by (method) (increase(${ROUTER_METRICS.requestsReadTotal}${sel}[${rangeFor(window)}]))`;
 }
 
 /** Relays grouped by a label over the window (whole numbers). */
@@ -374,11 +379,11 @@ export function qRequestsBy(
   by: ErrorsGroupBy,
   window: MetricWindow = DEFAULT_WINDOW,
   spec?: string,
-): string {
+): PromQL {
   if (recordedReadsFor(window)) {
-    return `round(sum by (${by}) (${sot(`${recordedPair(by).total}${selector({ spec })}`, rangeFor(window))}) * ${K})`;
+    return promql`round(sum by (${labelName(by)}) (${sot(promql`${recordedPair(by).total}${selector({ spec })}`, rangeFor(window))}) * ${K})`;
   }
-  return `round(sum by (${by}) (increase(${ROUTER_METRICS.requestsTotal}${selector({ spec })}[${rangeFor(window)}])))`;
+  return promql`round(sum by (${labelName(by)}) (increase(${ROUTER_METRICS.requestsTotal}${selector({ spec })}[${rangeFor(window)}])))`;
 }
 
 /**
@@ -387,30 +392,30 @@ export function qRequestsBy(
  * ({spec, apiInterface, provider_address, method}) once the family exists.
  */
 export function qLabelledErrorsBy(
-  metricName: string,
+  metricName: PromQL,
   by: "spec" | "method" | "provider_address",
   window: MetricWindow = DEFAULT_WINDOW,
   spec?: string,
-): string {
-  return `round(sum by (${by}) (increase(${metricName}${selector({ spec })}[${rangeFor(window)}])))`;
+): PromQL {
+  return promql`round(sum by (${labelName(by)}) (increase(${metricName}${selector({ spec })}[${rangeFor(window)}])))`;
 }
 
 /** Total of a labelled error counter over the window (whole number). */
 export function qLabelledErrorsTotal(
-  metricName: string,
+  metricName: PromQL,
   window: MetricWindow = DEFAULT_WINDOW,
   spec?: string,
   offset?: string,
-): string {
-  return `round(sum(increase(${metricName}${selector({ spec })}[${rangeFor(window)}]${off(offset)})))`;
+): PromQL {
+  return promql`round(sum(increase(${metricName}${selector({ spec })}[${rangeFor(window)}]${off(offset)})))`;
 }
 
 /* ── Retries (absent until the router's first retry) ─────────────────────── */
 
 /** Two `<n>s` durations (what `rangeFor` returns) added up. */
-function addSeconds(a: string, b?: string): string {
+function addSeconds(a: string, b?: string): PromQL {
   const sec = (d: string) => Number(/^(\d+)s$/.exec(d)?.[1] ?? NaN);
-  return b ? `${sec(a) + sec(b)}s` : a;
+  return b ? duration(sec(a) + sec(b)) : duration(a);
 }
 
 /**
@@ -427,20 +432,20 @@ function addSeconds(a: string, b?: string): string {
  * stopped reporting in the range; a series seen once there keeps its birth
  * value on its own. `range` and `offset` are `rangeFor` durations.
  */
-export function increaseFromBirth(series: string, range: string, offset?: string): string {
+export function increaseFromBirth(series: PromQL, range: string, offset?: string): PromQL {
   const o = off(offset);
   const before = addSeconds(range, offset);
-  const inc = `increase(${series}[${range}]${o})`;
-  const first = `min_over_time(${series}[${range}]${o})`;
-  const storeHeld = `count(last_over_time(${ROUTER_METRICS.overallHealth}[1d] offset ${before})) > 0`;
-  const birth = `(((${first} unless ${series} offset ${before}) unless (${first} >= last_over_time(${series}[1d] offset ${before}))) and on () (${storeHeld}))`;
-  return `((${inc} + (${birth} or ${inc} * 0)) or ${birth})`;
+  const inc = promql`increase(${series}[${duration(range)}]${o})`;
+  const first = promql`min_over_time(${series}[${duration(range)}]${o})`;
+  const storeHeld = promql`count(last_over_time(${ROUTER_METRICS.overallHealth}[1d] offset ${before})) > 0`;
+  const birth = promql`(((${first} unless ${series} offset ${before}) unless (${first} >= last_over_time(${series}[1d] offset ${before}))) and on () (${storeHeld}))`;
+  return promql`((${inc} + (${birth} or ${inc} * 0)) or ${birth})`;
 }
 
 /** How a retried request ended: a reply in the end (`recovered`) or an error. */
 export type RetryOutcome = "recovered" | "failed";
 
-const RETRY_OUTCOME_METRIC: Record<RetryOutcome, string> = {
+const RETRY_OUTCOME_METRIC: Record<RetryOutcome, PromQL> = {
   recovered: OPTIONAL_METRICS.retriesSuccessTotal,
   failed: OPTIONAL_METRICS.retriesFailedTotal,
 };
@@ -451,8 +456,8 @@ export function qRetriesByMethod(
   window: MetricWindow = DEFAULT_WINDOW,
   spec?: string,
   offset?: string,
-): string {
-  return `round(sum by (spec, method) ${increaseFromBirth(`${RETRY_OUTCOME_METRIC[outcome]}${selector({ spec })}`, rangeFor(window), offset)})`;
+): PromQL {
+  return promql`round(sum by (spec, method) ${increaseFromBirth(promql`${RETRY_OUTCOME_METRIC[outcome]}${selector({ spec })}`, rangeFor(window), offset)})`;
 }
 
 /** The per-method rows added up - the hero's "successful retries", equal to the Errors tab's card. */
@@ -461,18 +466,18 @@ export function qRetriesTotal(
   window: MetricWindow = DEFAULT_WINDOW,
   spec?: string,
   offset?: string,
-): string {
-  return `sum(${qRetriesByMethod(outcome, window, spec, offset)})`;
+): PromQL {
+  return promql`sum(${qRetriesByMethod(outcome, window, spec, offset)})`;
 }
 
 /** Mean extra attempts per retried request: the histogram's sum ÷ count. */
 export function qRetryAvgExtraAttempts(
   window: MetricWindow = DEFAULT_WINDOW,
   spec?: string,
-): string {
+): PromQL {
   const sel = selector({ spec });
   const r = rangeFor(window);
-  return `sum${increaseFromBirth(`${OPTIONAL_METRICS.retryAttemptsSum}${sel}`, r)} / sum${increaseFromBirth(`${OPTIONAL_METRICS.retryAttemptsCount}${sel}`, r)}`;
+  return promql`sum${increaseFromBirth(promql`${OPTIONAL_METRICS.retryAttemptsSum}${sel}`, r)} / sum${increaseFromBirth(promql`${OPTIONAL_METRICS.retryAttemptsCount}${sel}`, r)}`;
 }
 
 /**
@@ -483,8 +488,8 @@ export function qRetryAvgExtraAttempts(
 export function qClientRequestsFromBirth(
   window: MetricWindow = DEFAULT_WINDOW,
   spec?: string,
-): string {
-  return `round(sum${increaseFromBirth(`${ROUTER_METRICS.latencyCount}${selector({ spec })}`, rangeFor(window))})`;
+): PromQL {
+  return promql`round(sum${increaseFromBirth(promql`${ROUTER_METRICS.latencyCount}${selector({ spec })}`, rangeFor(window))})`;
 }
 
 
@@ -492,34 +497,34 @@ export function qClientRequestsFromBirth(
 
 /** Availability ratio series (success/total rate over each step bucket).
  *  clamp_max(…, 1): same rate()-extrapolation guard as qAvailability. */
-export function qAvailabilitySeriesExpr(step: string, spec?: string, window?: MetricWindow): string {
+export function qAvailabilitySeriesExpr(step: string, spec?: string, window?: MetricWindow): PromQL {
   const sel = selector({ spec });
   if (recordedSeriesFor(window)) {
-    return `clamp_max(sum(${aot(`${RECORDED.success}${sel}`, step)}) / sum(${aot(`${RECORDED.requests}${sel}`, step)}), 1)`;
+    return promql`clamp_max(sum(${aot(promql`${RECORDED.success}${sel}`, step)}) / sum(${aot(promql`${RECORDED.requests}${sel}`, step)}), 1)`;
   }
-  return `clamp_max(sum(rate(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${rateRange(step)}])) / sum(rate(${ROUTER_METRICS.requestsTotal}${sel}[${rateRange(step)}])), 1)`;
+  return promql`clamp_max(sum(rate(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${rateRange(step)}])) / sum(rate(${ROUTER_METRICS.requestsTotal}${sel}[${rateRange(step)}])), 1)`;
 }
 
 /** Error-rate series (1 − availability). */
-export function qErrorRateSeriesExpr(step: string, spec?: string, window?: MetricWindow): string {
-  return `1 - (${qAvailabilitySeriesExpr(step, spec, window)})`;
+export function qErrorRateSeriesExpr(step: string, spec?: string, window?: MetricWindow): PromQL {
+  return promql`1 - (${qAvailabilitySeriesExpr(step, spec, window)})`;
 }
 
 /** Error-count series: errors per step, whole from a one-minute step up. */
-export function qErrorCountSeriesExpr(step: string, spec?: string, window?: MetricWindow): string {
+export function qErrorCountSeriesExpr(step: string, spec?: string, window?: MetricWindow): PromQL {
   const sel = selector({ spec });
   if (recordedSeriesFor(window)) {
-    return `round(clamp_min((sum(${sot(`${RECORDED.requests}${sel}`, step)}) - sum(${sot(`${RECORDED.success}${sel}`, step)})) * ${K}, 0))`;
+    return promql`round(clamp_min((sum(${sot(promql`${RECORDED.requests}${sel}`, step)}) - sum(${sot(promql`${RECORDED.success}${sel}`, step)})) * ${K}, 0))`;
   }
-  return roundWhole(`clamp_min(sum(${countOverStep(`${ROUTER_METRICS.requestsTotal}${sel}`, step)}) - sum(${countOverStep(`${ROUTER_METRICS.requestsSuccessTotal}${sel}`, step)}), 0)`, step);
+  return roundWhole(promql`clamp_min(sum(${countOverStep(promql`${ROUTER_METRICS.requestsTotal}${sel}`, step)}) - sum(${countOverStep(promql`${ROUTER_METRICS.requestsSuccessTotal}${sel}`, step)}), 0)`, step);
 }
 
 /** RPS series. */
-export function qRpsSeriesExpr(step: string, spec?: string, window?: MetricWindow): string {
+export function qRpsSeriesExpr(step: string, spec?: string, window?: MetricWindow): PromQL {
   if (recordedSeriesFor(window)) {
-    return `sum(${aot(`${RECORDED.requests}${selector({ spec })}`, step)})`;
+    return promql`sum(${aot(promql`${RECORDED.requests}${selector({ spec })}`, step)})`;
   }
-  return `sum(rate(${ROUTER_METRICS.requestsTotal}${selector({ spec })}[${rateRange(step)}]))`;
+  return promql`sum(rate(${ROUTER_METRICS.requestsTotal}${selector({ spec })}[${rateRange(step)}]))`;
 }
 
 /** Latency-quantile series over the router histogram. */
@@ -528,19 +533,19 @@ export function qLatencySeriesExpr(
   step: string,
   spec?: string,
   window?: MetricWindow,
-): string {
+): PromQL {
   if (recordedSeriesFor(window)) {
-    return `histogram_quantile(${quantile}, sum by (le) (${aot(`${RECORDED.latencyBucket}${selector({ spec })}`, step)}))`;
+    return promql`histogram_quantile(${quantile}, sum by (le) (${aot(promql`${RECORDED.latencyBucket}${selector({ spec })}`, step)}))`;
   }
-  return `histogram_quantile(${quantile}, sum by (le) (rate(${ROUTER_METRICS.latencyBucket}${selector({ spec })}[${rateRange(step)}])))`;
+  return promql`histogram_quantile(${quantile}, sum by (le) (rate(${ROUTER_METRICS.latencyBucket}${selector({ spec })}[${rateRange(step)}])))`;
 }
 
 /** Latency-quantile series per chain (the Dashboard's per-chain latency lines). */
-export function qPerSpecLatencySeriesExpr(quantile: number, step: string, window?: MetricWindow): string {
+export function qPerSpecLatencySeriesExpr(quantile: number, step: string, window?: MetricWindow): PromQL {
   if (recordedSeriesFor(window)) {
-    return `histogram_quantile(${quantile}, sum by (spec, le) (${aot(RECORDED.latencyBucket, step)}))`;
+    return promql`histogram_quantile(${quantile}, sum by (spec, le) (${aot(RECORDED.latencyBucket, step)}))`;
   }
-  return `histogram_quantile(${quantile}, sum by (spec, le) (rate(${ROUTER_METRICS.latencyBucket}[${rateRange(step)}])))`;
+  return promql`histogram_quantile(${quantile}, sum by (spec, le) (rate(${ROUTER_METRICS.latencyBucket}[${rateRange(step)}])))`;
 }
 
 /* ── Grouped chain-level reads (one query for every group, joined on labels) ── */
@@ -554,23 +559,23 @@ export function qPerSpecLatencySeriesExpr(quantile: number, step: string, window
  */
 export type GroupBy = readonly string[];
 
-const by = (g: GroupBy): string => g.join(", ");
+const by = (g: GroupBy): PromQL => labelList(g);
 
 /** Client requests (histogram _count) over the window, per group. */
-export function qGroupedClientRequests(g: GroupBy, window: MetricWindow = DEFAULT_WINDOW): string {
+export function qGroupedClientRequests(g: GroupBy, window: MetricWindow = DEFAULT_WINDOW): PromQL {
   if (recordedReadsFor(window)) {
-    return `sum by (${by(g)}) (${sot(RECORDED.clientRequests, rangeFor(window))}) * ${K}`;
+    return promql`sum by (${by(g)}) (${sot(RECORDED.clientRequests, rangeFor(window))}) * ${K}`;
   }
-  return `sum by (${by(g)}) (increase(${ROUTER_METRICS.latencyCount}[${rangeFor(window)}]))`;
+  return promql`sum by (${by(g)}) (increase(${ROUTER_METRICS.latencyCount}[${rangeFor(window)}]))`;
 }
 
 /** success/total over the window, per group — both sides carry the group's labels, so they match one-to-one. */
-export function qGroupedAvailability(g: GroupBy, window: MetricWindow = DEFAULT_WINDOW): string {
+export function qGroupedAvailability(g: GroupBy, window: MetricWindow = DEFAULT_WINDOW): PromQL {
   const r = rangeFor(window);
   if (recordedReadsFor(window)) {
-    return `clamp_max(sum by (${by(g)}) (${sot(RECORDED.success, r)}) / sum by (${by(g)}) (${sot(RECORDED.requests, r)}), 1)`;
+    return promql`clamp_max(sum by (${by(g)}) (${sot(RECORDED.success, r)}) / sum by (${by(g)}) (${sot(RECORDED.requests, r)}), 1)`;
   }
-  return `clamp_max(sum by (${by(g)}) (increase(${ROUTER_METRICS.requestsSuccessTotal}[${r}])) / sum by (${by(g)}) (increase(${ROUTER_METRICS.requestsTotal}[${r}])), 1)`;
+  return promql`clamp_max(sum by (${by(g)}) (increase(${ROUTER_METRICS.requestsSuccessTotal}[${r}])) / sum by (${by(g)}) (increase(${ROUTER_METRICS.requestsTotal}[${r}])), 1)`;
 }
 
 /** A latency quantile over the window, per group. `spec` narrows the read to one chain. */
@@ -579,52 +584,52 @@ export function qGroupedLatencyQuantile(
   g: GroupBy,
   window: MetricWindow = DEFAULT_WINDOW,
   spec?: string,
-): string {
+): PromQL {
   if (recordedReadsFor(window)) {
-    return `histogram_quantile(${quantile}, sum by (${by(g)}, le) (${sot(`${RECORDED.latencyBucket}${selector({ spec })}`, rangeFor(window))}))`;
+    return promql`histogram_quantile(${quantile}, sum by (${by(g)}, le) (${sot(promql`${RECORDED.latencyBucket}${selector({ spec })}`, rangeFor(window))}))`;
   }
-  return `histogram_quantile(${quantile}, sum by (${by(g)}, le) (rate(${ROUTER_METRICS.latencyBucket}${selector({ spec })}[${rangeFor(window)}])))`;
+  return promql`histogram_quantile(${quantile}, sum by (${by(g)}, le) (rate(${ROUTER_METRICS.latencyBucket}${selector({ spec })}[${rangeFor(window)}])))`;
 }
 
 /** Mean composite selection score, per group. */
-export function qGroupedQos(g: GroupBy): string {
-  return `avg by (${by(g)}) (${ENDPOINT_METRICS.selectionScore}${selector({ score_type: "composite" })})`;
+export function qGroupedQos(g: GroupBy): PromQL {
+  return promql`avg by (${by(g)}) (${ENDPOINT_METRICS.selectionScore}${selector({ score_type: "composite" })})`;
 }
 
 /** Health per group (1/0) from the blocked gauge: 1 while any provider of the group is in rotation. */
-export function qGroupedHealth(g: GroupBy, spec?: string): string {
-  return `1 - min by (${by(g)}) (${ROUTER_METRICS.csmProviderBlocked}${selector({ spec })})`;
+export function qGroupedHealth(g: GroupBy, spec?: string): PromQL {
+  return promql`1 - min by (${by(g)}) (${ROUTER_METRICS.csmProviderBlocked}${selector({ spec })})`;
 }
 
 /** The router's latest block, per group. */
-export function qGroupedLatestBlock(g: GroupBy): string {
-  return `max by (${by(g)}) (${ROUTER_METRICS.latestBlock})`;
+export function qGroupedLatestBlock(g: GroupBy): PromQL {
+  return promql`max by (${by(g)}) (${ROUTER_METRICS.latestBlock})`;
 }
 
 /** One row per (group, endpoint_id) on the blocked gauge — a group's upstream count is its row count. */
-export function qGroupedUpstreams(g: GroupBy): string {
-  return `count by (${by(g)}, endpoint_id) (${qProviderBlockedByEndpoint()})`;
+export function qGroupedUpstreams(g: GroupBy): PromQL {
+  return promql`count by (${by(g)}, endpoint_id) (${qProviderBlockedByEndpoint()})`;
 }
 
 /** Health per chain from the blocked gauge — `qGroupedHealth` by spec. */
-export function qPerSpecHealth(spec?: string): string {
+export function qPerSpecHealth(spec?: string): PromQL {
   return qGroupedHealth(["spec"], spec);
 }
 
 /** Per-upstream RPS series (stacked upstream-mix charts). */
-export function qPerUpstreamRpsExpr(step: string, spec?: string, window?: MetricWindow): string {
+export function qPerUpstreamRpsExpr(step: string, spec?: string, window?: MetricWindow): PromQL {
   if (recordedSeriesFor(window)) {
-    return `sum by (provider_address) (${aot(`${RECORDED.requestsByProvider}${selector({ spec })}`, step)})`;
+    return promql`sum by (provider_address) (${aot(promql`${RECORDED.requestsByProvider}${selector({ spec })}`, step)})`;
   }
-  return `sum by (provider_address) (rate(${ROUTER_METRICS.requestsTotal}${selector({ spec })}[${rateRange(step)}]))`;
+  return promql`sum by (provider_address) (rate(${ROUTER_METRICS.requestsTotal}${selector({ spec })}[${rateRange(step)}]))`;
 }
 
 /** Per-chain RPS series (stacked per-chain charts). */
-export function qPerSpecRpsExpr(step: string, window?: MetricWindow): string {
+export function qPerSpecRpsExpr(step: string, window?: MetricWindow): PromQL {
   if (recordedSeriesFor(window)) {
-    return `sum by (spec) (${aot(RECORDED.requests, step)})`;
+    return promql`sum by (spec) (${aot(RECORDED.requests, step)})`;
   }
-  return `sum by (spec) (rate(${ROUTER_METRICS.requestsTotal}[${rateRange(step)}]))`;
+  return promql`sum by (spec) (rate(${ROUTER_METRICS.requestsTotal}[${rateRange(step)}]))`;
 }
 
 /**
@@ -636,8 +641,7 @@ export function qBackupShareExpr(
   backupNames: string[],
   step: string,
   window?: MetricWindow,
-): string {
-  const escaped = backupNames.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\\\$&"));
+): PromQL {
   const sel = selector({ spec });
   // Case-INSENSITIVE on purpose. These names come from the mounted values file,
   // while `provider_address` carries the name the ROUTER was configured with —
@@ -645,11 +649,12 @@ export function qBackupShareExpr(
   // (`Blockdaemon` in the values, `blockdaemon` on the series). A case-sensitive
   // match silently yields an empty numerator, which reads as "0% backup" rather
   // than "no data" (MAG-2537).
-  const backupSel = `{spec="${spec}",provider_address=~"(?i)(${escaped.join("|")})"}`;
+  const backups = promRegex(regex`(?i)(${regexAlt(backupNames.map(regexLiteral))})`);
+  const backupSel = promql`{spec=${promString(spec)},provider_address=~${backups}}`;
   if (recordedSeriesFor(window)) {
-    return `sum(${aot(`${RECORDED.requestsByProvider}${backupSel}`, step)}) / sum(${aot(`${RECORDED.requestsByProvider}${sel}`, step)})`;
+    return promql`sum(${aot(promql`${RECORDED.requestsByProvider}${backupSel}`, step)}) / sum(${aot(promql`${RECORDED.requestsByProvider}${sel}`, step)})`;
   }
-  return `sum(rate(${ROUTER_METRICS.requestsTotal}${backupSel}[${rateRange(step)}])) / sum(rate(${ROUTER_METRICS.requestsTotal}${sel}[${rateRange(step)}]))`;
+  return promql`sum(rate(${ROUTER_METRICS.requestsTotal}${backupSel}[${rateRange(step)}])) / sum(rate(${ROUTER_METRICS.requestsTotal}${sel}[${rateRange(step)}]))`;
 }
 
 /**
@@ -659,18 +664,18 @@ export function qBackupShareExpr(
  * availability at that time. An upstream whose success counter was never born
  * failed every try (`or … * 0`). Recorded series from the chart floor up.
  */
-export function qPerUpstreamFailedRpsExpr(step: string, spec: string, window?: MetricWindow): string {
+export function qPerUpstreamFailedRpsExpr(step: string, spec: string, window?: MetricWindow): PromQL {
   const sel = selector({ spec });
   const [tot, ok] = recordedSeriesFor(window)
     ? [
-        `sum by (provider_address) (${aot(`${RECORDED.requestsByProvider}${sel}`, step)})`,
-        `sum by (provider_address) (${aot(`${RECORDED.successByProvider}${sel}`, step)})`,
+        promql`sum by (provider_address) (${aot(promql`${RECORDED.requestsByProvider}${sel}`, step)})`,
+        promql`sum by (provider_address) (${aot(promql`${RECORDED.successByProvider}${sel}`, step)})`,
       ]
     : [
-        `sum by (provider_address) (rate(${ROUTER_METRICS.requestsTotal}${sel}[${rateRange(step)}]))`,
-        `sum by (provider_address) (rate(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${rateRange(step)}]))`,
+        promql`sum by (provider_address) (rate(${ROUTER_METRICS.requestsTotal}${sel}[${rateRange(step)}]))`,
+        promql`sum by (provider_address) (rate(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${rateRange(step)}]))`,
       ];
-  return `clamp_min(${tot} - (${ok} or ${tot} * 0), 0)`;
+  return promql`clamp_min(${tot} - (${ok} or ${tot} * 0), 0)`;
 }
 
 /**
@@ -682,9 +687,9 @@ export function qPerUpstreamFailedRpsExpr(step: string, spec: string, window?: M
  * histogram's thousands. ⚠ Zero on both is "not polled", never "healthy"
  * (see `qEndpointPolls`).
  */
-export function qPerEndpointPollsSeriesExpr(kind: "ok" | "failed", spec: string, step: string): string {
+export function qPerEndpointPollsSeriesExpr(kind: "ok" | "failed", spec: string, step: string): PromQL {
   const metric = kind === "ok" ? ENDPOINT_METRICS.fetchLatestSuccess : ENDPOINT_METRICS.fetchLatestFails;
-  return `sum by (endpoint_id) (increase(${metric}${selector({ spec })}[${rateRange(step)}]))`;
+  return promql`sum by (endpoint_id) (increase(${metric}${selector({ spec })}[${rateRange(step)}]))`;
 }
 
 /* ── Per-upstream (one name on one chain) latency + volume ─────────────── */
@@ -697,12 +702,12 @@ export function qPerEndpointPollsSeriesExpr(kind: "ok" | "failed", spec: string,
  */
 
 /** `{spec, endpoint_id}` selector — the `rpc_endpoint_*` families. */
-export function upstreamEndpointSelector(ref: UpstreamRef): string {
+export function upstreamEndpointSelector(ref: UpstreamRef): PromQL {
   return selector({ spec: ref.spec, endpoint_id: ref.endpointId });
 }
 
 /** `{spec, provider_address}` selector — the `smartrouter_*` families. */
-export function upstreamProviderSelector(ref: UpstreamRef): string {
+export function upstreamProviderSelector(ref: UpstreamRef): PromQL {
   return selector({ spec: ref.spec, provider_address: ref.endpointId });
 }
 
@@ -711,11 +716,11 @@ export function qEndpointLatencyQuantile(
   quantile: number,
   ref: UpstreamRef,
   window: MetricWindow = DEFAULT_WINDOW,
-): string {
+): PromQL {
   if (recordedReadsFor(window)) {
-    return `histogram_quantile(${quantile}, sum by (le) (${sot(`${RECORDED.endpointLatencyBucket}${upstreamEndpointSelector(ref)}`, rangeFor(window))}))`;
+    return promql`histogram_quantile(${quantile}, sum by (le) (${sot(promql`${RECORDED.endpointLatencyBucket}${upstreamEndpointSelector(ref)}`, rangeFor(window))}))`;
   }
-  return `histogram_quantile(${quantile}, sum by (le) (rate(${ENDPOINT_METRICS.latencyBucket}${upstreamEndpointSelector(ref)}[${rangeFor(window)}])))`;
+  return promql`histogram_quantile(${quantile}, sum by (le) (rate(${ENDPOINT_METRICS.latencyBucket}${upstreamEndpointSelector(ref)}[${rangeFor(window)}])))`;
 }
 
 /** Latency-quantile series for one upstream. */
@@ -724,11 +729,11 @@ export function qEndpointLatencySeriesExpr(
   ref: UpstreamRef,
   step: string,
   window?: MetricWindow,
-): string {
+): PromQL {
   if (recordedSeriesFor(window)) {
-    return `histogram_quantile(${quantile}, sum by (le) (${aot(`${RECORDED.endpointLatencyBucket}${upstreamEndpointSelector(ref)}`, step)}))`;
+    return promql`histogram_quantile(${quantile}, sum by (le) (${aot(promql`${RECORDED.endpointLatencyBucket}${upstreamEndpointSelector(ref)}`, step)}))`;
   }
-  return `histogram_quantile(${quantile}, sum by (le) (rate(${ENDPOINT_METRICS.latencyBucket}${upstreamEndpointSelector(ref)}[${rateRange(step)}])))`;
+  return promql`histogram_quantile(${quantile}, sum by (le) (rate(${ENDPOINT_METRICS.latencyBucket}${upstreamEndpointSelector(ref)}[${rateRange(step)}])))`;
 }
 
 /**
@@ -741,16 +746,16 @@ export function qEndpointLatencyByEndpointSeriesExpr(
   lookback: string,
   presence: string,
   window?: MetricWindow,
-): string {
+): PromQL {
   // Only where the upstream was scraped in the last `presence`: a quantile
   // over `lookback` would otherwise carry the last value that far into a
   // stretch with no data at all.
   if (recordedSeriesFor(window)) {
-    const seen = `sum by (endpoint_id) (count_over_time(${RECORDED.endpointLatencyBucket}${selector({ spec, le: "+Inf" })}[${presence}])) > 0`;
-    return `histogram_quantile(${quantile}, sum by (le, endpoint_id) (${aot(`${RECORDED.endpointLatencyBucket}${selector({ spec })}`, lookback)})) and on (endpoint_id) (${seen})`;
+    const seen = promql`sum by (endpoint_id) (count_over_time(${RECORDED.endpointLatencyBucket}${selector({ spec, le: "+Inf" })}[${duration(presence)}])) > 0`;
+    return promql`histogram_quantile(${quantile}, sum by (le, endpoint_id) (${aot(promql`${RECORDED.endpointLatencyBucket}${selector({ spec })}`, lookback)})) and on (endpoint_id) (${seen})`;
   }
-  const seen = `sum by (endpoint_id) (count_over_time(${ENDPOINT_METRICS.latencyBucket}${selector({ spec, le: "+Inf" })}[${presence}])) > 0`;
-  return `histogram_quantile(${quantile}, sum by (le, endpoint_id) (rate(${ENDPOINT_METRICS.latencyBucket}${selector({ spec })}[${lookback}]))) and on (endpoint_id) (${seen})`;
+  const seen = promql`sum by (endpoint_id) (count_over_time(${ENDPOINT_METRICS.latencyBucket}${selector({ spec, le: "+Inf" })}[${duration(presence)}])) > 0`;
+  return promql`histogram_quantile(${quantile}, sum by (le, endpoint_id) (rate(${ENDPOINT_METRICS.latencyBucket}${selector({ spec })}[${duration(lookback)}]))) and on (endpoint_id) (${seen})`;
 }
 
 /**
@@ -762,26 +767,26 @@ export function qEndpointLatencyByEndpointSeriesExpr(
  * back for a whole lookback, traffic that never changed. Only where the
  * upstream was scraped in the last `rateWindow`, so a gap is a gap.
  */
-export function qUpstreamRpsByUpstreamSeriesExpr(spec: string, lookback: string, rateWindow: string, step: string, window?: MetricWindow): string {
+export function qUpstreamRpsByUpstreamSeriesExpr(spec: string, lookback: string, rateWindow: string, step: string, window?: MetricWindow): PromQL {
   if (recordedSeriesFor(window)) {
-    const rm = `${RECORDED.requestsByProvider}${selector({ spec })}`;
-    return `avg_over_time((sum by (provider_address) (${rm}))[${lookback}:${step}]) and on (provider_address) (sum by (provider_address) (count_over_time(${rm}[${rateWindow}])) > 0)`;
+    const rm = promql`${RECORDED.requestsByProvider}${selector({ spec })}`;
+    return promql`avg_over_time((sum by (provider_address) (${rm}))[${duration(lookback)}:${duration(step)}]) and on (provider_address) (sum by (provider_address) (count_over_time(${rm}[${duration(rateWindow)}])) > 0)`;
   }
-  const m = `${ROUTER_METRICS.requestsTotal}${selector({ spec })}`;
-  return `avg_over_time((sum by (provider_address) (rate(${m}[${rateWindow}])))[${lookback}:${step}]) and on (provider_address) (sum by (provider_address) (count_over_time(${m}[${rateWindow}])) > 0)`;
+  const m = promql`${ROUTER_METRICS.requestsTotal}${selector({ spec })}`;
+  return promql`avg_over_time((sum by (provider_address) (rate(${m}[${duration(rateWindow)}])))[${duration(lookback)}:${duration(step)}]) and on (provider_address) (sum by (provider_address) (count_over_time(${m}[${duration(rateWindow)}])) > 0)`;
 }
 
 /** One upstream's request-volume series (router scope). */
-export function qUpstreamVolumeSeriesExpr(ref: UpstreamRef, step: string, window?: MetricWindow): string {
+export function qUpstreamVolumeSeriesExpr(ref: UpstreamRef, step: string, window?: MetricWindow): PromQL {
   if (recordedSeriesFor(window)) {
-    return `sum(${sot(`${RECORDED.requestsByProvider}${upstreamProviderSelector(ref)}`, step)}) * ${K}`;
+    return promql`sum(${sot(promql`${RECORDED.requestsByProvider}${upstreamProviderSelector(ref)}`, step)}) * ${K}`;
   }
-  return `sum(${countOverStep(`${ROUTER_METRICS.requestsTotal}${upstreamProviderSelector(ref)}`, step)})`;
+  return promql`sum(${countOverStep(promql`${ROUTER_METRICS.requestsTotal}${upstreamProviderSelector(ref)}`, step)})`;
 }
 
 /** One upstream's READ-volume series (requests_read_total is real). */
-export function qUpstreamReadVolumeSeriesExpr(ref: UpstreamRef, step: string): string {
-  return `sum(${countOverStep(`${ROUTER_METRICS.requestsReadTotal}${upstreamProviderSelector(ref)}`, step)})`;
+export function qUpstreamReadVolumeSeriesExpr(ref: UpstreamRef, step: string): PromQL {
+  return promql`sum(${countOverStep(promql`${ROUTER_METRICS.requestsReadTotal}${upstreamProviderSelector(ref)}`, step)})`;
 }
 
 /**
@@ -789,72 +794,72 @@ export function qUpstreamReadVolumeSeriesExpr(ref: UpstreamRef, step: string): s
  * (an upstream's JSON-RPC error reply counts as a success here). `single`:
  * one read over the `step` just past (the error bar still filling).
  */
-export function qUpstreamFailedSeriesExpr(ref: UpstreamRef, step: string, window?: MetricWindow, single = false): string {
+export function qUpstreamFailedSeriesExpr(ref: UpstreamRef, step: string, window?: MetricWindow, single = false): PromQL {
   const sel = upstreamProviderSelector(ref);
   if (recordedSeriesFor(window)) {
-    const tot = `sum(${sot(`${RECORDED.requestsByProvider}${sel}`, step)})`;
-    const ok = `sum(${sot(`${RECORDED.successByProvider}${sel}`, step)})`;
-    return `round(clamp_min((${tot} - (${ok} or ${tot} * 0)) * ${K}, 0))`;
+    const tot = promql`sum(${sot(promql`${RECORDED.requestsByProvider}${sel}`, step)})`;
+    const ok = promql`sum(${sot(promql`${RECORDED.successByProvider}${sel}`, step)})`;
+    return promql`round(clamp_min((${tot} - (${ok} or ${tot} * 0)) * ${K}, 0))`;
   }
-  const tot = `sum(${countOverStep(`${ROUTER_METRICS.requestsTotal}${sel}`, step, single)})`;
-  const ok = `sum(${countOverStep(`${ROUTER_METRICS.requestsSuccessTotal}${sel}`, step, single)})`;
+  const tot = promql`sum(${countOverStep(promql`${ROUTER_METRICS.requestsTotal}${sel}`, step, single)})`;
+  const ok = promql`sum(${countOverStep(promql`${ROUTER_METRICS.requestsSuccessTotal}${sel}`, step, single)})`;
   // The success counter exists only after a first success: without it every try failed.
-  return roundWhole(`clamp_min(${tot} - (${ok} or ${tot} * 0), 0)`, step, single);
+  return roundWhole(promql`clamp_min(${tot} - (${ok} or ${tot} * 0), 0)`, step, single);
 }
 
 /** One upstream's JSON-RPC error replies per bucket - absent until the family fires. `single` as above. */
-export function qUpstreamNodeErrorSeriesExpr(ref: UpstreamRef, step: string, single = false): string {
-  return roundWhole(`sum(${countOverStep(`${OPTIONAL_METRICS.nodeErrorsTotal}${upstreamProviderSelector(ref)}`, step, single)})`, step, single);
+export function qUpstreamNodeErrorSeriesExpr(ref: UpstreamRef, step: string, single = false): PromQL {
+  return roundWhole(promql`sum(${countOverStep(promql`${OPTIONAL_METRICS.nodeErrorsTotal}${upstreamProviderSelector(ref)}`, step, single)})`, step, single);
 }
 
 /** One upstream's relays over the window (router scope), unrounded. */
-export function qUpstreamRequestsTotal(ref: UpstreamRef, window: MetricWindow = DEFAULT_WINDOW): string {
+export function qUpstreamRequestsTotal(ref: UpstreamRef, window: MetricWindow = DEFAULT_WINDOW): PromQL {
   const sel = upstreamProviderSelector(ref);
   if (recordedReadsFor(window)) {
-    return `sum(${sot(`${RECORDED.requestsByProvider}${sel}`, rangeFor(window))}) * ${K}`;
+    return promql`sum(${sot(promql`${RECORDED.requestsByProvider}${sel}`, rangeFor(window))}) * ${K}`;
   }
-  return `sum(increase(${ROUTER_METRICS.requestsTotal}${sel}[${rangeFor(window)}]))`;
+  return promql`sum(increase(${ROUTER_METRICS.requestsTotal}${sel}[${rangeFor(window)}]))`;
 }
 
 /** One upstream's success / total over the window (router scope), clamped to 1 as `qAvailability` is. */
-export function qUpstreamAvailability(ref: UpstreamRef, window: MetricWindow = DEFAULT_WINDOW): string {
+export function qUpstreamAvailability(ref: UpstreamRef, window: MetricWindow = DEFAULT_WINDOW): PromQL {
   const sel = upstreamProviderSelector(ref);
   const r = rangeFor(window);
   if (recordedReadsFor(window)) {
-    return `clamp_max(sum(${sot(`${RECORDED.successByProvider}${sel}`, r)}) / sum(${sot(`${RECORDED.requestsByProvider}${sel}`, r)}), 1)`;
+    return promql`clamp_max(sum(${sot(promql`${RECORDED.successByProvider}${sel}`, r)}) / sum(${sot(promql`${RECORDED.requestsByProvider}${sel}`, r)}), 1)`;
   }
-  return `clamp_max(sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${r}])) / sum(increase(${ROUTER_METRICS.requestsTotal}${sel}[${r}])), 1)`;
+  return promql`clamp_max(sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${r}])) / sum(increase(${ROUTER_METRICS.requestsTotal}${sel}[${r}])), 1)`;
 }
 
 /** One upstream's failed relays over the window (total − success, whole, ≥ 0). */
-export function qUpstreamFailedCount(ref: UpstreamRef, window: MetricWindow = DEFAULT_WINDOW): string {
+export function qUpstreamFailedCount(ref: UpstreamRef, window: MetricWindow = DEFAULT_WINDOW): PromQL {
   const sel = upstreamProviderSelector(ref);
   const r = rangeFor(window);
   if (recordedReadsFor(window)) {
-    return `round(clamp_min((sum(${sot(`${RECORDED.requestsByProvider}${sel}`, r)}) - sum(${sot(`${RECORDED.successByProvider}${sel}`, r)})) * ${K}, 0))`;
+    return promql`round(clamp_min((sum(${sot(promql`${RECORDED.requestsByProvider}${sel}`, r)}) - sum(${sot(promql`${RECORDED.successByProvider}${sel}`, r)})) * ${K}, 0))`;
   }
-  return `round(clamp_min(sum(increase(${ROUTER_METRICS.requestsTotal}${sel}[${r}])) - sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${r}])), 0))`;
+  return promql`round(clamp_min(sum(increase(${ROUTER_METRICS.requestsTotal}${sel}[${r}])) - sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${r}])), 0))`;
 }
 
 /** Per-upstream error rate over the window (router scope). */
 export function qUpstreamErrorRate(
   ref: UpstreamRef,
   window: MetricWindow = DEFAULT_WINDOW,
-): string {
+): PromQL {
   const sel = upstreamProviderSelector(ref);
   const r = rangeFor(window);
   if (recordedReadsFor(window)) {
-    return `1 - (sum(${sot(`${RECORDED.successByProvider}${sel}`, r)}) / sum(${sot(`${RECORDED.requestsByProvider}${sel}`, r)}))`;
+    return promql`1 - (sum(${sot(promql`${RECORDED.successByProvider}${sel}`, r)}) / sum(${sot(promql`${RECORDED.requestsByProvider}${sel}`, r)}))`;
   }
-  return `1 - (sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${r}])) / sum(increase(${ROUTER_METRICS.requestsTotal}${sel}[${r}])))`;
+  return promql`1 - (sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${r}])) / sum(increase(${ROUTER_METRICS.requestsTotal}${sel}[${r}])))`;
 }
 
 /* ── Health / block-lag / scores / gauges ────────────────────────────────── */
 
 /** Block lag per endpoint: spec-max latest block − each endpoint's block. */
-export function qBlockLagByEndpoint(spec?: string): string {
+export function qBlockLagByEndpoint(spec?: string): PromQL {
   const sel = selector({ spec });
-  return `max by (spec) (${ENDPOINT_METRICS.latestBlock}${sel}) - on(spec) group_right() ${ENDPOINT_METRICS.latestBlock}${sel}`;
+  return promql`max by (spec) (${ENDPOINT_METRICS.latestBlock}${sel}) - on(spec) group_right() ${ENDPOINT_METRICS.latestBlock}${sel}`;
 }
 
 /* ── Block tips (latest block per router / per upstream) ─────────────────── */
@@ -864,7 +869,7 @@ export function qBlockLagByEndpoint(spec?: string): string {
  * gap doesn't read as frozen, short enough that a genuinely stuck endpoint
  * surfaces within a poll or two.
  */
-export const TIP_WINDOW = "15m";
+export const TIP_WINDOW = duration("15m");
 
 /** `TIP_WINDOW` in seconds, for the "did this chain produce blocks?" test. */
 export const TIP_WINDOW_SECONDS = 15 * 60;
@@ -878,13 +883,13 @@ export const TIP_WINDOW_SECONDS = 15 * 60;
  * behind" is 4 minutes on one chain and four centuries on the other. Every
  * `behind` number the UI shows in seconds is a block delta divided by this.
  */
-export function qBlockRateBySpec(spec?: string): string {
-  return `max by (spec) (deriv(${ENDPOINT_METRICS.latestBlock}${selector({ spec })}[${TIP_WINDOW}]))`;
+export function qBlockRateBySpec(spec?: string): PromQL {
+  return promql`max by (spec) (deriv(${ENDPOINT_METRICS.latestBlock}${selector({ spec })}[${TIP_WINDOW}]))`;
 }
 
 /** Best (highest) upstream tip per chain — the reference every lag measures against. */
-export function qBestTipBySpec(spec?: string): string {
-  return `max by (spec) (${ENDPOINT_METRICS.latestBlock}${selector({ spec })})`;
+export function qBestTipBySpec(spec?: string): PromQL {
+  return promql`max by (spec) (${ENDPOINT_METRICS.latestBlock}${selector({ spec })})`;
 }
 
 /**
@@ -903,11 +908,11 @@ export function qBestTipBySpec(spec?: string): string {
  * best upstream is dominated by refresh cadence on fast chains. Report it in
  * SECONDS (see `qBlockRateBySpec`), never as a raw block count.
  */
-export function qRouterTips(scopeLabel?: string, spec?: string): string {
+export function qRouterTips(scopeLabel?: string, spec?: string): PromQL {
   const by = scopeLabel && isValidScopeLabelName(scopeLabel)
-    ? `${scopeLabel}, spec, apiInterface`
-    : "spec, apiInterface";
-  return `max by (${by}) (${ROUTER_METRICS.latestBlock}${selector({ spec })})`;
+    ? promql`${labelName(scopeLabel)}, spec, apiInterface`
+    : promql`spec, apiInterface`;
+  return promql`max by (${by}) (${ROUTER_METRICS.latestBlock}${selector({ spec })})`;
 }
 
 /**
@@ -915,13 +920,13 @@ export function qRouterTips(scopeLabel?: string, spec?: string): string {
  * (its highest interface) - the highest it reached within each `step`, so a
  * sample between two scrapes can't hide a tip that moved.
  */
-export function qEndpointTipsSeriesExpr(spec: string, step: string): string {
-  return `max by (endpoint_id) (max_over_time(${ENDPOINT_METRICS.latestBlock}${selector({ spec })}[${rateRange(step)}]))`;
+export function qEndpointTipsSeriesExpr(spec: string, step: string): PromQL {
+  return promql`max by (endpoint_id) (max_over_time(${ENDPOINT_METRICS.latestBlock}${selector({ spec })}[${rateRange(step)}]))`;
 }
 
 /** Per-upstream tips, keeping the interface split a per-endpoint_id roll-up loses. */
-export function qUpstreamTips(spec?: string): string {
-  return `max by (spec, endpoint_id, apiInterface) (${ENDPOINT_METRICS.latestBlock}${selector({ spec })})`;
+export function qUpstreamTips(spec?: string): PromQL {
+  return promql`max by (spec, endpoint_id, apiInterface) (${ENDPOINT_METRICS.latestBlock}${selector({ spec })})`;
 }
 
 /**
@@ -934,11 +939,11 @@ export function qUpstreamTips(spec?: string): string {
  * comparing it to `TIP_WINDOW ÷ changes` asks the only question that matters —
  * is this router further behind than its own update rate explains?
  */
-export function qRouterTipChanges(scopeLabel?: string, spec?: string): string {
+export function qRouterTipChanges(scopeLabel?: string, spec?: string): PromQL {
   const by = scopeLabel && isValidScopeLabelName(scopeLabel)
-    ? `${scopeLabel}, spec, apiInterface`
-    : "spec, apiInterface";
-  return `max by (${by}) (changes(${ROUTER_METRICS.latestBlock}${selector({ spec })}[${TIP_WINDOW}]))`;
+    ? promql`${labelName(scopeLabel)}, spec, apiInterface`
+    : promql`spec, apiInterface`;
+  return promql`max by (${by}) (changes(${ROUTER_METRICS.latestBlock}${selector({ spec })}[${TIP_WINDOW}]))`;
 }
 
 /**
@@ -947,8 +952,8 @@ export function qRouterTipChanges(scopeLabel?: string, spec?: string): string {
  * have produced blocks in that window (the caller pairs this with
  * `qBlockRateBySpec`), otherwise every Bitcoin poll would flag stale.
  */
-export function qTipChanges(spec?: string): string {
-  return `changes(${ENDPOINT_METRICS.latestBlock}${selector({ spec })}[${TIP_WINDOW}])`;
+export function qTipChanges(spec?: string): PromQL {
+  return promql`changes(${ENDPOINT_METRICS.latestBlock}${selector({ spec })}[${TIP_WINDOW}])`;
 }
 
 /** A label name Prometheus accepts in a `by (…)` clause. Mirrors `scope.ts`. */
@@ -957,13 +962,13 @@ function isValidScopeLabelName(label: string): boolean {
 }
 
 /** Block-lag series for ONE upstream: its chain's best tip − its own. */
-export function qEndpointBlockLagSeriesExpr(ref: UpstreamRef): string {
-  return `max(${ENDPOINT_METRICS.latestBlock}${selector({ spec: ref.spec })}) - max(${ENDPOINT_METRICS.latestBlock}${upstreamEndpointSelector(ref)})`;
+export function qEndpointBlockLagSeriesExpr(ref: UpstreamRef): PromQL {
+  return promql`max(${ENDPOINT_METRICS.latestBlock}${selector({ spec: ref.spec })}) - max(${ENDPOINT_METRICS.latestBlock}${upstreamEndpointSelector(ref)})`;
 }
 
 /** Specs whose every provider is blocked (bool per spec). */
-export function qChainDown(): string {
-  return `min by (spec) (${ROUTER_METRICS.csmProviderBlocked}) == bool 1`;
+export function qChainDown(): PromQL {
+  return promql`min by (spec) (${ROUTER_METRICS.csmProviderBlocked}) == bool 1`;
 }
 
 /** Selection-score expression (gauge; also valid for query_range series). */
@@ -971,13 +976,13 @@ export function qScoreExpr(
   scoreType: string,
   spec?: string,
   endpointId?: string,
-): string {
-  return `avg(${ENDPOINT_METRICS.selectionScore}${selector({ spec, endpoint_id: endpointId, score_type: scoreType })})`;
+): PromQL {
+  return promql`avg(${ENDPOINT_METRICS.selectionScore}${selector({ spec, endpoint_id: endpointId, score_type: scoreType })})`;
 }
 
 /** Optimizer-scope composite score per spec (no apiInterface label). */
-export function qOptimizerScore(scoreType: string, spec?: string): string {
-  return `avg(${OPTIMIZER_METRICS.selectionScore}${selector({ spec, score_type: scoreType })})`;
+export function qOptimizerScore(scoreType: string, spec?: string): PromQL {
+  return promql`avg(${OPTIMIZER_METRICS.selectionScore}${selector({ spec, score_type: scoreType })})`;
 }
 
 /**
@@ -1001,8 +1006,8 @@ export function qOptimizerScore(scoreType: string, spec?: string): string {
  * roster: rows are keyed by `endpoint_id` alone, so the per-interface gauge
  * would silently let one interface's score overwrite another's.
  */
-export function qOptimizerScoresByEndpoint(spec?: string): string {
-  return `${OPTIMIZER_METRICS.selectionScore}${selector({ spec })}`;
+export function qOptimizerScoresByEndpoint(spec?: string): PromQL {
+  return promql`${OPTIMIZER_METRICS.selectionScore}${selector({ spec })}`;
 }
 
 /**
@@ -1022,12 +1027,12 @@ export function qEndpointPolls(
   kind: "ok" | "failed",
   spec?: string,
   window: MetricWindow = DEFAULT_WINDOW,
-): string {
+): PromQL {
   const metric =
     kind === "ok" ? ENDPOINT_METRICS.fetchLatestSuccess : ENDPOINT_METRICS.fetchLatestFails;
   // `spec` in the by-clause: the roster joins rows on (upstream × chain), and
   // a poll row without it became a second, chain-less copy of every upstream.
-  return `sum by (endpoint_id, spec) (increase(${metric}${selector({ spec })}[${rangeFor(window)}]))`;
+  return promql`sum by (endpoint_id, spec) (increase(${metric}${selector({ spec })}[${rangeFor(window)}]))`;
 }
 
 /**
@@ -1038,8 +1043,8 @@ export function qConsistencyChecked(
   window: MetricWindow = DEFAULT_WINDOW,
   offset?: string,
   spec?: string,
-): string {
-  return `round(sum(increase(${ROUTER_METRICS.consistencyTotal}${selector({ spec })}[${rangeFor(window)}]${off(offset)})))`;
+): PromQL {
+  return promql`round(sum(increase(${ROUTER_METRICS.consistencyTotal}${selector({ spec })}[${rangeFor(window)}]${off(offset)})))`;
 }
 
 /**
@@ -1053,23 +1058,23 @@ export function qConsistencyCaught(
   window: MetricWindow = DEFAULT_WINDOW,
   offset?: string,
   spec?: string,
-): string {
-  return `round(sum(increase(smartrouter_consistency_failed_total${selector({ spec })}[${rangeFor(window)}]${off(offset)})))`;
+): PromQL {
+  return promql`round(sum(increase(smartrouter_consistency_failed_total${selector({ spec })}[${rangeFor(window)}]${off(offset)})))`;
 }
 
 /** The four csm_* gauges in one instant query. */
-export function qCsm(): string {
-  return `{__name__=~"${ROUTER_METRICS.csmBlockedProviders}|${ROUTER_METRICS.csmBlockedBackupProviders}|${ROUTER_METRICS.csmReportedProviders}|${ROUTER_METRICS.csmStickySessions}"}`;
+export function qCsm(): PromQL {
+  return promql`{__name__=~"${ROUTER_METRICS.csmBlockedProviders}|${ROUTER_METRICS.csmBlockedBackupProviders}|${ROUTER_METRICS.csmReportedProviders}|${ROUTER_METRICS.csmStickySessions}"}`;
 }
 
 /** Presence probe: non-empty result ⇒ the family is registered/emitted. */
-export function qPresence(metricName: string): string {
-  return `count({__name__="${metricName}"})`;
+export function qPresence(metricName: string): PromQL {
+  return promql`count({__name__=${promString(metricName)}})`;
 }
 
 /** `{spec="…"}` with the value quoted as a PromQL string, so no value can close the matcher; empty without a spec. */
-function specMatcher(spec?: string): string {
-  return spec ? `{spec=${JSON.stringify(spec)}}` : "";
+function specMatcher(spec?: string): PromQL {
+  return selector({ spec });
 }
 
 /**
@@ -1077,8 +1082,8 @@ function specMatcher(spec?: string): string {
  * stretch - the Errors tab's incidents (`detectErrorIncidents`). A `spec`
  * reads that chain's series only.
  */
-export function qFailedTriesBySpecProvider(step: string, spec?: string): string {
-  return `sum by (spec, provider_address) (increase(${OPTIONAL_METRICS.requestsFailedTotal}${specMatcher(spec)}[${step}]))`;
+export function qFailedTriesBySpecProvider(step: string, spec?: string): PromQL {
+  return promql`sum by (spec, provider_address) (increase(${OPTIONAL_METRICS.requestsFailedTotal}${specMatcher(spec)}[${duration(step)}]))`;
 }
 
 /**
@@ -1090,11 +1095,11 @@ export function qFailedTriesBySpecProvider(step: string, spec?: string): string 
  * provider with no success series failed every try (`or … * 0`). Rounded per
  * stretch, as the recorded failed-tries bars are.
  */
-export function qFailedTriesBySpecProviderRecorded(step: string, spec?: string): string {
+export function qFailedTriesBySpecProviderRecorded(step: string, spec?: string): PromQL {
   const sel = specMatcher(spec);
-  const tot = `sum by (spec, provider_address) (${sot(`${RECORDED.requestsByProvider}${sel}`, step)})`;
-  const ok = `sum by (spec, provider_address) (${sot(`${RECORDED.successByProvider}${sel}`, step)})`;
-  return `round(clamp_min((${tot} - (${ok} or ${tot} * 0)) * ${K}, 0))`;
+  const tot = promql`sum by (spec, provider_address) (${sot(promql`${RECORDED.requestsByProvider}${sel}`, step)})`;
+  const ok = promql`sum by (spec, provider_address) (${sot(promql`${RECORDED.successByProvider}${sel}`, step)})`;
+  return promql`round(clamp_min((${tot} - (${ok} or ${tot} * 0)) * ${K}, 0))`;
 }
 
 /**
@@ -1105,11 +1110,11 @@ export function qFailedTriesBySpecProviderRecorded(step: string, spec?: string):
  * do, since the collector delivers its samples late after an outage and the
  * ruler doesn't go back.
  */
-export function qRecordedSamplesPerStep(step: string, spec?: string): string {
-  return `max(count_over_time(${RECORDED.requestsByProvider}${specMatcher(spec)}[${step}]))`;
+export function qRecordedSamplesPerStep(step: string, spec?: string): PromQL {
+  return promql`max(count_over_time(${RECORDED.requestsByProvider}${specMatcher(spec)}[${duration(step)}]))`;
 }
 
 /** Provider error replies per chain and provider in each `step` stretch - the incidents' other kind. */
-export function qErrorRepliesBySpecProvider(step: string, spec?: string): string {
-  return `sum by (spec, provider_address) (increase(${OPTIONAL_METRICS.nodeErrorsTotal}${specMatcher(spec)}[${step}]))`;
+export function qErrorRepliesBySpecProvider(step: string, spec?: string): PromQL {
+  return promql`sum by (spec, provider_address) (increase(${OPTIONAL_METRICS.nodeErrorsTotal}${specMatcher(spec)}[${duration(step)}]))`;
 }

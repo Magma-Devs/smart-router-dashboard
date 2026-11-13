@@ -246,7 +246,7 @@ describe("applyScope", () => {
       qErrorRate("ETH1", "1d"),
       qLatencyQuantile(0.95, "ETH1", "1d"),
       qLatencySeriesExpr(0.5, "1d"),
-      qPerUpstreamRpsExpr("ETH1", "1d"),
+      qPerUpstreamRpsExpr("60s", "ETH1", "1d"),
       qBlockLagByEndpoint("ETH1"),
       qChainDown(),
       qScoreExpr("composite", "ETH1"),

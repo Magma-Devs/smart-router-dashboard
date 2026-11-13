@@ -24,6 +24,7 @@ import {
   ROUTER_METRICS,
 } from "../constants/metrics.js";
 import { isRecordedMetric } from "./recorded.js";
+import { labelName, promString, type PromQL } from "./query-text.js";
 
 /** A Prometheus label matcher every scoped selector in a query gains. */
 export interface MetricScope {
@@ -123,9 +124,10 @@ export function isValidScope(scope: MetricScope | null | undefined): scope is Me
  * then carries both, which is how the per-request router scope rides on top
  * of a deployment scope.
  */
-export function applyScope(expr: string, scope?: MetricScope | null, opts: ScopeOptions = {}): string {
+export function applyScope(expr: PromQL, scope?: MetricScope | null, opts: ScopeOptions = {}): PromQL {
   if (!isValidScope(scope)) return expr;
-  const matcher = `${scope.label}="${scope.value}"`;
+  // The value is validated above and escaped here as one string literal.
+  const matcher: string = `${labelName(scope.label)}=${promString(scope.value)}`;
 
   let out = "";
   let i = 0;
@@ -233,7 +235,8 @@ export function applyScope(expr: string, scope?: MetricScope | null, opts: Scope
     i++;
   }
 
-  return out;
+  // The input with matchers spliced into its selectors: PromQL in, PromQL out.
+  return out as PromQL;
 }
 
 /**
