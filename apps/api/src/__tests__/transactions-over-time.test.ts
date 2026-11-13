@@ -299,6 +299,15 @@ describe("transactions over time, for a router", () => {
     expect(canary.counts).toEqual({ accepted: bars({ 5: 7 }) });
   });
 
+  it("a router id with capitals is its service_name's id lower-cased", async () => {
+    const calls: Calls = { prom: [], loki: [] };
+    const capitals = { getRouters: () => [{ ...ROUTERS[0]!, id: "ETH-Prod" }, { ...ROUTERS[1]!, id: "Eth-Canary" }] } as unknown as ConfigurationService;
+    const r = await new TransactionsOverTimeService(promOf(SIBLINGS, [], calls), lokiOf([], [], calls), SEL, capitals).overTime("1h", undefined, "ETH-Prod");
+    expect(r).toMatchObject({ available: true, source: "recorded" });
+    expect(r.counts).toEqual({ accepted: bars({ 5: 2 }) });
+    expect(calls.loki[0]).toContain('{component="router", service_name="demo-eth-prod"}');
+  });
+
   it("sharing its chain with nothing of its own recorded: none of its newest minutes can be told apart either", async () => {
     const calls: Calls = { prom: [], loki: [] };
     const r = await new TransactionsOverTimeService(promOf([SIBLINGS[1]!], [], calls), lokiOf([], [], calls), SEL, cfg).overTime("1h", undefined, "eth-prod");

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { MetricsDetailService } from "../services/metrics-detail.js";
 import type { PrometheusClient } from "../services/prometheus-client.js";
+import { selectorMatches } from "./label-matchers.js";
 
 /**
  * `upstreamTimeline` - the Availability view: every upstream of one chain,
@@ -136,6 +137,43 @@ describe("MetricsDetailService.upstreamTimeline · every upstream of a chain on 
     const outcomes = queries.filter((q) => q.includes("smartrouter_final_"));
     expect(outcomes.length).toBeGreaterThan(0);
     for (const q of outcomes) expect(q).toContain('{chain="eth1", service_name=~".+-eth-stage"}');
+  });
+
+  /* A store holding what clients got per router on ETH1, as the fleet records it: the label carries
+     the router id lower-cased. A read gets the series its matchers select. */
+  function recordedPerRouter(ids: string[], routers: { id: string; node: string }[]) {
+    const prom = {
+      async queryRangeOrNull(expr: string) {
+        const counts = expr.includes("smartrouter_final_requests:count1m") ? "40" : expr.includes("smartrouter_final_failures:count1m") ? "3" : null;
+        if (counts === null) return [];
+        return ids
+          .filter((id) => selectorMatches(expr, { cluster: "example", chain: "eth1", service_name: `example-${id}` }))
+          .map(() => series("chain", "eth1", () => counts));
+      },
+    } as unknown as PrometheusClient;
+    const cfg = {
+      getRouters: () => routers.map((r) => ({ id: r.id, spec: "ETH1", localPort: null, nodes: [{ name: r.node, isBackup: false, endpoints: [] }] })),
+    };
+    return new MetricsDetailService(prom, cfg as never);
+  }
+
+  it("a router id with capitals reads what its clients got by its service_name, which carries the id lower-cased", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW * 1000);
+    try {
+      const svc = recordedPerRouter(["eth-prod", "eth-stage"], [{ id: "ETH-Prod", node: "eth-primary" }, { id: "ETH-Stage", node: "eth-stage-node" }]);
+      const body = await svc.upstreamTimeline("ETH1", "1h", "ETH-Stage");
+      expect(body.upstreams.map((u) => u.upstream)).toEqual(["eth-stage-node"]);
+      expect(body.served).toHaveLength(6);
+      expect(body.served![0]).toEqual({ t: START, requests: 40, failed: 3 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("another router whose id ends in this one's, in another case, can't be told apart: nothing said of what clients got", async () => {
+    const svc = recordedPerRouter(["eth-stage", "canary-eth-stage"], [{ id: "eth-stage", node: "eth-stage-node" }, { id: "Canary-ETH-Stage", node: "eth-canary-node" }]);
+    expect((await svc.upstreamTimeline("ETH1", "1h", "eth-stage")).served).toBeNull();
   });
 
   it("a store without the recorded counts says nothing of what clients got, never 100%", async () => {
