@@ -77,3 +77,13 @@ describe("CORS preflight", () => {
     );
   });
 });
+
+describe("CORS response headers", () => {
+  it("lets the page read Retry-After, so a rate-limited read waits as long as the api asks", async () => {
+    // A cross-origin page sees only the safelisted response headers unless the
+    // api names more. Without this the browser's retry after a 429 guesses.
+    app ??= await buildApp();
+    const res = await app.inject({ method: "GET", url: "/health", headers: { origin: ORIGIN } });
+    expect(String(res.headers["access-control-expose-headers"] ?? "").toLowerCase()).toContain("retry-after");
+  });
+});

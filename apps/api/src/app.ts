@@ -66,6 +66,10 @@ export async function buildApp(): Promise<FastifyInstance> {
     origin: config.server.corsOrigins,
     credentials: true,
     methods: ["GET", "HEAD", "POST", "PATCH", "DELETE"],
+    // A 429 says when to ask again, but a cross-origin page cannot read a
+    // header the api does not expose, so without this the browser's retry
+    // guesses.
+    exposedHeaders: ["Retry-After"],
   });
   await app.register(rateLimit, { max: config.server.rateLimitMax, timeWindow: "1 minute" });
 
