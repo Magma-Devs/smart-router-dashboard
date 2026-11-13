@@ -290,16 +290,21 @@ export class MetricsService {
   }
 
   /**
-   * The topbar's three fields in six reads: the router's health gauge, the
-   * current client RPS, and the upstream health roll-up (four reads of its
-   * own). No window — the badge describes now.
+   * The topbar's fields in six reads: the router's health gauge, the current
+   * client RPS, and the upstream health roll-up (four reads of its own). No
+   * window — the badge describes now. Under a chain filter the health and RPS
+   * are that chain's, and `allChains` reads the whole router's beside them,
+   * two reads more: the topbar shows those, so its status and RPS pill say
+   * the same on every page while its provider counts follow the chain.
    */
   async pulse(spec?: string, routerId?: string): Promise<DeploymentPulse> {
-    const [healthGauge, throughputRps, upstreamHealth] = await Promise.all([
-      spec ? this.chainHealth(spec) : this.prom.scalar(ROUTER_METRICS.overallHealth),
-      this.prom.scalar(qClientRps(spec)),
+    const routerWide = () => Promise.all([this.prom.scalar(ROUTER_METRICS.overallHealth), this.prom.scalar(qClientRps())]);
+    const [[healthGauge, throughputRps], upstreamHealth, wide] = await Promise.all([
+      spec ? Promise.all([this.chainHealth(spec), this.prom.scalar(qClientRps(spec))]) : routerWide(),
       readUpstreamHealth(this.prom, this.configSvc, spec, routerId),
+      spec ? routerWide() : null,
     ]);
+    const [wideGauge, wideRps] = wide ?? [healthGauge, throughputRps];
     return {
       health: health(healthGauge),
       upstreamHealthCounts: {
@@ -307,6 +312,7 @@ export class MetricsService {
         unknown: [...upstreamHealth.values()].filter((row) => row.health === "unknown").length,
       },
       throughputRps,
+      allChains: { health: health(wideGauge), throughputRps: wideRps },
       lastUpdated: new Date().toISOString(),
     };
   }

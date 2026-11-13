@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import Fastify from "fastify";
+import type { DeploymentPulse } from "@sr/shared";
+import { metricRoutes } from "../routes/metrics.js";
 import { MetricsService } from "../services/metrics.js";
 import { MetricsDetailService } from "../services/metrics-detail.js";
 import { MetricsDashboardService } from "../services/metrics-dashboard.js";
@@ -792,6 +795,8 @@ describe("MetricsService.pulse · the topbar reads six series, not the overview 
     expect(queries).toContain("sum(rate(smartrouter_end_to_end_latency_milliseconds_count[5m]))");
     expect(queries.every((q) => !q.includes("histogram_quantile") && !q.startsWith("count by (spec)"))).toBe(true);
     expect(pulse).toMatchObject({ health: "unknown", upstreamHealthCounts: { unhealthy: 0, unknown: 0 }, throughputRps: null });
+    // Without a chain the router-wide figures are the ones above, read once.
+    expect(pulse.allChains).toEqual({ health: "unknown", throughputRps: null });
   });
 
   it("under a chain filter reads that chain's endpoint gauge and RPS, like the hero", async () => {
@@ -799,6 +804,70 @@ describe("MetricsService.pulse · the topbar reads six series, not the overview 
     await new MetricsService(prom).pulse("ETH1");
     expect(queries).toContain('1 - min by (spec) (smartrouter_csm_provider_blocked{spec="ETH1"})');
     expect(queries).toContain('sum(rate(smartrouter_end_to_end_latency_milliseconds_count{spec="ETH1"}[5m]))');
-    expect(queries.every((q) => q !== "smartrouter_overall_health")).toBe(true);
+  });
+});
+
+// MAG-5295: on a chain's page the topbar's RPS pill and "Router operational"
+// read the chain's figures, with nothing saying so. The pulse carries the
+// whole router's beside them (`allChains`); only the provider counts follow
+// the chain.
+describe("MetricsService.pulse · the whole router's status and RPS beside a chain's (MAG-5295)", () => {
+  // The router is up and busy; the chain's only provider is out, and its traffic is small.
+  const answers = {
+    vector: (expr: string): PromVectorSample[] | undefined => {
+      const v = (n: string) => [{ metric: {}, value: [1, n] as [number, string] }];
+      if (expr === "smartrouter_overall_health") return v("1");
+      if (expr === "sum(rate(smartrouter_end_to_end_latency_milliseconds_count[5m]))") return v("50");
+      if (expr === '1 - min by (spec) (smartrouter_csm_provider_blocked{spec="ETH1"})') return v("0");
+      if (expr === 'sum(rate(smartrouter_end_to_end_latency_milliseconds_count{spec="ETH1"}[5m]))') return v("2");
+      return undefined;
+    },
+  };
+
+  it("under a chain filter reads the router's gauge and every chain's RPS too, two reads more", async () => {
+    const { prom, queries } = capturingProm(answers);
+    const pulse = await new MetricsService(prom).pulse("ETH1");
+    expect(queries).toHaveLength(8);
+    expect(queries).toContain("smartrouter_overall_health");
+    expect(queries).toContain("sum(rate(smartrouter_end_to_end_latency_milliseconds_count[5m]))");
+    expect(pulse).toMatchObject({
+      health: "unhealthy",
+      throughputRps: 2,
+      allChains: { health: "operational", throughputRps: 50 },
+    });
+  });
+
+  it("answers both over the route, and narrows only the provider counts by spec and routerId", async () => {
+    const { prom, queries } = capturingProm(answers);
+    const node = (name: string) => ({ name, endpoints: [{ interface: "jsonrpc" }] });
+    const configSvc = {
+      getRouters: () => [
+        { id: "eth-prod", spec: "ETH1", nodes: [node("eth-a")] },
+        { id: "eth-staging", spec: "ETH1", nodes: [node("eth-b")] },
+        { id: "sol-main", spec: "SOLANA", nodes: [node("sol-a")] },
+      ],
+    } as unknown as ConfigurationService;
+    const metrics = new MetricsService(prom, configSvc);
+    const app = Fastify();
+    app.decorate("scoped", () => ({ metrics }));
+    await app.register(metricRoutes);
+    try {
+      const res = await app.inject("/api/metrics/pulse?spec=ETH1&routerId=eth-prod");
+      expect(res.statusCode).toBe(200);
+      const body = res.json() as DeploymentPulse;
+      expect(body.allChains).toEqual({ health: "operational", throughputRps: 50 });
+      expect(body).toMatchObject({ health: "unhealthy", throughputRps: 2 });
+      // Configured and never measured, so each is "no health data": eth-prod's one provider.
+      expect(body.upstreamHealthCounts).toEqual({ unhealthy: 0, unknown: 1 });
+      // The health roll-up's reads carry the chain; the router-wide two don't.
+      const unscoped = queries.filter((q) => !q.includes('spec="ETH1"'));
+      expect(unscoped).toEqual(["smartrouter_overall_health", "sum(rate(smartrouter_end_to_end_latency_milliseconds_count[5m]))"]);
+      // Without routerId the counts take both of the chain's routers, never SOLANA's; the router's figures don't move.
+      const chain = (await app.inject("/api/metrics/pulse?spec=ETH1")).json() as DeploymentPulse;
+      expect(chain.upstreamHealthCounts).toEqual({ unhealthy: 0, unknown: 2 });
+      expect(chain.allChains).toEqual({ health: "operational", throughputRps: 50 });
+    } finally {
+      await app.close();
+    }
   });
 });
