@@ -65,7 +65,7 @@ import {
 import { LOG_READ_BUDGET_BYTES, readEnd, readStart, type ReadRange } from "./read-range.js";
 import { ListReads, readList } from "./log-list.js";
 import type { LokiClient } from "./loki-client.js";
-import { StreamScope } from "./stream-scope.js";
+import { serviceNameClash, serviceNameMatcher, StreamScope } from "./stream-scope.js";
 import type { PrometheusClient } from "./prometheus-client.js";
 import type { ConfigurationService } from "./configuration.js";
 import { isTransaction } from "./transactions.js";
@@ -263,8 +263,9 @@ const COUNT_KEEP = 256;
  * tenant's org in the metrics store (devops-magmadevs,
  * components/smart-router-fleet-loki/configs/recording-rules.yaml): one
  * sample a minute per `cluster`, `chain` (the router's network, lower case:
- * the spec lower-cased) and `service_name` (`<tenant>-<router id>`). The
- * failures are the server-errors alert's count: the `relay_end` leg is
+ * the spec lower-cased) and `service_name` (`<tenant>-<router id
+ * lower-cased>`, read by `serviceNameMatcher`). The failures are the
+ * server-errors alert's count: the `relay_end` leg is
  * FAILED_PIPELINE exactly, and the older lines' leg (a final line with an
  * error, or no result or reply) counted 1,305 where GAVE_UP counted 1,299 over
  * the same 15 minutes on the largest tenant (2026-10-20). Reading them costs
@@ -435,14 +436,14 @@ export class ErrorRequestsService {
     const matchers: string[] = [];
     if (chain) matchers.push(`chain="${chain.toLowerCase()}"`);
     if (router) {
-      // `service_name` is `<tenant>-<router id>`, and the tenant isn't known
-      // here: the id is matched as its end. Another router of the chain whose
-      // id ends in this one's would be counted with it - so then it isn't split.
-      const id = router.id;
-      if (!LABEL_TOKEN.test(id) || routers.some((r) => r.id !== id && r.spec === router.spec && r.id.endsWith(`-${id}`))) {
-        return { ...unavailable("shared-chain"), value: null };
-      }
-      matchers.push(`service_name=~".+-${id}"`);
+      // `service_name` is `<tenant>-<router id lower-cased>`, and the tenant
+      // isn't known here: the id is matched as its end. Another router of the
+      // chain whose id ends in this one's would be counted with it - so then it
+      // isn't split.
+      const matcher = serviceNameMatcher(router.id);
+      const others = routers.filter((r) => r.id !== router.id && r.spec === router.spec).map((r) => r.id);
+      if (!matcher || serviceNameClash(router.id, others)) return { ...unavailable("shared-chain"), value: null };
+      matchers.push(matcher);
     }
     // `or vector(0)`: an answer always has a sample, so none means the store didn't answer.
     const value = await prom

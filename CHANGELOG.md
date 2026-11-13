@@ -5,6 +5,23 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Fixed
+
+- **A router whose id has capitals gets its own Failed requests count and
+  Requests served row** (MAG-5296). The fleet names a router on its log
+  streams and the recorded counts `service_name` = `<tenant>-<router id
+  lower-cased>`: the chart labels the router's pods with the id lower-cased,
+  and the values file the dashboard reads keeps the id as written (the
+  chart's own default ids are `Ethereum` and `CosmosHub`). The Failed
+  requests card and the Availability view's Requests served row matched
+  `service_name=~".+-<id>"` with the id as written, so such a router counted
+  0 failed requests and showed no served row. Every reader that picks a
+  router by `service_name` now names it through one set of helpers
+  (`services/stream-scope.ts`): the id lower-cased, and regex-escaped where
+  it is matched by its end. A router whose id ends in another router's in
+  another case (`Archive-ETH-A` beside `eth-a`) isn't split from it,
+  and an id with a dot matches only a dot.
+
 ## [0.65.7]
 
 ### Fixed

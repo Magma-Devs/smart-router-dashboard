@@ -14,9 +14,20 @@
  *
  * Where the streams carry no such label, or Loki doesn't say, `narrow`
  * answers null and the lists read as before.
+ *
+ * Naming one router: every reader that picks a router by `service_name` -
+ * these streams, the recorded counts, the scraped series - goes through the
+ * `serviceName*` helpers below, so the id is lower-cased (and, in a regex,
+ * escaped) in one place. The chart labels a router's pods with its id
+ * lower-cased (`app.smart-router-id: {{ $router.id | lower }}`), the fleet's
+ * collector stamps `service_name` = `<tenant>-<that label>` on the pods' log
+ * streams and scraped series alike, and the log ruler's counts keep the stream
+ * label. The values file the dashboard reads keeps the id as written,
+ * capitals and all: the chart's own default ids are `Ethereum` and `CosmosHub`.
  */
 
 import type { LokiClient } from "./loki-client.js";
+import { escapeRe } from "./router-log.js";
 
 export const CHAIN_LABEL = "chain";
 export const ROUTER_LABEL = "service_name";
@@ -32,6 +43,41 @@ export const SAFE_VALUE = /^[A-Za-z0-9_.:-]{1,128}$/;
 export function withMatcher(selector: string, label: string, value: string): string | null {
   if (!SAFE_VALUE.test(value) || !/\}\s*$/.test(selector)) return null;
   return selector.replace(/\}\s*$/, `, ${label}="${value}"}`);
+}
+
+/** A router id as `service_name` carries it: lower-cased, as the chart labels the router's pods. */
+export const serviceNameId = (routerId: string): string => routerId.toLowerCase();
+
+/** One router's `service_name` where the tenant is known: `<tenant>-<id lower-cased>`. */
+export const serviceNameOf = (tenant: string, routerId: string): string => `${tenant}-${serviceNameId(routerId)}`;
+
+/** Whether a `service_name` value is this router's where the tenant isn't known: it ends in `-<id lower-cased>`. */
+export const isServiceNameOf = (value: string, routerId: string): boolean => value.endsWith(`-${serviceNameId(routerId)}`);
+
+/**
+ * Whether matching this router's `service_name` by its end would take in
+ * another router's too: one of `others` (the chain's other router ids) that
+ * the label carries as this one's id, or as an id ending in `-<id>`
+ * (`archive-eth` for `eth`). Compared lower-cased, as the label carries them.
+ */
+export function serviceNameClash(routerId: string, others: readonly string[]): boolean {
+  const own = serviceNameId(routerId);
+  return others.some((o) => {
+    const id = serviceNameId(o);
+    return id === own || id.endsWith(`-${own}`);
+  });
+}
+
+/**
+ * The matcher for one router's series or streams where the tenant isn't
+ * known, in PromQL or LogQL: `service_name=~".+-<id>"`, the id lower-cased
+ * and regex-escaped (a `.` in it matches only a dot), then escaped again for
+ * the quoted string. Null for an id that isn't a plain token.
+ */
+export function serviceNameMatcher(routerId: string): string | null {
+  if (!SAFE_VALUE.test(routerId)) return null;
+  const regex = `.+-${escapeRe(serviceNameId(routerId))}`;
+  return `${ROUTER_LABEL}=~"${regex.replace(/\\/g, "\\\\")}"`;
 }
 
 /** The tenant the selector pins, when it names one: `service_name` is `<tenant>-<router id lower-cased>`. */
@@ -64,12 +110,12 @@ export class StreamScope {
    */
   async narrow(spec?: string, routerId?: string): Promise<string | null> {
     if (routerId) {
-      // As the Transactions chart names a router (transactions-over-time.ts): <tenant>-<id lower-cased>,
-      // exactly where the selector names the tenant, else the one value ending in -<id>.
-      const id = routerId.toLowerCase();
+      // <tenant>-<id lower-cased>, exactly where the selector names the tenant, else the one value ending in -<id>.
       const cluster = clusterOf(this.selector);
       const routers = [...((await this.values(ROUTER_LABEL)) ?? [])];
-      const own = cluster ? routers.filter((v) => v === `${cluster}-${id}`) : routers.filter((v) => v.endsWith(`-${id}`));
+      const own = cluster
+        ? routers.filter((v) => v === serviceNameOf(cluster, routerId))
+        : routers.filter((v) => isServiceNameOf(v, routerId));
       const narrowed = own.length === 1 ? withMatcher(this.selector, ROUTER_LABEL, own[0]!) : null;
       if (narrowed) return narrowed;
     }

@@ -7,6 +7,7 @@ import type { RouterTopology } from "@sr/shared";
 import { CANCELLED_NOTE, METHOD_REDACTED, methodOf, onChain, ownRow, parseRouterLine, scrubUrls, UpstreamIndex, type RouterLine, type UpstreamInfo } from "../services/router-log.js";
 import type { LokiClient, LokiLine } from "../services/loki-client.js";
 import type { ConfigurationService } from "../services/configuration.js";
+import { selectorMatches } from "./label-matchers.js";
 
 /* Router log lines as a live router wrote them (smart-router :main,
    2026-09-27), cut down to the fields the table reads. Real captures unless
@@ -908,6 +909,44 @@ describe("the Failed requests count", () => {
     };
     return { prom, queries, counts: () => queries.filter((q) => q.startsWith("sum(sum_over_time(")) };
   };
+  /** The same store holding the failures per series: a count sums the series its matchers select, as the store does. */
+  const labelled = (series: { labels: Record<string, string>; failures: number }[]) => {
+    const queries: string[] = [];
+    const prom = {
+      async scalar(q: string) {
+        queries.push(q);
+        if (q.startsWith("time() - max(timestamp(")) return 30;
+        if (q.startsWith("time() - min(min_over_time(")) return 40 * 86400;
+        return series.filter((s) => selectorMatches(q, s.labels)).reduce((n, s) => n + s.failures, 0);
+      },
+    };
+    return { prom, counts: () => queries.filter((q) => q.startsWith("sum(sum_over_time(")) };
+  };
+  /** A recorded series of one router on ETH1: the label carries the id as the chart labels the pods, lower-cased. */
+  const onEth1 = (id: string, failures: number) => ({ labels: { cluster: "example", chain: "eth1", service_name: `example-${id}` }, failures });
+  const routersOf = (...ids: string[]) =>
+    ({ getRouters: () => ids.map((id, i) => ({ id, spec: "ETH1", nodes: [nodeOf(`n${i}`)] })) }) as unknown as ConfigurationService;
+
+  it("a router id with capitals is counted by its service_name, which carries the id lower-cased", async () => {
+    const { prom, counts } = labelled([onEth1("eth-a", 3), onEth1("eth-b", 5)]);
+    const svc = new ErrorRequestsService(counter(9).loki, SEL, routersOf("ETH-A", "Eth-B"), undefined, prom);
+    expect(await svc.failedCount("1h", undefined, "ETH-A")).toEqual({ available: true, value: 3 });
+    expect(await svc.failedCount("1h", undefined, "Eth-B")).toEqual({ available: true, value: 5 });
+    expect(counts()[0]).toContain('{chain="eth1", service_name=~".+-eth-a"}');
+  });
+
+  it("another router whose id ends in this one's, in another case, can't be told apart from it", async () => {
+    const { prom } = labelled([onEth1("eth-a", 3), onEth1("archive-eth-a", 5)]);
+    const svc = new ErrorRequestsService(counter(9).loki, SEL, routersOf("eth-a", "Archive-ETH-A"), undefined, prom);
+    expect(await svc.failedCount("1h", undefined, "eth-a")).toEqual({ available: false, reason: "shared-chain", value: null });
+    expect(await svc.failedCount("1h", undefined, "Archive-ETH-A")).toEqual({ available: true, value: 5 });
+  });
+
+  it("a dot in a router id matches only a dot", async () => {
+    const { prom } = labelled([onEth1("eth.a", 3), onEth1("ethxa", 5)]);
+    const svc = new ErrorRequestsService(counter(9).loki, SEL, routersOf("Eth.A", "ethxa"), undefined, prom);
+    expect(await svc.failedCount("1h", undefined, "Eth.A")).toEqual({ available: true, value: 3 });
+  });
 
   it("a router alone on its chain is counted by that chain; one sharing it can't be told apart, and says so", async () => {
     const { loki, queries } = counter(2);

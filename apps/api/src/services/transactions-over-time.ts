@@ -6,9 +6,9 @@
  * Read from the store first: the fleet's Loki ruler records
  * `smartrouter_transactions:count1m` in each tenant's org, a per-minute count
  * of the `relay_end` lines `TX_EVENT_FILTER` finds, labelled `cluster`,
- * `chain` (the spec, lowercased), `service_name` (`<tenant>-<router id>`),
- * `api_interface`, `outcome`, `tx_status` and `tx_refused` - each absent when
- * empty. Its rule:
+ * `chain` (the spec, lowercased), `service_name` (`<tenant>-<router id
+ * lower-cased>`, `serviceNameOf`), `api_interface`, `outcome`, `tx_status`
+ * and `tx_refused` - each absent when empty. Its rule:
  *
  *   count_over_time({component="router"} <TX_EVENT_FILTER> | json … [1m] offset 30s)
  *
@@ -35,7 +35,7 @@ import type { MetricWindow, RouterTopology, TransactionsOverTime, TxResult } fro
 import { bucketGrid, WINDOWS } from "@sr/shared";
 import type { PrometheusClient } from "./prometheus-client.js";
 import type { LokiClient, LokiSeries } from "./loki-client.js";
-import { withMatcher } from "./stream-scope.js";
+import { ROUTER_LABEL, serviceNameOf, withMatcher } from "./stream-scope.js";
 import type { ConfigurationService } from "./configuration.js";
 import { LABEL_TOKEN } from "./router-log.js";
 import { TX_EVENT_FILTER, txResultOf } from "./transactions.js";
@@ -178,11 +178,11 @@ export class TransactionsOverTimeService {
       fromStore = ruler;
     }
     if (read && fromStore) {
-      // A router sharing its chain is told apart by `service_name`: <tenant>-<router id>.
+      // A router sharing its chain is told apart by `service_name`: <tenant>-<router id lower-cased>.
       let own = recorded;
       let serviceName: string | null = null;
       if (router && shared && recorded.length) {
-        const nameOf = (s: Sample, id: string) => `${s.metric.cluster ?? ""}-${id.toLowerCase()}`;
+        const nameOf = (s: Sample, id: string) => serviceNameOf(s.metric.cluster ?? "", id);
         const onChain = this.routers().filter((r) => r.spec === router.spec);
         if (!recorded.some((s) => onChain.some((r) => s.metric.service_name === nameOf(s, r.id)))) {
           return empty({ available: false, reason: "shared-chain" });
@@ -193,7 +193,7 @@ export class TransactionsOverTimeService {
       for (const s of own) for (const [t, n] of s.values) add(resultOf(s.metric), t, n);
 
       // The newest minutes, from the logs: from where the recorded counts end to now.
-      const selector = router && shared ? (serviceName ? withMatcher(this.selector, "service_name", serviceName) : null) : this.selector;
+      const selector = router && shared ? (serviceName ? withMatcher(this.selector, ROUTER_LABEL, serviceName) : null) : this.selector;
       const tail = this.loki && selector ? await this.readTail(selector, chain, read.coveredTo, nowSec) : null;
       if (tail) for (const s of tail) for (const [t, n] of s.values) add(resultOf(s.metric), t, n);
       return { available: true, source: "recorded", grid, asOf: nowSec, counts, partialFrom: tail ? null : read.coveredTo };

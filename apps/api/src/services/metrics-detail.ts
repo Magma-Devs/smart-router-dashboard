@@ -74,6 +74,7 @@ import type { ConfigurationService } from "./configuration.js";
 import { health, toPoints } from "./metrics.js";
 import { CACHED as CACHED_UPSTREAM, LABEL_TOKEN } from "./router-log.js";
 import { RECORDED_OUTCOMES } from "./error-requests.js";
+import { serviceNameClash, serviceNameMatcher } from "./stream-scope.js";
 
 export class MetricsDetailService {
   constructor(
@@ -256,12 +257,13 @@ export class MetricsDetailService {
 
     // What clients got, per stretch: requests and the ones the router couldn't serve - the counts the
     // fleet Loki's ruler records once a minute (RECORDED_OUTCOMES, the Failed requests card's). A router
-    // is its `service_name` (<tenant>-<id>, the id matched as its end), unless another router id of the
-    // chain ends in its: then it can't be split, and nothing is said rather than the chain's figure.
+    // is its `service_name` (<tenant>-<id lower-cased>, the id matched as its end), unless another router
+    // id of the chain ends in its: then it can't be split, and nothing is said rather than the chain's figure.
     const router = routerId ? (this.configSvc?.getRouters() ?? []).find((r) => r.id === routerId) : undefined;
-    const siblings = (this.configSvc?.getRouters() ?? []).filter((r) => r.spec === spec && r.id !== routerId);
-    const splittable = !router || (LABEL_TOKEN.test(router.id) && !siblings.some((r) => r.id.endsWith(`-${router.id}`)));
-    const outcomeSel = `{chain="${spec.toLowerCase()}"${router ? `, service_name=~".+-${router.id}"` : ""}}`;
+    const siblings = (this.configSvc?.getRouters() ?? []).filter((r) => r.spec === spec && r.id !== routerId).map((r) => r.id);
+    const byRouter = router ? serviceNameMatcher(router.id) : null;
+    const splittable = !router || (byRouter !== null && !serviceNameClash(router.id, siblings));
+    const outcomeSel = `{chain="${spec.toLowerCase()}"${byRouter ? `, ${byRouter}` : ""}}`;
     const [requested, unserved] = LABEL_TOKEN.test(spec) && splittable
       ? await Promise.all([RECORDED_OUTCOMES.requests, RECORDED_OUTCOMES.failures].map((m) => range((st) => `sum(sum_over_time(${m}${outcomeSel}[${st}]))`)))
       : [null, null];
