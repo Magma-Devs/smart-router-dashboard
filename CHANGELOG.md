@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.65.3]
+
 ### Fixed
 
 - **Audit log: typing an address no longer flashes an error** (MAG-5291).
