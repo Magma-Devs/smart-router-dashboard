@@ -99,10 +99,10 @@ describe("the notice", () => {
   });
 
   it.each([
-    ["2026-11-11T14:05:42.000Z", "11 November 2026 at 14:05 UTC"],
+    ["2026-11-11T14:05:42.000Z", "Nov 11, 2026, 14:05 UTC"],
     // Just after midnight UTC is the evening before in the Americas: the zone
     // has to be named, or the reader takes it as their own.
-    ["2027-01-01T00:03:00.000Z", "1 January 2027 at 00:03 UTC"],
+    ["2027-01-01T00:03:00.000Z", "Jan 1, 2027, 00:03 UTC"],
   ])("says when it changed, in UTC (%s)", (iso, expected) => {
     const { text, html } = renderPasswordChangedEmail({ changedAt: new Date(iso) });
     expect(text).toContain(`was changed on ${expected}.`);
@@ -117,7 +117,7 @@ describe("the notice", () => {
       const { text } = renderPasswordChangedEmail({
         changedAt: new Date("2027-01-01T00:03:00.000Z"),
       });
-      expect(text).toContain("was changed on 1 January 2027 at 00:03 UTC.");
+      expect(text).toContain("was changed on Jan 1, 2027, 00:03 UTC.");
     } finally {
       if (saved === undefined) delete process.env.TZ;
       else process.env.TZ = saved;
@@ -197,6 +197,8 @@ describe("notifyPasswordChanged", () => {
     );
     expect(ses.sent.map((m) => m.to)).toEqual([["dana@example.com"]]);
     expect(ses.sent[0]!.subject).toBe("Your Smart Router password was changed");
+    expect(ses.sent[0]!.text).toContain("was changed on Nov 11, 2026, 14:05 UTC.");
+    expect(ses.sent[0]!.html).toContain("<strong>Nov 11, 2026, 14:05 UTC</strong>");
   });
 
   it("returns a refusal as a note, never as an exception", async () => {

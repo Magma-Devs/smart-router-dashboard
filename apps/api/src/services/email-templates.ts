@@ -10,6 +10,7 @@ import {
   renderEmailHtml,
 } from "./email-layout.js";
 import { config } from "../config.js";
+import { emailTime } from "./email-time.js";
 
 /**
  * The transactional emails, with their copy. The invitation and the password
@@ -30,6 +31,9 @@ import { config } from "../config.js";
  *     shell, which has no footer and no remote images at all.
  *  4. **The message says what to do if it wasn't you.** On the reset that is
  *     the last line; it reassures without alarming.
+ *
+ * A time, where one is printed, is written by `emailTime` (`email-time.ts`):
+ * `Nov 11, 2026, 14:05 UTC`.
  */
 
 /** The customer this deployment belongs to, for the invitation's subject. */
@@ -194,7 +198,7 @@ export function renderTwoFactorResetEmail(opts: {
 }): RenderedEmail {
   const customer = customerName();
   const subject = EMAIL_SUBJECTS.two_factor_reset(customer);
-  const when = utcStamp(opts.at);
+  const when = emailTime(opts.at);
 
   const text =
     `Two-factor authentication was reset on your account (${opts.to}) on the ` +
@@ -236,31 +240,6 @@ export async function sendTwoFactorResetEmail(
   return deliver({ to: opts.to, ...renderTwoFactorResetEmail(opts) }, log);
 }
 
-const MONTHS = [
-  "January",
-  "February",
-  "March",
-  "April",
-  "May",
-  "June",
-  "July",
-  "August",
-  "September",
-  "October",
-  "November",
-  "December",
-] as const;
-
-/** `11 November 2026 at 14:05 UTC` — spelled out, so no reader has to guess
- *  which of day and month comes first, and in UTC, so it matches the audit log
- *  whatever the reader's timezone. Built by hand: `Intl`'s wording moves with
- *  the ICU version the runtime ships. */
-function utcStamp(at: Date): string {
-  const hh = String(at.getUTCHours()).padStart(2, "0");
-  const mm = String(at.getUTCMinutes()).padStart(2, "0");
-  return `${at.getUTCDate()} ${MONTHS[at.getUTCMonth()]} ${at.getUTCFullYear()} at ${hh}:${mm} UTC`;
-}
-
 /**
  * Password changed — sent whichever way the password changed: from the Account
  * page, or by a reset link being used. A change the owner did not make is the
@@ -276,7 +255,7 @@ function utcStamp(at: Date): string {
 export function renderPasswordChangedEmail(opts: { changedAt: Date }): RenderedEmail {
   const customer = customerName();
   const subject = EMAIL_SUBJECTS.password_changed(customer);
-  const when = utcStamp(opts.changedAt);
+  const when = emailTime(opts.changedAt);
   const noLink =
     "This notice never contains a link. One that asks you to click something did not come from us.";
 
