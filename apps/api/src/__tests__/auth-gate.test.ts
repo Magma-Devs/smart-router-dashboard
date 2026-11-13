@@ -110,7 +110,7 @@ async function signedInUser(role: Role = "read_only") {
   const session = await createSession(t.db, {
     userId: user.id,
     authMethod: "password",
-    client: { ip: "84.229.11.6", userAgent: "Chrome/141.0.0.0 Safari/537.36 (Macintosh)" },
+    client: { ip: "203.0.113.64", userAgent: "Chrome/141.0.0.0 Safari/537.36 (Macintosh)" },
   });
   const token = await mint({ sub: user.id, sid: session.id, role });
   return { user, session, token };

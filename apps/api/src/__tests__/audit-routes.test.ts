@@ -88,7 +88,7 @@ async function signedIn(role: Role = "read_only"): Promise<{ user: User; token: 
   const session = await createSession(t.db, {
     userId: user.id,
     authMethod: "password",
-    client: { ip: "84.229.11.6", userAgent: "Chrome/141.0.0.0 Safari/537.36 (Macintosh)" },
+    client: { ip: "203.0.113.64", userAgent: "Chrome/141.0.0.0 Safari/537.36 (Macintosh)" },
   });
   const token = await new SignJWT({ sub: user.id, email: user.email, role, sid: session.id })
     .setProtectedHeader({ alg: "HS256", typ: "JWT" })
@@ -112,7 +112,7 @@ async function seedEvents(): Promise<void> {
   await w.write({
     action: "signin.failed",
     actor: { id: null, kind: "user", label: "who@example.com" },
-    access: { ip: "84.229.11.6", client: "Chrome 141 / macOS", sessionId: null },
+    access: { ip: "203.0.113.64", client: "Chrome 141 / macOS", sessionId: null },
     note: "unknown address",
   });
   await w.write({
@@ -225,7 +225,7 @@ describe("GET /api/audit/events", () => {
     const [signin, changed] = body.items;
 
     expect(signin?.actor).toMatchObject({ type: "user", name: "who@example.com" });
-    expect(signin?.context).toMatchObject({ ip: "84.229.11.6", client: "Chrome 141 / macOS" });
+    expect(signin?.context).toMatchObject({ ip: "203.0.113.64", client: "Chrome 141 / macOS" });
     expect(signin?.note).toBe("unknown address");
 
     expect(changed?.target).toEqual({ type: "endpoint", id: "ep_8143", name: "eth-jsonrpc" });

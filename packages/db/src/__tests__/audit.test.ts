@@ -290,7 +290,7 @@ describe("0004_audit migration", () => {
         insert into audit_events
           (action, action_group, source, actor_kind, actor_name, ip)
         values
-          ('provider.edited', 'config', 'dashboard', 'user', 'Ron Katz', '84.229.11.6')
+          ('provider.edited', 'config', 'dashboard', 'user', 'Ron Katz', '203.0.113.64')
       `),
     );
     expect(err.constraint).toBe("audit_events_no_context_on_config");
@@ -358,14 +358,14 @@ describe("createAuditWriter", () => {
       action: "signin.failed",
       actor: { id: null, kind: "user", label: "attacker@elsewhere.com" },
       note: "unknown address",
-      access: { ip: "84.229.11.6", client: "Chrome 141 / macOS", sessionId: null },
+      access: { ip: "203.0.113.64", client: "Chrome 141 / macOS", sessionId: null },
     });
 
     const [row] = await t.db.select().from(auditEvents);
     expect(row?.actorName).toBe("attacker@elsewhere.com");
     expect(row?.actorUserId).toBeNull();
     expect(row?.note).toBe("unknown address");
-    expect(row?.ip).toBe("84.229.11.6");
+    expect(row?.ip).toBe("203.0.113.64");
     expect(row?.client).toBe("Chrome 141 / macOS");
   });
 
@@ -413,7 +413,7 @@ describe("createAuditWriter", () => {
     await writer().write({
       action: "signin.succeeded",
       actor: { id: null, kind: "user", label: "dana@customer.com" },
-      access: { ip: "84.229.11.6", client: "Chrome 141 / macOS", sessionId: session },
+      access: { ip: "203.0.113.64", client: "Chrome 141 / macOS", sessionId: session },
     });
 
     const [row] = await t.db.select().from(auditEvents);
@@ -430,7 +430,7 @@ describe("createAuditWriter", () => {
     await writer().write({
       action: "provider.edited",
       actor: { id: null, kind: "system" },
-      access: { ip: "84.229.11.6", client: "Chrome 141 / macOS", sessionId: null },
+      access: { ip: "203.0.113.64", client: "Chrome 141 / macOS", sessionId: null },
     });
 
     const [row] = await t.db.select().from(auditEvents);

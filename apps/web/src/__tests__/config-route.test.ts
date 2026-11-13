@@ -37,7 +37,7 @@ describe("GET /api/config grafanaUrl", () => {
 });
 
 describe("GET /api/config grafanaDashboardUrl", () => {
-  const reportsUrl = "https://magmadevs.grafana.net/d/sr-interactive-war-room/customer-experience?from=now-5m&to=now&timezone=browser&var-chain=$__all&var-provider=$__all&refresh=5m";
+  const reportsUrl = "https://example.grafana.net/d/customer/reports?from=now-5m&to=now&timezone=browser&var-chain=$__all&var-provider=$__all&refresh=5m";
 
   afterEach(() => {
     vi.unstubAllEnvs();
@@ -88,7 +88,7 @@ describe("GET /api/config grafanaDashboardUrl", () => {
 });
 
 describe("GET /api/config grafanaCustomerUsageDashboardUrl", () => {
-  const reportsUrl = "https://magmadevs.grafana.net/d/sr-customer-usage/customer-usage?from=now-5m&to=now&timezone=browser&var-chain=$__all&var-interface=$__all&refresh=5m";
+  const reportsUrl = "https://example.grafana.net/d/customer/usage?from=now-5m&to=now&timezone=browser&var-chain=$__all&var-interface=$__all&refresh=5m";
 
   afterEach(() => {
     vi.unstubAllEnvs();

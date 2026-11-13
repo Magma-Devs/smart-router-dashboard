@@ -223,7 +223,7 @@ describe("POST /auth/invite/accept — social", () => {
       headers: {
         "user-agent": "undici",
         "x-internal-auth": INTERNAL,
-        "x-forwarded-client-ip": "84.229.11.6",
+        "x-forwarded-client-ip": "203.0.113.64",
         "x-forwarded-client-ua": FIREFOX,
       },
       payload: { token, oauthProvider: "google", oauthToken: "an-id-token" },
@@ -236,7 +236,7 @@ describe("POST /auth/invite/accept — social", () => {
     const rows = await t.db.execute<{ action: string; ip: string; client: string; session_id: string }>(
       sql`select action, host(ip) as ip, client, session_id from audit_events order by seq`,
     );
-    const context = { ip: "84.229.11.6", client: "Firefox 131 / Windows", session_id: sessionId };
+    const context = { ip: "203.0.113.64", client: "Firefox 131 / Windows", session_id: sessionId };
     expect(rows.rows).toEqual([
       { action: "invite.redeemed", ...context },
       { action: "signin.succeeded", ...context },

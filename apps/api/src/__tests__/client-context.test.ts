@@ -65,7 +65,7 @@ describe("parseClient", () => {
 
 describe("normalizeIp", () => {
   it("keeps ordinary addresses", () => {
-    expect(normalizeIp("84.229.11.6")).toBe("84.229.11.6");
+    expect(normalizeIp("203.0.113.64")).toBe("203.0.113.64");
     expect(normalizeIp("2001:db8::1")).toBe("2001:db8::1");
     expect(normalizeIp("::1")).toBe("::1");
     expect(normalizeIp(" 10.0.0.1 ")).toBe("10.0.0.1");

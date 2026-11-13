@@ -20,6 +20,10 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   comments. Each now says what the figure showed without the number or the
   deployment: a 4 GB read is still about half an hour of a busy deployment's
   router lines.
+- **Real-world identifiers in test fixtures** (MAG-5299): a public client IP
+  address (now `203.0.113.64`, from the documentation range), an internal
+  Grafana host and dashboard ids (now `example.grafana.net/d/customer/…`) and
+  a real Stellar transaction hash (now a synthetic one).
 
 ## [0.66.0]
 

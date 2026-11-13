@@ -106,7 +106,7 @@ async function customerAdmin(email = "dana@customer.example") {
   const session = await createSession(t.db, {
     userId: admin!.id,
     authMethod: "password",
-    client: { ip: "84.229.11.6", userAgent: "Chrome/141.0.0.0 (Macintosh)" },
+    client: { ip: "203.0.113.64", userAgent: "Chrome/141.0.0.0 (Macintosh)" },
   });
   const token = await new SignJWT({
     sub: admin!.id,
