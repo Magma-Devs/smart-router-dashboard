@@ -492,7 +492,7 @@ describe("readStart", () => {
   });
 
   it("a part sized from a quiet average is weighed again: the newest hours can be far heavier", async () => {
-    // Quiet for 13 days, then three times as busy - as the largest tenant grew.
+    // Quiet for 13 days, then three times as busy - as a growing deployment is.
     const { loki } = sized((t) => (t < 13 * 24 * HOUR ? B / 4 : (3 * B) / 4));
     const end = 14 * 24 * HOUR;
     const start = await readStart(loki, SEL, { startMs: 0, endMs: end }, end);
@@ -983,7 +983,7 @@ describe("the Failed requests count", () => {
   });
 
   it("from the lines, a window heavier than one read may scan isn't counted - it says so, and Loki is not asked for it", async () => {
-    // 14 days of the largest tenant's router lines: about 800 GB.
+    // 14 days of a busy deployment's router lines: hundreds of gigabytes.
     const { loki, queries } = counter(5, 800e9);
     expect(await new ErrorRequestsService(loki, SEL, cfg).failedCount("14d")).toEqual({ available: false, reason: "too-large", value: null });
     expect(queries).toHaveLength(0);

@@ -154,7 +154,7 @@ describe("listAuditEvents", () => {
     await w.write({
       action: "signin.failed",
       actor: { id: null, kind: "user", label: "who@example.com" },
-      access: { ip: "84.229.11.6", client: "Chrome 141 / macOS", sessionId: null },
+      access: { ip: "203.0.113.64", client: "Chrome 141 / macOS", sessionId: null },
     });
     await w.write({
       action: "provider.renamed",
@@ -164,7 +164,7 @@ describe("listAuditEvents", () => {
 
     const [signin, renamed] = (await listAuditEvents(t.db)).items;
     expect(signin?.context).toEqual({
-      ip: "84.229.11.6",
+      ip: "203.0.113.64",
       client: "Chrome 141 / macOS",
       session: null,
     });

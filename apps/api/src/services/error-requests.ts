@@ -267,8 +267,8 @@ const COUNT_KEEP = 256;
  * lower-cased>`, read by `serviceNameMatcher`). The failures are the
  * server-errors alert's count: the `relay_end` leg is
  * FAILED_PIPELINE exactly, and the older lines' leg (a final line with an
- * error, or no result or reply) counted 1,305 where GAVE_UP counted 1,299 over
- * the same 15 minutes on the largest tenant (2026-10-20). Reading them costs
+ * error, or no result or reply) counts within half a percent of GAVE_UP over
+ * the same minutes. Reading them costs
  * the same at a month as at five minutes; reading the logs costs the window.
  */
 export const RECORDED_OUTCOMES = {

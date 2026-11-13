@@ -60,13 +60,12 @@ export const readEnd = (range: ReadRange, before?: number) =>
 
 /**
  * The most log one read may scan, in bytes as Loki's index counts them: about
- * half an hour of the busiest tenant's router lines (production, 2026-10-20: 6.7 GB
- * an hour, 1.6 TB a month), so the default half hour reads whole on every
- * tenant at its usual volume.
+ * half an hour of a busy deployment's router lines, so the default half hour
+ * reads whole on every tenant at its usual volume.
  * A line filter doesn't lower it - a read opens every chunk of the streams it
  * selects, matches or not - and a read with few matches can't stop early.
- * A 14-day read that ignored it pinned the shared Loki at 97 % CPU for five
- * minutes and timed out every tenant's alert rules (2026-10-20).
+ * A 14-day read that ignored it can pin a shared Loki and time out every
+ * tenant's alert rules.
  */
 export const LOG_READ_BUDGET_BYTES = 4e9;
 
@@ -83,8 +82,8 @@ const SIZING_ROUNDS = 3;
  * Where a read ending at `endMs` starts: the range's start when the stretch
  * between fits the budget, else the newest part that does. The part is sized
  * from the stretch's weight as if spread evenly, then weighed again and cut
- * again: traffic grows, and a month's average is a third of the largest
- * tenant's current hour. Older lines are the next read's (`readOnFrom` takes
+ * again: traffic grows, and a month's average can be a fraction of a busy
+ * deployment's current hour. Older lines are the next read's (`readOnFrom` takes
  * the start as a cut), so a long window costs one budget per "Load older",
  * not all of it at once.
  */

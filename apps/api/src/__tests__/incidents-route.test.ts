@@ -262,7 +262,7 @@ describe("POST /api/incidents — AUTH_MODE=enabled", () => {
     const session = await createSession(t.db, {
       userId: user!.id,
       authMethod: "password",
-      client: { ip: "84.229.11.6", userAgent: "Chrome/141 (Macintosh)" },
+      client: { ip: "203.0.113.64", userAgent: "Chrome/141 (Macintosh)" },
     });
     const token = await new SignJWT({ sub: user!.id, email: user!.email, role, sid: session.id })
       .setProtectedHeader({ alg: "HS256", typ: "JWT" })

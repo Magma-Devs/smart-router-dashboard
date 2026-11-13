@@ -134,7 +134,7 @@ async function tokenFor(user: User): Promise<string> {
   const session = await createSession(t.db, {
     userId: user.id,
     authMethod: "password",
-    client: { ip: "84.229.11.6", userAgent: "Chrome/141.0.0.0 Safari/537.36 (Macintosh)" },
+    client: { ip: "203.0.113.64", userAgent: "Chrome/141.0.0.0 Safari/537.36 (Macintosh)" },
   });
   return mint({ sub: user.id, sid: session.id, role: user.role });
 }
@@ -910,7 +910,7 @@ describe("enrolment and reset over HTTP", () => {
   });
 
   it("records the enrolment from where it happened, not where the session began", async () => {
-    // The session was opened from 84.229.11.6 (see tokenFor). Enrolling from
+    // The session was opened from 203.0.113.64 (see tokenFor). Enrolling from
     // somewhere else is exactly the case an investigation needs to see.
     app = await buildAuthApp();
     const user = await seedUser();
@@ -976,7 +976,7 @@ describe("enrolment and reset over HTTP", () => {
     const memberSession = await createSession(t.db, {
       userId: member.id,
       authMethod: "password+totp",
-      client: { ip: "84.229.11.6", userAgent: "Chrome/141" },
+      client: { ip: "203.0.113.64", userAgent: "Chrome/141" },
     });
     const stale = await issueChallenge(t.db, member.id);
 
@@ -1014,7 +1014,7 @@ describe("enrolment and reset over HTTP", () => {
     const ended = await createSession(t.db, {
       userId: member.id,
       authMethod: "password+totp",
-      client: { ip: "84.229.11.6", userAgent: "Chrome/141" },
+      client: { ip: "203.0.113.64", userAgent: "Chrome/141" },
     });
 
     const res = await app.inject({

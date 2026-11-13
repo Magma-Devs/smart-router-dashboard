@@ -42,7 +42,7 @@ describe("sessions", () => {
     createSession(t.db, {
       userId: user.id,
       authMethod: "password",
-      client: { ip: "84.229.11.6", userAgent: "Mozilla/5.0 (Macintosh) Chrome/141.0.0.0 Safari/537.36" },
+      client: { ip: "203.0.113.64", userAgent: "Mozilla/5.0 (Macintosh) Chrome/141.0.0.0 Safari/537.36" },
     });
 
   /** Seconds-since-epoch "now", the shape of a JWT `iat`. */
@@ -66,7 +66,7 @@ describe("sessions", () => {
       const session = await open();
       expect(session.client).toBe("Chrome 141 / macOS");
       expect(session.userAgent).toContain("Chrome/141");
-      expect(session.ip).toBe("84.229.11.6");
+      expect(session.ip).toBe("203.0.113.64");
       expect(session.expiresAt.getTime()).toBeGreaterThan(Date.now());
     });
 

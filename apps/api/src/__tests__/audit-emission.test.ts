@@ -107,7 +107,7 @@ async function adminToken(): Promise<{ token: string; id: string }> {
   const session = await createSession(t.db, {
     userId: admin!.id,
     authMethod: "password",
-    client: { ip: "84.229.11.6", userAgent: "Chrome/141.0.0.0 (Macintosh)" },
+    client: { ip: "203.0.113.64", userAgent: "Chrome/141.0.0.0 (Macintosh)" },
   });
   const token = await new SignJWT({
     sub: admin!.id,
@@ -129,7 +129,7 @@ describe("events reach the log", () => {
     const res = await app!.inject({
       method: "POST",
       url: "/auth/setup",
-      remoteAddress: "84.229.11.6",
+      remoteAddress: "203.0.113.64",
       headers: {
         "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:131.0) Gecko/20100101 Firefox/131.0",
       },
@@ -142,7 +142,7 @@ describe("events reach the log", () => {
     const rows = await t.db.execute<{ ip: string | null; client: string | null }>(
       sql`select ip::text, client from audit_events where action = 'setup.completed'`,
     );
-    expect(rows.rows).toEqual([{ ip: "84.229.11.6/32", client: "Firefox 131 / Windows" }]);
+    expect(rows.rows).toEqual([{ ip: "203.0.113.64/32", client: "Firefox 131 / Windows" }]);
   });
 
   it("records a successful and a failed sign-in differently", async () => {

@@ -585,9 +585,9 @@ describe("retry builders", () => {
   // raw counter 11 and plain increase() 0, because the series was born at 11.
   // Then an 18-minute gap in scraping (the laptop slept): a 15m window that
   // started inside the gap read 31 - the whole total - without the day check.
-  // Then a production deployment's metrics: a zero side of `S * 0` dropped every series
-  // that had stopped reporting (restarted pods) and read 43,716 retries for
-  // Solana testnet where plain increase() read 142,257; this form read 142,408.
+  // Then a deployment with restarted pods: a zero side of `S * 0` dropped every
+  // series that had stopped reporting and read under a third of the retries
+  // plain increase() read; this form read them all, plus the born-in-range ones.
   it("increaseFromBirth adds a born-in-range series' first value back, but not after a gap", () => {
     const s = 'm{spec="ETH1"}';
     const held = "count(last_over_time(smartrouter_overall_health[1d] offset 60s)) > 0";

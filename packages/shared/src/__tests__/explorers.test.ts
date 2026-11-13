@@ -169,7 +169,7 @@ describe("explorerTxUrl", () => {
   });
 
   it("Stellar: stellar.expert, on the network's own path", () => {
-    const XLM_TX = "d70bf3c3aec3dd39fa8c33e38306b65581fb1e058fcba7cfd70c7f2aa3359a77";
+    const XLM_TX = "5c".repeat(32);
     expect(explorerTxUrl("XLM", XLM_TX)).toBe(`https://stellar.expert/explorer/public/tx/${XLM_TX}`);
     expect(explorerTxUrl("XLMT", XLM_TX)).toBe(`https://stellar.expert/explorer/testnet/tx/${XLM_TX}`);
     expect(explorerTxUrl("XLM", EVM)).toBeNull();

@@ -5,6 +5,29 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.66.1]
+
+### Removed
+
+- **Three Upstreams roster screenshots that showed a production deployment's
+  upstreams** (MAG-5299): `docs/assets/upstreams-by-upstream-before.png`,
+  `upstreams-by-upstream-after.jpg` and
+  `upstreams-router-disambiguation.jpg`, with the 0.24.1 entry's links to
+  them. That entry, and the comments in `UpstreamsView.tsx`, no longer count
+  that deployment's chains or name its providers.
+- **Figures read off production deployments** (MAG-5299): log volumes, series
+  counts, request and failure counts and an incident's date and load, in this
+  changelog, `CLAUDE.md`, `docs/RECORDING-RULES.md`, the comments of
+  `read-range.ts`, `error-requests.ts` and `loki-client.ts`, and two test
+  comments, and the 0.66.0 entry and `error-incidents.ts` comment on the
+  error timeline. Each now says what the figure showed without the number or
+  the deployment: a 4 GB read is still about half an hour of a busy
+  deployment's router lines.
+- **Real-world identifiers in test fixtures** (MAG-5299): a public client IP
+  address (now `203.0.113.64`, from the documentation range), an internal
+  Grafana host and dashboard ids (now `example.grafana.net/d/customer/…`) and
+  a real Stellar transaction hash (now a synthetic one).
+
 ## [0.66.0]
 
 ### Added
@@ -13,7 +36,7 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   they arrived, not by type. One line per burst - errors well above a
   provider's usual level until they stop for 15 minutes - drawn on one time
   axis with its waves, its count and whether it is still going. A day of a
-  busy deployment reads as about 20 lines instead of millions of error rows.
+  busy deployment reads as a short list of lines instead of every error row.
   - **Burst**: one provider, then back to normal.
   - **Chain-wide**: several providers of one chain at the same time.
   - **Recurring**: the same provider and chain 3 times or more, each within
@@ -1182,10 +1205,9 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 - **The Transactions and Errors lists read only what is new when they poll,
   and the viewers of one list on an api process share its read** (MAG-4574).
   A read of the router's logs costs Loki the whole stretch it covers, whatever
-  its filters match: on the largest tenant, which writes 6.7 GB of router
-  lines an hour, a 30-minute Transactions poll scanned about 10 GB, up to
-  27 GB with the reads of each request's other lines, for every viewer every
-  15 s. A list on the page window now keeps its last read on the api, and
+  its filters match: on a busy deployment a 30-minute Transactions poll
+  scanned gigabytes, several times that with the reads of each request's
+  other lines, for every viewer every 15 s. A list on the page window now keeps its last read on the api, and
   the next poll runs the line filters only from a minute before where that
   read ended, merges what they find by request, and reads the rest of a
   request's lines only when it is new or its lines can still come: rows,
@@ -1266,7 +1288,7 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   and answer from that read once it holds the request's `relay_end`. Before,
   every look-up read the whole range, because a request's 5 to 40 lines
   never fill the read's limit, and "Search the last 30 days" read a month:
-  720 hour-long splits in Loki, about 1.6 TB of logs on the largest tenant,
+  720 hour-long splits in Loki, terabytes of logs on a busy deployment,
   from one click and again on every load of a `?request=` link. The 5
   minutes hold the router's longest default processing budget, 3 minutes.
   A link to a request now finds it whatever the page's window. When its
@@ -1310,9 +1332,9 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 - **Long windows no longer stall the shared log store** (MAG-4465). The
   Failed requests card and the Errors and Transactions lists read the raw
   router lines over the whole window, and a line filter doesn't make that
-  cheaper: Loki opens every chunk of the router's streams. On the largest
-  tenant 14 days is about 800 GB; on 2026-10-20 such a read pinned the fleet
-  Loki at 97 % CPU for five minutes and timed out every tenant's alert rules.
+  cheaper: Loki opens every chunk of the router's streams. On a busy
+  deployment 14 days is hundreds of gigabytes, and such a read can pin a
+  shared Loki and time out every tenant's alert rules.
   - The **Failed requests** card reads the counts the fleet Loki's ruler
     records once a minute (`smartrouter_final_failures:count1m`, the
     server-errors alert's count): about a second for a month. A router on a
@@ -1323,7 +1345,7 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   - The **Errors** and **Transactions** lists read at most 4 GB of logs per
     read, weighed first from Loki's index: a range within that is read
     whole (a small deployment's month), a heavier one from its newest part
-    (about half an hour on the largest tenant), and **Load older** reads on.
+    (about half an hour on a busy deployment), and **Load older** reads on.
     An empty part says it is a part.
 
 ## [0.44.0]
@@ -1647,8 +1669,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   (`promql/recorded.ts`: the Mimir ruler's two-minute rates of the request
   counters, the two latency histograms and the upstream relay counters, summed
   per chain and router) instead of scanning the raw families — a per-chain p95
-  over seven days reads 645 series instead of 7,530, and the upstream roster's
-  reads over the 10,620-series endpoint histogram become reads over 1,230.
+  over seven days reads about a tenth of the raw bucket series, and the
+  upstream roster's reads over the endpoint histogram shrink about as much.
   Narrower windows stay raw and exact, and chart lines switch only from 12
   hours up, where a chart point is a two-minute average over the step rather
   than an instantaneous rate. The api probes the series' freshness on
@@ -2725,10 +2747,9 @@ See [`docs/AUDIT.md`](./docs/AUDIT.md) for the full reference.
   the chain, and the upstream grouping reused it — so a card's rows carried
   role, url, interface and capabilities, and nothing chain-shaped. Node urls are
   masked to scheme+host (the path is where API keys live), so a provider serving
-  every chain off one hostname rendered row after identical row: Lava's 27 all
-  read `https://g.w.lavanet.xyz`, Blockdaemon's the same. Rows now lead with the
-  chain, in a fixed-width slot so one long name can't step the row's other
-  columns out of line down a card of 27.
+  every chain off one hostname rendered row after identical row. Rows now lead
+  with the chain, in a fixed-width slot so one long name can't step the row's
+  other columns out of line down a long card.
 - **A chain served by two routers now names them.** The config allows a staging
   and a production router on one `network`, and a node both declare got a row
   from each — still identical once the chain was named. Those rows carry the
@@ -2736,14 +2757,10 @@ See [`docs/AUDIT.md`](./docs/AUDIT.md) for the full reference.
   pinned per path. Only where the ambiguity is real, and computed from the rows
   the filters leave visible.
 - **The upstream card header no longer names a chain.** It showed the first
-  chain in config order plus a bare "+26" — which read as a primary the config
+  chain in config order plus a bare "+N" — which read as a primary the config
   never declares (that head chain is only whichever router declares the node
   first in the values file), and which is duplication now that every row names
   its own chain. The card is about the upstream; the chains are the rows.
-
-  The roster [before](./docs/assets/upstreams-by-upstream-before.png) and
-  [after](./docs/assets/upstreams-by-upstream-after.jpg), and
-  [two routers on one chain](./docs/assets/upstreams-router-disambiguation.jpg).
 
 ### Known issues
 

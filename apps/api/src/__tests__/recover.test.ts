@@ -112,7 +112,7 @@ describe("reset-2fa", () => {
     const session = await createSession(t.db, {
       userId: user.id,
       authMethod: "password+totp",
-      client: { ip: "84.229.11.6", userAgent: "Chrome/141" },
+      client: { ip: "203.0.113.64", userAgent: "Chrome/141" },
     });
     const stale = await issueChallenge(t.db, user.id);
 
