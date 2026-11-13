@@ -434,8 +434,8 @@ an admin's, and the one `make recover CMD="reset-password …"` prints — so al
 them are covered. Creating an account sets a password too (first-run setup,
 invite redemption), but there is no earlier owner to warn.
 
-It says that the password changed, when (in UTC, from the `password_updated_at`
-the change wrote), and what to do if it wasn't them: open the dashboard the way
+It says that the password changed, when (in UTC, `Nov 11, 2026, 14:05 UTC`,
+from the `password_updated_at` the change wrote), and what to do if it wasn't them: open the dashboard the way
 they usually do, choose **Forgot your password?** on the sign-in page to set a
 new one, which signs out every device, and tell their administrator. It carries
 **no link** — see the rules below.
@@ -502,6 +502,11 @@ From the ticket, and each has a test:
   copy and bait somebody into pressing. It says what to do in words, and its
   last line says it never contains a link, so a copy that has one gives itself
   away.
+- **A time reads one way in every email**: `Nov 11, 2026, 14:05 UTC` — the
+  dashboard's date and 24-hour clock, with the zone written out. The dashboard
+  shows the reader's own zone, which the browser reports; an email has no
+  browser and an account stores no zone, so it gives UTC, the zone of the
+  audit log. `emailTime` (`services/email-time.ts`) writes every one.
 
 
 ### The reset password page
