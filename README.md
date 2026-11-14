@@ -139,7 +139,9 @@ hears about it: Critical calls the on-call engineer. Off by default. Full guide:
 ```bash
 make dev            # hot-reload docker stack (api tsx watch · web next dev · shared tsc --watch)
 
-# or on the host (Node 24 + pnpm 10, needs a Prometheus at PROMETHEUS_URL):
+# or on the host (Node 26 + pnpm 12, needs a Prometheus at PROMETHEUS_URL).
+# Install pnpm once (https://pnpm.io/installation, or `npm install -g pnpm`);
+# it then runs the version `packageManager` pins.
 cp .env.example .env   # optional — every var has a compose default
 pnpm install
 pnpm --filter @sr/shared build && pnpm --filter @sr/db build
@@ -188,18 +190,24 @@ not as forty importers — and the fix is a runbook keyed on that output:
 (`/chain-resync` in Claude Code), with the reasoning in
 [`.claude/rules/chain-resync.md`](.claude/rules/chain-resync.md).
 
-Every version is pinned. npm dependencies and `pnpm.overrides` use exact
-versions, pnpm itself is pinned by hash (`packageManager`), GitHub Actions by
-commit SHA, and base and compose images by version tag plus digest.
+Every version is pinned. npm dependencies and the `overrides` in
+[`pnpm-workspace.yaml`](./pnpm-workspace.yaml) use exact versions, pnpm itself
+by `packageManager` (the lockfile records its sha512) and by the pnpm image
+digest in the Dockerfiles, GitHub Actions by commit SHA, and base and compose
+images by version tag plus digest.
 [Dependabot](.github/dependabot.yml) moves the pins weekly (npm, Actions,
-Dockerfiles, compose) and proposes a release only once it is 7 days old.
+Dockerfiles, compose) and proposes a release only once it is 7 days old. It
+proposes no major of Node, the pnpm image or `@types/node` (those are
+migrations), and moves each image in one PR across the Dockerfiles. Node and
+pnpm are also pinned in `.nvmrc` and `packageManager`, which it does not edit:
+the Quality Gate fails until those match the Dockerfiles.
 pnpm applies the same rule to any new version (`minimumReleaseAge` in
 [`pnpm-workspace.yaml`](./pnpm-workspace.yaml)). It also refuses a release
 published with weaker evidence than the package's earlier ones (`trustPolicy`),
 and `pnpm add` writes exact versions. Two escape hatches, each with its reason:
 a security fix younger than 7 days goes in `minimumReleaseAgeExclude` until it
 ages, and a trust exception goes in `trustPolicyExclude` by exact version.
-Transitive pins in `pnpm.overrides` move only by hand.
+Transitive pins in `overrides` move only by hand.
 
 When `NODE_ENV` isn't `production`, the api also serves an interactive
 **OpenAPI 3.1 explorer at [`/docs`](http://localhost:8000/docs)** (raw spec at

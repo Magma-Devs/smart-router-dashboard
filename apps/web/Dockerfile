@@ -1,8 +1,19 @@
+# pnpm comes from its official image, pinned by digest, for the runner's
+# architecture like the build stage that copies it. Its version matches
+# `packageManager` in package.json; Dependabot moves this line, so move the
+# pin with it.
+FROM --platform=$BUILDPLATFORM ghcr.io/pnpm/pnpm:12.18.0-alpine@sha256:937d5b248145cd59aaf3d78dd0fd45f95e65b942585c370a0a11d53ab937ed98 AS pnpm
+
 # The build stage runs on the runner's own architecture whatever the image
 # targets: its output is plain JS and the web loads no native module at
 # runtime, so BuildKit runs it once for linux/amd64,linux/arm64.
-FROM --platform=$BUILDPLATFORM node:24.22.3-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5 AS builder
-RUN corepack enable
+FROM --platform=$BUILDPLATFORM node:26.13.1-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5 AS builder
+# pnpm's native binary and the node-gyp it uses for native builds. A pnpm
+# that is not the one `packageManager` pins fails the build rather than
+# downloading the pinned one.
+COPY --from=pnpm /opt/pnpm /opt/pnpm
+RUN for bin in pnpm pn pnpx pnx; do ln -s "/opt/pnpm/$bin" "/usr/local/bin/$bin"; done
+ENV pnpm_config_pm_on_fail=error
 WORKDIR /app
 
 # NEXT_PUBLIC_* are baked at build time into the client bundle. The browser
@@ -36,7 +47,7 @@ RUN cd apps/web/.next/standalone/node_modules/.pnpm && \
 # Runtime stage, built once per target architecture. Keep it free of RUN:
 # the CI builder has no QEMU, so a RUN here fails on arm64 with "exec format
 # error". COPY, ENV, USER and CMD need no emulation.
-FROM node:24.22.3-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5
+FROM node:26.13.1-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5
 WORKDIR /app
 
 COPY --from=builder /app/apps/web/.next/standalone ./

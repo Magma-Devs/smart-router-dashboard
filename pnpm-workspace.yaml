@@ -29,3 +29,27 @@ trustPolicyExclude:
   # maintainer publishes. beta.32 (2026-07-20) is by the same maintainer as
   # beta.31 and has run here since then.
   - next-auth@5.0.0-beta.32
+
+# Transitive versions forced to a fixed release, mostly to take a security fix
+# a dependency has not picked up yet. pnpm reads them only from this file.
+# Dependabot does not edit them: one moves only when someone edits it here.
+overrides:
+  "brace-expansion@<5.0.8": "5.0.12"
+  "browserslist@<4.28.7": "4.29.3"
+  "esbuild@<0.25.0": "0.28.2"
+  "fast-copy@<4.1.0": "4.1.2"
+  "fast-jwt@<6.3.4": "6.3.4"
+  "fast-uri@<3.1.8": "3.1.9"
+  "find-my-way@<9.7.0": "9.10.0"
+  "glob": "14.0.3"
+  "ip-address@<10.7.1": "10.7.6"
+  "minimatch": "11.0.4"
+  "postcss@<8.5.18": "8.5.32"
+  "sharp@<0.35.0": "0.35.5"
+  "zod@<4.6.6": "4.6.7"
+
+# Packages whose install scripts may run. Anything with an install script that
+# is not listed fails the install. esbuild ships its binary as a platform
+# package, so its postinstall (a binary check) stays off.
+allowBuilds:
+  esbuild: false

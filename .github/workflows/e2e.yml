@@ -47,15 +47,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Setup Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      # pnpm at the version `packageManager` pins, checked against npm's
+      # registry signature, and Node from `.nvmrc`. It restores the pnpm store
+      # keyed on the lockfile, then installs with --frozen-lockfile.
+      - name: Setup pnpm and Node.js, install dependencies
+        uses: pnpm/setup@fa36a5ef7dcdefc3a7cb25655c122e00cf6e636e # v3.1.2
         with:
           node-version-file: .nvmrc
-
-      - name: Enable corepack and install dependencies
-        run: |
-          corepack enable
-          pnpm install --frozen-lockfile
+          cache: true
+          require-lockfile: true
 
       - name: Build workspace packages
         run: pnpm --filter @sr/shared build && pnpm --filter @sr/db build
