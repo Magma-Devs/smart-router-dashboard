@@ -2,10 +2,8 @@ version: 2
 
 # Every version in this repo is pinned: npm packages and overrides to exact
 # versions, actions to commit SHAs, images to digests. These updaters are how
-# the pins move. Each waits 7 days after a release before proposing it, the
-# same age pnpm's minimumReleaseAge enforces (pnpm-workspace.yaml), so a
-# version update never proposes a release the install would refuse. Security
-# updates are not delayed by the cooldown.
+# the pins move. They propose a release as soon as it is out: there is no
+# cooldown, as pnpm has no minimum release age (pnpm-workspace.yaml).
 #
 # Dependabot does not edit `overrides` in pnpm-workspace.yaml. A transitive
 # package pinned there moves only when someone edits it by hand.
@@ -25,8 +23,6 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
-    cooldown:
-      default-days: 7
     ignore:
       # Follows the Node major in .nvmrc, so it moves with it.
       - dependency-name: "@types/node"
@@ -39,8 +35,6 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
-    cooldown:
-      default-days: 7
 
   # Base images: apps/api/Dockerfile, apps/web/Dockerfile, Dockerfile.dev.
   # Each FROM carries a version tag and a digest; the updater moves both.
@@ -52,8 +46,6 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
-    cooldown:
-      default-days: 7
     groups:
       # One PR per image across the three Dockerfiles, not one per directory:
       # a Node or pnpm bump is a single PR, where `.nvmrc` or `packageManager`
@@ -75,8 +67,6 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
-    cooldown:
-      default-days: 7
     ignore:
       # Our own router image, followed on `main` by design (SR_ROUTER_IMAGE
       # overrides it).
