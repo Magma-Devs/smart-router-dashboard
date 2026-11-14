@@ -5,6 +5,23 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.67.1]
+
+### Changed
+
+- **No minimum release age.** `minimumReleaseAge` is 0 (it was 7 days) and
+  Dependabot's npm, Actions, Docker and Compose updaters have no cooldown
+  (they waited 7 days): a release can be proposed and installed as soon as it
+  is published. pnpm's own default would be a 1-day minimum; the repo opts
+  out. `trustPolicy: no-downgrade`, `blockExoticSubdeps` and the exact pins
+  stay.
+- **pnpm 12.18.0 → 12.21.0** (#378): the Dockerfiles' pnpm image and
+  `packageManager`. 12.19.0 stops an offline-mode error from printing a
+  registry token; 12.20.0 drops the undici 6 that security scanners flag in
+  the `node-gyp` pnpm bundles; 12.21.0 fixes installs, peer dependencies and
+  running scripts. The lockfile's first document records 12.21.0's binaries;
+  the project's 500 resolved packages are unchanged.
+
 ## [0.67.0]
 
 ### Changed
