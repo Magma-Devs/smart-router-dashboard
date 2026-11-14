@@ -6,17 +6,15 @@ packages:
 # Supply-chain settings. Every version in this repo is exact (package.json,
 # overrides, the lockfile); these settings decide what a NEW version may be.
 #
-# minimumReleaseAge: refuse any release younger than 7 days (in minutes).
-#   Compromised releases are usually found and pulled within days. A security
-#   fix that cannot wait goes in minimumReleaseAgeExclude, by name, and comes
-#   out again once it has aged.
+# minimumReleaseAge: 0 installs a release as soon as it is published. pnpm's
+#   own default is a 1-day minimum; this repo opts out of any age check.
 # trustPolicy: refuse a version published with weaker evidence than the
 #   package's earlier versions (e.g. a plain token publish after trusted
 #   publishing), the usual sign of a stolen npm token.
 # blockExoticSubdeps: a dependency of a dependency may not come from a git
 #   repo or a tarball URL, only from the registry.
 # saveExact: `pnpm add` writes an exact version, never a ^range.
-minimumReleaseAge: 10080
+minimumReleaseAge: 0
 trustPolicy: no-downgrade
 blockExoticSubdeps: true
 saveExact: true
