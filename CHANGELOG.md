@@ -19,6 +19,10 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   is one short line, drawn only when there are such errors. A kind picked
   from the filter that has no bursts says so in the header ("No bursts of
   failed attempts in the last 1 day").
+- **The request list's counts say when they are partial.** "Requests with an
+  error 300" beside "All 300" said the same number twice, and 300 was only
+  the rows loaded, not the total. The number beside the title is gone, and
+  while older requests are not loaded the filter's counts read "300+".
 
 ## [0.68.0]
 
