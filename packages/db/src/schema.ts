@@ -383,3 +383,4 @@ export type LoginAttempt = typeof loginAttempts.$inferSelect;
 /** MAG-2770 audit log — kept in its own module, re-exported so
  *  `import * as schema` still sees every table. */
 export * from "./schema-audit.js";
+export * from "./schema-ask.js";

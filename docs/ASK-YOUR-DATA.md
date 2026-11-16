@@ -1,8 +1,9 @@
-# Ask your data: foundation
+# Ask your data: backend contracts and persistence
 
 [MAG-4750](https://magmadevs.atlassian.net/browse/MAG-4750) owns the canonical
 scope. The [implementation and acceptance ledger](ASK-YOUR-DATA-IMPLEMENTATION.md)
-tracks all six delivery slices. This document describes MAG-4929's foundation.
+tracks all six delivery slices. This document describes MAG-4929's foundation
+and MAG-4930's durable personal history/run primitives.
 
 ## Runtime configuration
 
@@ -22,6 +23,7 @@ a GitHub repository secret alone does not inject a running container's secret.
 | ASK_DATA_BEDROCK_REGION | Region, default us-east-1 |
 | ASK_DATA_BEDROCK_MODEL | Explicit currently verified model/inference profile ID |
 | AWS_BEARER_TOKEN_BEDROCK | Runtime bearer secret, independent of SES credentials |
+| ASK_DATA_RETENTION_DAYS | 1-90 days, default 90; shorter customer policy applies to reads immediately |
 
 Model/region/credential availability must be verified now. MAG-3702's historical
 provisioning is not a current availability check. There is no provider/key fallback.
@@ -29,9 +31,51 @@ Use `secretKeyRef` for both tokens, never a public ConfigMap or frontend env. Th
 foundation does not change fleet resources or enable a customer deployment.
 
 `GET /api/ask/capabilities` requires a live session and the deployment gates. It
-returns contract version 1 and `acceptingQuestions:false`. There is no public
-question endpoint yet. Disabled/auth-off/self-hosted deployments cannot invoke
-either provider through it. Existing session revocation and 2FA gates apply.
+returns contract version 1 and `acceptingQuestions:false` until budget admission
+is installed. Personal history/preferences routes are authenticated. Question
+submission refuses with 503 until the accounting slice installs atomic admission;
+none of these routes invokes a model or MCP. Disabled/auth-off/self-hosted
+deployments cannot use them. Existing session revocation and 2FA gates apply.
+
+## Personal history and durable runs
+
+Migration `0010_ask_runs` adds chats, runs, ordered messages and last-view
+preferences. Every query/mutation scopes both the server customer ID and the
+session's person. Composite foreign keys prevent attaching a message to another
+person/customer's run. A chat/run ID or cursor grants no access.
+
+History uses bounded keyset pagination over an activity sequence; it cannot lose
+precision at PostgreSQL's microsecond timestamp boundary. Search is personal and
+customer-scoped, with literal LIKE escaping and cursor/filter binding. A chat
+opens its latest 50 messages in chronological order; `?before=` loads earlier
+messages using `nextMessageCursor`. Run and message expiry are enforced on reads.
+The chat title previews the newest question, rather than retaining an expired
+first question inside the title of an ongoing chat.
+
+Submission locks the person's SQL row, checks an existing idempotency key/hash,
+and atomically commits the run, user message, chat activity and admission hook.
+The database independently enforces one active run per customer/person through a
+partial unique index. A changed retry is a conflict; an expired retry cannot
+resurrect an old answer. Admission failure rolls everything back.
+
+Workers claim queued runs with `FOR UPDATE SKIP LOCKED`, a unique fencing token
+and a bounded lease. Completion, heartbeat and failure first acquire the row
+lock, then recheck the current wall clock in a second statement: PostgreSQL may
+evaluate an UPDATE's WHERE before a lock wait. A lease that expires during that
+wait cannot be extended or publish a late answer. Success and its assistant
+message commit together, after answer validation. A failed/cancelled/interrupted
+run creates no assistant success message.
+
+Queued cancellation is terminal; a running cancellation requests durable stop.
+Recovery terminates lost/old/revoked-session runs without replaying potentially
+billable work. The user's admission is released; any future financial reservation
+stays for reconciliation. Runs record the original session ID without a foreign
+key that would prevent normal expired-session cleanup.
+
+These are durable database primitives, not yet a production execution loop.
+MAG-4931 installs the bounded tool worker/recovery scheduling; MAG-4932 installs
+budget admission/reconciliation and actual retention deletion. The enabled UI and
+GK8 rollout remain later slices.
 
 ## Identity and tool boundary
 
@@ -84,7 +128,9 @@ development check, not a customer spending route. Never put tokens directly in
 shell history or commit an environment file. The command prints metadata and
 usage only; no raw customer values, answer text or credential is printed.
 
-Tests use mocked upstreams through the real MCP SDK transport plus the real
-session gate over PGlite. These prove local boundary/error behavior. Real HTTP
-with independent PostgreSQL connections, live providers, browser flows and the
-GK8 rollout remain explicit later acceptance items.
+Adapter tests use mocked upstreams through the real MCP SDK. Persistence tests
+also use actual network HTTP, independent PostgreSQL connections, multiple API
+instances and synthetic current sessions. See
+[MAG-4930 validation](validation/MAG-4930/README.md). Live providers, the production
+worker/accounting integration, browser flows and GK8 rollout remain explicit
+later acceptance items.
