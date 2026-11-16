@@ -46,14 +46,14 @@ test("the header counts the days down and turns red in the last week", async ({ 
   await signInThroughUi(page, member);
 
   const pill = page.getByRole("link", { name: /Set up 2FA/ });
-  await expect(pill).toHaveText("Set up 2FA — 28 days left");
+  await expect(pill).toHaveText("Set up 2FA - 28 days left");
   const calm = await paintedColour(page, "a.pill");
 
   // Twenty-three days later.
   await ageIntoGracePeriod(member.email, 25);
   await page.reload();
 
-  await expect(pill).toHaveText("Set up 2FA — 5 days left");
+  await expect(pill).toHaveText("Set up 2FA - 5 days left");
   const urgent = await paintedColour(page, "a.pill");
 
   expect(urgent, "the last week looks the same as the first").not.toBe(calm);

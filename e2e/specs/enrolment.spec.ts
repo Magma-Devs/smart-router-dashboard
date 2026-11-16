@@ -35,9 +35,7 @@ test("the dashboard stays shut until an authenticator is set up", async ({ page 
   await signInThroughUi(page, member);
 
   // The password alone got a session — and a session is not the dashboard.
-  await expect(
-    page.getByRole("heading", { name: "Two-factor authentication is required" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "2FA is required" })).toBeVisible();
   // No sidebar full of links that would 403: the gate wraps the chrome.
   await expect(page.locator(".gw-app")).toHaveCount(0);
   // Not now, and not for a moment before the enrolment screen either: the gate
@@ -66,12 +64,10 @@ test("the dashboard stays shut until an authenticator is set up", async ({ page 
   });
 
   await page.getByLabel("Code from the app").fill(await authenticator.next());
-  await page.getByRole("button", { name: "Turn on two-factor" }).click();
+  await page.getByRole("button", { name: "Turn on 2FA" }).click();
 
   await expect(page.locator(".gw-app")).toBeVisible();
-  await expect(
-    page.getByRole("heading", { name: "Two-factor authentication is required" }),
-  ).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "2FA is required" })).toHaveCount(0);
 
   expect(
     await page.evaluate(

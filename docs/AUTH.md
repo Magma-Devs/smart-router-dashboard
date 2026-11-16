@@ -826,7 +826,7 @@ sign in as. Create the first admin.
   `PASSWORD_BREACH_CHECK=off`, not a mystery timeout.
 - Then a real one. You land signed in, on the dashboard.
 
-Note the header: **"Set up 2FA — 30 days left"**. The first admin on a
+Note the header: **"Set up 2FA - 30 days left"**. The first admin on a
 fresh install is the one account that may defer, and the countdown is not
 dismissible, because what it counts down to is the dashboard closing.
 
@@ -835,8 +835,11 @@ two-factor authentication before inviting anyone". The grace period ends
 the moment you hand somebody else access, and that refusal is the ending —
 there is no flag to write.
 
-Account → Two-factor → Set up. Scan the QR with Google Authenticator, or
+Account → 2FA → Set up. Scan the QR with Google Authenticator, or
 copy the key beside it into a password manager, then type the code back.
+The QR's tile shows a spinner until the api's answer lands, and **Copy key**
+turns to a tick and "Copied" once the key is on the clipboard (on a page
+served over plain http too, where the browser has no Clipboard API).
 The countdown disappears and the invite goes through.
 
 Sign out and back in: the password now gets you a second screen asking for
@@ -854,7 +857,7 @@ read-only's access: see [Roles](#roles)).
   it. Open it in a private window: the invited address is fixed text, not
   a field — the account is created with the invitation's address, so there
   is nothing there that could disagree with it.
-- Accept it. They land on **"Two-factor authentication is required"** —
+- Accept it. They land on **"2FA is required"** —
   an invited person gets no grace period, and the only thing their session
   opens is enrolment. Set it up and the dashboard appears underneath,
   without another sign-in.

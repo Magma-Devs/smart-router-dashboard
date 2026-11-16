@@ -80,9 +80,7 @@ test("the form shows it is working from the click until the next page", async ({
   await page.waitForURL(/\/metrics$/);
   // A new member has no authenticator and no grace period, so the dashboard
   // is shut until they set one up — from the first paint of the new page.
-  await expect(
-    page.getByRole("heading", { name: "Two-factor authentication is required" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "2FA is required" })).toBeVisible();
   expect(await dashboardChromeSeen(page), "the dashboard was drawn before the enrolment screen").toBe(
     false,
   );
