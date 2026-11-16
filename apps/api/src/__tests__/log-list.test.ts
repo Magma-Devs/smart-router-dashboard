@@ -285,6 +285,54 @@ describe("a polled Errors list answers what a read of its whole window answers",
   });
 });
 
+describe("a failed cross-validation in the Errors list", () => {
+  const RULE = { needed: 2, answered: 2, nodeErrors: 0, reason: "no-agreement", agreed: 1, asked: 3 };
+  /** The request's relay_end, and the line before it that carries the rule it failed. */
+  const disagreedAt = (guid: string, t: number): Logged[] => [
+    log(t - 1, {
+      GUID: guid, failureReason: "no-agreement", successCount: "2", agreementThreshold: "2", nodeErrorCount: "0",
+      error: "cross-validation failed: agreement threshold not reached {nilReplies:0,results:2,maxMatchingResults:1,agreementThreshold:2,maxParticipants:3}",
+      message: "cross-validation failed: successful responses did not reach a diverse quorum",
+    }),
+    relayEnd(t, guid, {
+      selection: "cross_validation", outcome: "no_answer", stop_reason: "CrossValidation", served_by: "", status: 500, has_reply: false,
+      error_code: "PROTOCOL_HASH_CONSENSUS_ERROR", latency_ms: 90,
+      attempts: [
+        { upstream: "eth-a", outcome: "ok", error_code: "", message: "", batch: 0, sent_ms: 1, latency_ms: 60, returned_to_client: false },
+        { upstream: "eth-b", outcome: "ok", error_code: "", message: "", batch: 0, sent_ms: 1, latency_ms: 80, returned_to_client: false },
+      ],
+    }),
+  ];
+  const LOGS = [...disagreedAt("1100", T0 - 10 * MIN), relayEnd(T0 - 15 * MIN, "800")];
+
+  it("carries the rule it failed: its other line is read with its relay_end, once, and no other request's", async () => {
+    const [first, second] = await pollEach(errorsList(), LOGS, [T0, T0 + 30_000]);
+    expect(first!.polled).toEqual(first!.whole);
+    expect(first!.polled.rows.map((r) => [r.guid, r.errorCode, r.quorum])).toEqual([["1100", "PROTOCOL_HASH_CONSENSUS_ERROR", RULE], ["800", null, undefined]]);
+    // Only the failed cross-validation is read on; a request with nothing but its relay_end to read is not.
+    expect(followedUp(first!.reads)).toEqual(["1100"]);
+    // Its lines can't still come: the poll keeps the row and reads nothing more of it.
+    expect(second!.polled).toEqual(second!.whole);
+    expect(second!.polled.rows[0]).toMatchObject({ guid: "1100", quorum: RULE });
+    expect(followedUp(second!.reads)).toEqual([]);
+  });
+
+  it("is listed from its relay_end, without the rule, when Loki doesn't return its other line", async () => {
+    const { loki } = lokiOf(LOGS);
+    const flaky = {
+      labelValues: async () => null,
+      volume: (...args: [string, number, number]) => loki.volume(...args),
+      queryRange: (query: string, ...rest: [number, number, number, "forward" | "backward"]) =>
+        query.includes('"GUID":"(') ? Promise.resolve(null) : loki.queryRange(query, ...rest),
+    } as unknown as LokiClient;
+    vi.setSystemTime(T0);
+    const report = await new ErrorRequestsService(flaky, SEL, config).report(live());
+    expect(report).toMatchObject({ available: true, more: false });
+    expect(report.unread).toBeUndefined();
+    expect(report.rows.map((r) => [r.guid, r.errorCode, r.quorum])).toEqual([["1100", "PROTOCOL_HASH_CONSENSUS_ERROR", undefined], ["800", null, undefined]]);
+  });
+});
+
 describe("a polled Transactions list answers what a read of its whole window answers", () => {
   const T1 = T0;
   const T2 = T0 + 30_000;

@@ -17,6 +17,7 @@ import { Tip } from "@/components/gateway/Tip";
 import { fmtComma } from "@/lib/format";
 import { fmtDay, fmtTime } from "@/lib/datetime";
 import { TT } from "@/lib/tooltips";
+import { OUTVOTED_MEANS } from "@/lib/cross-validation";
 import { providerName, rangeWords } from "./request-log";
 
 /** How many lanes show before "Show all". */
@@ -31,16 +32,23 @@ export const SHAPE: Record<ErrorIncidentShape, { label: string; hint: string }> 
   "long-running": { label: "Long-running", hint: "Above the usual level for 6 hours or more without a break." },
 };
 
-export const KIND: Record<ErrorIncidentKind, { label: string; noun: string; color: string }> = {
-  failed: { label: "Failed attempts", noun: "failed attempts", color: "var(--err)" },
-  reply: { label: "Error replies", noun: "error replies", color: "var(--warn)" },
+export const KIND: Record<ErrorIncidentKind, { label: string; noun: string; color: string; hint: string }> = {
+  failed: { label: "Failed attempts", noun: "failed attempts", color: "var(--err)", hint: "No usable answer from the provider: a timeout, a connection error, a rate limit." },
+  reply: { label: "Error replies", noun: "error replies", color: "var(--warn)", hint: "The provider answered with an error: invalid params, pruned data." },
+  disagreed: { label: "Providers disagreed", noun: "disagreements", color: "var(--info)", hint: "The providers' answers didn't match and not enough of them agreed, so the router returned no answer. A provider behind the head, or a fork." },
 };
+
+/** The error type a `disagreed` line's requests carry: the list opens filtered to it. */
+export const DISAGREED_CODE = "PROTOCOL_HASH_CONSENSUS_ERROR";
 
 const chainName = (spec: string) => buildChainMetaByIndex(spec).name;
 
-/** "blockdaemon on NEAR", "NEAR: 3 providers", "NEAR +6 chains: 2 providers". */
+/** "blockdaemon on NEAR", "NEAR: 3 providers", "NEAR +6 chains: 2 providers"; disagreed: "Ethereum: eth_getBlockByNumber", "Ethereum: 3 methods". */
 export function lineTitle(l: ErrorIncidentLine): string {
   const main = l.chains[0]?.spec;
+  if (l.kind === "disagreed" && main) {
+    return `${chainName(main)}: ${l.providers.length === 1 ? l.providers[0] : `${l.providers.length} methods`}`;
+  }
   if (l.shape === "chain-wide" && main) {
     const others = l.chains.length - 1;
     return `${chainName(main)}${others ? ` +${others} ${others === 1 ? "chain" : "chains"}` : ""}: ${l.providers.length} providers`;
@@ -110,9 +118,9 @@ export function ErrorIncidents({ chainFilter, win, openKey, onOpen }: {
         <span style={{ flex: 1 }} />
         {hasBursts && (
           <div className="gw-segctl">
-            {(["all", "failed", "reply"] as const).map((k) => (
+            {(["all", "failed", "reply", "disagreed"] as const).map((k) => (
               <button key={k} className={kind === k ? "on" : ""} onClick={() => { setKind(k); setAll(false); }} style={{ padding: "5px 11px", whiteSpace: "nowrap" }}
-                title={k === "failed" ? "No usable answer from the provider: a timeout, a connection error, a rate limit." : k === "reply" ? "The provider answered with an error: invalid params, pruned data." : undefined}>
+                title={k === "all" ? undefined : KIND[k].hint}>
                 {k !== "all" && <span style={{ display: "inline-block", width: 7, height: 7, borderRadius: 2, background: KIND[k].color, marginRight: 6, verticalAlign: "middle" }} />}
                 {k === "all" ? "All" : KIND[k].label}
                 {data && k !== "all" && <span className="gw-tnum" style={{ marginLeft: 6, color: "var(--text-4)" }}>{count(k)}</span>}
@@ -168,7 +176,8 @@ export function ErrorIncidents({ chainFilter, win, openKey, onOpen }: {
                       </div>
                       <div style={{ fontSize: 11, color: "var(--text-4)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {KIND[l.kind].label}
-                        {l.shape === "chain-wide" ? <> · {l.providers.map(providerName).join(", ")}</> : null}
+                        {l.kind === "disagreed" ? (l.providers.length > 1 ? <> · {l.providers.join(", ")}</> : null)
+                          : l.shape === "chain-wide" ? <> · {l.providers.map(providerName).join(", ")}</> : null}
                         {l.waves.length > 1 ? <> · {l.waves.length} waves</> : null}
                         {" · "}{durWords(l.end - l.start + step)}
                       </div>
@@ -202,6 +211,27 @@ export function ErrorIncidents({ chainFilter, win, openKey, onOpen }: {
           )}
         </div>
       )}
+      {/* Outvoted: times a provider's answer to a cross-validated request was
+          not the one the router returned - it differed from the agreed answer,
+          it was an error, or the request found no agreement. A quiet line, not
+          a lane: the counter does not say which. */}
+      {data && data.outvoted.length > 0 && (kind === "all" || kind === "disagreed") && (
+        <div style={{ padding: "8px 16px", fontSize: 12, color: "var(--text-3)", borderTop: "1px solid var(--line)", display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+          <span style={{ display: "inline-flex", alignItems: "center", color: "var(--text-2)", fontWeight: 600 }}>Outvoted<Tip text={TT.outvoted!} /></span>
+          <span>
+            {data.outvoted.slice(0, 6).map((o, i) => (
+              <span key={`${o.spec}|${o.provider}`}>
+                {i ? " · " : ""}
+                <span className="gw-mono" style={{ color: "var(--text)" }}>{providerName(o.provider)}</span>
+                {chainFilter ? null : <> on {chainName(o.spec)}</>}
+                {" "}<span className="gw-tnum" style={{ color: "var(--info)" }}>{fmtComma(o.count)}×</span>
+              </span>
+            ))}
+            {data.outvoted.length > 6 ? <> · {data.outvoted.length - 6} more</> : null}
+            <span style={{ color: "var(--text-4)" }}> in the last {winWords}: {OUTVOTED_MEANS}</span>
+          </span>
+        </div>
+      )}
       {data && steady.length > 0 && (
         <div style={{ borderTop: "1px solid var(--line)" }}>
           <button className="gw-disclosure" onClick={() => setSteadyOpen(!steadyOpen)} aria-expanded={steadyOpen}
@@ -212,7 +242,7 @@ export function ErrorIncidents({ chainFilter, win, openKey, onOpen }: {
           </button>
           {steadyOpen && (
             <table className="gw-table" style={{ width: "100%" }}>
-              <thead><tr><th>Provider</th><th>Chain</th><th>Kind</th><th style={{ textAlign: "right" }}>Usually, per minute</th><th style={{ textAlign: "right" }}>Share of the time</th></tr></thead>
+              <thead><tr><th>Provider / method</th><th>Chain</th><th>Kind</th><th style={{ textAlign: "right" }}>Usually, per minute</th><th style={{ textAlign: "right" }}>Share of the time</th></tr></thead>
               <tbody>
                 {steady.map((s) => (
                   <tr key={`${s.kind}|${s.spec}|${s.provider}`}>

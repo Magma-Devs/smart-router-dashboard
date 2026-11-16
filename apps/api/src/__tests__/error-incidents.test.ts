@@ -22,9 +22,21 @@ describe("MetricsDetailService.errorIncidents · the reads behind the timeline",
   function service(refuse: string | null = null) {
     const reads: { expr: string; start: number; end: number; step: string }[] = [];
     const prom = {
+      // The outvoted providers, one instant read over the window: a declared one and one the config doesn't name.
+      async queryAtOrNull(expr: string) {
+        if (!expr.includes("smartrouter_cross_validation_provider_disagreements_total")) throw new Error(`unexpected instant read ${expr}`);
+        return [
+          { metric: { spec: "ETH1", provider_address: "Node-A" }, value: [NOW, "340"] },
+          { metric: { spec: "ETH1", provider_address: "node-x" }, value: [NOW, "5"] },
+          { metric: { spec: "BASE", provider_address: "node-c" }, value: [NOW, "0"] },
+        ];
+      },
       async queryRangeOrNull(expr: string, start: number, end: number, step: string) {
         reads.push({ expr, start, end, step });
         if (refuse && expr.includes(refuse)) return null;
+        if (expr.includes("smartrouter_cross_validation_failures_total")) {
+          return [{ metric: { spec: "ETH1", method: "eth_getBlockByNumber" }, values: day(280, 4, "9") }];
+        }
         if (expr.includes("smartrouter_requests_failed_total")) {
           return [
             { metric: { spec: "ETH1", provider_address: "Node-A" }, values: day(286, 3, "40") },
@@ -45,47 +57,52 @@ describe("MetricsDetailService.errorIncidents · the reads behind the timeline",
   });
   afterEach(() => vi.useRealTimers());
 
-  it("reads failed tries and error replies once each, a day back at 5-minute steps, ending on a step", async () => {
+  it("reads failed tries, error replies and disagreements once each, a day back at 5-minute steps, ending on a step", async () => {
     const { svc, reads } = service();
     const body = await svc.errorIncidents("1d");
-    expect(reads.map((r) => [r.start, r.end, r.step])).toEqual([[NOW - 86_400, NOW, "300s"], [NOW - 86_400, NOW, "300s"]]);
+    expect(reads.map((r) => [r.start, r.end, r.step])).toEqual([[NOW - 86_400, NOW, "300s"], [NOW - 86_400, NOW, "300s"], [NOW - 86_400, NOW, "300s"]]);
     expect(reads.map((r) => r.expr)).toEqual([
       "sum by (spec, provider_address) (increase(smartrouter_requests_failed_total[300s]))",
       "sum by (spec, provider_address) (increase(smartrouter_node_errors_total[300s]))",
+      'sum by (spec, method) (increase(smartrouter_cross_validation_failures_total{reason=~"no-agreement|diversity-unmet|group-quorum-unmet"}[300s]))',
     ]);
     expect(body).toMatchObject({ from: NOW - 86_400, to: NOW, stepSec: 300, available: true, failed: [] });
-    // Every chain and provider but the relay cache.
+    // Every chain and provider but the relay cache; a disagreement's second axis is the method.
     expect(body.lines.map((l) => `${l.kind} ${l.providers.join()} ${l.chains[0]!.spec}`).sort()).toEqual([
-      "failed Node-A ETH1", "failed node-c BASE", "failed node-x ETH1", "reply node-b ETH1",
+      "disagreed eth_getBlockByNumber ETH1", "failed Node-A ETH1", "failed node-c BASE", "failed node-x ETH1", "reply node-b ETH1",
     ]);
+    // Outvoted providers over the window, the most first; a zero is left out.
+    expect(body.outvoted).toEqual([{ spec: "ETH1", provider: "Node-A", count: 340 }, { spec: "ETH1", provider: "node-x", count: 5 }]);
   });
 
   it("reads one chain's series when a chain is picked", async () => {
     const { svc, reads } = service();
     const body = await svc.errorIncidents("1d", "ETH1");
-    expect(reads.every((r) => r.expr.includes('{spec="ETH1"}'))).toBe(true);
+    expect(reads.every((r) => r.expr.includes('spec="ETH1"'))).toBe(true);
     expect(body.lines.every((l) => l.chains.every((c) => c.spec === "ETH1"))).toBe(true);
   });
 
   it("reads a config router's chain and keeps the providers it declares, in any case", async () => {
     const { svc, reads } = service();
     const body = await svc.errorIncidents("1d", undefined, "eth-prod");
-    expect(reads.every((r) => r.expr.includes('{spec="ETH1"}'))).toBe(true);
-    expect(body.lines.map((l) => `${l.kind} ${l.providers.join()}`).sort()).toEqual(["failed Node-A", "reply node-b"]);
+    expect(reads.every((r) => r.expr.includes('spec="ETH1"'))).toBe(true);
+    expect(body.lines.map((l) => `${l.kind} ${l.providers.join()}`).sort()).toEqual(["disagreed eth_getBlockByNumber", "failed Node-A", "reply node-b"]);
+    // A router's outvoted providers are the ones it declares.
+    expect(body.outvoted).toEqual([{ spec: "ETH1", provider: "Node-A", count: 340 }]);
   });
 
   it("answers no lines, without a read, for a router the config does not name", async () => {
     const { svc, reads } = service();
     const body = await svc.errorIncidents("1d", undefined, "gone");
     expect(reads).toEqual([]);
-    expect(body).toEqual({ from: NOW - 86_400, to: NOW, stepSec: 300, lines: [], steady: [], available: true, failed: [] });
+    expect(body).toEqual({ from: NOW - 86_400, to: NOW, stepSec: 300, lines: [], steady: [], outvoted: [], available: true, failed: [] });
   });
 
   it("names a read the store refused, and keeps the lines of the other", async () => {
     const { svc } = service("smartrouter_node_errors_total");
     const body = await svc.errorIncidents("1d", "ETH1");
     expect(body).toMatchObject({ available: false, failed: ["reply"] });
-    expect(body.lines.map((l) => l.kind)).toEqual(["failed", "failed"]);
+    expect(body.lines.map((l) => l.kind).sort()).toEqual(["disagreed", "failed", "failed"]);
   });
 
   it("reads at a 1-minute step up to 3 hours and 30 minutes beyond 7 days, always at least a day back", async () => {
@@ -93,7 +110,7 @@ describe("MetricsDetailService.errorIncidents · the reads behind the timeline",
     await svc.errorIncidents("30m");
     await svc.errorIncidents("30d");
     expect(reads.map((r) => [r.end - r.start, r.step, r.end % Number.parseInt(r.step, 10)])).toEqual([
-      [86_400, "60s", 0], [86_400, "60s", 0], [30 * 86_400, "1800s", 0], [30 * 86_400, "1800s", 0],
+      [86_400, "60s", 0], [86_400, "60s", 0], [86_400, "60s", 0], [30 * 86_400, "1800s", 0], [30 * 86_400, "1800s", 0], [30 * 86_400, "1800s", 0],
     ]);
   });
 });
@@ -117,6 +134,7 @@ describe("MetricsDetailService.errorIncidents · a config router past a week, fr
   it("reads its chain's recorded series and keeps the providers it declares", async () => {
     const reads: string[] = [];
     const prom = {
+      async queryAtOrNull() { return []; },
       async queryRangeOrNull(expr: string, start: number, end: number, step: string) {
         reads.push(expr);
         const values = (v: (t: number) => string) => {
@@ -137,7 +155,7 @@ describe("MetricsDetailService.errorIncidents · a config router past a week, fr
     } as unknown as PrometheusClient;
     const body = await new MetricsDetailService(prom, config as never).errorIncidents("30d", undefined, "eth-prod");
     expect(reads.filter((q) => q.includes(":rate2m15s"))).toHaveLength(2);
-    for (const q of reads) expect(q).toContain('{spec="ETH1"}');
+    for (const q of reads) expect(q).toContain('spec="ETH1"');
     expect(reads.some((q) => q.includes("smartrouter_requests_failed_total"))).toBe(false);
     expect(body.lines.map((l) => `${l.kind} ${l.providers.join()} ${l.count}`)).toEqual(["failed Node-A 800"]);
   });

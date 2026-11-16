@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   qErrorRepliesBySpecProvider,
-  qFailedTriesBySpecProvider,
+  qDisagreementsBySpecMethod, qFailedTriesBySpecProvider, qOutvotedBySpecProvider,
   qFailedTriesBySpecProviderRecorded,
   qRecordedSamplesPerStep,
   countPointsPerStep,
@@ -926,6 +926,16 @@ describe("incident reads", () => {
   it("count failed tries and error replies per chain and provider, one count per step", () => {
     expect(qFailedTriesBySpecProvider("300s")).toBe("sum by (spec, provider_address) (increase(smartrouter_requests_failed_total[300s]))");
     expect(qErrorRepliesBySpecProvider("60s")).toBe("sum by (spec, provider_address) (increase(smartrouter_node_errors_total[60s]))");
+  });
+
+  // The three reasons the router ends as PROTOCOL_HASH_CONSENSUS_ERROR; too few answers or providers are not disagreements.
+  it("count cross-validation failures per chain and method, and outvoted providers over the window from the counter's birth", () => {
+    expect(qDisagreementsBySpecMethod("300s")).toBe('sum by (spec, method) (increase(smartrouter_cross_validation_failures_total{reason=~"no-agreement|diversity-unmet|group-quorum-unmet"}[300s]))');
+    expect(qDisagreementsBySpecMethod("60s", "ETH1")).toBe('sum by (spec, method) (increase(smartrouter_cross_validation_failures_total{reason=~"no-agreement|diversity-unmet|group-quorum-unmet",spec="ETH1"}[60s]))');
+    const q = qOutvotedBySpecProvider("1800s", "ETH1");
+    expect(q.startsWith("sum by (spec, provider_address) (")).toBe(true);
+    expect(q).toContain('smartrouter_cross_validation_provider_disagreements_total{spec="ETH1"}[1800s]');
+    expect(q).toContain("min_over_time(");
   });
 
   it("read one chain's series when given its spec, quoted so no value closes the matcher", () => {

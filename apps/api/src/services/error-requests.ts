@@ -135,6 +135,40 @@ const REQUEST_SPAN_MS = 60_000;
  * keeps every request the lines hold - what a look-up by ID wants, for a
  * request that went fine as much as one that didn't.
  */
+/** The code a request the providers disagreed on ends with: the requests whose rule `CV_NO_QUORUM` carries. */
+const CV_FAILED_CODE = "PROTOCOL_HASH_CONSENSUS_ERROR";
+
+/** The line the router writes, with the request's ID, when the providers' answers formed no quorum. */
+export const CV_NO_QUORUM = "cross-validation failed: successful responses did not reach a diverse quorum";
+
+/**
+ * The cross-validation rule a request failed, from that line: how many
+ * answers had to agree, how many providers answered, how many returned an
+ * error, and the router's reason. The line's error text names two more, where
+ * no answer reached the threshold: the most answers that agreed
+ * (`maxMatchingResults`) and how many providers the rule asks
+ * (`maxParticipants`). The event that ends the request carries none of it.
+ * Undefined when the request's lines don't hold the line, or its numbers
+ * don't read as numbers.
+ */
+function quorumOf(lines: RouterLine[]): ErrorRequestRow["quorum"] {
+  const l = lines.find((x) => x.message === CV_NO_QUORUM);
+  if (!l) return undefined;
+  const whole = (x: number) => (Number.isInteger(x) && x >= 0 ? x : null);
+  const n = (v: unknown) => (typeof v === "number" ? whole(v) : str(v).trim() ? whole(Number(str(v))) : null);
+  const needed = n(l.f.agreementThreshold), answered = n(l.f.successCount), nodeErrors = n(l.f.nodeErrorCount);
+  if (needed === null || answered === null) return undefined;
+  // The inner error is written into the line as text: `{…,maxMatchingResults:1,…,maxParticipants:3}`.
+  const text = Object.values(l.f).filter((v): v is string => typeof v === "string").join(" ");
+  const inText = (key: string) => { const m = new RegExp(`\\b${key}:(\\d+)\\b`).exec(text); return m ? Number(m[1]) : undefined; };
+  const agreed = inText("maxMatchingResults"), asked = inText("maxParticipants");
+  return {
+    needed, answered, nodeErrors: nodeErrors ?? 0, reason: str(l.f.failureReason),
+    ...(agreed !== undefined ? { agreed } : {}),
+    ...(asked !== undefined ? { asked } : {}),
+  };
+}
+
 export function buildErrorRows(lines: RouterLine[], index: UpstreamIndex, every = false): ErrorRequestRow[] {
   const byGuid = new Map<string, RouterLine[]>();
   for (const l of lines) byGuid.set(l.guid, [...(byGuid.get(l.guid) ?? []), l]);
@@ -145,7 +179,10 @@ export function buildErrorRows(lines: RouterLine[], index: UpstreamIndex, every 
     const event = lastWhere(ordered, isRelayEnd);
     if (event) {
       const row = rowOfEvent(event, guid, index, every);
-      if (row) rows.push(row);
+      if (row) {
+        const quorum = quorumOf(ordered);
+        rows.push(quorum ? { ...row, quorum } : row);
+      }
       continue;
     }
     const received = ordered.find((l) => l.message.startsWith(ERROR_MSG.received));
@@ -537,9 +574,11 @@ export class ErrorRequestsService {
             limit: this.cap,
           },
         ],
-        // A request found by its relay_end needs nothing more; one found by its
+        // A request found by its relay_end needs nothing more, but a failed
+        // cross-validation: its rule is on another line. One found by its
         // lines needs the rest of them - and its relay_end, when it has one.
-        follow: { messages: [...Object.values(ERROR_MSG), RELAY_END], perGuid: 40, beforeMs: REQUEST_SPAN_MS, afterMs: REQUEST_SPAN_MS },
+        follow: { messages: [...Object.values(ERROR_MSG), RELAY_END, CV_NO_QUORUM], perGuid: 40, beforeMs: REQUEST_SPAN_MS, afterMs: REQUEST_SPAN_MS },
+        needsRest: (end) => str(end.f.error_code) === CV_FAILED_CODE,
         cap: this.cap,
         rowsOf: (lines) => buildErrorRows(lines, index),
         basis: JSON.stringify(routers),

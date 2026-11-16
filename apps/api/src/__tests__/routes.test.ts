@@ -22,6 +22,12 @@ function mockPrometheus(): void {
         status: 200,
         headers: { "content-type": "application/json" },
       });
+    // An instant read's answer, one sample per series.
+    const vector = (series: unknown[]) =>
+      new Response(JSON.stringify({ status: "success", data: { resultType: "vector", result: series } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
     if (new URL(url).pathname.endsWith("/query_range") && query.includes("sum by (le, endpoint_id)")) {
       return matrix([
         { metric: { endpoint_id: "eth-lava" }, values: [[1, "40"], [2, "44"]] },
@@ -35,6 +41,21 @@ function mockPrometheus(): void {
         { metric: { spec: "ETH1", provider_address: "eth-lava" }, values: pts((t) => t >= 1500 && t <= 1680) },
         { metric: { spec: "BTC", provider_address: "btc-node" }, values: pts((t) => t >= 300 && t <= 420) },
         { metric: { spec: "ETH1", provider_address: "Cached" }, values: pts(() => true) },
+      ]);
+    }
+    // Cross-validation failures per chain and method: a stretch where every ETH1 answer disagreed.
+    if (new URL(url).pathname.endsWith("/query_range") && query.startsWith("sum by (spec, method) (increase(smartrouter_cross_validation_failures_total")) {
+      const pts = (hot: (t: number) => boolean) => Array.from({ length: 31 }, (_, k) => [k * 60, hot(k * 60) ? "8" : "0"]);
+      return matrix([
+        { metric: { spec: "ETH1", method: "eth_getBlockByNumber" }, values: pts((t) => t >= 1500 && t <= 1680) },
+        { metric: { spec: "ETH1", method: "eth_getBalance" }, values: pts((t) => t >= 1560 && t <= 1680) },
+      ]);
+    }
+    // Outvoted providers over the window, an instant read.
+    if (new URL(url).pathname.endsWith("/query") && query.startsWith("sum by (spec, provider_address) (") && query.includes("smartrouter_cross_validation_provider_disagreements_total")) {
+      return vector([
+        { metric: { spec: "ETH1", provider_address: "eth-lava" }, value: [1800, "340"] },
+        { metric: { spec: "BTC", provider_address: "btc-node" }, value: [1800, "2"] },
       ]);
     }
     // Request volume: short rates averaged over what is there (see qUpstreamRpsByUpstreamSeriesExpr).
@@ -382,9 +403,13 @@ describe("api routes", () => {
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body).toMatchObject({ from: 0, to: 1800, stepSec: 60, available: true, failed: [] });
-    // Another chain's burst and the relay cache are left out.
-    expect(body.lines).toHaveLength(1);
-    expect(body.lines[0]).toMatchObject({ kind: "failed", shape: "incident", providers: ["eth-lava"], start: 1500, end: 1680, count: 200, ongoing: false });
+    // Another chain's burst and the relay cache are left out. The providers disagreeing on two methods at once is one chain-wide line.
+    expect(body.lines).toHaveLength(2);
+    expect(body.lines.map((l: { kind: string }) => l.kind).sort()).toEqual(["disagreed", "failed"]);
+    expect(body.lines.find((l: { kind: string }) => l.kind === "failed")).toMatchObject({ shape: "incident", providers: ["eth-lava"], start: 1500, end: 1680, count: 200, ongoing: false });
+    expect(body.lines.find((l: { kind: string }) => l.kind === "disagreed")).toMatchObject({ shape: "chain-wide", providers: ["eth_getBalance", "eth_getBlockByNumber"], count: 56 });
+    // Outvoted providers: the chain's only.
+    expect(body.outvoted).toEqual([{ spec: "ETH1", provider: "eth-lava", count: 340 }]);
   });
 
   it("GET /api/metrics/error-incidents?routerId= answers no lines for a router the config does not name", async () => {
@@ -394,7 +419,7 @@ describe("api routes", () => {
     vi.setSystemTime(1_800_000);
     let res;
     try {
-      expect((await app.inject({ method: "GET", url: "/api/metrics/error-incidents?window=30m" })).json().lines).toHaveLength(2);
+      expect((await app.inject({ method: "GET", url: "/api/metrics/error-incidents?window=30m" })).json().lines).toHaveLength(3);
       res = await app.inject({ method: "GET", url: "/api/metrics/error-incidents?window=30m&routerId=eth-prod" });
     } finally {
       vi.useRealTimers();

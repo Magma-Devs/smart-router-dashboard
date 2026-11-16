@@ -27,6 +27,7 @@ import {
 import { CopyButton } from "@/components/gateway/CopyButton";
 import { ExplorerBlockLink } from "@/components/gateway/ExplorerLink";
 import { LocalTime } from "@/components/gateway/LocalTime";
+import { blockOffHead, quorumChips } from "@/lib/cross-validation";
 import { fmtComma } from "@/lib/format";
 import { codeWords, fmtTook, isCache, providerInWords, providerName, realCode, RequestLogsLink } from "./request-log";
 
@@ -248,6 +249,17 @@ export function RequestBreakdown(p: BreakdownProps) {
   const cache = p.attempts.some((a) => isCache(a.upstream));
   const tried = [providers ? `${providers} ${providers === 1 ? "provider" : "providers"}` : null, cache ? "the cache" : null].filter(Boolean).join(" and ");
   const blockAhead = finalCode && facts.requestedBlock != null && facts.seenBlock != null && facts.requestedBlock > facts.seenBlock;
+  // Cross-validation failed: whose answers the router compared. It compares
+  // them by hash and logs neither the hashes nor the values, so the answers
+  // themselves can't be shown.
+  const compared = finalCode === "PROTOCOL_HASH_CONSENSUS_ERROR"
+    ? [...new Set(p.attempts.filter((a) => a.outcome === "ok" && !isCache(a.upstream)).map((a) => a.upstream))]
+    : [];
+  const crossValidated = compared.length > 0 || Boolean(facts.quorum);
+  // The block asked for beside the router's latest, on a failed cross-validation: providers a block apart answer differently.
+  const blocks = crossValidated && facts.requestedBlock != null && facts.seenBlock != null
+    ? { asked: facts.requestedBlock, head: facts.seenBlock, off: blockOffHead(facts.requestedBlock, facts.seenBlock, fmtComma) }
+    : null;
   const steps = stepsOf(p.attempts);
   return (
     <div style={{ display: "grid", gap: 16, padding: "8px 4px 12px" }}>
@@ -262,7 +274,8 @@ export function RequestBreakdown(p: BreakdownProps) {
             {p.status.label}
           </span>
           {/* A provider's answer names its error on its own try, below; only the router's own needs it here. */}
-          {routerAnswered && finalCode && <ErrorName code={finalCode} entry={entry} />}
+          {/* Not when the status already is the error's name ("Providers disagreed"). */}
+          {routerAnswered && finalCode && errorName(finalCode).toLowerCase() !== p.status.label.toLowerCase() && <ErrorName code={finalCode} entry={entry} />}
           {routerAnswered && entry && <SourceTag source={entry.source} />}
           {p.final?.from === "provider" && isCache(p.final.attempt.upstream) && <CacheTag />}
           {p.status.detail && <span style={{ fontSize: 12, color: "var(--text-3)" }}>{p.status.detail}</span>}
@@ -280,10 +293,42 @@ export function RequestBreakdown(p: BreakdownProps) {
             <span>{entry.action}</span>
           </div>
         )}
-        {Boolean(p.retries || blockAhead || p.extra?.length) && (
+        {Boolean(p.retries || blockAhead || crossValidated || p.extra?.length) && (
           <div style={{ ...kvGrid, rowGap: 6, marginTop: 2 }}>
+            {facts.quorum && (
+              <KV label="Rule">
+                <span style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {quorumChips(facts.quorum).map((c) => (
+                    <span key={c.text} className={`gw-tag${c.tone === "bad" ? " gw-tag--err" : c.tone === "warn" ? " gw-tag--warn" : ""}`}>{c.text}</span>
+                  ))}
+                </span>
+              </KV>
+            )}
+            {compared.length > 0 && (
+              <KV label="Compared">
+                <span style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
+                  {compared.map((u) => <span key={u} className="gw-tag gw-mono">{providerName(u)}</span>)}
+                  <span style={{ fontSize: 11.5, color: "var(--text-4)" }}>answers not logged</span>
+                </span>
+              </KV>
+            )}
+            {blocks && (
+              <KV label="Blocks">
+                <div className="gw-mono" style={{
+                  display: "grid", gridTemplateColumns: "max-content max-content max-content", columnGap: 16, rowGap: 4, alignItems: "baseline",
+                  padding: "8px 12px", borderRadius: 6, background: "var(--hover)", fontSize: 12,
+                }}>
+                  <span style={{ color: "var(--text-3)" }}>requested</span>
+                  <span style={{ textAlign: "right" }}>{block(blocks.asked)}</span>
+                  <span style={{ color: blocks.off.tone === "warn" ? "var(--warn)" : blocks.off.tone === "bad" ? "var(--err)" : "var(--text-3)", fontWeight: 600 }}>{blocks.off.text}</span>
+                  <span style={{ color: "var(--text-3)" }}>router&apos;s latest</span>
+                  <span style={{ textAlign: "right" }}>{block(blocks.head)}</span>
+                  <span />
+                </div>
+              </KV>
+            )}
             {p.retries && <KV label="Retries"><span style={{ color: "var(--text-2)" }}>{p.retries}</span></KV>}
-            {blockAhead && <KV label="Note"><span style={{ color: "var(--text-2)" }}>Requested block is ahead of the router&apos;s latest block.</span></KV>}
+            {blockAhead && !blocks && <KV label="Note"><span style={{ color: "var(--text-2)" }}>Requested block is ahead of the router&apos;s latest block.</span></KV>}
             {p.extra?.map((x) => <KV key={x.label} label={x.label}>{x.value}</KV>)}
           </div>
         )}
@@ -331,8 +376,9 @@ export function RequestBreakdown(p: BreakdownProps) {
               <KV label="Chain"><span title={p.chainTitle}>{p.chain}</span></KV>
               <KV label="Time"><LocalTime t={p.time} format="dateTime" className="gw-mono gw-tnum" /></KV>
               {facts.customer && <KV label="Customer"><Id value={facts.customer} /></KV>}
-              {facts.requestedBlock != null && <KV label="Requested block"><span className="gw-mono gw-tnum">{block(facts.requestedBlock)}</span></KV>}
-              {facts.seenBlock != null && <KV label="Router's latest block"><span className="gw-mono gw-tnum">{block(facts.seenBlock)}</span></KV>}
+              {/* A failed cross-validation shows the two blocks side by side above, once. */}
+              {!blocks && facts.requestedBlock != null && <KV label="Requested block"><span className="gw-mono gw-tnum">{block(facts.requestedBlock)}</span></KV>}
+              {!blocks && facts.seenBlock != null && <KV label="Router's latest block"><span className="gw-mono gw-tnum">{block(facts.seenBlock)}</span></KV>}
             </div>
           </Section>
         </div>

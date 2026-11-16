@@ -1113,3 +1113,37 @@ export function qRecordedSamplesPerStep(step: string, spec?: string): string {
 export function qErrorRepliesBySpecProvider(step: string, spec?: string): string {
   return `sum by (spec, provider_address) (increase(${OPTIONAL_METRICS.nodeErrorsTotal}${specMatcher(spec)}[${step}]))`;
 }
+
+/**
+ * The `reason` values of `smartrouter_cross_validation_failures_total` whose
+ * request ends as `PROTOCOL_HASH_CONSENSUS_ERROR`: enough providers answered
+ * and their answers formed no accepted quorum. The counter's other reasons
+ * (`insufficient-responses`, `insufficient-capacity`, `insufficient-groups`)
+ * are too few answers or too few providers, not a disagreement.
+ */
+export const CROSS_VALIDATION_DISAGREED_REASONS = ["no-agreement", "diversity-unmet", "group-quorum-unmet"] as const;
+
+/**
+ * Cross-validation failures per chain and method in each `step` stretch:
+ * requests the router answered with no result because the providers'
+ * answers didn't match (`smartrouter_cross_validation_failures_total` at
+ * `CROSS_VALIDATION_DISAGREED_REASONS`, the timeline's `disagreed` lines).
+ * The counter names no provider - the disagreement is the chain's - so the
+ * method is the second axis.
+ */
+export function qDisagreementsBySpecMethod(step: string, spec?: string): string {
+  const sel = [`reason=~"${CROSS_VALIDATION_DISAGREED_REASONS.join("|")}"`, ...(spec ? [`spec=${JSON.stringify(spec)}`] : [])].join(",");
+  return `sum by (spec, method) (increase(${OPTIONAL_METRICS.crossValidationFailuresTotal}{${sel}}[${step}]))`;
+}
+
+/**
+ * Times, over `range`, each provider's answer to a cross-validated request
+ * was not the one the router returned
+ * (`smartrouter_cross_validation_provider_disagreements_total`), per chain:
+ * it differed from the agreed answer, it was an error, or the request found
+ * no agreement and every provider that answered is counted. An instant
+ * read; counted from the counter's birth, as the Errors tab's cards are.
+ */
+export function qOutvotedBySpecProvider(range: string, spec?: string): string {
+  return `sum by (spec, provider_address) (${increaseFromBirth(`${OPTIONAL_METRICS.crossValidationDisagreementsTotal}${specMatcher(spec)}`, range)})`;
+}

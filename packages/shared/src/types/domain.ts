@@ -631,6 +631,17 @@ export interface CallFacts {
   requestedBlock?: number;
   /** The router's latest block when it parsed the request. */
   seenBlock?: number;
+  /**
+   * The cross-validation rule the request failed, where the router's logs
+   * carry it: how many answers had to agree (`needed`), how many providers
+   * answered without an error (`answered`), how many returned one
+   * (`nodeErrors`), and the router's reason (`no-agreement`,
+   * `diversity-unmet`, `group-quorum-unmet`). Where no answer reached the
+   * threshold the router also says the most answers that agreed (`agreed`: 1
+   * is no two the same) and how many providers the rule asks (`asked`). Which
+   * provider said what is not logged.
+   */
+  quorum?: { needed: number; answered: number; nodeErrors: number; reason: string; agreed?: number; asked?: number };
 }
 
 /** One request that hit an error - a try failed, or the router gave up - rebuilt from the router's log lines. */

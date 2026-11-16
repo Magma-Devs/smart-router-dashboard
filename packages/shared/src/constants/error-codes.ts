@@ -330,7 +330,7 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: true,
     mayHaveGoneThrough: false,
     meaning:
-      "Cross-validation couldn't confirm an answer. Not enough separate providers gave the same answer.",
+      "The providers' answers didn't match, so the router returned no answer rather than guess. A provider behind the head, or a fork.",
     action: "",
   },
   PROTOCOL_NO_RESPONSE_TIMEOUT: {

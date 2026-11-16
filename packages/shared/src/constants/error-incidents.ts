@@ -22,13 +22,24 @@
  *    jumps.
  */
 
-export type ErrorIncidentKind = "failed" | "reply";
+/**
+ * What a line counts: failed tries at a provider, error replies from one, or
+ * `disagreed` - cross-validation failures, requests the router answered with
+ * no result because the providers' answers didn't match
+ * (`smartrouter_cross_validation_failures_total` at the reasons that end as
+ * `PROTOCOL_HASH_CONSENSUS_ERROR`: `no-agreement`, `diversity-unmet`,
+ * `group-quorum-unmet`). That counter names no provider - the disagreement
+ * is the chain's - so a `disagreed` series' `provider` is the METHOD, and
+ * its lines never join across chains.
+ */
+export type ErrorIncidentKind = "failed" | "reply" | "disagreed";
 export type ErrorIncidentShape = "incident" | "chain-wide" | "recurring" | "long-running";
 
-/** One chain and provider's count per stretch: failed tries, or error replies. */
+/** One chain and provider's count per stretch: failed tries, or error replies; one chain and method's cross-validation failures (`disagreed`). */
 export interface ErrorIncidentSeries {
   kind: ErrorIncidentKind;
   spec: string;
+  /** The provider; the method for a `disagreed` series. */
   provider: string;
   /** [unix seconds, count in the stretch ending there]; a missing stretch counts 0. */
   points: [number, number][];
@@ -45,7 +56,7 @@ export interface ErrorIncidentLine {
   key: string;
   kind: ErrorIncidentKind;
   shape: ErrorIncidentShape;
-  /** The provider that failed; every provider of the chain for a chain-wide line. */
+  /** The provider that failed; every provider of the chain for a chain-wide line. For a `disagreed` line, the methods the providers disagreed on. */
   providers: string[];
   /** The chains it touched, the most errors first. */
   chains: { spec: string; count: number }[];
@@ -69,6 +80,21 @@ export interface SteadyError {
   presence: number;
 }
 
+/**
+ * A provider and the times its answer to a cross-validated request was not
+ * the one the router returned
+ * (`smartrouter_cross_validation_provider_disagreements_total`): it differed
+ * from the agreed answer, it was an error, or the request found no agreement
+ * - the router then counts every provider that answered. The counter does
+ * not tell the three apart.
+ */
+export interface OutvotedProvider {
+  spec: string;
+  provider: string;
+  /** Times in the window. */
+  count: number;
+}
+
 /** `GET /api/metrics/error-incidents`: the lines over the page window. */
 export interface ErrorIncidentsReport {
   /** The page window: lines ending before `from` are left out. */
@@ -78,6 +104,8 @@ export interface ErrorIncidentsReport {
   stepSec: number;
   lines: ErrorIncidentLine[];
   steady: SteadyError[];
+  /** Providers whose answer was not the one returned, in the window, the most first; empty until cross-validation runs. */
+  outvoted: OutvotedProvider[];
   /** False when the store refused a read; `failed` names which. */
   available: boolean;
   failed: ErrorIncidentKind[];
@@ -102,9 +130,9 @@ export const ERROR_INCIDENTS_RECORDED_ABOVE_SEC = 7 * 86400;
 export const ERROR_INCIDENT_RULES = {
   multiplier: 3,
   /** Per 5 minutes; scaled to the read's step. */
-  floorPer5Min: { failed: 10, reply: 50 } as Record<ErrorIncidentKind, number>,
+  floorPer5Min: { failed: 10, reply: 50, disagreed: 5 } as Record<ErrorIncidentKind, number>,
   /** A burst's least size in all, whatever the step: twice the 5-minute floor. */
-  minCount: { failed: 20, reply: 100 } as Record<ErrorIncidentKind, number>,
+  minCount: { failed: 20, reply: 100, disagreed: 10 } as Record<ErrorIncidentKind, number>,
   gapSec: 15 * 60,
   repeatSec: 3 * 3600,
   longSec: 6 * 3600,
@@ -164,11 +192,13 @@ export function detectErrorIncidents(series: ErrorIncidentSeries[], stepSec: num
     if (presence > R.steadyPresence) steady.push({ kind: s.kind, spec: s.spec, provider: s.provider, perMinute: usual / (stepSec / 60), presence });
   }
 
-  // 1. Hot stretches of one provider (one kind), across chains, while the gap is short.
+  // 1. Hot stretches of one provider (one kind), across chains, while the gap
+  // is short. A disagreement is the chain's, and its "provider" a method name
+  // every EVM chain shares: those join within one chain only.
   const gap = Math.max(R.gapSec, 2 * stepSec);
   const byProvider = new Map<string, Hot[]>();
   for (const h of hot) {
-    const k = `${h.kind}|${h.provider}`;
+    const k = h.kind === "disagreed" ? `${h.kind}|${h.spec}|${h.provider}` : `${h.kind}|${h.provider}`;
     (byProvider.get(k) ?? byProvider.set(k, []).get(k)!).push(h);
   }
   const episodes: Episode[] = [];

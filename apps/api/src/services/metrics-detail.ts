@@ -14,10 +14,13 @@ import {
   errorIncidentsRead,
   qErrorRepliesBySpecProvider,
   qFailedTriesBySpecProvider,
+  qDisagreementsBySpecMethod,
+  qOutvotedBySpecProvider,
   qFailedTriesBySpecProviderRecorded,
   qRecordedSamplesPerStep,
   RECORDED_INTERVAL_SECONDS,
   recordedReadsReach,
+  type OutvotedProvider,
   type ErrorIncidentKind,
   type ErrorIncidentSeries,
   type ErrorIncidentsReport,
@@ -205,35 +208,50 @@ export class MetricsDetailService {
     const end = Math.floor(nowSec / stepSec) * stepSec;
     const start = end - readSeconds;
     const router = routerId ? (this.configSvc?.getRouters() ?? []).find((r) => r.id === routerId) : undefined;
-    if (routerId && !router) return { from: end - range, to: end, stepSec, lines: [], steady: [], available: true, failed: [] };
+    if (routerId && !router) return { from: end - range, to: end, stepSec, lines: [], steady: [], outvoted: [], available: true, failed: [] };
     const chain = router?.spec ?? spec;
     const declared = router ? new Set(router.nodes.map((n) => n.name.toLowerCase())) : null;
     // Past a week, failed tries from the recorded series where their history
     // reaches the first point's stretch, the step before `start`.
     const recorded = range > ERROR_INCIDENTS_RECORDED_ABOVE_SEC && recordedReadsReach(window, Math.ceil(nowSec) - start + stepSec);
-    const kinds: ErrorIncidentKind[] = ["failed", "reply"];
-    const reads = await Promise.all([
+    const kinds: ErrorIncidentKind[] = ["failed", "reply", "disagreed"];
+    // Disagreements name no provider: their second axis is the method. The
+    // outvoted providers are one instant count over the window.
+    const [outvotedRows, ...reads] = await Promise.all([
+      this.prom.queryAtOrNull(qOutvotedBySpecProvider(`${range}s`, chain), end),
       recorded
         ? this.failedTriesRecorded(step, stepSec, start, end, chain)
         : this.prom.queryRangeOrNull(qFailedTriesBySpecProvider(step, chain), start, end, step),
       this.prom.queryRangeOrNull(qErrorRepliesBySpecProvider(step, chain), start, end, step),
+      this.prom.queryRangeOrNull(qDisagreementsBySpecMethod(step, chain), start, end, step),
     ]);
     const series: ErrorIncidentSeries[] = [];
     reads.forEach((rows, i) => {
+      const kind = kinds[i]!;
       for (const r of rows ?? []) {
-        const s = r.metric.spec ?? "", provider = r.metric.provider_address ?? "";
+        const s = r.metric.spec ?? "", provider = (kind === "disagreed" ? r.metric.method : r.metric.provider_address) ?? "";
         if (!s || !provider || provider.toLowerCase() === CACHED_UPSTREAM.toLowerCase()) continue;
         if (chain && s.toUpperCase() !== chain.toUpperCase()) continue;
-        if (declared && !declared.has(provider.toLowerCase())) continue;
+        if (kind !== "disagreed" && declared && !declared.has(provider.toLowerCase())) continue;
         series.push({
-          kind: kinds[i]!, spec: s, provider,
+          kind, spec: s, provider,
           points: (r.values ?? []).map(([t, v]) => [Number(t), Number(v)] as [number, number]).filter(([, v]) => Number.isFinite(v)),
         });
       }
     });
     const { lines, steady } = detectErrorIncidents(series, stepSec, start, end, end - range);
+    const outvoted: OutvotedProvider[] = [];
+    for (const r of outvotedRows ?? []) {
+      const s = r.metric.spec ?? "", provider = r.metric.provider_address ?? "", count = Math.round(Number(r.value[1]));
+      if (!s || !provider || !(count > 0)) continue;
+      if (chain && s.toUpperCase() !== chain.toUpperCase()) continue;
+      if (declared && !declared.has(provider.toLowerCase())) continue;
+      outvoted.push({ spec: s, provider, count });
+    }
+    outvoted.sort((a, b) => b.count - a.count || a.provider.localeCompare(b.provider) || a.spec.localeCompare(b.spec));
     return {
-      from: end - range, to: end, stepSec, lines, steady,
+      from: end - range, to: end, stepSec, lines, steady, outvoted,
+      // The outvoted count is a side note: a refused read there empties it without failing the timeline.
       available: reads.every((r) => r !== null),
       failed: kinds.filter((_, i) => reads[i] === null),
     };
