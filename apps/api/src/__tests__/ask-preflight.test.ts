@@ -33,6 +33,8 @@ beforeEach(() => {
     ASK_DATA_PRICING_JSON: JSON.stringify(pricing),
     ASK_DATA_TOKEN_COUNTER: "runtime",
     ASK_DATA_TOKEN_COUNTER_MODEL: pricing.model,
+    APP_VERSION: "",
+    GIT_COMMIT: "",
   }))
     vi.stubEnv(key, value);
 });
@@ -64,6 +66,8 @@ function providers() {
 
 describe("free operator preflight", () => {
   it("works while the deployment flag stays off, discovers ownership and counts tool input without reading source data or inferring", async () => {
+    vi.stubEnv("APP_VERSION", "0.99.0");
+    vi.stubEnv("GIT_COMMIT", "a".repeat(40));
     const p = providers();
     const out = vi.spyOn(process.stdout, "write").mockReturnValue(true);
     await import("../ask-preflight.js");
@@ -82,8 +86,20 @@ describe("free operator preflight", () => {
       countedTokens: 123,
       monthlyLimitMicroUsd: "10000000",
       operations: ["metrics.query"],
+      build: { version: "0.99.0", commit: "a".repeat(40) },
     });
     expect(output).not.toContain("private-");
+  });
+  it("omits malformed build metadata rather than echoing arbitrary environment text", async () => {
+    vi.stubEnv("APP_VERSION", "private-bedrock-fixture");
+    vi.stubEnv("GIT_COMMIT", "private-mcp-fixture");
+    const p = providers();
+    const out = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    await import("../ask-preflight.js");
+    const output = out.mock.calls.map(([value]) => String(value)).join("");
+    expect(JSON.parse(output)).toMatchObject({ ok: true, build: { version: null, commit: null } });
+    expect(output).not.toContain("private-");
+    expect(p.converse).not.toHaveBeenCalled();
   });
   it.each([
     { ASK_DATA_PREFLIGHT: "false" },

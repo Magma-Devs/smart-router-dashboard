@@ -45,10 +45,19 @@ try {
     AbortSignal.timeout(settings.requestTimeoutMs),
   );
   if (count < 1) throw new AskFailure("ASK_BEDROCK_UNAVAILABLE");
+  const version = process.env.APP_VERSION ?? "";
+  const commit = process.env.GIT_COMMIT ?? "";
   process.stdout.write(
     JSON.stringify({
       ok: true,
       timestamp: new Date().toISOString(),
+      build: {
+        version:
+          version.length <= 160 && /^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9._-]+)?$/.test(version)
+            ? version
+            : null,
+        commit: /^[a-f0-9]{40}$/i.test(commit) ? commit : null,
+      },
       customerId: settings.customerId,
       model: settings.bedrockModel,
       region: settings.bedrockRegion,
