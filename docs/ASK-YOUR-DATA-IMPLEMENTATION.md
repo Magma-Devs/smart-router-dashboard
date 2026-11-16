@@ -123,6 +123,10 @@ No acceptance item is complete without the corresponding observed evidence.
   physical retention. API admission/worker activation now require valid dated
   pricing and a supported free token counter. Deployment flags remain off.
 
-- MAG-4933 adds the complete panel/full UI and real-browser verification. The
+- [PR #396](https://github.com/Magma-Devs/smart-router-dashboard/pull/396) adds the complete panel/full UI and real-browser verification. The
   customer feature remains off in deployments; no live runtime/pilot acceptance
   is inferred from the synthetic provider used for deterministic browser checks.
+
+- MAG-4934 adds runtime Compose wiring, a free configuration/provider preflight
+  and the [operational runbook](ASK-YOUR-DATA-OPERATIONS.md). Live provider, staff,
+  fleet secret/pin delivery and the controlled GK8 rehearsal remain open.

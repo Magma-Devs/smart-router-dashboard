@@ -628,6 +628,7 @@ export interface AskSettings {
 }
 
 export function readAskSettings(source: NodeJS.ProcessEnv = process.env): AskSettings {
+  const requestedRetentionDays = positiveInt(source.ASK_DATA_RETENTION_DAYS, 90);
   const settings: AskSettings = {
     enabled:
       source.ASK_DATA_ENABLED === "true" &&
@@ -646,7 +647,8 @@ export function readAskSettings(source: NodeJS.ProcessEnv = process.env): AskSet
     maxContextBytes: 64_000,
     maxOutputTokens: 2048,
     maxSteps: 8,
-    retentionDays: positiveInt(source.ASK_DATA_RETENTION_DAYS, 90),
+    // Invalid availability configuration must not stop mandatory cleanup.
+    retentionDays: Math.min(90, requestedRetentionDays),
     maxToolResultBytes: 12_000,
     maxToolCalls: 8,
     leaseMs: 15_000,
@@ -666,7 +668,7 @@ export function readAskSettings(source: NodeJS.ProcessEnv = process.env): AskSet
     settings.problem = "ASK_DATA_BEDROCK_REGION is invalid";
   else if (!settings.bedrockModel || settings.bedrockModel.length > 2048)
     settings.problem = "ASK_DATA_BEDROCK_MODEL is required";
-  else if (settings.retentionDays > 90 || (source.ASK_DATA_RETENTION_DAYS !== undefined && (!/^[1-9][0-9]*$/.test(source.ASK_DATA_RETENTION_DAYS))))
+  else if (requestedRetentionDays > 90 || (source.ASK_DATA_RETENTION_DAYS !== undefined && (!/^[1-9][0-9]*$/.test(source.ASK_DATA_RETENTION_DAYS))))
     settings.problem = "ASK_DATA_RETENTION_DAYS must be 1 to 90";
   try {
     const url = new URL(settings.mcpUrl);
