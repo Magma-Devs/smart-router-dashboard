@@ -1154,7 +1154,7 @@ export async function authRoutes(app: FastifyInstance) {
           action: "signin.failed",
           actor: { id: claimed.user.id, kind: "user", label: email, email },
           access: { ...client.access, sessionId: null },
-          note: "two-factor secret could not be decrypted with this deployment's key",
+          note: "2FA secret could not be decrypted with this deployment's key",
         });
         return refuse();
       }
@@ -1166,7 +1166,7 @@ export async function authRoutes(app: FastifyInstance) {
           // The one place the distinction is recorded. A run of these against
           // one account means somebody holds a correct password, which reads
           // very differently from a run of "wrong password".
-          note: "wrong two-factor code",
+          note: "wrong 2FA code",
         });
         return refuse();
       }

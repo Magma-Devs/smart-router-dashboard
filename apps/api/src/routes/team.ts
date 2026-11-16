@@ -116,7 +116,7 @@ export async function teamRoutes(app: FastifyInstance) {
       error: "Forbidden",
       code: "TWO_FACTOR_REQUIRED",
       message:
-        "Set up two-factor authentication before inviting anyone. You are about to give somebody else access to this deployment.",
+        "Set up 2FA before inviting anyone. You are about to give somebody else access to this deployment.",
     });
     return false;
   }
@@ -385,7 +385,7 @@ export async function teamRoutes(app: FastifyInstance) {
           statusCode: 409,
           error: "Conflict",
           message:
-            "You cannot reset your own two-factor authentication. Ask another administrator.",
+            "You cannot reset your own 2FA. Ask another admin.",
         });
       }
 
@@ -396,7 +396,7 @@ export async function teamRoutes(app: FastifyInstance) {
         return reply.code(409).send({
           statusCode: 409,
           error: "Conflict",
-          message: "That member has not set up two-factor authentication.",
+          message: "That member has not set up 2FA.",
         });
       }
 
@@ -430,7 +430,7 @@ export async function teamRoutes(app: FastifyInstance) {
             // "who cleared whose" without a join.
             target: { type: "member", id: target.id, name: target.email },
             access: { ...access, sessionId: me.sessionId },
-            note: `two-factor reset for ${target.email}`,
+            note: `2FA reset for ${target.email}`,
           },
           tx,
         );
@@ -443,7 +443,7 @@ export async function teamRoutes(app: FastifyInstance) {
               actor: { id: me.id, kind: "user" },
               target: { type: "session", id: sessionId, name: target.email },
               access: { ...access, sessionId: me.sessionId },
-              note: "two-factor reset",
+              note: "2FA reset",
             },
             tx,
           );

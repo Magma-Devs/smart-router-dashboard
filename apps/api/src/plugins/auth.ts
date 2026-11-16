@@ -410,7 +410,7 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
           reply,
           403,
           AUTH_ERROR_CODES.twoFactorRequired,
-          "Set up two-factor authentication to continue.",
+          "Set up 2FA to continue.",
         );
       }
     }

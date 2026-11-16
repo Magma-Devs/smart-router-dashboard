@@ -301,7 +301,7 @@ describe("an admin's reset, managed, with a transport", () => {
     // The reset's own row is untouched: still in the reset's transaction,
     // still naming both people.
     const [resetRow] = await rows("2fa.reset");
-    expect(resetRow?.note).toBe("two-factor reset for dana@example.com");
+    expect(resetRow?.note).toBe("2FA reset for dana@example.com");
     expect(resetRow?.actorUserId).toBe(admin.id);
   });
 

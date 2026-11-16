@@ -883,8 +883,8 @@ Note the header: **"Set up 2FA - 30 days left"**. The first admin on a
 fresh install is the one account that may defer, and the countdown is not
 dismissible, because what it counts down to is the dashboard closing.
 
-**2. Two-factor.** Try Team → Invite *first*: refused, with "set up
-two-factor authentication before inviting anyone". The grace period ends
+**2. 2FA.** Try Team → Invite *first*: refused, with "Set up 2FA before
+inviting anyone". The grace period ends
 the moment you hand somebody else access, and that refusal is the ending —
 there is no flag to write.
 

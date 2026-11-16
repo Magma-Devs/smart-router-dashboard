@@ -764,7 +764,7 @@ describe("two-step sign-in", () => {
     expect(res.statusCode).toBe(401);
     const rows = await t.db.select().from(auditEvents).where(eq(auditEvents.action, "signin.failed"));
     expect(rows.map((r) => r.note)).toEqual([
-      "two-factor secret could not be decrypted with this deployment's key",
+      "2FA secret could not be decrypted with this deployment's key",
     ]);
     // Not charged against the person: they may well have typed the right code.
     const attempts = await t.db.select().from(loginAttempts);
@@ -837,7 +837,7 @@ describe("two-step sign-in", () => {
     const afterWrong = await actions();
     expect(afterWrong.map((r) => r.action)).toContain("signin.failed");
     expect(afterWrong.find((r) => r.action === "signin.failed")?.note).toBe(
-      "wrong two-factor code",
+      "wrong 2FA code",
     );
 
     // And the whole thing, done properly.
@@ -1033,7 +1033,7 @@ describe("enrolment and reset over HTTP", () => {
     expect(reset?.actorUserId).toBe(admin.id);
     const revoked = rows.filter((r) => r.action === "session.revoked");
     expect(revoked.map((r) => r.targetId)).toEqual([ended.id]);
-    expect(revoked[0]?.note).toBe("two-factor reset");
+    expect(revoked[0]?.note).toBe("2FA reset");
   });
 
   it("refuses an id that is not a plain uuid with 400, not a 500", async () => {

@@ -133,7 +133,7 @@ export async function accountRoutes(app: FastifyInstance) {
           statusCode: 409,
           error: "Conflict",
           message:
-            "Two-factor authentication is already set up for this account. An administrator can reset it if you have lost your phone.",
+            "2FA is already set up for this account. Lost your phone? Ask an admin to reset your 2FA.",
         });
       }
 
@@ -146,7 +146,7 @@ export async function accountRoutes(app: FastifyInstance) {
             statusCode: 409,
             error: "Conflict",
             message:
-              "Two-factor authentication is already set up for this account. An administrator can reset it if you have lost your phone.",
+              "2FA is already set up for this account. Lost your phone? Ask an admin to reset your 2FA.",
           });
         }
       } catch (err) {
