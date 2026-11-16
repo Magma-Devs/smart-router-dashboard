@@ -1,10 +1,11 @@
 "use client";
 
 /* MetricsView — the Metrics page body, ported verbatim from the design
- * prototype (page-metrics.jsx MetricsPage): RouterHeader, the four tabs
- * (Overview / Upstreams / Errors / Transactions - the Errors tab folds the
- * prototype's error breakdown and our retry breakdown into one, the
- * transaction tab is ours, and the prototype's Traffic tab is gone), and the
+ * prototype (page-metrics.jsx MetricsPage): RouterHeader, the five tabs
+ * (Overview / Upstreams / Errors / Transactions / Find a request - the Errors
+ * tab folds the prototype's error breakdown and our retry breakdown into one,
+ * the transaction tab and the look-up are ours, and the prototype's Traffic
+ * tab is gone), and the
  * cross-tab
  * chain-filter banner. Exported standalone so both /metrics and the
  * chrome-less /standalone route can render it. timeWindow AND the chain come
@@ -39,10 +40,11 @@ import { ChainTrafficByProvider } from "./ChainTrafficByProvider";
 import { ChainAvailability } from "./ChainAvailability";
 import { ErrorsBreakdown, type ErrorsFocus, type ErrorsJump } from "./ErrorsBreakdown";
 import { TransactionLog } from "./TransactionLog";
+import { FindRequest } from "./FindRequest";
 import { UpstreamMetricsTab } from "./upstream/UpstreamMetricsTab";
 
 /** The first is the default, and the only one the URL leaves out. */
-const TABS = ["metrics", "upstreams", "errors", "transactions"] as const;
+const TABS = ["metrics", "upstreams", "errors", "transactions", "request"] as const;
 type Tab = (typeof TABS)[number];
 
 /** Something in a link the page couldn't open as it was: its times, or its window. */
@@ -161,7 +163,7 @@ export function MetricsView() {
       {/* The tabs outgrow a narrow screen: they scroll sideways rather than
           wrap each label onto two lines. */}
       <div style={{ display: "flex", borderBottom: "1px solid var(--line)", marginBottom: 24, overflowX: "auto", overflowY: "hidden" }}>
-        {([["metrics", "Overview"], ["upstreams", "Upstreams"], ["errors", "Errors"], ["transactions", "Transactions"]] as [Tab, string][]).map(([k, l]) => (
+        {([["metrics", "Overview"], ["upstreams", "Upstreams"], ["errors", "Errors"], ["transactions", "Transactions"], ["request", "Find a request"]] as [Tab, string][]).map(([k, l]) => (
           // A request in the URL is the tab's it was opened on (`?request=`): another tab drops it.
           <button key={k} onClick={() => pickTab(k)} style={{
             whiteSpace: "nowrap", flexShrink: 0,
@@ -234,6 +236,7 @@ export function MetricsView() {
           onFocus={(e) => byHand((f) => ({ ...f, upstream: e.upstream ? { name: e.upstream, spec: activeChain } : null, range: e.range }))} />
       )}
       {tab === "transactions" && <TransactionLog chainFilter={activeChain} win={timeWindow} />}
+      {tab === "request" && <FindRequest win={timeWindow} />}
     </div>
   );
 }

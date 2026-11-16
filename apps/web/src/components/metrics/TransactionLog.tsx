@@ -83,7 +83,7 @@ function summarize(rows: TxLogRow[]) {
 const OUTCOME: Record<TxLogRow["outcome"], { label: string; color: string }> = TX_RESULT;
 
 /** A row's result word: the chart's, except where the send reply says the chain ran it (Sui). */
-function resultOf(r: TxLogRow): { label: string; color: string } {
+export function resultOf(r: TxLogRow): { label: string; color: string } {
   return r.outcome === "accepted" && r.txStatus === "success" ? { label: "Executed", color: "var(--ok)" } : OUTCOME[r.outcome];
 }
 
@@ -127,7 +127,7 @@ const OUTCOME_HINT: Record<TxLogRow["outcome"], string> = {
 }
 
 /** An opened row: the transaction, every provider it went to, and the response to the client, in plain words. */
-function Details({ row }: { row: TxLogRow }) {
+export function Details({ row }: { row: TxLogRow }) {
   const replied = row.attempts.find((a) => a.replied);
   const final: FinalAnswer =
     row.outcome === "failed" || (row.outcome === "unknown" && row.error && !replied) ? { from: "router", code: row.error?.code ?? null }

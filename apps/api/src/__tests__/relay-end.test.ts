@@ -578,8 +578,8 @@ describe("relay_end's caller, hash and on-chain fields", () => {
     const quoted = ev(95_000, { GUID: "9006", method: "eth_call", chain: "ETH1", selection: "stateless", outcome: "node_error", error_code: "CHAIN_EXECUTION_REVERTED", error: `reverted ${HASH}`, served_by: "node-a", status: 200, has_reply: true, latency_ms: 3 });
     const nested = ev(95_100, { GUID: "9007", method: "eth_call", chain: "ETH1", selection: "stateless", outcome: "ok", served_by: "node-a", status: 200, has_reply: true, latency_ms: 3, client: { request_id: "acme-req-0192" } });
     const others = new ErrorRequestsService(lokiOf([quoted, nested]).loki, SEL, cfg);
-    expect(await others.lookup(HASH, RANGE)).toEqual({ available: true, row: null });
-    expect(await others.lookup("acme-req-0192", RANGE)).toEqual({ available: true, row: null });
+    expect(await others.lookup(HASH, RANGE)).toEqual({ available: true, row: null, transaction: null });
+    expect(await others.lookup("acme-req-0192", RANGE)).toEqual({ available: true, row: null, transaction: null });
   });
 
   it("a hash several requests carry - the transaction sent again - answers with the newest and how many", async () => {

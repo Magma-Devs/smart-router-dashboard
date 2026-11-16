@@ -395,13 +395,13 @@ describe("ErrorRequestsService", () => {
     expect(queries.at(-1)).toBe('{service="router"} |= `15972212763463815960` |~ `"(GUID|tx_hash|request_id)":"15972212763463815960"`');
     // Nothing failed on the way: answered, not "recovered".
     expect((await svc.lookup("13101775707732352358", RANGE)).row).toMatchObject({ method: "getSlot", result: "ok", retried: false });
-    expect(await svc.lookup("999", RANGE)).toEqual({ available: true, row: null });
+    expect(await svc.lookup("999", RANGE)).toEqual({ available: true, row: null, transaction: null });
   });
 
   it("an ID that could reach into the query is never sent", async () => {
     const { loki, queries } = lokiStub(LINES);
     const r = await new ErrorRequestsService(loki, '{service="router"}', configSvc).lookup('1"} |= `x', RANGE);
-    expect(r).toEqual({ available: true, row: null });
+    expect(r).toEqual({ available: true, row: null, transaction: null });
     expect(queries).toEqual([]);
   });
 
@@ -619,7 +619,7 @@ describe("GET /api/error-requests", () => {
     expect((await app.inject({ method: "GET", url: "/api/requests/a%60b?window=1d" })).statusCode).toBe(400);
     const res = await app.inject({ method: "GET", url: "/api/requests/15972212763463815960?window=1d" });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toMatchObject({ available: true, row: { guid: "15972212763463815960", method: "getSlot", resolvedBy: "sol-publicnode" } });
+    expect(res.json()).toMatchObject({ available: true, row: { guid: "15972212763463815960", method: "getSlot", resolvedBy: "sol-publicnode" }, transaction: null });
   });
 
   it("with LOKI_URL it lists each request's tries - for the window, or an exact range", async () => {
