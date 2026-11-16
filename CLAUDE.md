@@ -1228,6 +1228,26 @@ Compose / Makefile knobs:
   (and the web's first page); no tag exists until it passes, so a failed
   smoke leaves the version unpublished and reusable.
 
+## Branches and versions
+
+- **A branch is brought up to date by a rebase, never a merge commit.**
+  `git fetch origin && git rebase origin/main`, then push with
+  `--force-with-lease`. `git merge origin/main`, `git pull` without
+  `--rebase` and GitHub's "Update branch" (merge) are out; "Update with
+  rebase" is fine. `git rev-list --merges origin/main..HEAD` prints nothing on
+  a branch that is ready. Two things enforce it: the "linear history" ruleset
+  refuses a push that carries a merge commit, on every branch, and the quality
+  gate's **No merge commits** job fails a pull request whose branch holds one.
+- **`main` takes squash merges only**, one commit per pull request, titled as
+  the pull request is.
+- **A pull request that ships sets `VERSION` to the next number after
+  `main`'s**: the patch for a fix, the minor for a feature. An open pull
+  request reserves no number: when another one merges first, rebase and take
+  the next. The build on `main` refuses a `VERSION` at or below the latest
+  `v*` tag and publishes nothing for it, so a stale number is a release that
+  never happens. The pull request's title ends with the version, and
+  `CHANGELOG.md` has a `## [<VERSION>]` section above the previous release's.
+
 ## Gotchas
 
 | Trap | Reality |
