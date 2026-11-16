@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { RouterTopology } from "@sr/shared";
+import type { HealthState, RouterTopology, UpstreamMetrics } from "@sr/shared";
 import { buildUpstreamRows, directTargetFor, groupByChain } from "../catalog";
 
 /** Two chains, three upstreams, one of them serving both chains over two
@@ -194,5 +194,35 @@ describe("directTargetFor — internal paths", () => {
       httpIndex: 1,
       httpInternalPath: "/v3",
     });
+  });
+});
+
+// MAG-5349: publicnode serves two chains, so its card rolls two rows into one state.
+describe("buildUpstreamRows: the card's health across an upstream's chains", () => {
+  const metric = (spec: string, health: HealthState) =>
+    ({ endpointId: "publicnode", spec, health, requests: 0, uptime: null, p95Ms: null }) as UpstreamMetrics;
+  const card = (...states: HealthState[]) =>
+    buildUpstreamRows(
+      ROUTERS,
+      states.map((health, i) => metric(["ETH1", "COSMOSHUB"][i]!, health)),
+    ).find((u) => u.name === "publicnode")!.health;
+
+  it("is untracked only when every chain is untracked", () => {
+    expect(card("untracked", "untracked")).toBe("untracked");
+    expect(card("untracked")).toBe("untracked");
+  });
+
+  it("shows the gap when an untracked chain sits beside one with no health data", () => {
+    expect(card("untracked", "unknown")).toBe("unknown");
+    expect(card("unknown", "untracked")).toBe("unknown");
+  });
+
+  it("is judged by a chain that has a verdict, whatever the untracked one says", () => {
+    expect(card("untracked", "operational")).toBe("operational");
+    expect(card("untracked", "unhealthy")).toBe("unhealthy");
+  });
+
+  it("is unknown when nothing reported on it", () => {
+    expect(card()).toBe("unknown");
   });
 });

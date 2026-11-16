@@ -31,14 +31,19 @@ export interface UpstreamHealth {
   routerIds: string[];
 }
 
-const rank: Record<HealthState, number> = { operational: 0, unknown: 1, unhealthy: 2 };
+// Worst wins across a row's interfaces and replicas. `untracked` ranks lowest:
+// an interface judged by its checks decides the row, and the row reads
+// `untracked` only when every signal of it is untracked.
+const rank: Record<HealthState, number> = { untracked: 0, operational: 1, unknown: 2, unhealthy: 3 };
 /* The reasons, in words a client reads: a "block check" is the router asking
    a provider for its latest block, which it does whether or not it sends the
    provider requests. No store or scrape is named: the reader can check neither. */
 export const NO_DATA_REASON = "No data yet: the router reports nothing about it.";
 const missing = NO_DATA_REASON;
+const untracked =
+  "Not tracked by design: this provider serves only add-on methods and has no way to report a block height, so the router runs no block checks on it. Its health is known only from the requests it serves.";
 
-/** Four reads, independent of fleet size; shared by the roster and the pulse's counts. */
+/** Five reads, independent of fleet size; shared by the roster and the pulse's counts. */
 export async function readUpstreamHealth(
   prom: PrometheusClient,
   config?: ConfigurationService,
@@ -86,9 +91,14 @@ export async function readUpstreamHealth(
     branches.push(sum(other.length ? `{spec!~${regex(other)}}` : "", FALLBACK_HEALTH_WINDOW));
     return branches.join(" or ");
   };
-  const [successes, failures] = await Promise.all([
+  // max, so one tracked url is enough to judge the provider by its polls: only
+  // a provider with EVERY url untracked reads 0. No series on an older router.
+  const [successes, failures, tracking] = await Promise.all([
     prom.query(polls(ENDPOINT_METRICS.fetchLatestSuccess)),
     prom.query(polls(ENDPOINT_METRICS.fetchLatestFails)),
+    prom.query(
+      `max by (endpoint_id, spec, apiInterface, instance) (${ENDPOINT_METRICS.urlBlockTracking}${sel})`,
+    ),
   ]);
   const rows = new Map<string, UpstreamHealth>();
   const expected = new Map<string, Set<string>>();
@@ -113,9 +123,18 @@ export async function readUpstreamHealth(
       expected.set(key, interfaces);
     }
   }
-  type Signal = { rowKey: string; iface: string; instance: string; gauge?: HealthState; ok: number; failed: number };
+  type Signal = {
+    rowKey: string;
+    iface: string;
+    instance: string;
+    gauge?: HealthState;
+    ok: number;
+    failed: number;
+    /** The router tracks no url of it, by design: no check will ever be reported. */
+    untracked?: boolean;
+  };
   const signals = new Map<string, Signal>();
-  const add = (sample: PromVectorSample, kind: "gauge" | "ok" | "failed") => {
+  const add = (sample: PromVectorSample, kind: "gauge" | "ok" | "failed" | "tracking") => {
     const id = sample.metric.endpoint_id;
     const chain = sample.metric.spec ?? "";
     if (!id || (spec && chain !== spec)) return;
@@ -134,6 +153,8 @@ export async function readUpstreamHealth(
           ? "unhealthy"
           : "operational";
       if (!signal.gauge || rank[measured] > rank[signal.gauge]) signal.gauge = measured;
+    } else if (kind === "tracking") {
+      if (Number.isFinite(value)) signal.untracked = value === 0;
     } else if (Number.isFinite(value) && value > 0) {
       // Do not round increase() before deciding whether a poll happened.
       signal[kind] += value;
@@ -143,6 +164,7 @@ export async function readUpstreamHealth(
   gauges.forEach((sample) => add(sample, "gauge"));
   successes.forEach((sample) => add(sample, "ok"));
   failures.forEach((sample) => add(sample, "failed"));
+  tracking.forEach((sample) => add(sample, "tracking"));
   const resolved = new Set<string>();
   const observed = new Map<string, Set<string>>();
   const merge = (key: string, health: HealthState, cause: HealthCause, reason: string) => {
@@ -166,6 +188,11 @@ export async function readUpstreamHealth(
       rows.get(signal.rowKey)!.failingChecks.push({ apiInterface: signal.iface, instance: signal.instance });
     } else if (signal.ok > 0) {
       merge(signal.rowKey, "operational", "ok", `Block checks passed in the last ${minutes} minutes.`);
+    } else if (signal.untracked) {
+      // No check outcome is the expected reading here, not a gap. Blocked and
+      // failed-check verdicts above still win: the router took it out on real
+      // failures, or an older pod of the fleet still checks it.
+      merge(signal.rowKey, "untracked", "untracked", untracked);
     } else if (signal.gauge === "operational") {
       // "In rotation" is the router's default for a provider it has not taken
       // out; a url nobody polls or routes to reads so however broken it is.
@@ -256,7 +283,7 @@ export async function readHealthSince(prom: PrometheusClient, rows: Map<string, 
 /** The providers that are not operational, unhealthy first then the oldest trouble, for the top bar's list. */
 export function providersNeedingAttention(rows: Map<string, UpstreamHealth>, limit = 30): ProviderAttention[] {
   return [...rows.values()]
-    .filter((r) => r.health !== "operational")
+    .filter((r) => r.health !== "operational" && r.health !== "untracked")
     .sort((a, b) => rank[b.health] - rank[a.health] || (a.healthSince ?? Infinity) - (b.healthSince ?? Infinity) || a.spec.localeCompare(b.spec) || a.endpointId.localeCompare(b.endpointId))
     .slice(0, limit)
     .map((r) => ({ endpointId: r.endpointId, spec: r.spec, health: r.health, cause: r.healthCause, reason: r.healthReason, since: r.healthSince, sinceOrEarlier: r.healthSinceOrEarlier }));

@@ -1,11 +1,11 @@
 import type { HealthState } from "@sr/shared";
-import { HEALTH_UNKNOWN_HINT, healthColor, healthLabel, healthTagClass } from "@/lib/health";
+import { healthColor, healthHint, healthLabel, healthTagClass } from "@/lib/health";
 
 /** Status dot alone, for a table cell that has its own label column. */
 export function HealthDot({ health, size = 7 }: { health: HealthState; size?: number }) {
   return (
     <span
-      title={health === "unknown" ? HEALTH_UNKNOWN_HINT : healthLabel(health)}
+      title={healthHint(health) ?? healthLabel(health)}
       style={{
         width: size, height: size, borderRadius: 999, flexShrink: 0,
         background: healthColor(health),
@@ -23,7 +23,7 @@ export function HealthTag({ health, fontSize = 10, reason }: { health: HealthSta
   return (
     <span
       className={healthTagClass(health)}
-      title={reason ?? (health === "unknown" ? HEALTH_UNKNOWN_HINT : undefined)}
+      title={reason ?? healthHint(health)}
       style={{ fontSize, padding: "1px 6px", display: "inline-flex", gap: 5, alignItems: "center" }}
     >
       <HealthDot health={health} size={6} />

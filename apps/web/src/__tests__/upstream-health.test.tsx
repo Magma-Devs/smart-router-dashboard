@@ -119,6 +119,32 @@ describe("MAG-4226", () => {
     expect(html).not.toContain("Operational");
   });
 
+  // MAG-5349: a provider the router does not track by design is a fact, not a gap.
+  it("shows a provider with no block height by design as neutral, never as a warning", () => {
+    fixture.rows = [
+      upstream({
+        health: "untracked",
+        healthReason: "Not tracked by design: this provider serves only add-on methods.",
+        requests: 100,
+        uptime: 1,
+        errorRate: 0,
+        latestBlock: null,
+        polls: null,
+      }),
+    ];
+    const html = renderToStaticMarkup(
+      createElement(UpstreamMetricsTab, { timeWindow: "5m", chainFilter: "ETH1" }),
+    );
+    expect(html).toContain("No block height");
+    expect(html).toContain("no block height by design");
+    expect(html).toContain('role="note"');
+    expect(html).not.toContain('role="alert"');
+    expect(html).not.toContain("Unknown");
+    expect(html).not.toContain("health is unknown");
+    expect(html).not.toContain("Unhealthy");
+    expect(html).not.toContain("Operational");
+  });
+
   it("keeps a healthy idle backup operational, with no manufactured success percentage", () => {
     fixture.rows = [
       upstream({
