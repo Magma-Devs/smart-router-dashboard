@@ -113,6 +113,21 @@ Newest first, filterable by group, person, object and date, with a detail
 sheet per event and an **Export CSV** button that exports what the filters
 say — not just the page on screen.
 
+A row names its event in words ("Sign-in failed", "Session ended"), its
+group, and its target by the name it had at the time. The detail sheet keeps
+the codes the API and the CSV use: the event's (`signin.failed`) and the
+target's kind and id, which is what the **Object id** filter takes. It gives
+the time twice, on the reader's clock and in UTC
+(`Nov 12, 2026, 12:22:07 UTC`), the zone the notification emails state, so a
+row can be matched with the email it sent.
+
+The **Group** filter offers the groups something in the product writes. The
+config-approval events (group `approval`) are in the catalog with no writer
+yet, so that group is not offered, and the sheet shows an **Approval request**
+only on a row that names one. `apps/web/src/components/audit/filter-groups.ts`
+holds the groups left out, and a test fails when it disagrees with the
+writers.
+
 It reads a page at a time — 25, 50 (the default) or 100 rows — with
 **Newest**, **Newer** and **Older** above and below the table and a label
 saying where the reader is ("Newest 50", "Older entries · page 3"). A page is

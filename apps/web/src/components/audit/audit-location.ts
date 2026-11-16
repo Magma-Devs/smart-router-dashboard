@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useMemo, useSyncExternalStore } from "react";
-import { AUDIT_GROUPS } from "@sr/shared";
 import type { AuditFilters } from "@/components/audit/useAuditFeed";
+import { FILTER_GROUPS } from "@/components/audit/filter-groups";
 
 /**
  * Where the reader is in the audit log, kept in the page's URL — MAG-5272.
@@ -70,7 +70,7 @@ export function parseAuditLocation(search: string): AuditLocation {
   const from = q.get("from") ?? "";
   const to = q.get("to") ?? "";
   const filters: AuditFilters = {
-    group: (AUDIT_GROUPS as readonly string[]).includes(group) ? group : "",
+    group: (FILTER_GROUPS as readonly string[]).includes(group) ? group : "",
     actor: text("actor", ACTOR_MAX),
     targetId: text("target", TARGET_MAX),
     from: isDay(from) ? from : "",

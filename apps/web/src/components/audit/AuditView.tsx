@@ -1,15 +1,19 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AUDIT_GROUPS, type AuditEventRecord } from "@sr/shared";
+import type { AuditEventRecord } from "@sr/shared";
 import { SideSheet } from "@/components/gateway/SideSheet";
 import {
+  actorEmail,
   AuditDetail,
+  auditSheetHeading,
   ChangeList,
   GroupTag,
   NoteText,
-  targetLabel,
+  targetName,
 } from "@/components/audit/bits";
+import { eventLabel, groupLabel } from "@/components/audit/event-labels";
+import { FILTER_GROUPS } from "@/components/audit/filter-groups";
 import { LocalTime, ZoneLabel } from "@/components/gateway/LocalTime";
 import {
   auditExportPath,
@@ -202,6 +206,7 @@ export function AuditView() {
     },
   });
   const atNewest = feed.page?.atNewest ?? location.position.kind === "newest";
+  const heading = selected ? auditSheetHeading(selected) : null;
 
   return (
     <div className="gw-page">
@@ -265,9 +270,9 @@ export function AuditView() {
               onChange={(e) => set({ group: e.target.value })}
             >
               <option value="">All groups</option>
-              {AUDIT_GROUPS.map((g) => (
+              {FILTER_GROUPS.map((g) => (
                 <option key={g} value={g}>
-                  {g}
+                  {groupLabel(g)}
                 </option>
               ))}
             </select>
@@ -329,7 +334,7 @@ export function AuditView() {
             title="Could not open this page of the log"
             body={
               feed.badPosition
-                ? "The link points at a place in the log that these filters can't reach — it was edited, or its filters were changed after it was made."
+                ? "The link points at a place in the log that these filters can't reach. It was edited, or its filters were changed after it was made."
                 : feed.error
             }
             action={
@@ -424,6 +429,8 @@ export function AuditView() {
               </thead>
               {feed.items.map((event) => {
                 const open = () => setSelected(event);
+                const email = actorEmail(event.actor);
+                const target = targetName(event);
                 return (
                   // One <tbody> per event so the stacked changes belong to their
                   // row rather than floating as a sibling.
@@ -450,18 +457,13 @@ export function AuditView() {
                       </td>
                       <td>
                         <div style={{ fontWeight: 550 }}>{event.actor.name}</div>
-                        {event.actor.email ? (
-                          <div style={{ fontSize: 11, color: "var(--text-3)" }}>
-                            {event.actor.email}
-                          </div>
+                        {email ? (
+                          <div style={{ fontSize: 11, color: "var(--text-3)" }}>{email}</div>
                         ) : null}
                       </td>
                       <td>
-                        <div
-                          className="gw-mono"
-                          style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 8 }}
-                        >
-                          {event.action}
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          {eventLabel(event.action)}
                           <GroupTag group={event.group} />
                         </div>
                         {event.note ? (
@@ -470,20 +472,14 @@ export function AuditView() {
                           </div>
                         ) : null}
                       </td>
+                      {/* The name alone: ids, and the approval request a change
+                          came from, are in the detail sheet. */}
                       <td>
-                        {targetLabel(event) ? (
-                          <span style={{ fontSize: 12 }}>{targetLabel(event)}</span>
+                        {target ? (
+                          <span style={{ fontSize: 12 }}>{target}</span>
                         ) : (
                           <span style={{ color: "var(--text-4)" }}>—</span>
                         )}
-                        {event.request ? (
-                          <div
-                            className="gw-mono"
-                            style={{ fontSize: 11, color: "var(--text-3)", marginTop: 2 }}
-                          >
-                            {event.request}
-                          </div>
-                        ) : null}
                       </td>
                     </tr>
                     {event.changes.length > 0 ? (
@@ -512,8 +508,8 @@ export function AuditView() {
       <SideSheet
         open={selected !== null}
         onClose={() => setSelected(null)}
-        title={selected?.action ?? ""}
-        sub={selected ? `${selected.actor.name} · ${selected.group}` : undefined}
+        title={heading?.title ?? ""}
+        sub={heading?.sub}
       >
         {selected ? <AuditDetail event={selected} /> : null}
       </SideSheet>
