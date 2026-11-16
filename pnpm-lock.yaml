@@ -258,7 +258,7 @@ importers:
         version: 3.0.3
       drizzle-orm:
         specifier: 0.45.3
-        version: 0.45.3(@cloudflare/workers-types@5.20261116.1)(@electric-sql/pglite@0.5.14)(postgres@3.4.9)
+        version: 0.45.3(@cloudflare/workers-types@5.20261116.1)(@electric-sql/pglite@0.5.16)(postgres@3.4.9)
       fastify:
         specifier: 5.12.8
         version: 5.12.8
@@ -279,8 +279,8 @@ importers:
         version: 2.9.1
     devDependencies:
       '@electric-sql/pglite':
-        specifier: 0.5.14
-        version: 0.5.14
+        specifier: 0.5.16
+        version: 0.5.16
       '@types/node':
         specifier: 26.6.5
         version: 26.6.5
@@ -372,7 +372,7 @@ importers:
         version: 26.6.5
       drizzle-orm:
         specifier: 0.45.3
-        version: 0.45.3(@cloudflare/workers-types@5.20261116.1)(@electric-sql/pglite@0.5.14)(postgres@3.4.9)
+        version: 0.45.3(@cloudflare/workers-types@5.20261116.1)(@electric-sql/pglite@0.5.16)(postgres@3.4.9)
       typescript:
         specifier: 6.0.3
         version: 6.0.3
@@ -387,14 +387,14 @@ importers:
         version: 3.0.3
       drizzle-orm:
         specifier: 0.45.3
-        version: 0.45.3(@cloudflare/workers-types@5.20261116.1)(@electric-sql/pglite@0.5.14)(postgres@3.4.9)
+        version: 0.45.3(@cloudflare/workers-types@5.20261116.1)(@electric-sql/pglite@0.5.16)(postgres@3.4.9)
       postgres:
         specifier: 3.4.9
         version: 3.4.9
     devDependencies:
       '@electric-sql/pglite':
-        specifier: 0.5.14
-        version: 0.5.14
+        specifier: 0.5.16
+        version: 0.5.16
       '@types/node':
         specifier: 26.6.5
         version: 26.6.5
@@ -617,8 +617,8 @@ packages:
   '@drizzle-team/brocli@0.10.2':
     resolution: {integrity: sha512-z33Il7l5dKjUgGULTqBsQBQwckHh5AbIuxhdsIxDDiZAzBOrZO6q9ogcWC65kU382AfynTfgNumVcNIjuIua6w==}
 
-  '@electric-sql/pglite@0.5.14':
-    resolution: {integrity: sha512-aAQe7iArcFB2w1xtx91l3l9trxhMzD6aZf+WnosSHNhwgp70EJz80Igw/bHnW14fUEFYWPBoQ1sGom8Xc0Jttg==}
+  '@electric-sql/pglite@0.5.16':
+    resolution: {integrity: sha512-Nj8KcIsJL748W408U2N8q4+9IlONdpRIU8MJypIAAINMJ5nqKyqpX7Mgg/5XKkXiAib3AoZGR6hnJFlrlLBrcg==}
 
   '@emnapi/runtime@1.11.3':
     resolution: {integrity: sha512-Xz4Tpyki7XyrpbUK1jR1AhdAdaXyhhY4lZ3neLodmhpuWfy2PAQN5B46sAiU4liOXGLkHypn/qU+jvfWSCYYLA==}
@@ -3274,7 +3274,7 @@ snapshots:
 
   '@drizzle-team/brocli@0.10.2': {}
 
-  '@electric-sql/pglite@0.5.14': {}
+  '@electric-sql/pglite@0.5.16': {}
 
   '@emnapi/runtime@1.11.3':
     dependencies:
@@ -4173,10 +4173,10 @@ snapshots:
       esbuild: 0.25.12
       tsx: 4.23.13
 
-  drizzle-orm@0.45.3(@cloudflare/workers-types@5.20261116.1)(@electric-sql/pglite@0.5.14)(postgres@3.4.9):
+  drizzle-orm@0.45.3(@cloudflare/workers-types@5.20261116.1)(@electric-sql/pglite@0.5.16)(postgres@3.4.9):
     optionalDependencies:
       '@cloudflare/workers-types': 5.20261116.1
-      '@electric-sql/pglite': 0.5.14
+      '@electric-sql/pglite': 0.5.16
       postgres: 3.4.9
 
   ecdsa-sig-formatter@1.0.11:
