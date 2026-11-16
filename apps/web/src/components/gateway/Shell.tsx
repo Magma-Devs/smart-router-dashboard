@@ -17,6 +17,7 @@ import { getAuthVersion, subscribeAuth } from "@/lib/auth-store";
 import { useMe } from "@/hooks/use-me";
 import { TwoFactorCountdown, TwoFactorGate } from "@/components/auth/two-factor-gate";
 import { ReportIncidentButton } from "@/components/incidents/ReportIncident";
+import { roleBadgeLabel } from "./role-badge";
 
 export function ThemeToggle() {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
@@ -160,10 +161,10 @@ function Sidebar({ grafanaDashboardUrl, grafanaCustomerUsageDashboardUrl }: {
  * store by ApiTokenBridge) → the signed-in user + a working sign-out.
  * AUTH_MODE=disabled (store stays empty) → the self-hosted placeholder.
  */
-function SidebarUser() {
+export function SidebarUser() {
   // Subscribed to the store for the sign-in/sign-out transition, but the role
   // itself comes from `useMe` — the session's copy is frozen at sign-in, so the
-  // badge would keep claiming ADMIN after a demotion. See `useMe`.
+  // badge would keep claiming Admin after a demotion. See `useMe`.
   useSyncExternalStore(subscribeAuth, getAuthVersion, () => 0);
   const { me: user } = useMe();
 
@@ -207,7 +208,7 @@ function SidebarUser() {
             {user ? (user.name ?? user.email) : "Self-hosted deployment"}
           </div>
           <div>
-            <span className="plan-chip">{user ? user.role : "local"}</span>
+            <span className="plan-chip">{roleBadgeLabel(user?.role)}</span>
           </div>
         </div>
         {user ? (
@@ -245,8 +246,9 @@ function Topbar({ here, sub, incidentsEnabled }: { here: string; sub: string | n
   return (
     <header className="gw-top">
       <div className="gw-top__crumbs">
-        <span style={{ color: "var(--text-3)" }}>Smart Router</span>
+        <span className="gw-top__root" style={{ color: "var(--text-3)" }}>Smart Router</span>
         <svg
+          className="gw-top__root"
           width="12"
           height="12"
           viewBox="0 0 24 24"

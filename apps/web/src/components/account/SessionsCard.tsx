@@ -73,15 +73,15 @@ export function SessionsCard() {
         {sessions.map((s) => (
           <div key={s.id} className="gw-row" style={{
             padding: "10px 11px", borderRadius: 7, background: "var(--bg)",
-            border: "1px solid " + (s.current ? "var(--brand)" : "var(--line)"), gap: 10,
+            border: "1px solid " + (s.current ? "var(--info)" : "var(--line)"), gap: 10,
           }}>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 13, fontWeight: 500 }}>
-                {s.client ?? "Unrecognised device"}
-                {s.current && <span style={{ color: "var(--brand)", fontWeight: 600 }}> · this device</span>}
+                {s.client ?? "Unrecognized device"}
+                {s.current && <span style={{ color: "var(--info)", fontWeight: 600 }}> · this device</span>}
               </div>
               <div className="gw-mono" style={{ fontSize: 11, color: "var(--text-3)", marginTop: 2 }}>
-                {s.ip ?? "—"} · signed in <LocalTime t={s.createdAt} format="relative" /> · seen{" "}
+                {s.ip ? `${s.ip} · signed in` : "Signed in"} <LocalTime t={s.createdAt} format="relative" /> · seen{" "}
                 <LocalTime t={s.lastSeenAt} format="relative" />
               </div>
             </div>

@@ -34,9 +34,11 @@ export function ReportIncidentButton({ enabled }: { enabled: boolean }) {
   if (!enabled) return null;
   return (
     <>
-      <button className="gw-btn" onClick={() => setOpen(true)} title="Report an incident to Magma's engineers">
+      {/* The label folds away in a narrow top bar (`.gw-top__label`); the
+          button keeps its name for a screen reader. */}
+      <button className="gw-btn" onClick={() => setOpen(true)} title="Report an incident to Magma's engineers" aria-label="Report incident">
         <IconAlert size={14} />
-        Report incident
+        <span className="gw-top__label">Report incident</span>
       </button>
       <ReportIncidentModal open={open} onClose={() => setOpen(false)} />
     </>
