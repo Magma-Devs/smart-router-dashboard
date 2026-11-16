@@ -725,10 +725,48 @@ describe("GET /api/audit/export.csv", () => {
       "target_name",
       "request",
       "note",
+      "ip",
+      "client",
+      "session",
       "field",
       "from",
       "to",
     ]);
+  });
+
+  it("carries the address, client and session reference of an access event", async () => {
+    app = await buildAuthedApp();
+    const { token, sessionId } = await signedIn();
+    await createAuditWriter(t.db).write({
+      action: "signin.succeeded",
+      actor: { id: null, kind: "system" },
+      access: { ip: "203.0.113.64", client: "Chrome 141 / macOS", sessionId },
+    });
+    const { text } = await csvOf(token);
+
+    expect(text).not.toContain(sessionId);
+    const [header, row] = text
+      .replace(/^\uFEFF/, "")
+      .split("\r\n")
+      .map((l) => l.split(","));
+    const cell = (name: string) => row?.[header!.indexOf(name)];
+    expect(cell("ip")).toBe("203.0.113.64");
+    expect(cell("client")).toBe("Chrome 141 / macOS");
+    expect(cell("session")).toBe(auditSessionRef(sessionId));
+  });
+
+  it("neutralises a formula in the client column", async () => {
+    app = await buildAuthedApp();
+    await createAuditWriter(t.db).write({
+      action: "signin.failed",
+      actor: { id: null, kind: "user", label: "who@example.com" },
+      access: { ip: "203.0.113.64", client: "@SUM(1+1)", sessionId: null },
+    });
+    const { token } = await signedIn();
+    const { text } = await csvOf(token);
+
+    expect(text).toContain(",'@SUM(1+1),");
+    expect(text).not.toContain(",@SUM");
   });
 
   it("leads with a UTF-8 BOM so a spreadsheet does not mangle a name", async () => {
@@ -790,7 +828,7 @@ describe("GET /api/audit/export.csv", () => {
     // Trailing field,from,to are empty rather than absent — a short row would
     // shift every column after it in a spreadsheet.
     expect(rows[0]?.endsWith(",,,")).toBe(true);
-    expect(rows[0]?.split(",")).toHaveLength(15);
+    expect(rows[0]?.split(",")).toHaveLength(18);
   });
 
   /**

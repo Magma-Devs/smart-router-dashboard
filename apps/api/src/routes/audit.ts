@@ -204,6 +204,9 @@ function parseAuditQuery(
  * becomes three lines sharing the same event id. Events with nothing to diff
  * get one line with the field columns empty. Flat beats nested — the person
  * opening this file wants to filter and sort it, not parse it."
+ *
+ * `ip`, `client` and `session` are the event's access context, empty on the
+ * events that carry none; `session` is the reference the feed shows.
  */
 const CSV_COLUMNS = [
   "event_id",
@@ -218,6 +221,9 @@ const CSV_COLUMNS = [
   "target_name",
   "request",
   "note",
+  "ip",
+  "client",
+  "session",
   "field",
   "from",
   "to",
@@ -252,6 +258,9 @@ function csvRowsFor(event: AuditEventRecord): string {
     event.target?.name ?? null,
     event.request,
     event.note,
+    event.context?.ip ?? null,
+    event.context?.client ?? null,
+    event.context?.session ?? null,
   ];
   if (event.changes.length === 0) return csvLine([...base, null, null, null]);
   return event.changes.map((c) => csvLine([...base, c.field, c.from, c.to])).join("");

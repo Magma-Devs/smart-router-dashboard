@@ -164,10 +164,13 @@ columns empty. Columns:
 
 ```
 event_id,time,actor_name,actor_email,source,action,group,
-target_type,target_id,target_name,request,note,field,from,to
+target_type,target_id,target_name,request,note,ip,client,session,field,from,to
 ```
 
-A session's `target_id` holds the [reference](#sessions), as in the feed.
+`ip`, `client` and `session` are the event's access context (the page's
+**IP address**, **Client** and **Session**), empty on events that carry none;
+`session` and a session's `target_id` hold the [reference](#sessions), as in
+the feed.
 
 Starts with a UTF-8 BOM (Excel assumes the local codepage otherwise; scripted
 consumers read it as `utf-8-sig`), CRLF line endings, and every cell passes the
