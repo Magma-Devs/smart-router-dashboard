@@ -1,0 +1,19 @@
+// The build recipe for the dashboards' sign-in redirect proxy, and only that.
+//
+// This Worker is DEPLOYED by devops-magmadevs (components/smart-router-fleet-
+// dashboard, `make deploy-auth-proxy`), which pins a release of the bundle by
+// version and sha256, uploads it through the Workers API, and owns the route,
+// the DNS record, the vars and the secrets. Nothing here names a route, an
+// account or a credential, and nothing in this repo deploys it.
+//
+// What the release publishes: `wrangler deploy --dry-run --outdir dist` turns
+// src/index.ts into one ES module, attached to the `v<VERSION>` release as
+// `auth-proxy-<VERSION>.js` with its sha256 beside it (build-and-push.yml,
+// the publish-auth-proxy job). The compatibility date the deploy runs under is
+// devops' to set; this one is for `wrangler dev` here.
+{
+  "name": "smartrouter-dashboard-auth-proxy",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-01",
+  "workers_dev": false,
+}

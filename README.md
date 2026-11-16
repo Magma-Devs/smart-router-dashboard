@@ -225,6 +225,8 @@ Both images are published for `linux/amd64` and `linux/arm64` from a single buil
 
 Set `DASHBOARD_API_URL` on the web container at runtime to point one published image at any api host.
 
+`apps/auth-proxy`, the dashboards' sign-in redirect proxy, is a Cloudflare Worker rather than an image: each release attaches its bundle, `auth-proxy-<VERSION>.js` with its sha256, to the `v<VERSION>` GitHub release (the `publish-auth-proxy` job), and devops-magmadevs pins and deploys it. See [docs/AUTH.md](docs/AUTH.md#one-callback-for-every-dashboard-the-redirect-proxy).
+
 ```bash
 docker pull ghcr.io/magma-devs/smart-router-dashboard/backend:latest
 docker pull ghcr.io/magma-devs/smart-router-dashboard/frontend:latest
