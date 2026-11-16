@@ -4,7 +4,7 @@ import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { useEffect, useState, useSyncExternalStore, type ComponentType } from "react";
 import { signOut } from "next-auth/react";
-import { buildChainMetaByIndex } from "@sr/shared";
+import { buildChainMetaByIndex, isRole } from "@sr/shared";
 import { NAV_SECTIONS, visibleNavSections } from "./nav";
 import { useAuthMode } from "./auth-mode";
 import { CHAIN_DRAWER_PATH, ChainDrawer, ChainDrawerProvider, useChainDrawer } from "./ChainDrawer";
@@ -18,6 +18,7 @@ import { useMe } from "@/hooks/use-me";
 import { TwoFactorCountdown, TwoFactorGate } from "@/components/auth/two-factor-gate";
 import { ReportIncidentButton } from "@/components/incidents/ReportIncident";
 import { roleBadgeLabel } from "./role-badge";
+import { roleChipStyle } from "@/components/team/bits";
 
 export function ThemeToggle() {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
@@ -208,7 +209,12 @@ export function SidebarUser() {
             {user ? (user.name ?? user.email) : "Self-hosted deployment"}
           </div>
           <div>
-            <span className="plan-chip">{roleBadgeLabel(user?.role)}</span>
+            <span
+              className="plan-chip"
+              style={isRole(user?.role) ? roleChipStyle(user.role) : undefined}
+            >
+              {roleBadgeLabel(user?.role)}
+            </span>
           </div>
         </div>
         {user ? (

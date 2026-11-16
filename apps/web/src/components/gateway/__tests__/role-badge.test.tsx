@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { ROLES, ROLE_LABELS, type Role } from "@sr/shared";
+import { ROLES, ROLE_COLORS, ROLE_LABELS, type Role } from "@sr/shared";
 import { roleBadgeLabel } from "../role-badge";
 
 /**
@@ -40,7 +40,9 @@ describe("the sidebar's account footer", () => {
     me.role = role;
     const { SidebarUser } = await import("../Shell");
     const html = renderToStaticMarkup(createElement(SidebarUser));
-    expect(html).toContain(`<span class="plan-chip">${ROLE_LABELS[role]}</span>`);
+    expect(html).toMatch(new RegExp(`<span class="plan-chip"[^>]*>${ROLE_LABELS[role]}</span>`));
+    // The same colour as the role's chip on the Team page.
+    expect(html).toContain(ROLE_COLORS[role]);
     expect(html).not.toContain(`>${role}<`);
   });
 });
