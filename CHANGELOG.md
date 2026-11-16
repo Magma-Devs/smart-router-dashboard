@@ -5,6 +5,26 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.69.0]
+
+### Added
+
+- **Find a request, from any page.** A search box in the top bar takes a
+  request ID (the one in the router's error message or response headers), a
+  transaction hash or the request ID your own app sent, and opens the
+  Metrics page's new **Find a request** tab on it: what was asked, every
+  provider it went to, what each one answered, and what the client got - for
+  any request, answered or not, not only the ones the Errors and
+  Transactions tabs list. A transaction shows its send row too (Sent /
+  Refused / Outcome unknown, the hash with its explorer link), read from the
+  same lines as the request (`transaction` on `GET /api/requests/:guid`), so
+  the logs are read once. The request is in the URL (`?tab=request&request=`),
+  so a link opens it; on the Metrics page the search keeps your place in
+  history, so Back returns to the view before it. A request ID from a router
+  on smart-router v1.6.1 or later is found in about a second whatever the
+  window; a hash or a caller's ID is read over the page's window, with
+  "Search the last 30 days" offered when it isn't there.
+
 ## [0.68.0]
 
 ### Added
