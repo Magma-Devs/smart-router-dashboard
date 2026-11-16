@@ -88,6 +88,14 @@ receipts, under its $10 limit. This is the disposable validation database, not
 the GK8 production budget. Test content was deleted while accounting survived;
 all temporary provider credentials/grants were revoked/deleted.
 
+[A second native run](native-panel-full.json) explicitly starts in the panel,
+minimizes while processing, reopens the persisted answer, expands into the full
+view and reloads. Follow-up log/status questions run in the full view. All three
+answers pass, including an automated missing-status caveat check. Its nine
+settled model steps cost $0.132606; the cumulative disposable pool is then
+$0.854622 spent and the same $0.072504 held. This covers both live views, rather
+than inferring panel acceptance from the deterministic provider fixture.
+
 The final code passes 3,733 workspace tests plus 24 actual HTTP/PostgreSQL checks,
 workspace typecheck, API production build and lint (zero errors, 14 existing
 warnings). Four deterministic browser flows also pass with native-style client
@@ -111,6 +119,21 @@ monthly pool and every model-step receipt across runs. The observer records
 protocol shape/usage only and never transforms a provider response. Screenshots,
 traces and video are disabled; the page closes before failure artifacts can
 capture customer content. Only metadata receipts should be retained.
+
+## Current cloud policy observations
+
+The [read-only control-plane receipt](cloud-policy.json) confirms private,
+encrypted fleet RDS instances: DEV automated backups retain seven days, PROD
+fourteen days, with an encrypted PROD replica in us-west-2 retaining fourteen
+days. The receipt records the actual restorable windows, not an exercised
+restore. Both parameter groups are in sync with explicit `pgaudit.log=ddl,role`
+and `pgaudit.log_parameter=0`. Other statement/parameter logging settings are
+reported as engine defaults without an effective value by this API; no SQL
+session was used to infer their running values. Bedrock invocation logging is
+not configured in this account/region at the time of the read. This does not
+claim a provider-wide retention policy or deletion from backups. A restored
+database must run retention and verify expired content is inaccessible before
+customer/internal traffic is admitted.
 
 ## Remaining deployment work
 
