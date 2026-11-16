@@ -64,6 +64,14 @@ chart implementation PRs.
    no source-data read, paid inference, database write or deployment change. It
    checks while the deployment flag stays off; its process-local adapter setting
    does not activate the API. A failure prints only stage and a fixed code.
+   For fleet enablement, run `node apps/api/dist/ask-preflight.js` inside the
+   exact released API image with `ASK_DATA_PREFLIGHT=true`. Its receipt includes
+   the image's `APP_VERSION` and `GIT_COMMIT`; the release build supplies both.
+   Local source runs without those build variables report null build metadata
+   and cannot attest to a fleet image. Keep the successful metadata receipt for
+   the enable target; it must match the selected dashboard pin and be less than
+   one hour old. This is an operator checkpoint, not a signed attestation or a
+   substitute for observing the running deployment.
 4. After an authenticated test deployment is configured, enable only that test
    deployment and use its normal dashboard session with `ask:smoke`, as described
    in [the API guide](ASK-YOUR-DATA.md#controlled-operator-checkpoint). This is the
