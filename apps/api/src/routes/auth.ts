@@ -1,11 +1,13 @@
 import type { FastifyBaseLogger, FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import type { Database, User } from "@sr/db";
+import type { Database, Session, User } from "@sr/db";
 import {
+  findInactiveUserByEmail,
   findUserByEmail,
   recordSignIn,
   toPublicUser,
   upsertOAuthUser,
   providerKey,
+  OAuthAccountInactiveError,
   OAuthAccountNotFoundError,
   type OAuthProvider,
 } from "../services/users.js";
@@ -47,7 +49,7 @@ import {
   issueChallenge,
   type FirstFactor,
 } from "../services/two-factor.js";
-import { lazyAuditWriter, type AuditWriter } from "../services/audit.js";
+import { lazyAuditWriter, type AuditEvent, type AuditWriter } from "../services/audit.js";
 import { sendPasswordResetEmail } from "../services/email-templates.js";
 import { emailTransportConfigured } from "../services/email.js";
 import { notifyPasswordChanged } from "../services/password-notice.js";
@@ -95,7 +97,11 @@ export const EMAIL_FIELD = { type: "string" as const, format: "email", maxLength
 /** One message for every dead reset link. MAG-2870: "The same message for both
  *  cases. Telling someone a link was already used also tells an attacker it was
  *  already used." */
-const RESET_GONE = "This link has expired.";
+const RESET_GONE = "This link no longer works. It may have been used, replaced or expired.";
+
+/** `password.reset_requested` notes for the requests that send nothing. */
+const RESET_REQUEST_UNKNOWN_NOTE = "not sent, no account with this address";
+const RESET_REQUEST_NO_PASSWORD_NOTE = "not sent, the account has no password";
 
 interface SignInBody {
   email: string;
@@ -308,6 +314,54 @@ export async function authRoutes(app: FastifyInstance) {
     return app.db;
   }
 
+  /**
+   * A refused sign-in's row, in a transaction of its own so a failed write
+   * fails the request rather than being swallowed. Not the attempt counter's
+   * transaction: that commits before the credential is checked, and holding it
+   * open across bcrypt would hold the address's counter row with it.
+   */
+  async function recordRefusal(db: Database, event: AuditEvent): Promise<void> {
+    await db.transaction((tx) => audit.write(event, tx));
+  }
+
+  /**
+   * Spend one attempt on an address, and when that finds it locked, write the
+   * `signin.blocked` row in the same transaction. No credential is checked in
+   * between, so a write that fails takes back only an attempt past the lock.
+   */
+  async function spendAttempt(
+    db: Database,
+    email: string,
+    blocked: (tx: Database, attempts: number) => Promise<AuditEvent>,
+  ) {
+    return db.transaction(async (tx) => {
+      const attempt = await recordAttempt(tx, email);
+      if (attempt.locked) await audit.write(await blocked(tx, attempt.attempts), tx);
+      return attempt;
+    });
+  }
+
+  /**
+   * The row for a sign-in at an address with no active account but a removed
+   * (or suspended) one: `signin.blocked`, naming that account, as the catalog
+   * defines it. Null when the address has no such account either.
+   */
+  async function inactiveAccountRefusal(
+    db: Database,
+    email: string,
+    access: ResolvedClient["access"],
+  ): Promise<AuditEvent | null> {
+    const inactive = await findInactiveUserByEmail(db, email);
+    if (!inactive) return null;
+    return {
+      action: "signin.blocked",
+      actor: { id: inactive.id, kind: "user", label: email, email },
+      target: { type: "member", id: inactive.id, name: inactive.email },
+      access: { ...access, sessionId: null },
+      note: `account ${inactive.status}`,
+    };
+  }
+
   app.get(
     "/auth/bootstrap",
     {
@@ -444,13 +498,15 @@ export async function authRoutes(app: FastifyInstance) {
 
   /** `invite.expired` fires from wherever the expiry is first *observed* — a
    *  preview, a redemption attempt, or the admin's Invites list — which is a
-   *  read, not a scheduled sweep, so there is nothing to run. */
+   *  read, not a scheduled sweep, so there is nothing to run. The row carries
+   *  the expiry as its time, not the moment it was noticed. */
   async function auditExpiryOnce(lookup: InviteLookup | RedeemResult): Promise<void> {
     if (lookup.ok || !lookup.justExpired || !lookup.invitation) return;
     await audit.write({
       action: "invite.expired",
       actor: { id: null, kind: "system" },
       target: { type: "invite", id: lookup.invitation.id, name: lookup.invitation.email },
+      occurredAt: lookup.invitation.expiresAt,
     });
   }
 
@@ -555,13 +611,67 @@ export async function authRoutes(app: FastifyInstance) {
         });
       }
 
-      const result = await redeemInvitation(db, {
-        rawToken: body.token,
-        password: body.password,
-        verifiedEmail,
-        provider,
-        name: body.name ?? null,
-      });
+      // A session is opened for the OAuth path and only for it, and the
+      // asymmetry is the point rather than an oversight.
+      //
+      // The Google caller is the web tier finishing a sign-in it cannot start
+      // again: it holds a one-shot id_token, not a password, so there is no
+      // second round-trip to fall back on and the session has to come from
+      // here. The password caller is a browser that is about to sign in the
+      // ordinary way a moment later with credentials it just chose — a session
+      // minted here would be one nobody ever presents, exactly the stray row
+      // `/auth/setup` stopped creating.
+      //
+      // All of it happens inside the redemption's transaction, rows included:
+      // an account the log cannot say was created from this invitation is not
+      // created.
+      const opened: { session?: Session } = {};
+      const result = await redeemInvitation(
+        db,
+        {
+          rawToken: body.token,
+          password: body.password,
+          verifiedEmail,
+          provider,
+          name: body.name ?? null,
+        },
+        async (tx, redeemed) => {
+          if (provider && oauthProvider) {
+            opened.session = await createSession(tx, {
+              userId: redeemed.user.id,
+              authMethod: oauthProvider,
+              client,
+            });
+            await recordSignIn(tx, redeemed.user.id);
+          }
+          const sessionId = opened.session?.id ?? null;
+          await audit.write(
+            {
+              action: "invite.redeemed",
+              actor: { id: redeemed.user.id, kind: "user" },
+              target: {
+                type: "invite",
+                id: redeemed.invitation.id,
+                name: redeemed.invitation.email,
+              },
+              access: { ...client.access, sessionId },
+            },
+            tx,
+          );
+          // The session is a sign-in like any other, and the sessions list
+          // shows it. Without this row the log has a session nobody signed in to.
+          if (sessionId) {
+            await audit.write(
+              {
+                action: "signin.succeeded",
+                actor: { id: redeemed.user.id, kind: "user" },
+                access: { ...client.access, sessionId },
+              },
+              tx,
+            );
+          }
+        },
+      );
 
       if (!result.ok) {
         if (result.reason === "email_mismatch") {
@@ -580,44 +690,9 @@ export async function authRoutes(app: FastifyInstance) {
         return replyInviteGone(reply);
       }
 
-      // A session is opened for the OAuth path and only for it, and the
-      // asymmetry is the point rather than an oversight.
-      //
-      // The Google caller is the web tier finishing a sign-in it cannot start
-      // again: it holds a one-shot id_token, not a password, so there is no
-      // second round-trip to fall back on and the session has to come from
-      // here. The password caller is a browser that is about to sign in the
-      // ordinary way a moment later with credentials it just chose — a session
-      // minted here would be one nobody ever presents, exactly the stray row
-      // `/auth/setup` stopped creating.
-      const session =
-        provider && oauthProvider
-          ? await createSession(db, {
-              userId: result.user.id,
-              authMethod: oauthProvider,
-              client,
-            })
-          : null;
-      if (session) await recordSignIn(db, result.user.id);
-      await audit.write({
-        action: "invite.redeemed",
-        actor: { id: result.user.id, kind: "user" },
-        target: { type: "invite", id: result.invitation.id, name: result.invitation.email },
-        access: { ...client.access, sessionId: session?.id ?? null },
-      });
-      // The session is a sign-in like any other, and the sessions list shows
-      // it. Without this row the log has a session nobody signed in to.
-      if (session) {
-        await audit.write({
-          action: "signin.succeeded",
-          actor: { id: result.user.id, kind: "user" },
-          access: { ...client.access, sessionId: session.id },
-        });
-      }
-
       return reply.code(201).send({
         user: toPublicUser(result.user),
-        ...(session ? { sessionId: session.id } : {}),
+        ...(opened.session ? { sessionId: opened.session.id } : {}),
       });
     },
   );
@@ -661,7 +736,8 @@ export async function authRoutes(app: FastifyInstance) {
         return reply.code(500).send({
           statusCode: 500,
           error: "Internal Server Error",
-          message: "PUBLIC_WEB_ORIGIN is not configured, so reset links cannot be built",
+          message:
+            "Reset links can't be made on this deployment because its web address isn't set. Ask whoever runs it.",
         });
       }
       const { email } = request.body as { email: string };
@@ -696,7 +772,27 @@ export async function authRoutes(app: FastifyInstance) {
     const db = app.db;
     if (!db) return;
     const user = await findUserByEmail(db, email);
-    if (!user?.passwordHash) return;
+
+    // A request that sends nothing is still recorded. The note says which case
+    // it was in the same terms a refused sign-in uses, and the caller has
+    // already had the one answer every address gets.
+    if (!user?.passwordHash) {
+      const inactive = user ? null : await findInactiveUserByEmail(db, email);
+      const holder = user ?? inactive;
+      await audit.write({
+        action: "password.reset_requested",
+        actor: holder
+          ? { id: holder.id, kind: "user", label: email, email }
+          : { id: null, kind: "user", label: email, email },
+        access: { ...access, sessionId: null },
+        note: user
+          ? RESET_REQUEST_NO_PASSWORD_NOTE
+          : inactive
+            ? `not sent, account ${inactive.status}`
+            : RESET_REQUEST_UNKNOWN_NOTE,
+      });
+      return;
+    }
 
     // One link per account per cooldown. The route is public and each new link
     // kills the last, so without this anybody who knows an address can keep
@@ -799,7 +895,43 @@ export async function authRoutes(app: FastifyInstance) {
           .send({ statusCode: 400, error: "Bad Request", message: problem.message });
       }
 
-      const outcome = await consumePasswordReset(db, body.token, body.password);
+      // The rows are written inside the reset's transaction: a reset the log
+      // cannot record does not happen.
+      const outcome = await consumePasswordReset(
+        db,
+        body.token,
+        body.password,
+        async (tx, done) => {
+          // The link is a bearer credential, so who used it is unknowable; who
+          // generated it is not, and that is what an auditor needs to connect an
+          // admin-issued link to its redemption.
+          await audit.write(
+            {
+              action: "password.reset_completed",
+              actor: { id: done.user.id, kind: "user" },
+              access: { ...client.access, sessionId: null },
+              note: done.createdBy
+                ? `used a reset link from ${done.createdByName ?? "an admin"}`
+                : "used a self-serve reset link",
+            },
+            tx,
+          );
+          // The ticket's `session.revoked` covers a session killed "by a password
+          // reset": one row per session the reset ended.
+          for (const id of done.revokedSessionIds) {
+            await audit.write(
+              {
+                action: "session.revoked",
+                actor: { id: done.user.id, kind: "user" },
+                target: { type: "session", id, name: done.user.email },
+                access: { ...client.access, sessionId: null },
+                note: "password reset",
+              },
+              tx,
+            );
+          }
+        },
+      );
       if (!outcome.ok) {
         return reply.code(410).send({
           statusCode: 410,
@@ -809,33 +941,17 @@ export async function authRoutes(app: FastifyInstance) {
       }
 
       // After the commit, so a send that fails cannot undo the reset. Managed
-      // only; the note's suffix says whether the owner was told.
+      // only, and on a row of its own: the reset's row has already committed.
       const notice = await notifyPasswordChanged(
         { to: outcome.user.email, changedAt: outcome.changedAt },
         (msg, ctx) => request.log.warn(ctx ?? {}, msg),
       );
-
-      // The link is a bearer credential, so who used it is unknowable; who
-      // generated it is not, and that is what an auditor needs to connect an
-      // admin-issued link to its redemption.
-      const redeemed = outcome.createdBy
-        ? `redeemed a link generated by admin ${outcome.createdBy}`
-        : "redeemed a self-serve link";
-      await audit.write({
-        action: "password.reset_completed",
-        actor: { id: outcome.user.id, kind: "user" },
-        access: { ...client.access, sessionId: null },
-        note: notice ? `${redeemed}; ${notice}` : redeemed,
-      });
-      // The ticket's `session.revoked` covers a session killed "by a password
-      // reset": one row per session the reset ended.
-      for (const id of outcome.revokedSessionIds) {
+      if (notice) {
         await audit.write({
-          action: "session.revoked",
+          action: "password.reset_notice",
           actor: { id: outcome.user.id, kind: "user" },
-          target: { type: "session", id, name: outcome.user.email },
-          access: { ...client.access, sessionId: null },
-          note: "password reset",
+          target: { type: "member", id: outcome.user.id, name: outcome.user.email },
+          note: notice,
         });
       }
 
@@ -876,18 +992,19 @@ export async function authRoutes(app: FastifyInstance) {
       // Spend the attempt BEFORE the password is looked at. Counting first is
       // what keeps a parallel burst inside the per-account budget; a correct
       // password refunds it below.
-      const attempt = await recordAttempt(db, body.email);
-      if (attempt.locked) {
-        const target = await findUserByEmail(db, body.email);
-        await audit.write({
+      const attempt = await spendAttempt(db, body.email, async (tx, attempts) => {
+        const target = await findUserByEmail(tx, body.email);
+        return {
           action: "signin.blocked",
           // Named. A lockout row that doesn't say which address was locked can't be
           // acted on, and the address is right here.
           actor: { id: null, kind: "user", label: body.email.toLowerCase(), email: body.email.toLowerCase() },
           ...(target ? { target: { type: "member" as const, id: target.id, name: target.email } } : {}),
           access: { ...client.access, sessionId: null },
-          note: `${attempt.attempts} attempts on ${body.email.toLowerCase()} this window`,
-        });
+          note: `${attempts} attempts on ${body.email.toLowerCase()} this window`,
+        };
+      });
+      if (attempt.locked) {
         const locked = lockedReply(attempt.until);
         if (locked.retryAfterSec) reply.header("Retry-After", String(locked.retryAfterSec));
         return reply.code(423).send({ statusCode: 423, error: "Locked", message: locked.message });
@@ -899,15 +1016,19 @@ export async function authRoutes(app: FastifyInstance) {
       // doesn't answer the question the response refuses to.
       const ok = await verifyPasswordOrDecoy(body.password, user?.passwordHash);
       if (!user || !ok) {
-        await audit.write({
-          action: "signin.failed",
-          // `label` carries the typed address when no account backs it. Without
-          // it you cannot tell a typo from a run of guesses across a list of
-          // addresses — the investigation this row exists for.
-          actor: { id: user?.id ?? null, kind: "user", label: body.email, email: body.email },
-          access: { ...client.access, sessionId: null },
-          note: user ? "wrong password" : "unknown address",
-        });
+        const inactive = user ? null : await inactiveAccountRefusal(db, body.email, client.access);
+        await recordRefusal(
+          db,
+          inactive ?? {
+            action: "signin.failed",
+            // `label` carries the typed address when no account backs it. Without
+            // it you cannot tell a typo from a run of guesses across a list of
+            // addresses — the investigation this row exists for.
+            actor: { id: user?.id ?? null, kind: "user", label: body.email, email: body.email },
+            access: { ...client.access, sessionId: null },
+            note: user ? "wrong password" : "unknown address",
+          },
+        );
         return reply
           .code(401)
           .send({ statusCode: 401, error: "Unauthorized", message: "Invalid email or password" });
@@ -1006,15 +1127,14 @@ export async function authRoutes(app: FastifyInstance) {
       // attempts and then five code attempts. Spent BEFORE the code is checked,
       // as the password's is, so a parallel burst stays inside the budget; the
       // sign-in that finally succeeds refunds it (`completeSignIn`).
-      const attempt = await recordAttempt(db, email);
+      const attempt = await spendAttempt(db, email, async (_tx, attempts) => ({
+        action: "signin.blocked",
+        actor: { id: claimed.user.id, kind: "user", label: email, email },
+        target: { type: "member", id: claimed.user.id, name: email },
+        access: { ...client.access, sessionId: null },
+        note: `${attempts} attempts on ${email} this window`,
+      }));
       if (attempt.locked) {
-        await audit.write({
-          action: "signin.blocked",
-          actor: { id: claimed.user.id, kind: "user", label: email, email },
-          target: { type: "member", id: claimed.user.id, name: email },
-          access: { ...client.access, sessionId: null },
-          note: `${attempt.attempts} attempts on ${email} this window`,
-        });
         const locked = lockedReply(attempt.until);
         if (locked.retryAfterSec) reply.header("Retry-After", String(locked.retryAfterSec));
         return reply.code(423).send({ statusCode: 423, error: "Locked", message: locked.message });
@@ -1030,23 +1150,23 @@ export async function authRoutes(app: FastifyInstance) {
           "an enrolled two-factor secret could not be decrypted — TOTP_ENCRYPTION_KEY does not match the key it was sealed with",
         );
         await refundAttempt(db, email);
-        await audit.write({
+        await recordRefusal(db, {
           action: "signin.failed",
           actor: { id: claimed.user.id, kind: "user", label: email, email },
           access: { ...client.access, sessionId: null },
-          note: "two-factor secret could not be decrypted (TOTP_ENCRYPTION_KEY)",
+          note: "2FA secret could not be decrypted with this deployment's key",
         });
         return refuse();
       }
       if (!outcome.ok) {
-        await audit.write({
+        await recordRefusal(db, {
           action: "signin.failed",
           actor: { id: claimed.user.id, kind: "user", label: email, email },
           access: { ...client.access, sessionId: null },
           // The one place the distinction is recorded. A run of these against
           // one account means somebody holds a correct password, which reads
           // very differently from a run of "wrong password".
-          note: "wrong two-factor code",
+          note: "wrong 2FA code",
         });
         return refuse();
       }
@@ -1085,11 +1205,29 @@ export async function authRoutes(app: FastifyInstance) {
       const { token } = request.body as OAuthBody;
       const client = resolveClientContext(request, internalSecret);
 
+      const label = PROVIDER_LABEL[provider];
+      const access = { ...client.access, sessionId: null };
+      /** The row for an account that exists and is not active. */
+      const inactiveRefusal = (inactive: User): AuditEvent => ({
+        action: "signin.blocked",
+        actor: { id: inactive.id, kind: "user" },
+        target: { type: "member", id: inactive.id, name: inactive.email },
+        access,
+        note: `${label} sign-in, account ${inactive.status}`,
+      });
+
       let profile;
       try {
         profile = await verifyOAuthToken(provider, token);
       } catch (err) {
         request.log.warn({ provider, err: (err as Error).message }, "oauth verification failed");
+        // Nothing verified, so nobody to name: the row says only where it came from.
+        await recordRefusal(db, {
+          action: "signin.failed",
+          actor: { id: null, kind: "user" },
+          access,
+          note: `${label} sign-in could not be verified`,
+        });
         return reply
           .code(401)
           .send({ statusCode: 401, error: "Unauthorized", message: `${provider} token verification failed` });
@@ -1100,6 +1238,23 @@ export async function authRoutes(app: FastifyInstance) {
         user = await upsertOAuthUser(db, provider, profile);
       } catch (err) {
         if (err instanceof OAuthAccountNotFoundError) {
+          const email = profile.email;
+          const inactive = email ? await findInactiveUserByEmail(db, email) : null;
+          await recordRefusal(
+            db,
+            inactive
+              ? inactiveRefusal(inactive)
+              : {
+                  action: "signin.failed",
+                  actor: email
+                    ? { id: null, kind: "user", label: email, email }
+                    : { id: null, kind: "user" },
+                  access,
+                  note: email
+                    ? `${label} sign-in, no account with this address`
+                    : `${label} sign-in, no verified email address`,
+                },
+          );
           // Not 401: the token was fine, the account simply doesn't exist. A
           // person who was never invited should be told that, not left
           // retrying their password.
@@ -1107,11 +1262,15 @@ export async function authRoutes(app: FastifyInstance) {
             .code(403)
             .send({ statusCode: 403, error: "Forbidden", message: err.message });
         }
+        if (err instanceof OAuthAccountInactiveError) {
+          await recordRefusal(db, inactiveRefusal(err.user));
+        }
         return reply
           .code(400)
           .send({ statusCode: 400, error: "Bad Request", message: (err as Error).message });
       }
       if (user.status !== "active") {
+        await recordRefusal(db, inactiveRefusal(user));
         return reply
           .code(403)
           .send({ statusCode: 403, error: "Forbidden", message: "This account is no longer active" });

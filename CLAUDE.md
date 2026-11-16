@@ -370,7 +370,8 @@ apps/web/                 @sr/web — Next.js 16 App Router (:3000)
     lib/idle-store.ts   the idle gate's clock: page activity → SWR's isPaused
     lib/api-client.ts   base URL resolved ONCE per session from /api/config
     lib/datetime.ts     every date and time shown: one format, in the reader's
-                        zone (`<LocalTime>` renders one); CSV + API stay ISO UTC
+                        zone (`<LocalTime>` renders one), and in UTC where a time
+                        is matched with an email; CSV + API stay ISO UTC
     styles/globals.css  design tokens + gw-* classes, 1:1 from the prototype
 ```
 
@@ -760,6 +761,15 @@ the log; the accounts, 2FA and config-approval tasks only emit into it.
   because the log is unwell); inside a transaction it propagates, because the
   failed insert has already aborted the caller's transaction and catching it
   would turn an atomicity guarantee into a silent maybe.
+  The rows that record getting into an account go in the change's
+  transaction: a reset link generated or used, an invitation redeemed, and
+  everything a removal or role change writes, including revoking what a
+  removed or demoted admin handed out. A refused sign-in's row goes in a
+  transaction of its own (`recordRefusal` in `routes/auth.ts`), so a failed
+  write answers 500; the attempt it spent has already committed and stays
+  counted. A lockout's `signin.blocked` shares the counter's transaction.
+  `occurredAt` stamps a row noticed after the fact with the time it
+  happened (`invite.expired` carries the expiry).
 - **Redaction happens on the way in.** `audit/format.ts` is the only way values
   reach a row: `(none)` · `(new)` · `(deleted)` · `yes`/`no` · stable
   comma-joined lists · `(changed, ends a91f)`. There is no un-redacted copy in
@@ -797,6 +807,13 @@ the log; the accounts, 2FA and config-approval tasks only emit into it.
   The viewer asks for `order=desc`; a customer's tooling takes the default and
   pulls oldest-first on a schedule. Deliberately the same code path — a screen
   that could disagree with what a security team pulls is worse than no screen.
+- **A session is a reference on every read surface.** `toRecord`
+  (`audit-read.ts`) serves `context.session`, and the `target.id` of a
+  `session` target, as `auditSessionRef(id)`: the first 12 hex characters of
+  the id's SHA-256. The page, the export and the pull API never carry the id a
+  session token addresses, and the rows of one sign-in still share a value.
+  `target_id` takes the reference (`sha256()` in SQL); a session id there
+  matches nothing.
 - **The cursor is gap-free by construction, not by timing.** `seq` is handed
   out at `INSERT`, not at `COMMIT`, so two writers can take 100 and 101 and
   commit in the other order; a reader trusting `seq` alone serves 101, the
@@ -905,8 +922,8 @@ each poll's timer at its normal cadence. The phases run on the wall clock,
 so a laptop that slept through the hour wakes up paused instead of polling
 first. A hidden tab doesn't poll at all (SWR's default). **The standalone
 page is exempt** (`idleGateApplies`): it is for shared and wall screens that
-nobody touches, so it never slows or pauses. The Team page's member list and
-the Account page's sessions call `useSWR` directly, outside the gate.
+nobody touches, so it never slows or pauses. The Account page's sessions
+call `useSWR` directly, outside the gate.
 
 ## API endpoints
 
@@ -936,7 +953,7 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 | `GET /api/team/members` · `GET /api/team/members.csv` | — | `{ members[], adminCount, soleAdmin }`, admins first · the same list as CSV with formula leads neutralised. Every role — the access review is for everyone |
 | `PATCH /api/team/members/:id` · `DELETE …/:id` | — | `{ role }` → change a role (revokes nothing; the gate reads the row) · remove (state change, one transaction: sessions, cutoff, provider ids, pending invite). 409 on your own row, 404 on someone not active, 403 if you stopped being an admin mid-request. Admin |
 | `POST /api/account/password` | — | `{ current, next }` — signs out your other devices, keeps this one. Tests a credential, so: sign-in's per-IP limit (10/min) **and** the account's lockout budget (`423` once spent). After the commit, managed only, emails the owner that the password changed (no link; the outcome is `password.changed`'s note) |
-| `GET /api/account/me` | — | The caller from the live account row — id, email, name, avatar, role. What the web's `useMe()` polls, so a role change reaches the sidebar badge and the Team page without a new sign-in |
+| `GET /api/account/me` | — | The caller from the live account row — id, email, name, avatar, role, the sign-in providers it is linked to (`linkedProviders`), its 2FA state. What the web's `useMe()` polls, so a role change reaches the sidebar badge and the Team page without a new sign-in |
 | `GET /api/account/sessions` · `DELETE …/:id` · `DELETE …` | — | Your live sessions · sign out one device · sign out everywhere |
 | `GET /health` | — | Liveness — `{ health: "ok" }` |
 | `GET /health/ready` | — | Readiness — runs `vector(1)` against the store (not `-/ready`, which Mimir and a query-only proxy don't serve) with the configured credential; 503 + `components.prometheus:"ping_failed"` on failure, including a 401. Under `AUTH_MODE=enabled` it also runs `select 1` on the database, within 3 s: `components.database` is `ok`, `not_connected` (the lazy connect has not succeeded — Postgres unreachable, the credential refused, or migrations still running), `query_failed` or `timeout`, and anything but `ok` is a 503, so a pod whose database does not answer never becomes Ready and a surge-first rollout keeps the old pods serving. Absent from the body with auth off |
@@ -981,7 +998,7 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 | `POST /api/account/2fa/begin` · `/confirm` | — · `{code}` | Enrolment. `begin` returns the QR (server-rendered SVG) and the secret as text, once; `confirm` proves a code and turns 2FA on. Refused 409 for an already-enrolled account — an admin reset is the only way back |
 | `POST /api/team/members/:id/2fa/reset` | — | Admin only, and not for your own account (409). Destroys the secret, retires live challenges, signs them out everywhere, in one transaction with `2fa.reset` (naming both people) and a `session.revoked` per ended session. Then, on managed, emails the member, naming who reset it and when, and records the outcome as `2fa.reset_notice`; a failed send never undoes the reset. `notified: "email"` when it was sent, else `"on_next_signin"` (always on-prem). See [`docs/TWO-FACTOR.md`](docs/TWO-FACTOR.md) |
 | `GET /api/audit/events` | `from?`, `to?`, `actor?`, `action?` (repeatable), `group?` (repeatable), `target_type?`, `target_id?`, `order?`, `per_page?`, `after?`, `before?` | `AuditEventsResponse` — `{ items, cursor, has_more, start_cursor, has_previous }`. **`AUTH_MODE=enabled` only**; any role, no gate beyond a live session. **Oldest first by default** and resumable — feed `cursor` back as `after`; `start_cursor` as `before` reads the page ahead of this one (newer rows under `order=desc`, how the Audit log page steps back). A misspelled `action`/`group`, an `actor` that is neither a UUID nor an address, an unparseable time, `after` with `before`, and a cursor that is malformed, past the largest `xid8`, or from a different filter set or direction are all **400**, never an empty page or a 500 |
-| `GET /api/audit/export.csv` | same filters as `/api/audit/events` (no `after`/`before`/`per_page`) | The same events as a **streamed** CSV — one row per changed field sharing an `event_id`, events with nothing to diff getting one row with the field columns empty. UTF-8 BOM (Excel ignores the charset header on a downloaded file), CRLF per RFC 4180, and every field run through `escapeCsvField` so a name someone typed as `=HYPERLINK(…)` opens as text. Paged internally, so the whole matching history is served without holding it in memory |
+| `GET /api/audit/export.csv` | same filters as `/api/audit/events` (no `after`/`before`/`per_page`) | The same events as a **streamed** CSV — one row per changed field sharing an `event_id`, events with nothing to diff getting one row with the field columns empty. Each row carries the event's `ip`, `client` and `session` reference, empty on events with no access context. UTF-8 BOM (Excel ignores the charset header on a downloaded file), CRLF per RFC 4180, and every field run through `escapeCsvField` so a name someone typed as `=HYPERLINK(…)` opens as text. Paged internally, so the whole matching history is served without holding it in memory |
 | `GET /api/audit/tokens` | — | `{ tokens }` — **admin only**. Never returns a hash; a token is identified by name + last four characters, with `lastUsedAt` / `lastUsedIp` |
 | `POST /api/audit/tokens` | body `{ name }` | **admin only**. Mints a read-only pull token and returns `{ token, secret }` — the **only** time the value exists. Stored as SHA-256; lost means revoke and re-issue |
 | `DELETE /api/audit/tokens/:id` | — | **admin only**. Revokes; the token stops working on the next request. 404 when already revoked or unknown — the two are one answer so an id can't be confirmed by guessing |
@@ -1090,7 +1107,7 @@ API (`apps/api/src/config.ts` is the source of truth):
 | `LOKI_ORG_ID` | unset | sent as `X-Scope-OrgID`, for a Loki that takes the org from the client; unset sends no header |
 | `LOG_LEVEL` | `info` | |
 | `TENANT_ID` | — | set by the chart, **not read**. The multi-tenant store pins `X-Scope-OrgID` from the credential that authenticated, so the api never names its own org — a config field that did would move the tenancy boundary into a values file |
-| `GIT_COMMIT` / `APP_VERSION` | `unknown` / `0.0.0` | surfaced by `/version` |
+| `GIT_COMMIT` / `APP_VERSION` | `unknown` / `0.0.0` | surfaced by `/version`; `build-and-push.yml` sets both on every published image (the commit is `github.sha`) |
 | `NODE_ENV` | `production` | non-prod enables `/docs` + pretty logs |
 
 Auth (only read when `AUTH_MODE=enabled`; the metrics path never touches the DB):
@@ -1113,7 +1130,7 @@ Auth (only read when `AUTH_MODE=enabled`; the metrics path never touches the DB)
 | `TOTP_ENCRYPTION_KEY` | (unset) | **Required.** 32 bytes (base64 or hex) encrypting every enrolled TOTP secret at rest. The api refuses to boot without it: the 2FA gate shuts the dashboard to anyone unenrolled, enrolment is the only way through, and enrolment needs this key — so missing it locks out every account at once. Deliberately NOT derived from `AUTH_SECRET`, whose rotation is routine and would otherwise invalidate every enrolled phone. `openssl rand -base64 32` |
 | `TOTP_ISSUER` | `Smart Router` | What an authenticator app shows as the issuer. Override it so somebody administering two dashboards can tell the entries apart |
 | `PUBLIC_WEB_ORIGIN` | (unset) | browser-facing origin of the web app, used to build invitation and password-reset links. Routes that need it fail loudly when it is unset rather than guessing a host — `POST /api/team/invites` 500s. Both compose files default it to the web's `AUTH_URL` |
-| `CUSTOMER_NAME` | `Smart Router` | Who the deployment belongs to, as it appears in the invitation subject ("You've been added to **{customer}** on Smart Router") |
+| `CUSTOMER_NAME` | `Smart Router` | Who the deployment belongs to, as the emails name the dashboard; the invitation subject is "{inviter} invited you to the Smart Router dashboard for **{customer}**". The fleet sets the tenant's name |
 | `AWS_REGION` | (unset) | **Enables email.** Unset ⇒ nothing is sent; a `warn` line names the recipient, and only under `NODE_ENV=development` carries the body (it holds a live link). On-prem that is correct. On managed it means the admin carries invitation links, and self-serve reset answers 404 rather than issue a link nobody receives |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | (unset) | Optional. Both set ⇒ the SES client signs with this pair: the fleet's managed deployments get one per tenant from a Secret (the chart's `mail.accessKeySecret`), scoped to sending as the no-reply address through that tenant's configuration set. Absent ⇒ the SDK resolves credentials from the environment (IRSA / instance role). `ses-credentials.test.ts` pins that the pair alone signs the send |
 | `EMAIL_FROM` | `Smart Router <noreply@smart-router.local>` | Sender. An unmonitored no-reply |

@@ -3,6 +3,9 @@
 import { useState, type FormEvent } from "react";
 import { RESET_TTL_MS } from "@sr/shared";
 import { apiUrl } from "@/lib/api-client";
+import { AuthScreen } from "./auth-screen";
+import { emailProblem } from "./field-checks";
+import { Field, FormError } from "./form-fields";
 
 /**
  * Asking for a password-reset link — the managed half of MAG-2870's reset flow.
@@ -26,9 +29,13 @@ export function ForgotForm() {
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [submitted, setSubmitted] = useState(false);
+  const emailError = submitted ? emailProblem(email) : null;
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
+    setSubmitted(true);
+    if (emailProblem(email)) return;
     setBusy(true);
     setError(null);
     try {
@@ -60,16 +67,7 @@ export function ForgotForm() {
   }
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "var(--bg)",
-        padding: 24,
-      }}
-    >
+    <AuthScreen>
       <div className="gw-card" style={{ width: "100%", maxWidth: 400, padding: 32 }}>
         <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 8 }}>
           {sent ? "Check your inbox" : "Reset your password"}
@@ -89,47 +87,29 @@ export function ForgotForm() {
                 margin: "0 0 20px",
               }}
             >
-              Nothing has changed yet — your current password still works until you use the link.
+              Nothing has changed yet. Your current password still works until you use the link.
             </p>
             <a className="gw-btn" href="/login" style={{ justifyContent: "center", width: "100%" }}>
               Back to sign in
             </a>
           </>
         ) : (
-          <form onSubmit={onSubmit} style={{ display: "grid", gap: 12 }}>
+          <form noValidate onSubmit={onSubmit} style={{ display: "grid", gap: 12 }}>
             <p style={{ fontSize: 13, color: "var(--text-2)", lineHeight: 1.6, margin: "0 0 4px" }}>
               Enter your address and we&apos;ll send you a link to choose a new password.
             </p>
-            <label style={{ display: "grid", gap: 6, fontSize: 12, color: "var(--text-2)" }}>
-              Email
-              <input
-                className="gw-input"
-                type="email"
-                autoComplete="email"
-                required
-                autoFocus
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@yourcompany.com"
-              />
-            </label>
+            <Field
+              label="Email"
+              type="email"
+              autoComplete="email"
+              autoFocus
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@yourcompany.com"
+              error={emailError}
+            />
 
-            {error && (
-              <div
-                role="alert"
-                style={{
-                  fontSize: 12,
-                  color: "var(--err)",
-                  background: "rgba(239,68,68,0.08)",
-                  border: "1px solid rgba(239,68,68,0.25)",
-                  borderRadius: 7,
-                  padding: "8px 10px",
-                  lineHeight: 1.5,
-                }}
-              >
-                {error}
-              </div>
-            )}
+            <FormError message={error} />
 
             <button
               className="gw-btn gw-btn--primary"
@@ -153,6 +133,6 @@ export function ForgotForm() {
           </form>
         )}
       </div>
-    </main>
+    </AuthScreen>
   );
 }

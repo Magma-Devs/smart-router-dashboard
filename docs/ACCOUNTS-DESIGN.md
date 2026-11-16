@@ -30,16 +30,16 @@ those decisions, not the operator reference.
 | 11, 16 | 2FA column renders `—` | Populated: two-factor sign-in is required ([`TWO-FACTOR.md`](TWO-FACTOR.md)), Google and GitHub sign-in ask for the code too, and an admin can reset a member's 2FA |
 | 4 | One migration, `0001_accounts.sql` | `0001_accounts`, `0002_invitations`, `0003_password_lifecycle`, then `0005_magma_account`; 2FA and audit add their own |
 | 14 | Test harness to be decided | pglite: real in-process Postgres, no Docker |
-| 13.3 | Remove the shared credential from the chart | The chart no longer carries one; its `dashboard.auth` block turns accounts on per deployment (§13.3) |
+| 13.3 | Remove the shared credential from the chart | The chart carries none; its `dashboard.auth` block turns accounts on per deployment (§13.3), and the fleet's tenant template turns them on for every new managed deployment ([`AUTH.md`](AUTH.md#deployment-modes)) |
 
 ---
 
 ## 1. Goals and non-goals
 
 A customer will not make real configuration changes through the dashboard until it meets
-their SOC 2 requirements. Today every customer deployment shares one username and
-password. This is not "add roles to the login we have" — it is the account system,
-and every other task in the epic needs a named actor to attribute rows to.
+their SOC 2 requirements, and a login everybody at a customer shares does not. This is not
+"add roles to a shared login" — it is the account system, and every other task in the epic
+needs a named actor to attribute rows to.
 
 ### Goals
 

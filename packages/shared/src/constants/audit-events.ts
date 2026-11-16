@@ -58,7 +58,7 @@ export const AUDIT_GROUP_FALLBACK = "unclassified";
 
 /** Which ticket emits an event. Provenance for the docs; drives no behaviour. */
 export type AuditOrigin =
-  "MAG-2729" | "MAG-2730" | "MAG-2731" | "MAG-2770" | "MAG-4403" | "MAG-2869";
+  "MAG-2729" | "MAG-2730" | "MAG-2731" | "MAG-2770" | "MAG-4403" | "MAG-2869" | "MAG-5351";
 
 export interface AuditEventSpec {
   readonly group: AuditGroup;
@@ -108,7 +108,7 @@ export const AUDIT_EVENTS = {
   "signin.failed": {
     group: "access",
     description:
-      "A sign-in attempt was refused. The actor is the matching account when the address is known, and unattributed when it is not.",
+      "A sign-in attempt was refused: a wrong password or code, an address with no account, or a Google or GitHub account that is not a member. The actor is the matching account when the address is known, and unattributed when it is not.",
     carriesChanges: false,
     carriesAccessContext: true,
     origin: "MAG-2729",
@@ -131,7 +131,7 @@ export const AUDIT_EVENTS = {
   "session.revoked": {
     group: "access",
     description:
-      "A session was ended by something other than its holder signing out — revoked from the sessions list, or ended by a password change, a password reset or a removal.",
+      "A session was ended by something other than its holder signing out of it: revoked from the sessions list or by signing out everywhere, or ended by a password change, a password reset, a two-factor reset or a removal.",
     carriesChanges: false,
     carriesAccessContext: true,
     origin: "MAG-2729",
@@ -150,7 +150,8 @@ export const AUDIT_EVENTS = {
   },
   "password.reset_requested": {
     group: "accounts",
-    description: "A password reset was requested for an account.",
+    description:
+      "Somebody asked for a reset link from the sign-in page. Recorded for every request, including the ones that send nothing; the note says what became of it.",
     carriesChanges: false,
     carriesAccessContext: true,
     origin: "MAG-2729",
@@ -170,6 +171,24 @@ export const AUDIT_EVENTS = {
     carriesChanges: false,
     carriesAccessContext: true,
     origin: "MAG-2729",
+  },
+  // Its own row because `password.reset_completed` commits in the reset's
+  // transaction, before the email is attempted, and a row cannot be amended.
+  "password.reset_notice": {
+    group: "accounts",
+    description:
+      "The email telling an account's owner that a reset link changed their password: whether it was sent, and if not, why. Managed deployments only; on-prem sends no email.",
+    carriesChanges: false,
+    carriesAccessContext: false,
+    origin: "MAG-5351",
+  },
+  "password.reset_link_revoked": {
+    group: "accounts",
+    description:
+      "An unused reset link died before anyone used it, because the admin who generated it was removed or is no longer an admin.",
+    carriesChanges: false,
+    carriesAccessContext: false,
+    origin: "MAG-5351",
   },
 
   // ── Setup ─────────────────────────────────────────────────────────────────
@@ -201,14 +220,16 @@ export const AUDIT_EVENTS = {
   },
   "invite.revoked": {
     group: "people",
-    description: "A pending invitation was withdrawn before it was redeemed.",
+    description:
+      "A pending invitation was withdrawn before it was redeemed: by an admin, by the removal of the person it was for, or because the admin who sent it was removed or is no longer an admin.",
     carriesChanges: false,
     carriesAccessContext: false,
     origin: "MAG-2729",
   },
   "invite.expired": {
     group: "people",
-    description: "An invitation passed its expiry unredeemed.",
+    description:
+      "An invitation passed its expiry unredeemed. The row is recorded the first time the expiry is noticed, and its time is the expiry itself.",
     carriesChanges: false,
     carriesAccessContext: false,
     origin: "MAG-2729",
@@ -380,7 +401,8 @@ export const AUDIT_EVENTS = {
   },
   "apikey.deleted": {
     group: "config",
-    description: "An API key was deleted. Anything using it stops working.",
+    description:
+      "An API key was deleted, by an admin or because the admin who created it was removed or is no longer an admin. Anything using it stops working.",
     carriesChanges: false,
     carriesAccessContext: false,
     origin: "MAG-2731",

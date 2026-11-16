@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { Database } from "@sr/db";
-import { EMAIL_DELIVERY_NOTES, isRole, toCsv, type Role } from "@sr/shared";
+import { EMAIL_DELIVERY_NOTES, isRole, ROLE_LABELS, toCsv, type Role } from "@sr/shared";
 import { requireRole, type AuthUser } from "../plugins/auth.js";
 import { lazyAuditWriter, type AuditWriter } from "../services/audit.js";
 import {
@@ -23,7 +23,7 @@ import { deploymentMode, publicWebOrigin } from "../config.js";
 import { EMAIL_FIELD, resolveClientContext } from "./auth.js";
 import { clearEnrolment, isEnrolled, revokeChallenges } from "../services/two-factor.js";
 import { signOutEverywhere } from "../services/sessions.js";
-import { sendInvitationEmail } from "../services/email-templates.js";
+import { sendInvitationEmail, type NamedPerson } from "../services/email-templates.js";
 import { noticeTwoFactorReset, resetByLabel } from "../services/two-factor-reset-notice.js";
 
 /**
@@ -78,10 +78,13 @@ export async function teamRoutes(app: FastifyInstance) {
     // Same reason `app.ts` re-reads AUTH_MODE and `plugins/db.ts` DATABASE_URL.
     const origin = publicWebOrigin();
     if (!origin) {
+      // The variable's name is for the operator's log; the admin is told in words.
+      reply.log.error("PUBLIC_WEB_ORIGIN is not set, so an invitation link cannot be built");
       void reply.code(500).send({
         statusCode: 500,
         error: "Internal Server Error",
-        message: "PUBLIC_WEB_ORIGIN is not configured, so invitation links cannot be built",
+        message:
+          "Invitation links can't be made on this deployment because its web address isn't set. Ask whoever runs it.",
       });
       return null;
     }
@@ -113,7 +116,7 @@ export async function teamRoutes(app: FastifyInstance) {
       error: "Forbidden",
       code: "TWO_FACTOR_REQUIRED",
       message:
-        "Set up two-factor authentication before inviting anyone. You are about to give somebody else access to this deployment.",
+        "Set up 2FA before inviting anyone. You are about to give somebody else access to this deployment.",
     });
     return false;
   }
@@ -128,12 +131,14 @@ export async function teamRoutes(app: FastifyInstance) {
 
       // `invite.expired` fires from wherever an expiry is first observed. This
       // list sees every invitation, so an expired one nobody opens is still
-      // recorded — the first time an admin looks, and only then.
+      // recorded — the first time an admin looks, and only then, stamped with
+      // the expiry rather than the look.
       for (const expired of await noteExpiredInvitations(db)) {
         await audit.write({
           action: "invite.expired",
           actor: { id: null, kind: "system" },
           target: { type: "invite", id: expired.id, name: expired.email },
+          occurredAt: expired.expiresAt,
         });
       }
 
@@ -216,6 +221,8 @@ export async function teamRoutes(app: FastifyInstance) {
         url: inviteUrl(origin, rawToken),
         expiresAt: invitation.expiresAt,
         mode,
+        invitedBy: me.user,
+        role: invitation.role,
       });
 
       // No `changes`: the catalog marks this verb carriesChanges:false. The note
@@ -226,7 +233,7 @@ export async function teamRoutes(app: FastifyInstance) {
         action: "member.invited",
         actor: { id: me.id, kind: "user" },
         target: { type: "invite", id: invitation.id, name: invitation.email },
-        note: `as ${invitation.role}, expires ${invitation.expiresAt.toISOString()}; ${sent.note}`,
+        note: `as ${ROLE_LABELS[invitation.role]}, expires ${invitation.expiresAt.toISOString()}; ${sent.note}`,
       });
 
       return reply.code(201).send({
@@ -284,6 +291,8 @@ export async function teamRoutes(app: FastifyInstance) {
         url: inviteUrl(origin, result.rawToken),
         expiresAt: result.invitation.expiresAt,
         mode,
+        invitedBy: me.user,
+        role: result.invitation.role,
       });
 
       await audit.write({
@@ -376,7 +385,7 @@ export async function teamRoutes(app: FastifyInstance) {
           statusCode: 409,
           error: "Conflict",
           message:
-            "You cannot reset your own two-factor authentication. Ask another administrator.",
+            "You cannot reset your own 2FA. Ask another admin.",
         });
       }
 
@@ -387,7 +396,7 @@ export async function teamRoutes(app: FastifyInstance) {
         return reply.code(409).send({
           statusCode: 409,
           error: "Conflict",
-          message: "That member has not set up two-factor authentication.",
+          message: "That member has not set up 2FA.",
         });
       }
 
@@ -421,7 +430,7 @@ export async function teamRoutes(app: FastifyInstance) {
             // "who cleared whose" without a join.
             target: { type: "member", id: target.id, name: target.email },
             access: { ...access, sessionId: me.sessionId },
-            note: `two-factor reset for ${target.email}`,
+            note: `2FA reset for ${target.email}`,
           },
           tx,
         );
@@ -434,7 +443,7 @@ export async function teamRoutes(app: FastifyInstance) {
               actor: { id: me.id, kind: "user" },
               target: { type: "session", id: sessionId, name: target.email },
               access: { ...access, sessionId: me.sessionId },
-              note: "two-factor reset",
+              note: "2FA reset",
             },
             tx,
           );
@@ -487,7 +496,15 @@ export async function teamRoutes(app: FastifyInstance) {
  */
 async function deliverInviteLink(
   app: FastifyInstance,
-  opts: { to: string; url: string; expiresAt: Date; mode: "managed" | "onprem" },
+  opts: {
+    to: string;
+    url: string;
+    expiresAt: Date;
+    mode: "managed" | "onprem";
+    /** The admin sending this link; the email names them. */
+    invitedBy: NamedPerson;
+    role: Role;
+  },
 ): Promise<{ url?: string; delivery: "email" | "link"; fallback: boolean; note: string }> {
   if (opts.mode === "onprem") {
     return { url: opts.url, delivery: "link", fallback: false, note: EMAIL_DELIVERY_NOTES.link };
@@ -495,7 +512,7 @@ async function deliverInviteLink(
 
   const days = Math.max(1, Math.round((opts.expiresAt.getTime() - Date.now()) / 86_400_000));
   const { delivery } = await sendInvitationEmail(
-    { to: opts.to, inviteUrl: opts.url, expiresInDays: days },
+    { to: opts.to, inviteUrl: opts.url, expiresInDays: days, invitedBy: opts.invitedBy, role: opts.role },
     (msg, ctx) => app.log.warn(ctx ?? {}, msg),
   );
 
@@ -536,10 +553,12 @@ export async function teamPasswordRoutes(app: FastifyInstance) {
       }
       const origin = publicWebOrigin();
       if (!origin) {
+        request.log.error("PUBLIC_WEB_ORIGIN is not set, so a reset link cannot be built");
         return reply.code(500).send({
           statusCode: 500,
           error: "Internal Server Error",
-          message: "PUBLIC_WEB_ORIGIN is not configured, so reset links cannot be built",
+          message:
+            "Reset links can't be made on this deployment because its web address isn't set. Ask whoever runs it.",
         });
       }
 
@@ -568,24 +587,31 @@ export async function teamPasswordRoutes(app: FastifyInstance) {
         });
       }
 
-      const created = await createPasswordReset(db, {
-        userId: target.id,
-        mode: deploymentMode(),
-        // The column an auditor reads: an admin started this, not the holder.
-        createdBy: me.id,
-      });
-
       // Access context is required here by the catalog, and rightly: an admin
       // minting a reset link for somebody else is the first half of an account
       // takeover, so "from where" is part of the record. From where THIS
       // request came, not where the admin signed in: the two differ exactly
       // when a session is used from somewhere else, which is the case to catch.
       const { access } = resolveClientContext(request, undefined);
-      await audit.write({
-        action: "password.reset_link_generated",
-        actor: { id: me.id, kind: "user" },
-        target: { type: "member", id: target.id, name: target.email },
-        access: { ...access, sessionId: me.sessionId },
+      // The link and its row in one transaction: a link the log cannot record
+      // is not issued.
+      const created = await db.transaction(async (tx) => {
+        const link = await createPasswordReset(tx, {
+          userId: target.id,
+          mode: deploymentMode(),
+          // The column an auditor reads: an admin started this, not the holder.
+          createdBy: me.id,
+        });
+        await audit.write(
+          {
+            action: "password.reset_link_generated",
+            actor: { id: me.id, kind: "user" },
+            target: { type: "member", id: target.id, name: target.email },
+            access: { ...access, sessionId: me.sessionId },
+          },
+          tx,
+        );
+        return link;
       });
 
       // An admin never sets someone else's password — they hand over a link and

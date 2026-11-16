@@ -2,23 +2,24 @@
  * Every date and time the dashboard shows: one format, in the reader's own
  * time zone.
  *
- * The zone is the browser's. No formatter here names a `timeZone`, so
- * `Intl.DateTimeFormat` uses the one the reader's machine is set to, and a
- * reader in Tel Aviv and one in New York each see their own wall clock. The
- * format is the same on every screen: English month names and a 24-hour
- * clock (`hourCycle: "h23"`, so midnight reads 00:00, never 24:00).
+ * The zone is the browser's. No formatter here but `fmtDateTimeUtc` names a
+ * `timeZone`, so `Intl.DateTimeFormat` uses the one the reader's machine is
+ * set to, and a reader in Tel Aviv and one in New York each see their own wall
+ * clock. The format is the same on every screen: English month names and a
+ * 24-hour clock (`hourCycle: "h23"`, so midnight reads 00:00, never 24:00).
  *
- *   fmtTime       14:22                         chart axes, the ends of a range
- *   fmtTimeSec    14:22:07                      a list row's time
- *   fmtDay        Nov 12                        chart axes, a list row's date
- *   fmtDate       Nov 12, 2026                  a date on its own: joined, expires
- *   fmtDayTime    Nov 12, 14:22                 chart tooltips, a range's start
- *   fmtDateTime   Nov 12, 2026, 14:22:07 GMT+2  one instant in full, with its zone
- *   fmtRelative   3 min ago                     "is this person still around"
- *   zoneLabel     GMT+2                         beside a column of times
- *   zoneName      Asia/Jerusalem                its tooltip
- *   isoUtc        2026-11-12T12:22:07.000Z      the instant itself: `<time dateTime>`
- *   timeTitle     both of the last two          the tooltip on a shown time
+ *   fmtTime         14:22                         chart axes, the ends of a range
+ *   fmtTimeSec      14:22:07                      a list row's time
+ *   fmtDay          Nov 12                        chart axes, a list row's date
+ *   fmtDate         Nov 12, 2026                  a date on its own: joined, expires
+ *   fmtDayTime      Nov 12, 14:22                 chart tooltips, a range's start
+ *   fmtDateTime     Nov 12, 2026, 14:22:07 GMT+2  one instant in full, with its zone
+ *   fmtDateTimeUtc  Nov 12, 2026, 12:22:07 UTC    the same in UTC, the zone of the emails
+ *   fmtRelative     3 min ago                     "is this person still around"
+ *   zoneLabel       GMT+2                         beside a column of times
+ *   zoneName        Asia/Jerusalem                its tooltip
+ *   isoUtc          2026-11-12T12:22:07.000Z      the instant itself: `<time dateTime>`
+ *   timeTitle       both of the last two          the tooltip on a shown time
  *
  * `fmtDay` and `fmtDayTime` leave the year out: they label charts and the
  * request lists, which reach back 30 days at most.
@@ -50,7 +51,23 @@ const FORMATS = {
   day: { month: "short", day: "numeric" },
   date: { month: "short", day: "numeric", year: "numeric" },
   dayTime: { month: "short", day: "numeric", ...CLOCK },
-  dateTime: { month: "short", day: "numeric", year: "numeric", ...CLOCK, second: "2-digit", timeZoneName: "shortOffset" },
+  dateTime: {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    ...CLOCK,
+    second: "2-digit",
+    timeZoneName: "shortOffset",
+  },
+  dateTimeUtc: {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    ...CLOCK,
+    second: "2-digit",
+    timeZone: "UTC",
+    timeZoneName: "short",
+  },
   zone: { timeZoneName: "shortOffset" },
 } satisfies Record<string, Intl.DateTimeFormatOptions>;
 
@@ -87,6 +104,9 @@ export const fmtDate = (t: Instant) => format("date", t);
 export const fmtDayTime = (t: Instant) => format("dayTime", t);
 /** `Nov 12, 2026, 14:22:07 GMT+2` - the zone it was in then, which a DST change can make differ from today's. */
 export const fmtDateTime = (t: Instant) => format("dateTime", t);
+/** `Nov 12, 2026, 12:22:07 UTC` - an instant as an email states it (to the
+ *  second), so a row on screen can be matched with the notice it sent. */
+export const fmtDateTimeUtc = (t: Instant) => format("dateTimeUtc", t);
 
 /** `GMT+2`, `GMT-5`, `GMT+5:30`, `GMT`: the reader's offset at `t` (now by default). */
 export function zoneLabel(t: Instant = Date.now()): string {

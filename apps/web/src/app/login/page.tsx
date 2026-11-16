@@ -4,6 +4,7 @@ import { HOME_PATH } from "@/lib/home-path";
 import { oauthProviderFlags } from "@/auth.config";
 import { LoginForm } from "@/components/auth/login-form";
 import { fetchBootstrap } from "@/lib/bootstrap";
+import { signInNotice } from "@/lib/sign-in-notice";
 import { TWO_FACTOR_HANDOFF_COOKIE, decodeHandoff } from "@/lib/two-factor-handoff";
 
 export const metadata = { title: "Sign in · Smart Router Dashboard" };
@@ -18,7 +19,7 @@ export const dynamic = "force-dynamic";
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ step?: string }>;
+  searchParams: Promise<{ step?: string; reason?: string | string[] }>;
 }) {
   if (process.env.AUTH_MODE !== "enabled") redirect(HOME_PATH);
 
@@ -32,7 +33,7 @@ export default async function LoginPage({
   // the query and the cookie, so a reload after "Back" shows the password form
   // rather than a code screen the person walked away from. Only the address and
   // the provider go to the browser — the challenge stays in the httpOnly cookie.
-  const { step } = await searchParams;
+  const { step, reason } = await searchParams;
   const parked =
     step === "code" ? decodeHandoff((await cookies()).get(TWO_FACTOR_HANDOFF_COOKIE)?.value) : null;
 
@@ -40,6 +41,8 @@ export default async function LoginPage({
     <LoginForm
       providers={oauthProviderFlags}
       pendingCode={parked ? { email: parked.email, provider: parked.provider } : undefined}
+      // Only listed reasons become text; see `lib/sign-in-notice.ts`.
+      notice={signInNotice(reason)}
     />
   );
 }

@@ -105,6 +105,8 @@ describe("sessions", () => {
       expect(await checkSession(t.db, session.id, nowSec())).toEqual({
         ok: false,
         reason: "revoked",
+        // Carried so the gate can tell the holder's own sign-out from an admin's.
+        revokedReason: "self",
       });
     });
 

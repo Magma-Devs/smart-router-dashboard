@@ -164,7 +164,7 @@ export function TwoFactorGate({ children }: { children: React.ReactNode }) {
       <div style={{ width: "100%", maxWidth: 520 }}>
         <EnrolPanel
           onEnrolled={refresh}
-          heading="Two-factor authentication is required"
+          heading="2FA is required"
           intro={
             // Two ways to arrive here and they need different words. Somebody
             // whose admin reset them is not being asked to do something new,
@@ -173,7 +173,7 @@ export function TwoFactorGate({ children }: { children: React.ReactNode }) {
             // them wondering whether something is wrong.
             twoFactor?.graceEndsAt
               ? "Your grace period has ended. Set up an authenticator app to get back into the dashboard."
-              : "Everyone who uses this dashboard signs in with an authenticator app. Set one up to continue — it takes about a minute."
+              : "Everyone who uses this dashboard signs in with an authenticator app. Set one up to continue. It takes about a minute."
           }
         />
         <SignOutInstead />
@@ -211,7 +211,7 @@ export function TwoFactorCountdown() {
       }}
       title="Set up an authenticator app before the dashboard closes"
     >
-      Set up 2FA — {days} day{days === 1 ? "" : "s"} left
+      Set up 2FA - {days} day{days === 1 ? "" : "s"} left
     </a>
   );
 }

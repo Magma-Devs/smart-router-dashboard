@@ -27,7 +27,8 @@ export function ResetTwoFactorModal({
   open: boolean;
   onClose: () => void;
   member: MemberSummary | null;
-  onReset: () => void;
+  /** After the api has confirmed it; `emailed` when they were told by email. */
+  onReset: (emailed: boolean) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,11 +38,14 @@ export function ResetTwoFactorModal({
     setBusy(true);
     setError(null);
     try {
-      await apiPost(`/api/team/members/${member.id}/2fa/reset`, {});
-      onReset();
+      const res = await apiPost<{ notified?: string }>(
+        `/api/team/members/${member.id}/2fa/reset`,
+        {},
+      );
+      onReset(res?.notified === "email");
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not reset two-factor.");
+      setError(e instanceof Error ? e.message : "Could not reset 2FA.");
     } finally {
       setBusy(false);
     }
@@ -51,14 +55,14 @@ export function ResetTwoFactorModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="Reset two-factor authentication"
+      title="Reset 2FA"
       footer={
         <>
           <button className="gw-btn" onClick={onClose}>
             Cancel
           </button>
           <button className="gw-btn gw-btn--danger" disabled={busy} onClick={() => void reset()}>
-            {busy ? "Resetting…" : "Reset two-factor"}
+            {busy ? "Resetting…" : "Reset 2FA"}
           </button>
         </>
       }

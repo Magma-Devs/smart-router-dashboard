@@ -5,7 +5,7 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
-## [0.68.1]
+## [0.74.1]
 
 ### Changed
 
@@ -24,6 +24,129 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   the rows loaded, not the total. The number beside the title is gone, and
   while older requests are not loaded the filter's counts read "300+".
   The (i) beside the title is gone too.
+
+## [0.74.0]
+
+### Fixed
+
+- **Team page** (MAG-5351):
+  - Change role, Reset 2FA and Remove update the member's row as soon as the
+    api answers and say what they did, in a confirmation above the table.
+  - Each member and invitation row has one "..." menu holding its actions, so
+    every action stays on screen at 1024 px and nothing shifts with the
+    member's 2FA state. Reset 2FA is disabled, with the reason, for someone
+    who has not set up 2FA.
+  - Invites: the tab counts pending invitations only; states read Pending,
+    Expired and Revoked; "New link" is **Resend**; Revoke asks first; revoked
+    and expired invitations sit behind **Show revoked and expired**.
+  - A member without 2FA reads **Not set up**, with "Can't use the dashboard
+    until they set it up".
+  - One colour per role (`ROLE_COLORS`), the same on the Team page, in the
+    invite and change-role dialogs, on the join page and in the sidebar.
+    Admin is purple: red is kept for errors and destructive actions.
+- **Role descriptions** promise only what exists: Requester and Approver read
+  "Same access as Read-only for now."; Admin reads "Can invite and remove
+  members, change roles, and reset passwords and 2FA."
+- **Audit log page** (MAG-5351): events by name ("Sign-in failed", "Session
+  ended"), with the code kept in the detail sheet and the CSV; the detail
+  sheet gives the UTC time under the local one, to match an email; the Target
+  column shows names, with ids in the sheet; a failed sign-in shows its
+  address once. The approval group and the "Approval request" field are
+  hidden until something writes approval events.
+- **Sign-in, join, setup and reset pages** (MAG-5351):
+  - Someone whose session an admin ended (a removal, a 2FA reset) lands on
+    the sign-in page with "Your session ended. An admin changed your access."
+    Sign-in errors stay generic.
+  - A dead reset link reads "This link no longer works. It may have been used,
+    replaced or expired.", whether it was used, replaced or expired. A
+    successful reset reads "Password changed".
+  - One password rule everywhere a password is chosen: "8 to 64 characters,
+    spaces allowed. Passwords found in known data breaches are refused."
+    (`PASSWORD_RULE`, with the lengths the api checks, in `@sr/shared`).
+  - One error style, red text under the field it is about; an error no field
+    owns sits above the button. No browser tooltips, no boxed alerts, no
+    "••••••••" placeholders; Change password has visible labels.
+  - The lockout reads "Too many failed attempts. Try again in 15 minutes, or
+    reset your password."
+  - These pages follow the dashboard's light or dark theme.
+- **Account page and 2FA** (MAG-5351):
+  - The page is **Account**. Version, commit and uptime sit in **About this
+    deployment**, a commit only when one was recorded and the runtime mode
+    only when it is not `production`.
+  - **Connected accounts** shows each offered provider as Linked or Not
+    linked (`linkedProviders` on `GET /api/account/me`).
+  - 2FA setup shows a spinner where the QR code loads; the manual key wraps
+    between groups of four only; **Copy key** says Copied, and says so when a
+    copy fails.
+  - "Lost your phone? Ask an admin to reset your 2FA."
+- **Sidebar and top bar** (MAG-5351): the role badge says "Read-only", not
+  "READ_ONLY". The top bar never wraps: below about 1100 px it drops the root
+  crumb and Report incident shows its icon. Keyboard focus and the "this
+  device" card are blue, not red.
+- **Emails** (MAG-5351): the invitation's subject is "{Inviter} invited you to
+  the Smart Router dashboard for {customer}", its body says "Invited by {name}
+  ({email}) as {role}." and "It sets up the account for {email}, so do not
+  forward it."; the password-changed email ends "We never put a link in this
+  notice. If a copy has one, don't click it."
+- **No setting names reach a user** (MAG-5351): errors say what is missing in
+  plain words ("2FA isn't set up on this deployment. Ask whoever runs it.");
+  `TOTP_ENCRYPTION_KEY`, `PUBLIC_WEB_ORIGIN`, `AUTH_MODE` and "Postgres" stay
+  in logs, startup errors and docs.
+- **Wording** (MAG-5351): US spelling, "2FA" as the one name for it, and no
+  long dashes in what the account screens and emails say.
+- **Published images record their commit** (MAG-5351): `build-and-push.yml`
+  passes `GIT_COMMIT` (the workflow's `github.sha`) to the image build, so
+  `/version` and the Account page's **About this deployment** name the commit
+  instead of "unknown".
+
+### Changed
+
+- **Docs** (MAG-5351): `docs/AUTH.md`, `docs/MAG-2729-REQUIREMENTS.md`,
+  `docs/MAG-2729-MANUAL-CHECKS.md` and `docs/ACCOUNTS-DESIGN.md` describe the
+  audit page, required 2FA and the deployments that run with accounts on.
+
+## [0.73.0]
+
+### Fixed
+
+- **The audit log names a session by a reference, never by its id**
+  (MAG-5351). Every read of the log (the Audit log page and its detail sheet,
+  the CSV export and the token pull API) shows a session as the first 12 hex
+  characters of the SHA-256 of its id: the rows of one sign-in share it, and
+  the id cannot be worked back from it. That covers each row's access context
+  and the target of `session.revoked`. The `target_id` filter takes the
+  reference. Stored rows are unchanged.
+- **Account-access rows commit with the change they record** (MAG-5351). An
+  admin's reset link, a reset link being used and an invitation being redeemed
+  write their audit rows in the change's own transaction: a row that cannot be
+  written undoes the change and the request answers 500. A refused sign-in's
+  row is written in its own transaction once the attempt is counted, and a
+  failed write answers 500 rather than 401. A lockout's `signin.blocked`
+  shares the transaction that counted the attempt.
+- **Removing an admin, or making them anything else, revokes what they handed
+  out** (MAG-5351): their unredeemed invitations, unused reset links and audit
+  tokens, one row each (`invite.revoked`, `password.reset_link_revoked`,
+  `apikey.deleted`), in the same transaction as the removal or the role change.
+- **Rows for what went unrecorded** (MAG-5351):
+  - a refused Google or GitHub sign-in writes `signin.failed` with its reason,
+    and `signin.blocked` for a removed account;
+  - a password sign-in at a removed account's address writes `signin.blocked`
+    against that account, "account removed", not "unknown address";
+  - **Sign out everywhere** writes a `session.revoked` per other device;
+  - every forgot-password request a managed deployment accepts writes
+    `password.reset_requested`, including those that send nothing, with why;
+  - `invite.expired` carries the invitation's expiry as its time.
+- **Notes name people and roles** (MAG-5351): "as Read-only", "used a reset
+  link from {name}". The password-changed email after a reset link has its own
+  row, `password.reset_notice`, because the reset's row commits before the
+  email is sent.
+
+### Changed
+
+- **The audit CSV has `ip`, `client` and `session` columns** (MAG-5351), the
+  values the detail sheet shows, after `note`. The per-field columns move from
+  13-15 to 16-18: a reader that goes by the header is unaffected, one that
+  counts columns needs updating.
 
 ## [0.68.0]
 

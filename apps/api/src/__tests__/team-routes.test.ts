@@ -108,15 +108,17 @@ describe("POST /api/team/invites", () => {
   });
 
   it("refuses to invent a host when PUBLIC_WEB_ORIGIN is unset", async () => {
-    // The failure the compose files used to produce on every deployment: no
-    // origin, so no link, so nobody can be invited. Loud beats a link that
-    // looks right and goes nowhere.
+    // No origin, so no link, so nobody can be invited. Loud beats a link that
+    // looks right and goes nowhere. The admin is told in words; the variable's
+    // name is for whoever runs the deployment.
     setEnv({ PUBLIC_WEB_ORIGIN: undefined });
     const admin = await member("admin@example.com", "admin");
     const res = await invite(await bearer(admin), { email: "dana@example.com", role: "approver" });
 
     expect(res.statusCode).toBe(500);
-    expect(res.json().message).toMatch(/PUBLIC_WEB_ORIGIN/);
+    expect(res.json().message).toBe(
+      "Invitation links can't be made on this deployment because its web address isn't set. Ask whoever runs it.",
+    );
   });
 
   it("is admin-only", async () => {

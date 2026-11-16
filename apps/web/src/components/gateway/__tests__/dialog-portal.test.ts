@@ -33,8 +33,9 @@ function walk(dir: string, out: string[] = []): string[] {
 const files = walk(SRC).map((p) => ({ path: relative(SRC, p).split("\\").join("/"), src: readFileSync(p, "utf8") }));
 const LAYER = "components/gateway/DialogLayer.tsx";
 
-/** Portals that are not dialogs: a tooltip has no backdrop and takes no focus. */
-const NOT_A_DIALOG = new Set(["components/gateway/Tip.tsx"]);
+/** Portals that are not dialogs: a tooltip and a row's actions menu have no
+ *  backdrop and trap no focus. */
+const NOT_A_DIALOG = new Set(["components/gateway/Tip.tsx", "components/team/RowActions.tsx"]);
 
 describe("dialogs render through DialogLayer", () => {
   it("finds the source", () => {

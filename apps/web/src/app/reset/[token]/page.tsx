@@ -38,5 +38,11 @@ export default async function ResetPage({ params }: { params: Promise<{ token: s
 
   // An unanswered preview is not a dead link (see `ResetPreview`): show the
   // form without the address, and let the submit say whether the link works.
-  return <ResetForm token={token} email={preview.state === "live" ? preview.email : null} />;
+  return (
+    <ResetForm
+      token={token}
+      email={preview.state === "live" ? preview.email : null}
+      managed={process.env.DEPLOYMENT_MODE === "managed"}
+    />
+  );
 }

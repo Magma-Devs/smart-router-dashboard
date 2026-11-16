@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { TOTP_DIGITS } from "@sr/shared";
 import { apiPost, ApiError } from "@/lib/api-client";
+import { Spinner } from "@/components/gateway/BusyButton";
+import { copyText } from "./copy-text";
 
 /**
  * Setting up an authenticator: a QR, the same secret as text, and a code typed
@@ -26,9 +28,110 @@ interface Offer {
   issuer: string;
 }
 
+/** The secret in groups of four, as authenticator apps print it. */
+export function keyGroups(secret: string): string[] {
+  return secret.match(/.{1,4}/g) ?? [];
+}
+
+/** The secret typed by hand: a line breaks between two groups, never inside one. */
+export function ManualKey({ secret }: { secret: string }) {
+  return (
+    <code
+      className="gw-mono"
+      style={{ display: "block", fontSize: 12, lineHeight: 1.7, color: "var(--text-2)" }}
+    >
+      {keyGroups(secret).map((group, i) => (
+        <Fragment key={i}>
+          {i > 0 && " "}
+          <span style={{ whiteSpace: "nowrap" }}>{group}</span>
+        </Fragment>
+      ))}
+    </code>
+  );
+}
+
+export type CopyState = "idle" | "copied" | "failed";
+
+/** "Copy key", then a tick and "Copied" once the key is on the clipboard, or a
+ *  line saying it is not when the browser refused. */
+export function CopyKeyButton({ state, onCopy }: { state: CopyState; onCopy: () => void }) {
+  return (
+    <div style={{ marginTop: 8 }}>
+      <button
+        type="button"
+        className="gw-btn gw-btn--ghost"
+        style={{ fontSize: 12 }}
+        onClick={onCopy}
+      >
+        {state === "copied" ? (
+          <>
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="var(--ok)"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+            Copied
+          </>
+        ) : (
+          "Copy key"
+        )}
+      </button>
+      <div aria-live="polite" style={{ fontSize: 12, color: "var(--text-3)", marginTop: 4 }}>
+        {state === "failed" ? "Could not copy. Select the key and copy it by hand." : null}
+      </div>
+    </div>
+  );
+}
+
+/** Where the QR goes: a spinner on the same white tile until it arrives. */
+export function QrSlot({ qrSvg }: { qrSvg: string | undefined }) {
+  // The SVG has no colours of its own that survive both themes, so it sits on
+  // a fixed white tile. A QR must be dark-on-light to scan reliably.
+  const tile: React.CSSProperties = {
+    width: 180,
+    height: 180,
+    background: "#fff",
+    padding: 8,
+    borderRadius: 8,
+    flexShrink: 0,
+  };
+  if (qrSvg === undefined) {
+    return (
+      <div
+        role="status"
+        aria-label="Loading the QR code"
+        style={{
+          ...tile,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "#71717a",
+        }}
+      >
+        <Spinner size={22} />
+      </div>
+    );
+  }
+  return (
+    <div
+      aria-label="Authenticator QR code"
+      style={tile}
+      dangerouslySetInnerHTML={{ __html: qrSvg }}
+    />
+  );
+}
+
 export function EnrolPanel({
   onEnrolled,
-  heading = "Set up two-factor authentication",
+  heading = "Set up 2FA",
   intro,
 }: {
   onEnrolled: () => void;
@@ -39,8 +142,16 @@ export function EnrolPanel({
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [copy, setCopy] = useState<CopyState>("idle");
+  const copyReset = useRef<ReturnType<typeof setTimeout> | null>(null);
   const started = useRef(false);
+
+  useEffect(
+    () => () => {
+      if (copyReset.current) clearTimeout(copyReset.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     // Once per mount. Each call mints a fresh secret and discards the previous
@@ -54,12 +165,19 @@ export function EnrolPanel({
       } catch (err) {
         setError(
           err instanceof ApiError && err.statusCode === 503
-            ? "Two-factor authentication is not configured on this deployment. Ask whoever runs it to set TOTP_ENCRYPTION_KEY."
+            ? "2FA isn't set up on this deployment. Ask whoever runs it."
             : "Could not start setup. Reload and try again.",
         );
       }
     })();
   }, []);
+
+  async function copyKey(secret: string) {
+    const ok = await copyText(secret);
+    setCopy(ok ? "copied" : "failed");
+    if (copyReset.current) clearTimeout(copyReset.current);
+    copyReset.current = setTimeout(() => setCopy("idle"), ok ? 2000 : 6000);
+  }
 
   async function confirm(e: React.FormEvent) {
     e.preventDefault();
@@ -83,13 +201,11 @@ export function EnrolPanel({
           "Scan this with Google Authenticator, 1Password, Authy or any authenticator app, then enter the code it shows."}
       </p>
 
-      {error && !offer && (
-        <div role="alert" style={{ fontSize: 13, color: "var(--danger, #f43)" }}>
+      {error && !offer ? (
+        <div role="alert" style={{ fontSize: 13, color: "var(--err)" }}>
           {error}
         </div>
-      )}
-
-      {offer && (
+      ) : (
         <>
           <div
             style={{
@@ -100,83 +216,56 @@ export function EnrolPanel({
               marginBottom: 20,
             }}
           >
-            <div
-              aria-label="Authenticator QR code"
-              style={{
-                width: 180,
-                height: 180,
-                // The SVG has no colours of its own that survive both themes,
-                // so it sits on a fixed white tile. A QR must be dark-on-light
-                // to scan reliably, whatever the dashboard's theme is.
-                background: "#fff",
-                padding: 8,
-                borderRadius: 8,
-                flexShrink: 0,
-              }}
-              dangerouslySetInnerHTML={{ __html: offer.qrSvg }}
-            />
+            <QrSlot qrSvg={offer?.qrSvg} />
             <div style={{ minWidth: 200, flex: 1 }}>
               <div style={{ fontSize: 12, color: "var(--text-3)", marginBottom: 6 }}>
                 Can&rsquo;t scan? Enter this key by hand:
               </div>
-              <code
-                className="gw-mono"
-                style={{
-                  display: "block",
-                  fontSize: 12,
-                  wordBreak: "break-all",
-                  lineHeight: 1.7,
-                  color: "var(--text-2)",
-                }}
-              >
-                {offer.secret.replace(/(.{4})/g, "$1 ").trim()}
-              </code>
-              <button
-                type="button"
-                className="gw-btn gw-btn--ghost"
-                style={{ marginTop: 8, fontSize: 12 }}
-                onClick={() => {
-                  void navigator.clipboard?.writeText(offer.secret).then(() => {
-                    setCopied(true);
-                    setTimeout(() => setCopied(false), 1500);
-                  });
-                }}
-              >
-                {copied ? "Copied" : "Copy key"}
-              </button>
+              {offer ? (
+                <>
+                  <ManualKey secret={offer.secret} />
+                  <CopyKeyButton state={copy} onCopy={() => void copyKey(offer.secret)} />
+                </>
+              ) : (
+                <div style={{ fontSize: 12, color: "var(--text-3)" }}>
+                  Preparing your key&hellip;
+                </div>
+              )}
             </div>
           </div>
 
-          <form onSubmit={confirm} style={{ display: "grid", gap: 12, maxWidth: 260 }}>
-            <label style={{ display: "grid", gap: 6, fontSize: 12, color: "var(--text-2)" }}>
-              Code from the app
-              <input
-                className="gw-input gw-mono"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                pattern="[0-9]*"
-                maxLength={TOTP_DIGITS}
-                required
-                autoFocus
-                value={code}
-                onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
-                placeholder="000000"
-                style={{ letterSpacing: "0.35em", fontSize: 18, textAlign: "center" }}
-              />
-            </label>
-            {error && (
-              <div role="alert" style={{ fontSize: 12, color: "var(--danger, #f43)" }}>
-                {error}
-              </div>
-            )}
-            <button
-              className="gw-btn gw-btn--primary"
-              type="submit"
-              disabled={busy || code.length !== TOTP_DIGITS}
-            >
-              {busy ? "Checking…" : "Turn on two-factor"}
-            </button>
-          </form>
+          {offer && (
+            <form onSubmit={confirm} style={{ display: "grid", gap: 12, maxWidth: 260 }}>
+              <label style={{ display: "grid", gap: 6, fontSize: 12, color: "var(--text-2)" }}>
+                Code from the app
+                <input
+                  className="gw-input gw-mono"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  pattern="[0-9]*"
+                  maxLength={TOTP_DIGITS}
+                  required
+                  autoFocus
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+                  placeholder="000000"
+                  style={{ letterSpacing: "0.35em", fontSize: 18, textAlign: "center" }}
+                />
+              </label>
+              {error && (
+                <div role="alert" style={{ fontSize: 12, color: "var(--err)" }}>
+                  {error}
+                </div>
+              )}
+              <button
+                className="gw-btn gw-btn--primary"
+                type="submit"
+                disabled={busy || code.length !== TOTP_DIGITS}
+              >
+                {busy ? "Checking…" : "Turn on 2FA"}
+              </button>
+            </form>
+          )}
         </>
       )}
     </div>
