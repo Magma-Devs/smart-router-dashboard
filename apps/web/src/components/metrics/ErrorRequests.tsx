@@ -17,8 +17,6 @@ import { useOpening } from "@/hooks/use-opening";
 import { useRouterFilter } from "@/hooks/use-router-options";
 import { Refreshing, SkelLine, SkelRows } from "@/components/gateway/Skel";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
-import { Tip } from "@/components/gateway/Tip";
-import { TT } from "@/lib/tooltips";
 import { fmtComma } from "@/lib/format";
 import { linkRequest, requestFromUrl } from "@/lib/request-in-url";
 import { coveredSpan, groupBuckets, groupErrors, type ErrorGroup } from "@/lib/error-groups";
@@ -449,7 +447,7 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
         {/* What the list holds: what came of the requests, and the times it covers. The count is on "All", once. */}
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <span style={{ display: "inline-flex", alignItems: "center", fontSize: 12, fontWeight: 600, color: "var(--text-2)" }}>
-            Requests with an error<Tip text={TT.errorRequests!} />
+            Requests with an error
             <span style={{ marginLeft: 8, display: "inline-flex" }}><Refreshing show={log.refreshing} label="Reading newer requests" /></span>
           </span>
           <Seg
