@@ -6,6 +6,8 @@ import { users } from "@sr/db";
 import { askRoutes } from "../routes/ask.js";
 import { authPlugin, SESSION_JWT_AUDIENCE, SESSION_JWT_ISSUER } from "../plugins/auth.js";
 import { createSession, revokeSession } from "../services/sessions.js";
+import { AskStore } from "../services/ask/store.js";
+import { readAskSettings } from "../config.js";
 
 const SECRET = "ask-session-secret-with-at-least-32-chars";
 let app: FastifyInstance;
@@ -106,5 +108,47 @@ describe("Ask foundation capability route", () => {
         })
       ).statusCode,
     ).toBe(503);
+  });
+
+  it("keeps personal search and ORM-bound prompt values out of application logs", async () => {
+    const lines: string[] = [];
+    const logged = Fastify({
+      logger: {
+        level: "info",
+        stream: {
+          write: (line: string) => {
+            lines.push(line);
+          },
+        },
+      },
+    });
+    logged.decorate("db", t.db);
+    await logged.register(authPlugin);
+    await logged.register(askRoutes, {
+      settings: readAskSettings({
+        AUTH_MODE: "enabled",
+        DEPLOYMENT_MODE: "managed",
+        ASK_DATA_ENABLED: "true",
+        ASK_DATA_CUSTOMER_ID: "gk8",
+        ASK_DATA_MCP_TOKEN: "fixture-token",
+        AWS_BEARER_TOKEN_BEDROCK: "fixture-provider",
+        ASK_DATA_BEDROCK_MODEL: "fixture-model",
+      }),
+    });
+    const { headers } = await signedIn();
+    const secret = "private-search-and-prompt-value";
+    const spy = vi
+      .spyOn(AskStore.prototype, "listChats")
+      .mockRejectedValueOnce(new Error(`ORM params: ${secret}`));
+    try {
+      const response = await logged.inject({ url: `/api/ask/chats?query=${secret}`, headers });
+      expect(response.statusCode).toBe(503);
+      expect(response.json().code).toBe("ASK_UNAVAILABLE");
+      expect(lines.join("")).not.toContain(secret);
+      expect(lines.join("")).toContain("ASK_STORAGE_UNAVAILABLE");
+    } finally {
+      spy.mockRestore();
+      await logged.close();
+    }
   });
 });

@@ -108,7 +108,10 @@ No acceptance item is complete without the corresponding observed evidence.
 - [PR #389](https://github.com/Magma-Devs/smart-router-dashboard/pull/389): foundation,
   contracts and adapters. Current live access is still pending (Bedrock HTTP 403;
   expired `magma` AWS session). This does not block independent database/UI work.
-- MAG-4930 adds the durable data model, authenticated history/preferences routes
+- [PR #390](https://github.com/Magma-Devs/smart-router-dashboard/pull/390) adds the durable data model, authenticated history/preferences routes
   and SQL lifecycle primitives. Actual HTTP/PostgreSQL verifies ownership,
   idempotency, concurrency, lease fencing and recovery. Production worker
   scheduling, financial reconciliation and UI acceptance stay open.
+- MAG-4931 adds bounded read-only orchestration, structured/source-attributed
+  answers and a lease-aware queue worker. It stays inactive in the API until
+  actual budget admission/reconciliation is installed by MAG-4932.

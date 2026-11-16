@@ -524,7 +524,7 @@ export class AskStore {
       const rows = await tx
         .update(askRuns)
         .set({
-          status: sql`case when ${askRuns.status}='cancelling' or ${code}='ASK_CANCELLED' then 'cancelled' else 'failed' end`,
+          status: sql`case when ${askRuns.status}='cancelling' or ${code}='ASK_CANCELLED' then 'cancelled' when ${code}='ASK_INTERRUPTED' then 'interrupted' else 'failed' end`,
           errorCode: sql`case when ${askRuns.status}='cancelling' then 'ASK_CANCELLED' else ${code} end`,
           completedAt: sql`now()`,
           leaseToken: null,
@@ -563,5 +563,21 @@ export class AskStore {
       )
       .returning({ id: askRuns.id });
     return rows.length;
+  }
+
+  async leaseState(runId: string, token: string): Promise<"running" | "cancelling" | "lost"> {
+    const [run] = await this.db
+      .select({ status: askRuns.status })
+      .from(askRuns)
+      .where(and(this.lease(runId, token), this.sessionActive()))
+      .limit(1);
+    return run?.status === "running" || run?.status === "cancelling" ? run.status : "lost";
+  }
+
+  async interruptQueued(): Promise<void> {
+    await this.db
+      .update(askRuns)
+      .set({ status: "interrupted", errorCode: "ASK_INTERRUPTED", completedAt: sql`now()` })
+      .where(and(eq(askRuns.customerId, this.customerId), eq(askRuns.status, "queued")));
   }
 }

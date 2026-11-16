@@ -619,6 +619,12 @@ export interface AskSettings {
   maxOutputTokens: number;
   maxSteps: number;
   retentionDays: number;
+  maxToolResultBytes: number;
+  maxToolCalls: number;
+  leaseMs: number;
+  heartbeatMs: number;
+  workerPollMs: number;
+  workerConcurrency: number;
 }
 
 export function readAskSettings(source: NodeJS.ProcessEnv = process.env): AskSettings {
@@ -641,6 +647,12 @@ export function readAskSettings(source: NodeJS.ProcessEnv = process.env): AskSet
     maxOutputTokens: 2048,
     maxSteps: 8,
     retentionDays: positiveInt(source.ASK_DATA_RETENTION_DAYS, 90),
+    maxToolResultBytes: 12_000,
+    maxToolCalls: 8,
+    leaseMs: 15_000,
+    heartbeatMs: 1000,
+    workerPollMs: 1000,
+    workerConcurrency: 2,
   };
   // Exact deployment/customer mapping is runtime control-plane configuration.
   // A display name, browser field or tool result must never supply it.
