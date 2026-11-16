@@ -1,0 +1,346 @@
+{
+  "timestamp": "2026-11-16T19:22:22.703Z",
+  "environment": "isolated local dashboard/API/PostgreSQL with real staging MCP and Bedrock",
+  "customerId": "gk8",
+  "rawDataInArtifact": false,
+  "credentialsSaved": false,
+  "pricing": {
+    "version": "aws-global-sonnet5-20261116",
+    "model": "global.anthropic.claude-sonnet-5",
+    "region": "us-east-1",
+    "validFrom": "2026-11-16T00:00:00Z",
+    "validUntil": "2026-11-17T00:00:00Z",
+    "source": "https://aws.amazon.com/bedrock/pricing/",
+    "input": "2000000",
+    "output": "10000000",
+    "cacheRead": "200000",
+    "cacheWrite5m": "2500000",
+    "cacheWrite1h": "4000000"
+  },
+  "browser": {
+    "timestamp": "2026-11-16T19:23:50.458Z",
+    "rawDataInArtifact": false,
+    "credentialsSaved": false,
+    "records": [
+      {
+        "runId": "19ae96d6-f29e-47be-88a6-d329ebe8574a",
+        "chatId": "ddb6dc33-bd34-4188-8c72-78f93590b3ab",
+        "status": "succeeded",
+        "contractValid": true,
+        "evidence": [
+          {
+            "id": "0e6b52d9-cdfc-4ad2-91d2-9a09a55cadf6",
+            "sourceId": "gk8-metrics",
+            "operationId": "metrics.query",
+            "observedAt": "2026-11-16T19:22:55.024Z",
+            "from": "2026-11-16T19:22:49.000Z",
+            "to": "2026-11-16T19:22:49.000Z",
+            "coverage": "complete",
+            "truncated": false
+          }
+        ],
+        "submittedView": "panel",
+        "shownInView": true,
+        "reloadVerified": true,
+        "panelToFullVerified": true
+      },
+      {
+        "runId": "d5fa1320-e202-4d59-8546-caa351ce408e",
+        "chatId": "ddb6dc33-bd34-4188-8c72-78f93590b3ab",
+        "status": "succeeded",
+        "contractValid": true,
+        "evidence": [
+          {
+            "id": "69e9927c-5a04-4715-b160-09b00d381e28",
+            "sourceId": "gk8-logs",
+            "operationId": "logs.labels",
+            "observedAt": "2026-11-16T19:23:09.880Z",
+            "from": "2026-11-16T19:18:06.000Z",
+            "to": "2026-11-16T19:23:06.000Z",
+            "coverage": "unknown",
+            "truncated": false
+          },
+          {
+            "id": "1e5656fd-b2e6-414d-9d97-f8aa06778e0b",
+            "sourceId": "gk8-logs",
+            "operationId": "logs.label_values",
+            "observedAt": "2026-11-16T19:23:13.382Z",
+            "from": "2026-11-16T19:18:06.000Z",
+            "to": "2026-11-16T19:23:06.000Z",
+            "coverage": "unknown",
+            "truncated": false
+          },
+          {
+            "id": "a8b23d96-3db8-455a-83c7-5ebc7db868e6",
+            "sourceId": "gk8-logs",
+            "operationId": "logs.query_range",
+            "observedAt": "2026-11-16T19:23:17.261Z",
+            "from": "2026-11-16T19:18:06.000Z",
+            "to": "2026-11-16T19:23:06.000Z",
+            "coverage": "empty",
+            "truncated": false
+          },
+          {
+            "id": "41c3bcf8-d760-4d8e-a0e4-9c8729662b8f",
+            "sourceId": "gk8-logs",
+            "operationId": "logs.query_range",
+            "observedAt": "2026-11-16T19:23:21.401Z",
+            "from": "2026-11-16T19:18:06.000Z",
+            "to": "2026-11-16T19:23:06.000Z",
+            "coverage": "empty",
+            "truncated": false
+          }
+        ],
+        "submittedView": "full",
+        "shownInView": true,
+        "reloadVerified": true
+      },
+      {
+        "runId": "11d5a7e3-b1c9-403e-9cd9-415be11a0afa",
+        "chatId": "ddb6dc33-bd34-4188-8c72-78f93590b3ab",
+        "status": "succeeded",
+        "contractValid": true,
+        "evidence": [
+          {
+            "id": "869212c5-a2d1-4625-9f0a-c63b8d1ad6db",
+            "sourceId": "gk8-grafana",
+            "operationId": "grafana.search",
+            "observedAt": "2026-11-16T19:23:38.521Z",
+            "coverage": "empty",
+            "truncated": false
+          }
+        ],
+        "submittedView": "full",
+        "shownInView": true,
+        "reloadVerified": true,
+        "missingStatusCaveat": true
+      }
+    ]
+  },
+  "modelSteps": [
+    {
+      "id": "24e2b68f-7286-4bcf-bcf8-293d1cbd5192",
+      "runId": "19ae96d6-f29e-47be-88a6-d329ebe8574a",
+      "model": "global.anthropic.claude-sonnet-5",
+      "state": "settled",
+      "usage": {
+        "inputTokens": 3900,
+        "totalTokens": 4015,
+        "outputTokens": 115,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 0
+      },
+      "reservedMicroUsd": "36860",
+      "chargedMicroUsd": "8950",
+      "providerRequestId": "a44ffeec-ac1a-4201-b864-9984ef29b2ee",
+      "providerStatus": 200
+    },
+    {
+      "id": "b9cafe30-0387-4e67-b48b-9a10a0e7822e",
+      "runId": "19ae96d6-f29e-47be-88a6-d329ebe8574a",
+      "model": "global.anthropic.claude-sonnet-5",
+      "state": "settled",
+      "usage": {
+        "inputTokens": 4634,
+        "totalTokens": 5090,
+        "outputTokens": 456,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 0
+      },
+      "reservedMicroUsd": "39944",
+      "chargedMicroUsd": "13828",
+      "providerRequestId": "b4d23ad6-de47-49d3-b561-9e45d7871b0b",
+      "providerStatus": 200
+    },
+    {
+      "id": "de4aecf7-0399-4854-86df-ddb199353455",
+      "runId": "d5fa1320-e202-4d59-8546-caa351ce408e",
+      "model": "global.anthropic.claude-sonnet-5",
+      "state": "settled",
+      "usage": {
+        "inputTokens": 4437,
+        "totalTokens": 4551,
+        "outputTokens": 114,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 0
+      },
+      "reservedMicroUsd": "39116",
+      "chargedMicroUsd": "10014",
+      "providerRequestId": "8dac0af8-e989-4629-bce1-57285d1ceabf",
+      "providerStatus": 200
+    },
+    {
+      "id": "f10d227f-e410-435f-9fbd-c553d1662579",
+      "runId": "d5fa1320-e202-4d59-8546-caa351ce408e",
+      "model": "global.anthropic.claude-sonnet-5",
+      "state": "settled",
+      "usage": {
+        "inputTokens": 5170,
+        "totalTokens": 5295,
+        "outputTokens": 125,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 0
+      },
+      "reservedMicroUsd": "42196",
+      "chargedMicroUsd": "11590",
+      "providerRequestId": "34e3d71b-4a02-4c4c-b8db-2fa3cf76e30d",
+      "providerStatus": 200
+    },
+    {
+      "id": "4c1318c6-0dc8-42ae-afda-542022dc616d",
+      "runId": "d5fa1320-e202-4d59-8546-caa351ce408e",
+      "model": "global.anthropic.claude-sonnet-5",
+      "state": "settled",
+      "usage": {
+        "inputTokens": 6030,
+        "totalTokens": 6185,
+        "outputTokens": 155,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 0
+      },
+      "reservedMicroUsd": "45808",
+      "chargedMicroUsd": "13610",
+      "providerRequestId": "e9c38b0a-5004-4542-b7a7-014f1374f30e",
+      "providerStatus": 200
+    },
+    {
+      "id": "c10485bf-8077-479b-883e-8476c6658c7a",
+      "runId": "d5fa1320-e202-4d59-8546-caa351ce408e",
+      "model": "global.anthropic.claude-sonnet-5",
+      "state": "settled",
+      "usage": {
+        "inputTokens": 8112,
+        "totalTokens": 8273,
+        "outputTokens": 161,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 0
+      },
+      "reservedMicroUsd": "54556",
+      "chargedMicroUsd": "17834",
+      "providerRequestId": "7bdfd968-df89-4429-b976-e3b9f4beb01c",
+      "providerStatus": 200
+    },
+    {
+      "id": "6071d15e-2938-4700-b4c9-96ffe151788d",
+      "runId": "d5fa1320-e202-4d59-8546-caa351ce408e",
+      "model": "global.anthropic.claude-sonnet-5",
+      "state": "settled",
+      "usage": {
+        "inputTokens": 10213,
+        "totalTokens": 10862,
+        "outputTokens": 649,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 0
+      },
+      "reservedMicroUsd": "63380",
+      "chargedMicroUsd": "26916",
+      "providerRequestId": "09e7eb73-b565-45fc-906a-56538971c0a7",
+      "providerStatus": 200
+    },
+    {
+      "id": "58bf2972-1622-4db3-ae91-05ba37d3dfc4",
+      "runId": "11d5a7e3-b1c9-403e-9cd9-415be11a0afa",
+      "model": "global.anthropic.claude-sonnet-5",
+      "state": "settled",
+      "usage": {
+        "inputTokens": 5848,
+        "totalTokens": 6525,
+        "outputTokens": 677,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 0
+      },
+      "reservedMicroUsd": "45044",
+      "chargedMicroUsd": "18466",
+      "providerRequestId": "bb38904d-0410-4c2e-9fef-43c6d154a08b",
+      "providerStatus": 200
+    },
+    {
+      "id": "b03b5aa0-2430-4743-ba71-68de6efbdac2",
+      "runId": "11d5a7e3-b1c9-403e-9cd9-415be11a0afa",
+      "model": "global.anthropic.claude-sonnet-5",
+      "state": "settled",
+      "usage": {
+        "inputTokens": 5169,
+        "totalTokens": 5275,
+        "outputTokens": 106,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 0
+      },
+      "reservedMicroUsd": "42192",
+      "chargedMicroUsd": "11398",
+      "providerRequestId": "6ae6b8cf-0f16-4d28-b833-273504d0d437",
+      "providerStatus": 200
+    }
+  ],
+  "tools": [
+    {
+      "sourceId": "gk8-metrics",
+      "operationId": "metrics.query",
+      "ok": "success",
+      "latencyMs": 2316
+    },
+    {
+      "sourceId": "gk8-logs",
+      "operationId": "logs.labels",
+      "ok": "success",
+      "latencyMs": 688
+    },
+    {
+      "sourceId": "gk8-logs",
+      "operationId": "logs.label_values",
+      "ok": "success",
+      "latencyMs": 912
+    },
+    {
+      "sourceId": "gk8-logs",
+      "operationId": "logs.query_range",
+      "ok": "success",
+      "latencyMs": 854
+    },
+    {
+      "sourceId": "gk8-logs",
+      "operationId": "logs.query_range",
+      "ok": "success",
+      "latencyMs": 947
+    },
+    {
+      "sourceId": "gk8-grafana",
+      "operationId": "grafana.search",
+      "ok": "success",
+      "latencyMs": 1140
+    }
+  ],
+  "validationAccounting": {
+    "currentRunChargeMicroUsd": "132606",
+    "cumulativeLocalPool": [
+      {
+        "customerId": "gk8",
+        "month": "2026-11",
+        "limitMicroUsd": "10000000",
+        "spentMicroUsd": "854622",
+        "reservedMicroUsd": "72504"
+      }
+    ],
+    "earlierUnknownStepsStillHeld": [
+      {
+        "id": "1c3a6136-2000-42fa-9198-87103abb266f",
+        "reservedMicroUsd": "36252",
+        "providerRequestId": "69bc7cdc-6b4c-446f-96b7-30cc2ac18d21"
+      },
+      {
+        "id": "11304b89-e14a-4bde-a1c5-284b35a8f683",
+        "reservedMicroUsd": "36252",
+        "providerRequestId": "6f55b5de-efaf-489c-ab24-f6c39220e7b9"
+      }
+    ]
+  },
+  "cleanup": {
+    "testChatContentDeleted": true,
+    "accountingPreserved": true,
+    "testMcpKeyRevoked": true,
+    "testMcpParameterDeleted": true,
+    "testBedrockCredentialDeleted": true,
+    "testPolicyDeleted": true,
+    "testUserDeleted": true
+  }
+}

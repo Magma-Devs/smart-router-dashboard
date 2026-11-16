@@ -108,8 +108,12 @@ expired reads, physical deletion, retry and unchanged financial totals. Never ag
 or delete a customer's real records for a rehearsal. Record that runtime backups
 may retain deleted content until their separate backup expiry; verify the current
 backup and provider request-logging policies with the owners before pilot signoff.
-The database fleet currently documents 14-day backup copies and parameter-free
-DDL/role audit logging; that documentation is not proof of today's live settings.
+The [dated control-plane receipt](validation/MAG-4934/cloud-policy.json) verifies
+DEV seven-day / PROD fourteen-day automated backups, the fourteen-day PROD
+cross-region replica, explicit DDL/role audit with parameter logging off, and
+absent Bedrock invocation logging. It does not establish effective SQL engine
+defaults or exercise a restore. After restore, sweep retention and verify old
+content is inaccessible before admitting customer or internal traffic.
 
 Internal exports contain private content. Keep them in the authorized internal
 location with its retention policy; ordinary rollout evidence contains metadata
