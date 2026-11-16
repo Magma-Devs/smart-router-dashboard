@@ -106,6 +106,48 @@ describe("AUTH_MODE=enabled", () => {
     await expect(buildApp()).rejects.toThrow(/AUTH_SECRET/);
   });
 
+  /** The boot error for an AUTH_SECRET, with every other variable set. */
+  async function bootError(authSecret: string): Promise<string> {
+    setEnv({
+      AUTH_MODE: "enabled",
+      AUTH_SECRET: authSecret,
+      TOTP_ENCRYPTION_KEY: TOTP_KEY,
+      INTERNAL_AUTH_SECRET: INTERNAL,
+      DATABASE_URL: DEAD_DB,
+    });
+    try {
+      app = await buildApp();
+    } catch (err) {
+      return (err as Error).message;
+    }
+    return "";
+  }
+
+  it("refuses to boot on an AUTH_SECRET that is still a placeholder, without echoing it", async () => {
+    // Longer than 32, so the placeholder rule refuses it, not the length one.
+    const placeholder = "__DEPLOYMENT_FILLS_THIS_AUTH_SECRET__";
+    const message = await bootError(placeholder);
+    expect(message).toMatch(/AUTH_SECRET is still a placeholder/);
+    expect(message).toMatch(/openssl rand -base64 32/);
+    expect(message).not.toContain(placeholder);
+  });
+
+  it("refuses to boot on an AUTH_SECRET under 32 characters, without echoing it", async () => {
+    const short = "s".repeat(31);
+    const message = await bootError(short);
+    expect(message).toMatch(/AUTH_SECRET is shorter than 32 characters/);
+    expect(message).not.toContain(short);
+  });
+
+  it("boots on an AUTH_SECRET of exactly 32 characters", async () => {
+    expect(await bootError("k".repeat(32))).toBe("");
+  });
+
+  it("boots on a secret that only contains underscores, not a placeholder's shape", async () => {
+    // base64url output can start and end with `_`; only `__NAME__` is refused.
+    expect(await bootError("__x9Kf2_mQ8pL4vR7tY1wZ3nB6cD0eG5hJ")).toBe("");
+  });
+
   it("refuses to boot without DATABASE_URL", async () => {
     setEnv({
       AUTH_MODE: "enabled",

@@ -778,7 +778,7 @@ exercising the real flow.
 | Variable | Used by | Notes |
 |---|---|---|
 | `AUTH_MODE` | api + web | `disabled` (default) / `enabled` — must match on both |
-| `AUTH_SECRET` | api + web | HS256 signing secret, must match. `openssl rand -base64 32` |
+| `AUTH_SECRET` | api + web | HS256 signing secret, must match. `openssl rand -base64 32`. The api refuses to boot on one under 32 characters or still a `__NAME__` placeholder |
 | `DATABASE_URL` | api | Empty in both compose files. `make up-auth` / `make dev-auth` supply `postgres://sr:dev@postgres:5432/sr_dashboard`; only read when `AUTH_MODE=enabled` |
 | `DB_POOL_MAX` | api | Connections each api process holds to Postgres (default `20`). Every authenticated request takes one for the session join, so it bounds a backend's concurrency and, summed over a deployment's backends, what the instance must admit. Refused unless a whole number ≥ 1 |
 | `DB_IDLE_TIMEOUT_S` | api | Seconds an idle pooled connection is kept before it is closed (default `30`); the next request pays for a new one. `0` keeps idle connections for the life of the process. Refused unless a whole number ≥ 0 |

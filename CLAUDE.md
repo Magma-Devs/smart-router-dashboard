@@ -1151,7 +1151,7 @@ Auth (only read when `AUTH_MODE=enabled`; the metrics path never touches the DB)
 | Variable | Default | Notes |
 |---|---|---|
 | `AUTH_MODE` | `disabled` | `enabled` turns on the session gate + `/auth/*` + Postgres |
-| `AUTH_SECRET` | (unset) | HS256 signing secret shared with the web (must match) |
+| `AUTH_SECRET` | (unset) | HS256 signing secret shared with the web (must match). 32 characters or more: a shorter one, or one still a `__NAME__` placeholder, refuses the boot, as an unset one does (`authSecretProblem` in `plugins/auth.ts`) |
 | `DATABASE_URL` | (unset) | Postgres connection string for `users` + `sessions` |
 | `DB_POOL_MAX` | `20` | Connections each api process holds open to Postgres. Every authenticated request takes one for the session join, so this bounds a backend's concurrency and, summed over a deployment's backends, what its instance must admit — the fleet sets it per backend from a shared instance's connection budget. Anything but a whole number ≥ 1 refuses the boot |
 | `DB_IDLE_TIMEOUT_S` | `30` | Seconds a pooled connection sits idle before it is closed; the next request pays for a new one (TCP, TLS, three SCRAM legs). `0` keeps idle connections for the life of the process. Anything but a whole number ≥ 0 refuses the boot |
