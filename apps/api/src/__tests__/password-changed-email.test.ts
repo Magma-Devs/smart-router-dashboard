@@ -129,8 +129,10 @@ describe("the notice", () => {
     expect(text).toContain("on the Smart Router dashboard for Example Co");
     expect(text).toContain("If you made this change, there is nothing else to do.");
     expect(text).toContain("If you didn't, someone else may have your password.");
-    expect(text).toContain('"Forgot your password?" on the sign-in page');
-    expect(text).toContain("tell your administrator");
+    expect(text).toContain(
+      'choose "Forgot your password?" on the sign-in page to set a new one, ' +
+        "which signs out every device, and tell your administrator.",
+    );
   });
 
   it("carries no link at all — nothing to click, nothing to load", () => {
@@ -138,7 +140,14 @@ describe("the notice", () => {
     // somebody into pressing. The way back is described in words instead.
     const message = renderPasswordChangedEmail({ changedAt });
     expect(linksIn(message)).toEqual([]);
-    expect(message.text).toContain("This notice never contains a link.");
+  });
+
+  it("ends by saying it never has a link, and not to click one in a copy", () => {
+    const { text, html } = renderPasswordChangedEmail({ changedAt });
+    const line = "We never put a link in this notice. If a copy has one, don't click it.";
+    expect(text.endsWith(`\n\n${line}\n`)).toBe(true);
+    expect(html).toContain(line);
+    expect(text).not.toContain("never contains a link");
   });
 
   it("has no unsubscribe, no footer and nothing loaded from elsewhere", () => {

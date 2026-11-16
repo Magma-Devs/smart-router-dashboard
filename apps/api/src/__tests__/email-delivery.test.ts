@@ -514,9 +514,39 @@ describe("inviting on managed, with a transport", () => {
     expect(body).not.toHaveProperty("url");
     expect(ses.sent).toHaveLength(1);
     expect(ses.sent[0]!.to).toEqual(["dana@example.com"]);
-    expect(ses.sent[0]!.subject).toBe("You've been added to Example Co on Smart Router");
+    // The inviter is the admin who sent it (`boot` names them "Admin"), and the
+    // role is the one picked, by its label.
+    expect(ses.sent[0]!.subject).toBe(
+      "Admin invited you to the Smart Router dashboard for Example Co",
+    );
+    expect(ses.sent[0]!.text).toContain("Invited by Admin (admin@example.com) as Approver.");
     expect(ses.sent[0]!.text).toMatch(/https:\/\/dash\.example\.com\/invite\/[A-Za-z0-9_-]+/);
     expect(await lastNote("member.invited")).toMatch(/^as Approver, expires \S+; emailed$/);
+  });
+
+  it("names the admin who resent it, and the invitation's role, on a resend", async () => {
+    const token = await boot("managed");
+    setEnv({ ...fakeSesEnv(ses), CUSTOMER_NAME: "Example Co" });
+    resetEmailClientForTests();
+    const created = await app!.inject({
+      method: "POST",
+      url: "/api/team/invites",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { email: "dana@example.com", role: "requester" },
+    });
+    const id = created.json().invite.id as string;
+    const res = await app!.inject({
+      method: "POST",
+      url: `/api/team/invites/${id}/resend`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(ses.sent).toHaveLength(2);
+    expect(ses.sent[1]!.subject).toBe(
+      "Admin invited you to the Smart Router dashboard for Example Co",
+    );
+    expect(ses.sent[1]!.text).toContain("Invited by Admin (admin@example.com) as Requester.");
   });
 
   it("hands the admin the link when SES refuses, and says the email failed", async () => {

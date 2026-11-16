@@ -158,8 +158,7 @@ export async function accountRoutes(app: FastifyInstance) {
         return reply.code(503).send({
           statusCode: 503,
           error: "Service Unavailable",
-          message:
-            "Two-factor authentication is not configured on this deployment. TOTP_ENCRYPTION_KEY is not set.",
+          message: "2FA isn't set up on this deployment. Ask whoever runs it.",
         });
       }
 

@@ -25,19 +25,25 @@ export const EMAIL_TYPES = [
 export type EmailType = (typeof EMAIL_TYPES)[number];
 
 /**
- * Subject line per type — the single source of truth, from MAG-2870.
+ * Subject line per type: the single source of truth.
  *
- * The invitation's subject carries the customer name because it arrives at an
- * address that has never heard of us; "Smart Router" alone reads as spam. The
- * reset's does not, because by then the person has an account and the shorter
- * subject is the clearer one. The two-factor notice goes to an account holder
- * too, and names the customer in its body.
+ * The invitation's subject names the person who sent it and the customer the
+ * dashboard belongs to, because it arrives at an address that has never heard
+ * of us; "Smart Router" alone reads as spam. The others go to somebody who
+ * already has an account, so the shorter subject is the clearer one; the
+ * notices name the customer in their body. No subject carries a long dash.
  */
-export const EMAIL_SUBJECTS: Record<EmailType, (customer: string) => string> = {
-  invitation: (customer) => `You've been added to ${customer} on Smart Router`,
+export const EMAIL_SUBJECTS: Record<
+  Exclude<EmailType, "invitation">,
+  (customer: string) => string
+> & {
+  invitation: (customer: string, inviter: string) => string;
+} = {
+  invitation: (customer, inviter) =>
+    `${inviter} invited you to the Smart Router dashboard for ${customer}`,
   password_reset: () => "Reset your Smart Router password",
   password_changed: () => "Your Smart Router password was changed",
-  two_factor_reset: () => "Your Smart Router two-factor authentication was reset",
+  two_factor_reset: () => "Your Smart Router 2FA was reset",
 };
 
 /**

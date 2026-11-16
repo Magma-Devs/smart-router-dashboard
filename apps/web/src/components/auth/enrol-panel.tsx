@@ -165,7 +165,7 @@ export function EnrolPanel({
       } catch (err) {
         setError(
           err instanceof ApiError && err.statusCode === 503
-            ? "2FA is not set up on this deployment. Ask whoever runs it to set TOTP_ENCRYPTION_KEY."
+            ? "2FA isn't set up on this deployment. Ask whoever runs it."
             : "Could not start setup. Reload and try again.",
         );
       }

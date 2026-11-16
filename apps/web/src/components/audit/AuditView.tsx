@@ -324,7 +324,7 @@ export function AuditView() {
       {feed.unavailable ? (
         <EmptyState
           title="No audit log on this deployment"
-          body="The log is stored in Postgres and only exists when the dashboard runs with accounts enabled. Set AUTH_MODE=enabled to turn it on."
+          body="This deployment runs without accounts, so it keeps no audit log. Ask whoever runs it to turn accounts on."
         />
       ) : feed.error ? (
         location.position.kind === "newest" ? (

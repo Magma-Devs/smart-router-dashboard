@@ -4,9 +4,8 @@ import { NAV_SECTIONS, visibleNavSections } from "../nav";
 /**
  * What the sidebar offers on a deployment with no accounts.
  *
- * `AUTH_MODE=disabled` is the default and the shape every deployment runs
- * today: no database, no sessions, and none of the account routes registered on
- * the api. An entry that survives into that mode leads to a screen whose data
+ * `AUTH_MODE=disabled` is the default: no database, no sessions, and none of
+ * the account routes registered on the api. An entry that survives into that mode leads to a screen whose data
  * fetch 404s, which reads as a broken dashboard rather than a feature the
  * deployment was never built with.
  */

@@ -736,7 +736,8 @@ export async function authRoutes(app: FastifyInstance) {
         return reply.code(500).send({
           statusCode: 500,
           error: "Internal Server Error",
-          message: "PUBLIC_WEB_ORIGIN is not configured, so reset links cannot be built",
+          message:
+            "Reset links can't be made on this deployment because its web address isn't set. Ask whoever runs it.",
         });
       }
       const { email } = request.body as { email: string };
@@ -1153,7 +1154,7 @@ export async function authRoutes(app: FastifyInstance) {
           action: "signin.failed",
           actor: { id: claimed.user.id, kind: "user", label: email, email },
           access: { ...client.access, sessionId: null },
-          note: "two-factor secret could not be decrypted (TOTP_ENCRYPTION_KEY)",
+          note: "two-factor secret could not be decrypted with this deployment's key",
         });
         return refuse();
       }

@@ -764,7 +764,7 @@ describe("two-step sign-in", () => {
     expect(res.statusCode).toBe(401);
     const rows = await t.db.select().from(auditEvents).where(eq(auditEvents.action, "signin.failed"));
     expect(rows.map((r) => r.note)).toEqual([
-      "two-factor secret could not be decrypted (TOTP_ENCRYPTION_KEY)",
+      "two-factor secret could not be decrypted with this deployment's key",
     ]);
     // Not charged against the person: they may well have typed the right code.
     const attempts = await t.db.select().from(loginAttempts);

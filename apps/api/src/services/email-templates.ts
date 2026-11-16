@@ -1,4 +1,10 @@
-import { EMAIL_SUBJECTS, type EmailDelivery, type EmailType } from "@sr/shared";
+import {
+  EMAIL_SUBJECTS,
+  ROLE_LABELS,
+  type EmailDelivery,
+  type EmailType,
+  type Role,
+} from "@sr/shared";
 import { sendEmail, type EmailLogFn, type SendResult } from "./email.js";
 import {
   ctaButton,
@@ -14,10 +20,10 @@ import { emailTime } from "./email-time.js";
 
 /**
  * The transactional emails, with their copy. The invitation and the password
- * reset are MAG-2870's, close to verbatim; the password-changed notice is
- * MAG-2868's and the two-factor reset notice MAG-2869's. Structure follows
- * lava-connect: one `send*` per type, each composing subject, plain text and
- * HTML and handing them to `deliver()`.
+ * reset are MAG-2870's; the password-changed notice is MAG-2868's and the
+ * two-factor reset notice MAG-2869's. Structure follows lava-connect: one
+ * `send*` per type, each composing subject, plain text and HTML and handing
+ * them to `deliver()`.
  *
  * The invitation and the reset follow the four rules MAG-2870 sets for them.
  * The two notices keep rules 3 and 4, and in place of 1 and 2 carry no link at
@@ -27,18 +33,53 @@ import { emailTime } from "./email-time.js";
  *     strip buttons and people forward these.
  *  2. **The expiry is in the message**, so nobody discovers it by clicking a
  *     dead link.
- *  3. **No marketing footer, no tracking, no unsubscribe** — enforced by the
+ *  3. **No marketing footer, no tracking, no unsubscribe**, enforced by the
  *     shell, which has no footer and no remote images at all.
  *  4. **The message says what to do if it wasn't you.** On the reset that is
  *     the last line; it reassures without alarming.
  *
- * A time, where one is printed, is written by `emailTime` (`email-time.ts`):
- * `Nov 11, 2026, 14:05 UTC`.
+ * The copy is US English, calls the second factor "2FA", and carries no long
+ * dash (an em or en dash) in a subject, the plain text or the HTML; a pause is
+ * " - " or two sentences. A time, where one is printed, is written by
+ * `emailTime` (`email-time.ts`): `Nov 11, 2026, 14:05 UTC`.
  */
 
-/** The customer this deployment belongs to, for the invitation's subject. */
+/** The customer this deployment belongs to (`CUSTOMER_NAME`; the fleet sets
+ *  the tenant's name), as the emails name the dashboard. */
 function customerName(): string {
   return process.env.CUSTOMER_NAME?.trim() || config.customerName;
+}
+
+/** A person an email names: what the users row holds. */
+export interface NamedPerson {
+  name: string | null;
+  email: string;
+}
+
+/**
+ * A display name as an email prints it. The name is whatever its holder typed
+ * when they joined, so control characters and runs of whitespace collapse to
+ * one space: a name cannot add lines to a message, or headers to a subject.
+ */
+function printableName(person: NamedPerson): string | null {
+  // eslint-disable-next-line no-control-regex
+  const name = (person.name ?? "").replace(/[\s\u0000-\u001f\u007f-\u009f]+/g, " ").trim();
+  return name && name.toLowerCase() !== person.email.toLowerCase() ? name : null;
+}
+
+/** A person by name, or by address when they have none: `Victoria Admin`. */
+export function personName(person: NamedPerson): string {
+  return printableName(person) ?? person.email;
+}
+
+/**
+ * A person by name and address, `Victoria Admin (v@example.com)`, or the
+ * address alone. The address always, because it is what identifies them; the
+ * name is the part its holder controls.
+ */
+export function personLabel(person: NamedPerson): string {
+  const name = printableName(person);
+  return name ? `${name} (${person.email})` : person.email;
 }
 
 /**
@@ -69,7 +110,7 @@ export type DeliveryOutcome = Awaited<ReturnType<typeof deliver>>;
 /**
  * A composed message, before anything tries to send it.
  *
- * Rendering is split from sending so the copy can be asserted — and looked at —
+ * Rendering is split from sending so the copy can be asserted, and looked at,
  * without a transport in the way. It is also what lets the screenshots in
  * `docs/assets/` be the real templates rather than a mock-up of them.
  */
@@ -79,28 +120,38 @@ export interface RenderedEmail {
   html: string;
 }
 
-/**
- * Invitation.
- *
- * **The inviter is deliberately not named.** MAG-2870 is explicit, and the
- * reasoning is worth keeping next to the copy: an invitation goes to an address
- * nobody has verified yet, so a mistyped one puts a colleague's name and email
- * in a stranger's inbox. The recipient does not need it to act.
- */
-export function renderInvitationEmail(opts: {
+/** What an invitation needs to be written. */
+export interface InvitationEmailInput {
   to: string;
   inviteUrl: string;
   expiresInDays: number;
-}): RenderedEmail {
+  /** The admin sending this link: the one who invited, or who resent it. */
+  invitedBy: NamedPerson;
+  /** The role the account is created with. */
+  role: Role;
+}
+
+/**
+ * Invitation.
+ *
+ * It names who sent it, in the subject and again with their address and the
+ * role in the body, so the recipient can tell a colleague's invitation from a
+ * stranger's and knows what they are being given. The last line says the link
+ * creates the account for this one address, so it is not forwarded.
+ */
+export function renderInvitationEmail(opts: InvitationEmailInput): RenderedEmail {
   const customer = customerName();
-  const subject = EMAIL_SUBJECTS.invitation(customer);
+  const subject = EMAIL_SUBJECTS.invitation(customer, personName(opts.invitedBy));
   const days = opts.expiresInDays === 1 ? "1 day" : `${opts.expiresInDays} days`;
+  const invitedBy = `Invited by ${personLabel(opts.invitedBy)} as ${ROLE_LABELS[opts.role]}.`;
+  const forOnly = (to: string) => `It sets up the account for ${to}, so do not forward it.`;
 
   const text =
     `Hi,\n\n` +
     `You've been given access to the Smart Router dashboard for ${customer}.\n\n` +
+    `${invitedBy}\n\n` +
     `Set up your account:\n${opts.inviteUrl}\n\n` +
-    `The link works once and expires in ${days}. It only works for ${opts.to}.\n`;
+    `The link works once and expires in ${days}. ${forOnly(opts.to)}\n`;
 
   const html = renderEmailHtml({
     subject,
@@ -109,10 +160,11 @@ export function renderInvitationEmail(opts: {
       paragraph(
         `You've been given access to the Smart Router dashboard for ${escapeHtml(customer)}.`,
       ) +
+      paragraph(escapeHtml(invitedBy)) +
       ctaButton("Set up your account", opts.inviteUrl) +
       linkFallback(opts.inviteUrl) +
       paragraphSmall(
-        `The link works once and expires in <strong>${days}</strong>. It only works for ${escapeHtml(opts.to)}.`,
+        `The link works once and expires in <strong>${days}</strong>. ${escapeHtml(forOnly(opts.to))}`,
       ),
   });
 
@@ -120,7 +172,7 @@ export function renderInvitationEmail(opts: {
 }
 
 export async function sendInvitationEmail(
-  opts: { to: string; inviteUrl: string; expiresInDays: number },
+  opts: InvitationEmailInput,
   log?: EmailLogFn,
 ): Promise<DeliveryOutcome> {
   return deliver({ to: opts.to, ...renderInvitationEmail(opts) }, log);
@@ -129,7 +181,7 @@ export async function sendInvitationEmail(
 /**
  * Password reset.
  *
- * The expiry stated here is passed in rather than written into the copy —
+ * The expiry stated here is passed in rather than written into the copy:
  * lava-connect's template hardcodes 30 minutes, and this product's managed
  * reset is an hour. A number in prose that nothing derives from the code is a
  * number that goes stale silently.
@@ -146,8 +198,8 @@ export function renderPasswordResetEmail(opts: {
     `We received a request to reset your Smart Router password. ` +
     `Use the link below to choose a new one.\n\n` +
     `${opts.resetUrl}\n\n` +
-    `This link expires in ${hours}. If you didn't request this, you can ignore this email — ` +
-    `your password won't change.\n`;
+    `This link expires in ${hours}. If you didn't request this, you can ignore this email. ` +
+    `Your password won't change.\n`;
 
   const html = renderEmailHtml({
     subject,
@@ -159,7 +211,7 @@ export function renderPasswordResetEmail(opts: {
       ctaButton("Reset password", opts.resetUrl) +
       linkFallback(opts.resetUrl) +
       paragraphSmall(
-        `This link expires in <strong>${hours}</strong>. If you didn't request this, you can ignore this email — your password won't change.`,
+        `This link expires in <strong>${hours}</strong>. If you didn't request this, you can ignore this email. Your password won't change.`,
       ),
   });
 
@@ -174,7 +226,7 @@ export async function sendPasswordResetEmail(
 }
 
 /**
- * Two-factor reset notice — MAG-2869.
+ * Two-factor reset notice (MAG-2869).
  *
  * An admin can clear anybody's second factor. That is the lost-phone path, and
  * also the shortest way to take over an approver's account using only intended
@@ -182,7 +234,7 @@ export async function sendPasswordResetEmail(
  * This names who did it and when, so a reset nobody asked for is something the
  * member asks about.
  *
- * **No link, on purpose** — no undo, no sign-out button, no sign-in button.
+ * **No link, on purpose**: no undo, no sign-out button, no sign-in button.
  * Unlike the invitation and the reset, nobody asked for this message, and an
  * unrequested security notice with a link in it is the shape phishing takes; a
  * notice that never carries one makes a copy that does easy to spot. The reset
@@ -201,21 +253,21 @@ export function renderTwoFactorResetEmail(opts: {
   const when = emailTime(opts.at);
 
   const text =
-    `Two-factor authentication was reset on your account (${opts.to}) on the ` +
+    `2FA was reset on your account (${opts.to}) on the ` +
     `Smart Router dashboard for ${customer}.\n\n` +
     `Reset by: ${opts.resetBy}\n` +
     `When: ${when}\n\n` +
     `You have been signed out on every device. The next time you sign in, you'll be ` +
     `asked to set up an authenticator app again.\n\n` +
     `If you didn't ask for this, report it to your security team or another ` +
-    `administrator straight away.\n`;
+    `administrator right away.\n`;
 
   const html = renderEmailHtml({
     subject,
     body:
-      heading("Your two-factor authentication was reset") +
+      heading("Your 2FA was reset") +
       paragraph(
-        `Two-factor authentication was reset on your account (${escapeHtml(opts.to)}) on the ` +
+        `2FA was reset on your account (${escapeHtml(opts.to)}) on the ` +
           `Smart Router dashboard for ${escapeHtml(customer)}.`,
       ) +
       paragraph(
@@ -226,7 +278,7 @@ export function renderTwoFactorResetEmail(opts: {
         "You have been signed out on every device. The next time you sign in, you'll be asked to set up an authenticator app again.",
       ) +
       paragraphSmall(
-        "If you didn't ask for this, report it to your security team or another administrator straight away.",
+        "If you didn't ask for this, report it to your security team or another administrator right away.",
       ),
   });
 
@@ -241,31 +293,30 @@ export async function sendTwoFactorResetEmail(
 }
 
 /**
- * Password changed — sent whichever way the password changed: from the Account
- * page, or by a reset link being used. A change the owner did not make is the
+ * Password changed: sent whichever way the password changed, from the Account
+ * page or by a reset link being used. A change the owner did not make is the
  * earliest sign anybody gets that someone else is in the account.
  *
  * **It carries no link at all**: no button, no reset link, no sign-in link. A
  * takeover notice with a button is one an attacker can copy and bait somebody
  * into pressing, so the way back is described in words instead, and the last
- * line says that this notice never has a link, so a copy that has one gives
- * itself away. The time is the fact the reader needs to recognise the change
- * as theirs or not, so it is stated, in UTC.
+ * line says that this notice never has a link and not to click one, so a copy
+ * that has one gives itself away. The time is the fact the reader needs to
+ * recognize the change as theirs or not, so it is stated, in UTC.
  */
 export function renderPasswordChangedEmail(opts: { changedAt: Date }): RenderedEmail {
   const customer = customerName();
   const subject = EMAIL_SUBJECTS.password_changed(customer);
   const when = emailTime(opts.changedAt);
-  const noLink =
-    "This notice never contains a link. One that asks you to click something did not come from us.";
+  const noLink = "We never put a link in this notice. If a copy has one, don't click it.";
 
   const text =
     `The password for your account on the Smart Router dashboard for ${customer} ` +
     `was changed on ${when}.\n\n` +
     `If you made this change, there is nothing else to do.\n\n` +
     `If you didn't, someone else may have your password. Open the dashboard the way you ` +
-    `usually do, choose "Forgot your password?" on the sign-in page to set a new one — that ` +
-    `signs out every device — and tell your administrator.\n\n` +
+    `usually do, choose "Forgot your password?" on the sign-in page to set a new one, which ` +
+    `signs out every device, and tell your administrator.\n\n` +
     `${noLink}\n`;
 
   const html = renderEmailHtml({
@@ -280,7 +331,7 @@ export function renderPasswordChangedEmail(opts: { changedAt: Date }): RenderedE
       paragraph(
         "<strong>If you didn't</strong>, someone else may have your password. Open the dashboard " +
           "the way you usually do, choose <strong>Forgot your password?</strong> on the sign-in " +
-          "page to set a new one — that signs out every device — and tell your administrator.",
+          "page to set a new one, which signs out every device, and tell your administrator.",
       ) +
       paragraphSmall(noLink),
   });
