@@ -43,6 +43,18 @@ function mockPrometheus(): void {
         { metric: { spec: "ETH1", provider_address: "Cached" }, values: pts(() => true) },
       ]);
     }
+    // What clients got per chain and stretch (the log store's recorded outcomes): every request
+    // answered, except half of BTC's in the stretch ending at 360.
+    if (new URL(url).pathname.endsWith("/query_range") && query.startsWith("sum by (chain) (sum_over_time(smartrouter_final_")) {
+      // The outcomes carry `chain` and `service_name`, no router label: under a router scope the store has none.
+      if (query.includes('router="')) return matrix([]);
+      const failures = query.includes("smartrouter_final_failures:count1m");
+      const pts = (v: (t: number) => string) => Array.from({ length: 31 }, (_, k) => [k * 60, v(k * 60)]);
+      return matrix([
+        { metric: { chain: "eth1" }, values: pts(() => (failures ? "0" : "1000")) },
+        { metric: { chain: "btc" }, values: pts((t) => (failures ? (t === 360 ? "500" : "0") : "1000")) },
+      ]);
+    }
     // Cross-validation failures per chain and method: a stretch where every ETH1 answer disagreed.
     if (new URL(url).pathname.endsWith("/query_range") && query.startsWith("sum by (spec, method) (increase(smartrouter_cross_validation_failures_total")) {
       const pts = (hot: (t: number) => boolean) => Array.from({ length: 31 }, (_, k) => [k * 60, hot(k * 60) ? "8" : "0"]);
@@ -410,6 +422,28 @@ describe("api routes", () => {
     expect(body.lines.find((l: { kind: string }) => l.kind === "disagreed")).toMatchObject({ shape: "chain-wide", providers: ["eth_getBalance", "eth_getBlockByNumber"], count: 56 });
     // Outvoted providers: the chain's only.
     expect(body.outvoted).toEqual([{ spec: "ETH1", provider: "eth-lava", count: 340 }]);
+  });
+
+  it("GET /api/metrics/downtime-avoided counts the time a provider was failing while its chain kept answering", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(1_800_000);
+    let all, eth, unknown, scoped;
+    try {
+      scoped = await app.inject({ method: "GET", url: "/api/metrics/downtime-avoided?window=30m&router=eth-router" });
+      all = await app.inject({ method: "GET", url: "/api/metrics/downtime-avoided?window=30m" });
+      eth = await app.inject({ method: "GET", url: "/api/metrics/downtime-avoided?window=30m&spec=ETH1" });
+      unknown = await app.inject({ method: "GET", url: "/api/metrics/downtime-avoided?window=30m&routerId=eth-prod" });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(all.statusCode).toBe(200);
+    // ETH1: 4 one-minute stretches covered. BTC: 3 stretches of trouble, one with half its requests failed.
+    expect(all.json()).toEqual({ from: 0, to: 1800, stepSec: 60, seconds: 360, notAvoidedSeconds: 60, incidents: 2, chains: 2, strict: true, available: true });
+    expect(eth.json()).toMatchObject({ seconds: 240, notAvoidedSeconds: 0, incidents: 1, chains: 1, strict: true });
+    // Under a router scope the outcomes are still read, so the count stays the strict one.
+    expect(scoped.json()).toMatchObject({ seconds: 360, notAvoidedSeconds: 60, incidents: 2, chains: 2, strict: true, available: true });
+    // A router the config doesn't name: zeros, without a read.
+    expect(unknown.json()).toMatchObject({ seconds: 0, incidents: 0, strict: false, available: true });
   });
 
   it("GET /api/metrics/error-incidents?routerId= answers no lines for a router the config does not name", async () => {

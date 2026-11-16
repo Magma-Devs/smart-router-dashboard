@@ -362,6 +362,28 @@ export async function metricRoutes(app: FastifyInstance, opts: MetricRoutesOptio
       app.scoped(router).metricsDetail.errorIncidents(window, spec || undefined, routerId || undefined));
   });
 
+  // The Overview's "Downtime avoided" card: how long a provider was failing while its chain kept answering.
+  app.get<{ Querystring: WindowQuery & { spec?: string } }>("/api/metrics/downtime-avoided", {
+    schema: {
+      tags: ["Metrics"],
+      summary: "How long a provider was failing while its chain kept answering, over the window: the Errors timeline's bursts of failed tries, counted where the chain's requests were still answered",
+      querystring: {
+        type: "object" as const,
+        properties: {
+          window: windowQuerySchema.properties.window,
+          router: windowQuerySchema.properties.router,
+          routerId: windowQuerySchema.properties.routerId,
+          spec: { type: "string" as const, description: "Chain spec label, e.g. ETH1" },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const { spec, router, routerId } = request.query;
+    const window = parseWindow(request.query.window);
+    return snapshot(reply, "window", window, ["downtime-avoided", window, spec ?? null, routerId ?? null, scopeKey(router)], () =>
+      app.scoped(router).metricsDetail.downtimeAvoided(window, spec || undefined, routerId || undefined));
+  });
+
   // Which upstream took one chain's traffic - the "Traffic by provider" card.
   app.get<{ Querystring: { window?: string; spec?: string; router?: string } }>("/api/metrics/upstream-mix", {
     schema: {

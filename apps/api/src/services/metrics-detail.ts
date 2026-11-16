@@ -11,6 +11,10 @@ import {
   OPTIONAL_METRICS,
   ERROR_INCIDENTS_RECORDED_ABOVE_SEC,
   detectErrorIncidents,
+  downtimeAvoided,
+  downtimeAvoidedRead,
+  type DowntimeAvoidedReport,
+  type ServedStretch,
   errorIncidentsRead,
   qErrorRepliesBySpecProvider,
   qFailedTriesBySpecProvider,
@@ -104,6 +108,8 @@ export class MetricsDetailService {
   constructor(
     private readonly prom: PrometheusClient,
     private readonly configSvc?: ConfigurationService,
+    /** The client without the router scope, for series that carry no router label: the recorded request outcomes are split by `service_name`. */
+    private readonly unscoped: PrometheusClient = prom,
   ) {}
 
   /** Does this config router declare an upstream by that name? The metrics
@@ -255,6 +261,126 @@ export class MetricsDetailService {
       available: reads.every((r) => r !== null),
       failed: kinds.filter((_, i) => reads[i] === null),
     };
+  }
+
+  /**
+   * Downtime avoided over the window (`downtimeAvoided` in `@sr/shared`): how
+   * long a provider was failing while its chain kept answering. The failed
+   * tries per chain and provider are the Errors timeline's read (the raw
+   * counters at a 5-minute step, a minute up to 3 hours), batched into its
+   * bursts; a window past a week is read in pieces of a week at most, one
+   * after the other (`downtimeAvoidedRead`), so a short burst is never
+   * counted as a 30-minute stretch;
+   * what clients got on each chain in each stretch is the log store's
+   * recorded request outcomes (`RECORDED_OUTCOMES`, two range reads summed
+   * per chain, without the router scope: they carry `chain` and
+   * `service_name`, not the router's label). A store without those - no
+   * log ruler - or a router whose requests can't be told from another's on
+   * its chain answers `strict: false`: the time a provider was failing, whatever its chain did. A
+   * router the config doesn't name answers zeros without a read.
+   */
+  async downtimeAvoided(window: MetricWindow, spec?: string, routerId?: string): Promise<DowntimeAvoidedReport> {
+    const range = WINDOWS[window].rangeSeconds;
+    const nowSec = Date.now() / 1000;
+    const stepOf = downtimeAvoidedRead(range, 0).stepSec;
+    const end = Math.floor(nowSec / stepOf) * stepOf;
+    const { stepSec, pieces } = downtimeAvoidedRead(range, end);
+    const step = `${stepSec}s`;
+    const from = end - range;
+    const none = (available: boolean): DowntimeAvoidedReport =>
+      ({ from, to: end, stepSec, seconds: 0, notAvoidedSeconds: 0, incidents: 0, chains: 0, strict: false, available });
+    const routers = this.configSvc?.getRouters() ?? [];
+    const router = routerId ? routers.find((r) => r.id === routerId) : undefined;
+    if (routerId && !router) return none(true);
+    const chain = router?.spec ?? spec;
+    const declared = router ? new Set(router.nodes.map((n) => n.name.toLowerCase())) : null;
+    // The request outcomes, per chain: a router is its `service_name`, unless another of the chain's ends in its id.
+    const byRouter = router ? serviceNameMatcher(router.id) : null;
+    const splittable = !router || (byRouter !== null && !serviceNameClash(router.id, routers.filter((r) => r.spec === router.spec && r.id !== router.id).map((r) => r.id)));
+    const readable = splittable && (!chain || LABEL_TOKEN.test(chain));
+    const matchers = [chain ? `chain="${chain.toLowerCase()}"` : null, byRouter].filter(Boolean).join(", ");
+    const outcomes = (metric: string) => `sum by (chain) (sum_over_time(${metric}${matchers ? `{${matchers}}` : ""}[${step}]))`;
+
+    let seconds = 0, notAvoidedSeconds = 0, incidents = 0, strict = true;
+    const chains = new Set<string>();
+    // One piece at a time: a month is five reads of a week's size, never five at once.
+    for (const piece of pieces) {
+      const [rows, requested, unserved] = await Promise.all([
+        this.prom.queryRangeOrNull(qFailedTriesBySpecProvider(step, chain), piece.readFrom, piece.to, step),
+        readable ? this.unscoped.queryRangeOrNull(outcomes(RECORDED_OUTCOMES.requests), piece.from, piece.to, step) : null,
+        readable ? this.unscoped.queryRangeOrNull(outcomes(RECORDED_OUTCOMES.failures), piece.from, piece.to, step) : null,
+      ]);
+      if (rows === null) return none(false);
+      const series: ErrorIncidentSeries[] = [];
+      for (const r of rows) {
+        const s = r.metric.spec ?? "", provider = r.metric.provider_address ?? "";
+        if (!s || !provider || provider.toLowerCase() === CACHED_UPSTREAM.toLowerCase()) continue;
+        if (chain && s.toUpperCase() !== chain.toUpperCase()) continue;
+        if (declared && !declared.has(provider.toLowerCase())) continue;
+        series.push({
+          kind: "failed", spec: s, provider,
+          points: (r.values ?? []).map(([t, v]) => [Number(t), Number(v)] as [number, number]).filter(([, v]) => Number.isFinite(v)),
+        });
+      }
+      const { lines } = detectErrorIncidents(series, stepSec, piece.readFrom, piece.to, piece.from);
+      // No recorded requests in the piece at all: a store without the ruler, not idle chains.
+      let served: Map<string, Map<number, ServedStretch>> | null = null;
+      if (requested && unserved && requested.length) {
+        served = new Map();
+        for (const r of requested) {
+          const key = (r.metric.chain ?? "").toUpperCase();
+          if (!key) continue;
+          const at = served.get(key) ?? served.set(key, new Map()).get(key)!;
+          for (const [t, v] of r.values ?? []) if (Number.isFinite(Number(v))) at.set(Number(t), { requests: Number(v), failed: 0 });
+        }
+        for (const r of unserved) {
+          const at = served.get((r.metric.chain ?? "").toUpperCase());
+          if (!at) continue;
+          for (const [t, v] of r.values ?? []) {
+            const cell = at.get(Number(t));
+            if (cell && Number.isFinite(Number(v))) cell.failed = Number(v);
+          }
+        }
+      }
+      const got = downtimeAvoided({ lines, series, stepSec, windowFrom: piece.from, to: piece.to, served });
+      seconds += got.seconds;
+      notAvoidedSeconds += got.notAvoidedSeconds;
+      // A burst across the seam of two pieces is counted in each: the count is of bursts per piece.
+      incidents += got.incidents;
+      got.chainNames.forEach((c) => chains.add(c));
+      // One piece without the recorded outcomes and the whole count is the looser one.
+      if (!got.strict) strict = false;
+    }
+    // Strict pieces count answered stretches only; mixed with loose ones the sum would be neither.
+    if (!strict && pieces.length > 1) return this.downtimeLoose(pieces, step, stepSec, chain, declared, from, end);
+    return { from, to: end, stepSec, seconds, notAvoidedSeconds, incidents, chains: chains.size, strict, available: true };
+  }
+
+  /** The looser count over every piece - the time a provider was failing - for a store that records no request outcomes for part of the window. */
+  private async downtimeLoose(
+    pieces: { readFrom: number; from: number; to: number }[], step: string, stepSec: number,
+    chain: string | undefined, declared: Set<string> | null, from: number, end: number,
+  ): Promise<DowntimeAvoidedReport> {
+    let seconds = 0, incidents = 0;
+    const chains = new Set<string>();
+    for (const piece of pieces) {
+      const rows = await this.prom.queryRangeOrNull(qFailedTriesBySpecProvider(step, chain), piece.readFrom, piece.to, step);
+      if (rows === null) return { from, to: end, stepSec, seconds: 0, notAvoidedSeconds: 0, incidents: 0, chains: 0, strict: false, available: false };
+      const series: ErrorIncidentSeries[] = [];
+      for (const r of rows) {
+        const s = r.metric.spec ?? "", provider = r.metric.provider_address ?? "";
+        if (!s || !provider || provider.toLowerCase() === CACHED_UPSTREAM.toLowerCase()) continue;
+        if (chain && s.toUpperCase() !== chain.toUpperCase()) continue;
+        if (declared && !declared.has(provider.toLowerCase())) continue;
+        series.push({ kind: "failed", spec: s, provider, points: (r.values ?? []).map(([t, v]) => [Number(t), Number(v)] as [number, number]).filter(([, v]) => Number.isFinite(v)) });
+      }
+      const { lines } = detectErrorIncidents(series, stepSec, piece.readFrom, piece.to, piece.from);
+      const got = downtimeAvoided({ lines, series, stepSec, windowFrom: piece.from, to: piece.to, served: null });
+      seconds += got.seconds;
+      incidents += got.incidents;
+      got.chainNames.forEach((c) => chains.add(c));
+    }
+    return { from, to: end, stepSec, seconds, notAvoidedSeconds: 0, incidents, chains: chains.size, strict: false, available: true };
   }
 
   /**

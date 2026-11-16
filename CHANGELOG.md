@@ -5,6 +5,35 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.69.5]
+
+### Changed
+
+- **The Overview's six cards say what the router did for reliability.**
+  - **Requests answered** replaces "Success rate", which counted attempts at
+    providers and rounded to 100.00%. It is answered ÷ (answered + failed)
+    over client requests, written with enough decimals that it never reads
+    100% while a request failed ("99.9989%"), with what it is a share of under
+    it ("of 215.47M requests").
+  - **Downtime avoided** is new: how long a provider was failing while its
+    chain kept answering - the time a client on that provider alone would
+    have been down (`GET /api/metrics/downtime-avoided`). A stretch counts
+    only when a provider was in a burst of failed attempts on the chain (the
+    Errors tab's bursts) and at least 99.9% of the chain's requests in it got
+    an answer; stretches where requests did fail are never counted. Under the
+    number, how many incidents on how many chains; with none avoided, how long
+    a provider was failing with failed requests ("5 min with failed
+    requests"). Exact to a minute up to 3 hours and 5 minutes beyond. Where a deployment records no request outcomes the
+    card is titled "Provider trouble time" and says only that.
+  - **Saved by retry**, **Failed requests**, **Out-of-date answers blocked**
+    (was "Stale responses caught": the router threw the answer away and asked
+    another provider, so no client saw it) and **Answered from cache** keep
+    their numbers, in plain words.
+  - "Requests served" is no longer a card: it is the small print under
+    Requests answered.
+  - Under each number there is one short fact at most. What a card means is
+    in its tooltip.
+
 ## [0.69.4]
 
 ### Changed

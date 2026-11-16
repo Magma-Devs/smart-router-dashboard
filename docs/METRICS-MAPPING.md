@@ -186,7 +186,8 @@ client requests) against the live router:
   Every "requests served"/per-chain/per-method/RPS figure reads THIS.
 - **`requests_success_total` is TRANSPORT success** — an upstream answering
   with a JSON-RPC error object (e.g. `-32601`) still counts as success (it
-  increments `node_errors_total` instead). "Success rate" tooltips say so.
+  increments `node_errors_total` instead). The "Requests answered" tooltip
+  says a provider's own error answer counts as answered.
   Derived errors (`total − success`) therefore = failed attempts. A protocol
   error (`protocol_errors_total`: refused, reset or dropped connection, cut-off
   body, timeout) is one of those failed attempts, so wherever the classes sit
@@ -273,7 +274,7 @@ as not to disturb the other agent's checkout):
 | `smartrouter_hedge_total` | `dashboard.kpis.errorsHandled: {null,null}`; `errorsHandledBreakdown`/`failoverRatio`/`internalAvailability`/`contribution: null` | Errors-handled / hedge win / failover panels |
 | `smartrouter_cross_validation_{requests,success,failed,failures}_total` + `provider_{agreements,disagreements}_total` | `/cross-validation` → `emitted:false`, null rounds/consensus/disagreements, empty `byChain` (`consistency` stays real). `/error-incidents` → no `disagreed` lines (they read `failures_total` at `reason=~"no-agreement|diversity-unmet|group-quorum-unmet"`) and `outvoted: []` (`provider_disagreements_total`); its `failed` and `reply` lines are other families'. Fires on the first policy-matched request | Cross-validation panel + per-upstream disagreement rate; the Errors tab timeline's "Providers disagreed" lines and its Outvoted row |
 | `smartrouter_{node,protocol}_errors_total` `{spec, apiInterface, provider_address, method}` | when absent: zero node/protocol errors in `errors.pivots.category` + `upstream-detail.errorSplit`; when present: class fallback pivot, per-hotspot `nodeMethods`, upstream node-vs-transport split all light up, and protocol errors come out of the transport class (they are failed attempts too, so they would otherwise count twice). `pivots.{code,category,retryability}` come from the separate classified `smartrouter_errors_total{chain_id, error_category, error_name, retryable}` family once IT fires (no provider label → per-upstream by-code stays empty) | Error classes, node-errors-by-method |
-| `smartrouter_consistency_failed_total` | absent ⇒ `staleCaught`/`consistency.caught` = 0 (a true zero — the check never failed) | "Stale responses caught" tile |
+| `smartrouter_consistency_failed_total` | absent ⇒ `staleCaught`/`consistency.caught` = 0 (a true zero — the check never failed) | "Out-of-date answers blocked" card |
 | `smartrouter_requests_{write,batch}_total` | `methods.classTotals.{write,batch}: null` + `emitted` flags; `upstream-detail.volume.{write,batch}: null` | Read/write/batch class split |
 | `smartrouter_ws_{connections_active,subscriptions_total,subscription_errors_total}` | `/websocket` → `emitted:false` + nulls; once present, totals are lifetime | WebSocket panel |
 
