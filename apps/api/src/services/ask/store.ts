@@ -202,8 +202,24 @@ export class AskStore {
         and(this.runOwned(personId), eq(askRuns.chatId, chatId), inArray(askRuns.status, active)),
       )
       .limit(1);
+    const turnIds = [...new Set(page.map((message) => message.runId))];
+    const turns = turnIds.length
+      ? await this.db
+          .select()
+          .from(askRuns)
+          .where(and(this.runOwned(personId), inArray(askRuns.id, turnIds)))
+      : [];
     return {
       chat: chatWire(chat),
+      context: turns.find((turn) => turn.id === rows[0]?.runId)?.context ?? null,
+      runs: turns.map((turn) => ({
+        id: turn.id,
+        status: turn.status,
+        completedAt: turn.completedAt?.toISOString() ?? null,
+        error: turn.errorCode
+          ? { code: turn.errorCode, message: new AskFailure(turn.errorCode).message }
+          : null,
+      })),
       messages: [...page].reverse().map((row) => ({
         id: row.id,
         runId: row.runId,

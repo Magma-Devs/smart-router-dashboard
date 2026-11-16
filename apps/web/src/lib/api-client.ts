@@ -149,6 +149,7 @@ async function failure(
   res: Response,
   authenticated: boolean,
   fallback = `Request failed (${res.status})`,
+  requestAuthorization?: string,
 ): Promise<ApiError> {
   let message = fallback;
   let code: string | undefined;
@@ -165,7 +166,15 @@ async function failure(
     endingSession = true; // concurrent panels all fail at once; act once
     // An admin's act gets a sentence on the sign-in page; see `sign-in-notice.ts`.
     const redirectTo = signInPathAfter(endedBy);
-    void import("next-auth/react").then(({ signOut }) => signOut({ redirectTo }));
+    void import("next-auth/react").then(async ({ signOut }) => {
+      const { getAuthToken } = await import("./auth-store");
+      const sent = requestAuthorization?.startsWith("Bearer ") ? requestAuthorization.slice(7) : "";
+      if (sent && !sameSession(sent, getAuthToken() ?? "")) {
+        endingSession = false;
+        return;
+      }
+      await signOut({ redirectTo });
+    });
   }
   const retryAfterMs = res.status === 429 ? parseRetryAfter(res.headers.get("retry-after")) : null;
   return new ApiError(
@@ -176,21 +185,65 @@ async function failure(
   );
 }
 
-export async function apiGet<T>(path: string): Promise<T> {
+/** Optional binding for personal caches and multi-step writes: a request queued
+ * under one session must not run under a different account after sign-in changes. */
+function sessionIdentity(token: string): string | null {
+  try {
+    if (token.length > 16_384) return null;
+    const payload = token.split(".")[1];
+    if (!payload) return null;
+    const claims = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/"))) as Record<
+      string,
+      unknown
+    >;
+    if (
+      typeof claims.sub !== "string" ||
+      !claims.sub ||
+      typeof claims.sid !== "string" ||
+      !claims.sid
+    )
+      return null;
+    // Cache/request binding only. The server authenticates the actual bearer;
+    // decoded browser claims never grant data access or replace verification.
+    return JSON.stringify([claims.sub, claims.sid, claims.iss, claims.aud]);
+  } catch {
+    return null;
+  }
+}
+function sameSession(first: string, second: string): boolean {
+  if (first && first === second) return true;
+  const identity = sessionIdentity(first);
+  return identity !== null && identity === sessionIdentity(second);
+}
+function expectedSession(headers: Record<string, string>, token?: string): void {
+  if (token === undefined) return;
+  const current = headers.Authorization?.startsWith("Bearer ")
+    ? headers.Authorization.slice(7)
+    : "";
+  if (token && sameSession(token, current)) return;
+  throw new ApiError(
+    409,
+    "Your sign-in changed. Reopen the chat before continuing.",
+    "SESSION_CHANGED",
+  );
+}
+export async function apiGet<T>(path: string, sessionToken?: string): Promise<T> {
   const { base, headers, authenticated } = await requestContext();
+  expectedSession(headers, sessionToken);
   const res = await fetch(`${base}${path}`, { headers });
-  if (!res.ok) throw await failure(res, authenticated);
+  if (!res.ok) throw await failure(res, authenticated, undefined, headers.Authorization);
   return (await res.json()) as T;
 }
 
-export async function apiPost<T>(path: string, body: unknown): Promise<T> {
+export async function apiPost<T>(path: string, body: unknown, sessionToken?: string): Promise<T> {
   const { base, headers, authenticated } = await requestContext();
+  expectedSession(headers, sessionToken);
   const res = await fetch(`${base}${path}`, {
     method: "POST",
     headers: { "content-type": "application/json", ...headers },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw await failure(res, authenticated);
+  if (!res.ok) throw await failure(res, authenticated, undefined, headers.Authorization);
   return (await res.json()) as T;
 }
 
@@ -203,14 +256,16 @@ export async function apiSend<T>(
   method: "PATCH" | "DELETE" | "POST",
   path: string,
   body?: unknown,
+  sessionToken?: string,
 ): Promise<T> {
   const { base, headers, authenticated } = await requestContext();
+  expectedSession(headers, sessionToken);
   const res = await fetch(`${base}${path}`, {
     method,
     headers: body === undefined ? headers : { "content-type": "application/json", ...headers },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  if (!res.ok) throw await failure(res, authenticated);
+  if (!res.ok) throw await failure(res, authenticated, undefined, headers.Authorization);
   // 204 and friends have no body; callers of those ignore the result.
   const text = await res.text();
   return (text ? JSON.parse(text) : undefined) as T;
@@ -224,7 +279,8 @@ export async function apiSend<T>(
 export async function apiDownload(path: string, filename: string): Promise<void> {
   const { base, headers, authenticated } = await requestContext();
   const res = await fetch(`${base}${path}`, { headers });
-  if (!res.ok) throw await failure(res, authenticated, `Export failed (${res.status})`);
+  if (!res.ok)
+    throw await failure(res, authenticated, `Export failed (${res.status})`, headers.Authorization);
   const named = /filename="?([^";]+)"?/i.exec(res.headers.get("content-disposition") ?? "")?.[1];
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);

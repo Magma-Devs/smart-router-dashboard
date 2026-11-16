@@ -136,7 +136,9 @@ export const askPreferences = pgTable(
     view: text("view").$type<"panel" | "full">().notNull(),
     chatId: uuid("chat_id"),
     returnTo: text("return_to")
-      .$type<"/overview" | "/dashboard" | "/metrics" | "/upstreams">()
+      .$type<
+        "/overview" | "/dashboard" | "/metrics" | "/upstreams" | "/team" | "/audit" | "/account"
+      >()
       .notNull(),
     updatedAt: time("updated_at").notNull().defaultNow(),
   },
@@ -145,7 +147,7 @@ export const askPreferences = pgTable(
     check("ask_preferences_view", sql`${t.view} in ('panel','full')`),
     check(
       "ask_preferences_return_to",
-      sql`${t.returnTo} in ('/overview','/dashboard','/metrics','/upstreams')`,
+      sql`${t.returnTo} in ('/overview','/dashboard','/metrics','/upstreams','/team','/audit','/account')`,
     ),
   ],
 );

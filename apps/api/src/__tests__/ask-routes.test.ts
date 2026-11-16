@@ -68,6 +68,7 @@ describe("Ask foundation capability route", () => {
           enabled: true,
           acceptingQuestions: false,
           contractVersion: 1,
+          scopeId: expect.stringMatching(/^[a-f0-9]{64}$/),
         });
         expect(response.headers["cache-control"]).toBe("no-store");
         expect(fetchImpl).not.toHaveBeenCalled();

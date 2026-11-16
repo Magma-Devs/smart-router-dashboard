@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { ASK_CONTRACT_VERSION, askSubmitSchema, type AskCapabilities } from "@sr/shared";
@@ -77,10 +78,14 @@ export async function askRoutes(app: FastifyInstance, opts: AskRoutesOptions = {
         .status(error.statusCode)
         .send({ code: error.code, message: error.message, statusCode: error.statusCode });
     }
-    if (!requireAuth(request, reply)) return reply;
+    const me = requireAuth(request, reply);
+    if (!me) return reply;
     const result: AskCapabilities = {
       contractVersion: ASK_CONTRACT_VERSION,
       enabled: true,
+      scopeId: createHash("sha256")
+        .update(JSON.stringify([settings.customerId, me.id]))
+        .digest("hex"),
       acceptingQuestions: Boolean(opts.admit) && (opts.ready?.() ?? true) && !settings.problem,
     };
     return result;
@@ -89,6 +94,11 @@ export async function askRoutes(app: FastifyInstance, opts: AskRoutesOptions = {
   app.get(
     "/api/ask/chats",
     personal((request, { me, store }) => store.listChats(me.id, request.query)),
+  );
+  // Search text stays in the body, away from browser/ingress URL logs.
+  app.post(
+    "/api/ask/chats/search",
+    personal((request, { me, store }) => store.listChats(me.id, request.body)),
   );
   app.post(
     "/api/ask/chats",

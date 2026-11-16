@@ -68,7 +68,8 @@ server's customer feature flag. No spending route exists in the foundation PR.
 | Method/path | Meaning |
 | --- | --- |
 | GET /api/ask/capabilities | Availability, supported answer contract; no secrets or budget amount |
-| GET/POST /api/ask/chats | Personal paginated/searchable history; create personal chat |
+| GET/POST /api/ask/chats | Personal paginated history; create personal chat |
+| POST /api/ask/chats/search | Search personal history with search text in the request body |
 | GET /api/ask/chats/:id | Authorized chat and ordered messages |
 | POST /api/ask/chats/:id/runs | Idempotent submission with validated page context |
 | GET /api/ask/runs/:id | Authorized run state and validated terminal response |
@@ -118,6 +119,10 @@ No acceptance item is complete without the corresponding observed evidence.
   answers and a lease-aware queue worker. It stays inactive in the API until
   actual budget admission/reconciliation is installed by MAG-4932.
 
-- MAG-4932 installs actual customer/month accounting, internal staff records and
+- [PR #394](https://github.com/Magma-Devs/smart-router-dashboard/pull/394) installs actual customer/month accounting, internal staff records and
   physical retention. API admission/worker activation now require valid dated
   pricing and a supported free token counter. Deployment flags remain off.
+
+- MAG-4933 adds the complete panel/full UI and real-browser verification. The
+  customer feature remains off in deployments; no live runtime/pilot acceptance
+  is inferred from the synthetic provider used for deterministic browser checks.

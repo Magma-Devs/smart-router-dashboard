@@ -35,6 +35,7 @@ The observability dashboard for the [Smart Router](https://github.com/Magma-Devs
 - **Live test console** — fire requests at any chain × interface the router serves, sent from the dashboard's server so a deployment that admits only listed addresses still works, with a full method catalog generated from the [lava-specs](https://github.com/Magma-Devs/lava-specs) repo (238 chains, jsonrpc/rest/tendermint/grpc, archive/debug/trace/blockbook tiers).
 - **Self-contained** — `make up` gives you router + Prometheus + api + web from nothing. No accounts, no cloud, optional auth.
 - **Optional authentication** — `AUTH_MODE=enabled` adds Auth.js sign-in (email+password + Google/GitHub) backed by Postgres. Default is open (`disabled`) for private deployments.
+- **Managed Ask your data** — optional personal chat with authorized customer metrics/logs, shared spend limits, source evidence and panel/full history. Off by default; see [configuration and verification](docs/ASK-YOUR-DATA.md).
 
 > **Repo layout:** a pnpm/TypeScript monorepo — `apps/api` (Fastify 5 Prometheus proxy) + `apps/web` (Next.js 16) + `packages/shared` + `packages/db`. Everything runs from the repo root.
 

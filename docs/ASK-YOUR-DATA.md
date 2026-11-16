@@ -248,3 +248,43 @@ A successful smoke is not browser UX, semantic quality or GK8 pilot acceptance.
 
 See [MAG-4932 validation](validation/MAG-4932/README.md) for actual PostgreSQL tests
 and the remaining live-provider/runtime/browser/rollout acceptance limits.
+
+
+## Chat UI
+
+The web and API both require managed authenticated deployment and
+`ASK_DATA_ENABLED=true`. The API's current capabilities/session gate remains the
+source of authority; browser visibility never grants access. No menu entry is
+added. The top-bar button and Cmd/Ctrl+K open the last panel/full view. Customer
+roles all use the same customer-only read boundary.
+
+The dock leaves the dashboard usable, minimizes to a continuing-work pill and
+expands to `/ask?chat=<id>`. Both views share the same personal chats, draft and
+live run. Back returns to the originating actual application page. History is
+searched by POST body, grouped by local calendar days and paginated; earlier
+messages load without losing the reading position. Completed errors/cancellations
+are included with retained messages, so reload does not erase the outcome.
+Conversation context is preserved for follow-ups and across the two views;
+starting a new chat adopts the current page context.
+
+Structured answers render as plain text, with a summary, numbered sections,
+optional stats, copy feedback and actual source/time/coverage evidence. A long
+answer opens at its start; reading older messages is not interrupted. Enter sends,
+Shift+Enter inserts a line and IME composition does not submit. A single active
+question locks submission across every chat/tab. Stop is durable and never creates
+a success message. Connection, loading, unavailable, empty and failed states have
+specific human-readable copy; no budget amount or credential/configuration advice
+is exposed to customers.
+
+Personal UI/cache state is scoped by the server's opaque customer/person hash and
+current dashboard session, with no transcript or draft in persistent browser
+storage. Queued reads/writes are bound to the initiating session; refreshed bearers
+for that same session are accepted, but a replacement account cannot receive the
+old request. A late failed request cannot sign out a newly signed-in account.
+Direct links are checked by the API before becoming a saved last-view preference.
+
+On mobile, the panel uses the shared dialog layer for counted scroll locking,
+focus containment and Escape, with the background inert. Desktop remains nonmodal.
+The full view adapts history controls to small screens. Theme tokens, reduced
+motion and keyboard/focus labels follow the existing dashboard components.
+See [MAG-4933 verification and screenshots](validation/MAG-4933/README.md).

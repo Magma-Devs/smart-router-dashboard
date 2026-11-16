@@ -50,7 +50,7 @@ interface Server {
 type TestBody = AskChatDetail &
   AskChatPage &
   AskPreferences &
-  AskRun & { code?: string; run: AskRun | null; acceptingQuestions?: boolean };
+  AskRun & { code?: string; run: AskRun | null; acceptingQuestions?: boolean; scopeId?: string };
 
 suite("Ask HTTP backed by independent PostgreSQL connections", () => {
   const handles: DbHandle[] = [];
@@ -425,6 +425,18 @@ suite("Ask HTTP backed by independent PostgreSQL connections", () => {
       chatId: first,
       returnTo: "/upstreams",
     });
+    for (const returnTo of ["/account", "/team", "/audit"]) {
+      expect(
+        (
+          await request(a, alice, "/preferences", "PATCH", {
+            view: "panel",
+            chatId: first,
+            returnTo,
+          })
+        ).status,
+      ).toBe(200);
+      expect((await request(fresh, alice, "/preferences")).body.returnTo).toBe(returnTo);
+    }
     const page = await request(fresh, alice, "/chats?limit=2");
     expect(page.body.chats).toHaveLength(2);
     const older = await request(a, alice, `/chats?limit=2&cursor=${page.body.nextCursor}`);
@@ -680,5 +692,62 @@ suite("Ask HTTP backed by independent PostgreSQL connections", () => {
     expect(row!.question).toContain("[redacted]");
     const detail = await request(paidApi, alice, `/chats/${id}`);
     expect(JSON.stringify(detail.body)).not.toContain("private-test-credential");
+  });
+  it("isolates opaque browser cache scopes by current person and customer", async () => {
+    const aa = await request(a, alice, "/capabilities");
+    const ab = await request(a, bob, "/capabilities");
+    const ba = await request(b, alice, "/capabilities");
+    const same = await request(replica, alice, "/capabilities");
+    expect(aa.status).toBe(200);
+    expect(aa.body.scopeId).toMatch(/^[a-f0-9]{64}$/);
+    expect(same.body.scopeId).toBe(aa.body.scopeId);
+    expect(new Set([aa.body.scopeId, ab.body.scopeId, ba.body.scopeId]).size).toBe(3);
+    expect(Object.keys(aa.body).sort()).toEqual([
+      "acceptingQuestions",
+      "contractVersion",
+      "enabled",
+      "scopeId",
+    ]);
+  });
+  it("supports body-based personal search and retained context/error outcomes after reload", async () => {
+    const id = await chat();
+    const context = {
+      page: "metrics",
+      chain: "ETH1",
+      from: "2026-11-16T10:00:00Z",
+      to: "2026-11-16T10:30:00Z",
+    };
+    const submitted = await request(a, alice, `/chats/${id}/runs`, "POST", {
+      idempotencyKey: crypto.randomUUID(),
+      question: "PERSONAL_POST_SEARCH_FIXTURE",
+      context,
+    });
+    expect(submitted.status).toBe(200);
+    await request(a, alice, `/runs/${submitted.body.id}/cancel`, "POST");
+    const detail = await request(replica, alice, `/chats/${id}`);
+    expect(detail.body.context).toEqual(context);
+    expect(detail.body.runs).toEqual([
+      expect.objectContaining({
+        id: submitted.body.id,
+        status: "cancelled",
+        error: expect.objectContaining({ code: "ASK_CANCELLED" }),
+      }),
+    ]);
+    const own = await request(a, alice, "/chats/search", "POST", {
+      query: "PERSONAL_POST_SEARCH_FIXTURE",
+    });
+    expect(own.status).toBe(200);
+    expect(own.body.chats.map((c) => c.id)).toEqual([id]);
+    for (const [target, person] of [
+      [a, bob],
+      [b, alice],
+    ] as const)
+      expect(
+        (
+          await request(target, person, "/chats/search", "POST", {
+            query: "PERSONAL_POST_SEARCH_FIXTURE",
+          })
+        ).body.chats,
+      ).toHaveLength(0);
   });
 });
