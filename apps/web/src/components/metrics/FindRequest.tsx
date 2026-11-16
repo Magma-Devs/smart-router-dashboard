@@ -27,8 +27,8 @@ import { SkelLine } from "@/components/gateway/Skel";
 import { IconSearch } from "@/components/gateway/icons";
 import { linkRequest, requestFromUrl } from "@/lib/request-in-url";
 import { filterSelectStyle, LOOKUP_REFUSED, MatchesNote, NotFound, unreadableWords } from "./request-log";
-import { Details as RequestDetails, RESULT } from "./ErrorRequests";
-import { Details as TxDetails, resultOf as txResultOf } from "./TransactionLog";
+import { Details as RequestDetails } from "./ErrorRequests";
+import { Details as TxDetails } from "./TransactionLog";
 
 export function FindRequest({ win }: { win: MetricWindow }) {
   // The request in focus is the URL's: a link opens it, Back returns to the one before.
@@ -57,14 +57,12 @@ export function FindRequest({ win }: { win: MetricWindow }) {
   );
 }
 
-/** The request looked up: its result as a tag, then the opened row - a transaction's send row when it is one. */
+/** The request looked up, as its opened row - a transaction's send row when it is one. The row leads with its own status, so nothing above it repeats it. */
 function Found({ id, win, onClose }: { id: string; win: MetricWindow; onClose: () => void }) {
   const [wide, setWide] = useState(false);
   const { data, error, isLoading } = useApi<RequestLookup>(`/api/requests/${encodeURIComponent(id)}?window=${wide ? "30d" : win}`, 0);
   const row = data?.row ?? null;
   const tx = data?.transaction ?? null;
-  const tag = tx ? txResultOf(tx) : row ? RESULT[row.result] : null;
-  const hint = !tx && row ? RESULT[row.result].hint : undefined;
   return (
     <div className="gw-card" style={{ padding: 0 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderBottom: "1px solid var(--line)" }}>
@@ -72,7 +70,6 @@ function Found({ id, win, onClose }: { id: string; win: MetricWindow; onClose: (
         {row?.guid !== id && (
           <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-2)" }}>Looked up <span className="gw-mono">{id}</span></span>
         )}
-        {tag && <span className="gw-tag" title={hint} style={{ fontSize: 10, color: tag.color, borderColor: "currentColor" }}>{tag.label}</span>}
         <span style={{ flex: 1 }} />
         <button onClick={onClose} aria-label="Close" style={{ border: "none", background: "none", color: "var(--text-3)", cursor: "pointer", fontSize: 14, padding: 0, fontFamily: "inherit" }}>✕</button>
       </div>
