@@ -44,16 +44,13 @@ export function FindRequest({ win }: { win: MetricWindow }) {
   return (
     <div style={{ display: "grid", gap: 16 }}>
       <div className="gw-card">
-        <form onSubmit={(e) => { e.preventDefault(); if (typed) find(typed); }} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <div style={{ position: "relative", flex: "1 1 320px", maxWidth: 640 }}>
-            <span style={{ position: "absolute", left: 10, top: 0, bottom: 0, display: "flex", alignItems: "center", color: "var(--text-4)" }}><IconSearch size={14} /></span>
-            <input autoFocus aria-label="Request ID, transaction hash or your own request ID" value={draft} onChange={(e) => setDraft(e.target.value)}
-              placeholder="Request ID, transaction hash or your own request ID"
-              className="gw-mono" style={{ ...filterSelectStyle, height: 36, width: "100%", maxWidth: "none", paddingLeft: 30, fontSize: 12.5 }} />
-          </div>
-          <button type="submit" disabled={!typed} style={{ ...filterSelectStyle, height: 36, padding: "0 16px", cursor: typed ? "pointer" : "default", color: typed ? "var(--text)" : "var(--text-4)", fontWeight: 600 }}>Find</button>
+        {/* Enter searches: the box says what it takes, and the tab's name says what it does. */}
+        <form role="search" onSubmit={(e) => { e.preventDefault(); if (typed) find(typed); }} style={{ position: "relative", maxWidth: 640 }}>
+          <span style={{ position: "absolute", left: 10, top: 0, bottom: 0, display: "flex", alignItems: "center", color: "var(--text-4)" }}><IconSearch size={14} /></span>
+          <input autoFocus enterKeyHint="search" aria-label="Request ID, transaction hash or your own request ID" value={draft} onChange={(e) => setDraft(e.target.value)}
+            placeholder="Request ID, transaction hash or your own request ID"
+            className="gw-mono" style={{ ...filterSelectStyle, height: 36, width: "100%", maxWidth: "none", paddingLeft: 30, fontSize: 12.5 }} />
         </form>
-        <p style={{ margin: "10px 0 0", fontSize: 12, color: "var(--text-3)" }}>Any request, answered or not.</p>
       </div>
       {id && <Found key={id + win} id={id} win={win} onClose={() => find(null)} />}
     </div>
@@ -71,9 +68,10 @@ function Found({ id, win, onClose }: { id: string; win: MetricWindow; onClose: (
   return (
     <div className="gw-card" style={{ padding: 0 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderBottom: "1px solid var(--line)" }}>
-        <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-2)" }}>
-          {row?.guid === id ? "Request found" : <>Looked up <span className="gw-mono">{id}</span></>}
-        </span>
+        {/* The request names itself below; only a value that isn't its ID (a hash, a caller's id) is repeated here. */}
+        {row?.guid !== id && (
+          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-2)" }}>Looked up <span className="gw-mono">{id}</span></span>
+        )}
         {tag && <span className="gw-tag" title={hint} style={{ fontSize: 10, color: tag.color, borderColor: "currentColor" }}>{tag.label}</span>}
         <span style={{ flex: 1 }} />
         <button onClick={onClose} aria-label="Close" style={{ border: "none", background: "none", color: "var(--text-3)", cursor: "pointer", fontSize: 14, padding: 0, fontFamily: "inherit" }}>✕</button>
@@ -90,7 +88,7 @@ function Found({ id, win, onClose }: { id: string; win: MetricWindow; onClose: (
         ) : (
           <div style={{ display: "grid", gap: 8 }}>
             <MatchesNote matches={data?.matches} />
-            {tx ? <TxDetails row={tx} /> : <RequestDetails row={row} />}
+            {tx ? <TxDetails row={tx} lean /> : <RequestDetails row={row} lean />}
           </div>
         )}
       </div>
