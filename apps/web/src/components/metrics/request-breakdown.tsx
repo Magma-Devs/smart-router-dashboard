@@ -120,7 +120,7 @@ export function stepsOf(attempts: RelayAttempt[]): { title: string; attempts: Re
 const PROVIDER_COLUMNS = "minmax(110px, 1fr) minmax(150px, 2fr) 96px";
 
 /** One provider's line in a send: its name, what it answered, how long it took; its own words under it. */
-function ProviderLine({ a, isWrite }: { a: RelayAttempt; isWrite: boolean }) {
+function ProviderLine({ a, isWrite, lean = false }: { a: RelayAttempt; isWrite: boolean; lean?: boolean }) {
   const code = a.outcome === "failed" ? realCode(a) : null;
   const entry = code ? explainRouterError(code) : null;
   const r = responseWords(a, isWrite);
@@ -135,7 +135,7 @@ function ProviderLine({ a, isWrite }: { a: RelayAttempt; isWrite: boolean }) {
     }}>
       <span style={{ display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0 }}>
         <span className="gw-mono" title={a.upstream} style={{ fontSize: 12, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{providerName(a.upstream)}</span>
-        {a.replied && <span title="This provider's answer went back to the client." style={{ fontSize: 11, fontWeight: 600, color: "var(--warn)", whiteSpace: "nowrap" }}>→ client</span>}
+        {a.replied && !lean && <span title="This provider's answer went back to the client." style={{ fontSize: 11, fontWeight: 600, color: "var(--warn)", whiteSpace: "nowrap" }}>→ client</span>}
       </span>
       <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap", minWidth: 0 }}>
         {code
@@ -198,6 +198,12 @@ export interface BreakdownProps {
   isWrite: boolean;
   /** More rows for the response: a transaction's hash, an on-chain error, why a result is unknown. */
   extra?: { label: string; value: React.ReactNode }[];
+  /**
+   * One request on a page of its own (the Find a request tab): no request or
+   * reply sizes, and no "→ client" mark on the provider - the last step says
+   * whose answer went back.
+   */
+  lean?: boolean;
 }
 
 /** A label and its value, on one line of a two-column list. */
@@ -246,9 +252,10 @@ export function RequestBreakdown(p: BreakdownProps) {
       <div style={{
         borderRadius: 8, border: "1px solid var(--line)", background: "var(--surface)", padding: "12px 16px", display: "grid", gap: 8,
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 14, fontWeight: 600, color: p.status.color }}>
-            <span aria-hidden style={{ width: 8, height: 8, borderRadius: 999, background: p.status.color }} />
+        {/* On one baseline: the status word is larger than the words beside it, and centring them left the smaller ones floating above its foot. */}
+        <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+          <span style={{ display: "inline-flex", alignItems: "baseline", gap: 8, fontSize: 14, fontWeight: 600, color: p.status.color }}>
+            <span aria-hidden style={{ width: 8, height: 8, borderRadius: 999, background: p.status.color, alignSelf: "center" }} />
             {p.status.label}
           </span>
           {/* A provider's answer names its error on its own try, below; only the router's own needs it here. */}
@@ -283,7 +290,7 @@ export function RequestBreakdown(p: BreakdownProps) {
         <div style={{ flex: "2 1 560px", minWidth: 0 }}>
           <Section title="What happened" aside={tried || "no provider logged"}>
             <div>
-              <Step n={1} title={<>Request from the client: <span className="gw-mono">{p.method}</span>{facts.requestBytes != null && <span className="gw-mono gw-tnum" style={{ color: "var(--text-3)", fontWeight: 400 }}> · {fmtBytes(facts.requestBytes)}</span>}</>} />
+              <Step n={1} title={<>Request from the client: <span className="gw-mono">{p.method}</span>{!p.lean && facts.requestBytes != null && <span className="gw-mono gw-tnum" style={{ color: "var(--text-3)", fontWeight: 400 }}> · {fmtBytes(facts.requestBytes)}</span>}</>} />
               {steps.map((s, i) => (
                 <Step key={i} n={i + 2} title={s.title}>
                   <div style={{ border: "1px solid var(--line)", borderRadius: 8, overflow: "hidden", background: "var(--surface)" }}>
@@ -292,7 +299,7 @@ export function RequestBreakdown(p: BreakdownProps) {
                       <span>What it answered</span>
                       <span style={{ textAlign: "right" }}>Response time</span>
                     </div>
-                    {s.attempts.map((a, j) => <ProviderLine key={j} a={a} isWrite={p.isWrite} />)}
+                    {s.attempts.map((a, j) => <ProviderLine key={j} a={a} isWrite={p.isWrite} lean={p.lean} />)}
                   </div>
                 </Step>
               ))}
@@ -304,7 +311,7 @@ export function RequestBreakdown(p: BreakdownProps) {
                     : routerAnswered ? <span>No provider gave a usable answer, so the router sent its own error, named above</span>
                       : <span>The logs don&apos;t show an answer.</span>}
                   {p.tookMs != null && <span className="gw-mono gw-tnum" style={{ color: "var(--text-3)" }}>· after {fmtTook(p.tookMs)}</span>}
-                  {facts.replyBytes != null && <span className="gw-mono gw-tnum" style={{ color: "var(--text-3)" }}>· {fmtBytes(facts.replyBytes)}</span>}
+                  {!p.lean && facts.replyBytes != null && <span className="gw-mono gw-tnum" style={{ color: "var(--text-3)" }}>· {fmtBytes(facts.replyBytes)}</span>}
                 </div>
               </Step>
             </div>

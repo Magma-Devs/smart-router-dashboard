@@ -185,7 +185,7 @@ export function statusOf(r: ErrorRequestRow): BreakdownProps["status"] {
 
 /** An opened row: the request, every try, and the response to the client, in plain words. */
 /** An opened row: the request, every try, and the response - the Find a request tab shows it too. */
-export function Details({ row }: { row: ErrorRequestRow }) {
+export function Details({ row, lean = false }: { row: ErrorRequestRow; lean?: boolean }) {
   const replied = row.attempts.find((a) => a.replied);
   const final: FinalAnswer =
     row.result === "failed" || row.result === "write-unknown" ? { from: "router", code: row.errorCode }
@@ -199,7 +199,7 @@ export function Details({ row }: { row: ErrorRequestRow }) {
   return (
     <RequestBreakdown spec={row.spec} chain={chainWords(row)} chainTitle={chainsTitle(row)} method={row.method === "unknown" ? "method not in the logs" : row.method}
       time={row.time} guid={row.guid} tookMs={row.totalMs} facts={row} attempts={row.attempts}
-      final={final} status={statusOf(row)} retries={retriesWords(row)} isWrite={row.result === "write-unknown"} extra={extra} />
+      final={final} status={statusOf(row)} retries={retriesWords(row)} isWrite={row.result === "write-unknown"} extra={extra} lean={lean} />
   );
 }
 
