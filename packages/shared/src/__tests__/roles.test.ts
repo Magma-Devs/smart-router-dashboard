@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ROLES,
+  ROLE_COLORS,
   ROLE_DESCRIPTIONS,
   ROLE_LABELS,
   isRole,
@@ -18,6 +19,57 @@ describe("ROLES", () => {
     for (const role of ROLES) {
       expect(ROLE_LABELS[role], `no label for ${role}`).toBeTruthy();
       expect(ROLE_DESCRIPTIONS[role], `no description for ${role}`).toBeTruthy();
+    }
+  });
+});
+
+describe("ROLE_DESCRIPTIONS", () => {
+  it("promises no approvals: requester and approver have read-only's access", () => {
+    expect(ROLE_DESCRIPTIONS.requester).toBe("Same access as Read-only for now.");
+    expect(ROLE_DESCRIPTIONS.approver).toBe("Same access as Read-only for now.");
+    for (const role of ROLES) {
+      expect(ROLE_DESCRIPTIONS[role], role).not.toMatch(/approv|propos/i);
+    }
+  });
+
+  it("says what an admin can do", () => {
+    expect(ROLE_DESCRIPTIONS.admin).toBe(
+      "Can invite and remove members, change roles, and reset passwords and 2FA.",
+    );
+  });
+
+  it("uses no long dashes", () => {
+    for (const role of ROLES) expect(ROLE_DESCRIPTIONS[role], role).not.toMatch(/[\u2013\u2014]/);
+  });
+});
+
+describe("ROLE_COLORS", () => {
+  it("gives every role its own colour", () => {
+    const colours = ROLES.map((role) => ROLE_COLORS[role]);
+    for (const [i, c] of colours.entries()) {
+      expect(c, `no colour for ${ROLES[i]}`).toMatch(/^#[0-9a-f]{6}$/);
+    }
+    expect(new Set(colours).size).toBe(ROLES.length);
+  });
+
+  it("draws no role in a red hue", () => {
+    // Red is for errors and destructive actions. Hue of the sRGB colour, in
+    // degrees: red sits within 20 of 0.
+    for (const role of ROLES) {
+      const [r, g, b] = [1, 3, 5].map(
+        (i) => parseInt(ROLE_COLORS[role].slice(i, i + 2), 16) / 255,
+      ) as [number, number, number];
+      const max = Math.max(r, g, b);
+      const min = Math.min(r, g, b);
+      if (max - min < 0.1) continue; // a grey has no hue
+      let hue =
+        max === r
+          ? ((g - b) / (max - min)) * 60
+          : max === g
+            ? (2 + (b - r) / (max - min)) * 60
+            : (4 + (r - g) / (max - min)) * 60;
+      if (hue < 0) hue += 360;
+      expect(Math.min(hue, 360 - hue), `${role} is red`).toBeGreaterThan(20);
     }
   });
 });

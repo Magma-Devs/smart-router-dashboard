@@ -5,6 +5,7 @@ import { createTestDb, enrolledTwoFactor, type TestDb } from "@sr/db/testing";
 import {
   auditEvents,
   auditFilterFingerprint,
+  auditSessionRef,
   createAuditWriter,
   encodeAuditCursor,
   mintAuditToken,
@@ -83,7 +84,9 @@ async function seedUser(role: Role = "read_only"): Promise<User> {
   return created!;
 }
 
-async function signedIn(role: Role = "read_only"): Promise<{ user: User; token: string }> {
+async function signedIn(
+  role: Role = "read_only",
+): Promise<{ user: User; token: string; sessionId: string }> {
   const user = await seedUser(role);
   const session = await createSession(t.db, {
     userId: user.id,
@@ -97,7 +100,7 @@ async function signedIn(role: Role = "read_only"): Promise<{ user: User; token: 
     .setIssuedAt()
     .setExpirationTime("1h")
     .sign(new TextEncoder().encode(SECRET));
-  return { user, token };
+  return { user, token, sessionId: session.id };
 }
 
 const get = (token: string, qs = "") =>
@@ -234,6 +237,46 @@ describe("GET /api/audit/events", () => {
     ]);
     // A config event carries no address, as a matter of shape.
     expect(changed && "context" in changed).toBe(false);
+  });
+
+  it("names a session by its reference, to a person and to a token alike", async () => {
+    app = await buildAuthedApp();
+    const { token, sessionId } = await signedIn();
+    const w = createAuditWriter(t.db);
+    await w.write({
+      action: "signin.succeeded",
+      actor: { id: null, kind: "system" },
+      access: { ip: "203.0.113.64", client: "Chrome 141 / macOS", sessionId },
+    });
+    await w.write({
+      action: "session.revoked",
+      actor: { id: null, kind: "system" },
+      target: { type: "session", id: sessionId, name: "dana@example.com" },
+      access: { ip: "203.0.113.64", client: "Chrome 141 / macOS", sessionId: null },
+    });
+    const { secret } = await mintAuditToken(t.db, {
+      name: "SIEM pull",
+      createdBy: null,
+      createdByName: "Dana Levi",
+    });
+
+    for (const bearer of [token, secret]) {
+      const res = await get(bearer);
+      expect(res.statusCode).toBe(200);
+      expect(res.body).not.toContain(sessionId);
+      const [signin, revoked] = (res.json() as AuditEventsResponse).items;
+      expect(signin?.context?.session).toBe(auditSessionRef(sessionId));
+      expect(revoked?.target?.id).toBe(auditSessionRef(sessionId));
+    }
+
+    const byRef = (
+      await get(token, `?target_type=session&target_id=${auditSessionRef(sessionId)}`)
+    ).json() as AuditEventsResponse;
+    expect(byRef.items.map((i) => i.action)).toEqual(["session.revoked"]);
+    const byId = (
+      await get(token, `?target_type=session&target_id=${sessionId}`)
+    ).json() as AuditEventsResponse;
+    expect(byId.items).toEqual([]);
   });
 
   it("filters by verb, group and object", async () => {
@@ -682,10 +725,48 @@ describe("GET /api/audit/export.csv", () => {
       "target_name",
       "request",
       "note",
+      "ip",
+      "client",
+      "session",
       "field",
       "from",
       "to",
     ]);
+  });
+
+  it("carries the address, client and session reference of an access event", async () => {
+    app = await buildAuthedApp();
+    const { token, sessionId } = await signedIn();
+    await createAuditWriter(t.db).write({
+      action: "signin.succeeded",
+      actor: { id: null, kind: "system" },
+      access: { ip: "203.0.113.64", client: "Chrome 141 / macOS", sessionId },
+    });
+    const { text } = await csvOf(token);
+
+    expect(text).not.toContain(sessionId);
+    const [header, row] = text
+      .replace(/^\uFEFF/, "")
+      .split("\r\n")
+      .map((l) => l.split(","));
+    const cell = (name: string) => row?.[header!.indexOf(name)];
+    expect(cell("ip")).toBe("203.0.113.64");
+    expect(cell("client")).toBe("Chrome 141 / macOS");
+    expect(cell("session")).toBe(auditSessionRef(sessionId));
+  });
+
+  it("neutralises a formula in the client column", async () => {
+    app = await buildAuthedApp();
+    await createAuditWriter(t.db).write({
+      action: "signin.failed",
+      actor: { id: null, kind: "user", label: "who@example.com" },
+      access: { ip: "203.0.113.64", client: "@SUM(1+1)", sessionId: null },
+    });
+    const { token } = await signedIn();
+    const { text } = await csvOf(token);
+
+    expect(text).toContain(",'@SUM(1+1),");
+    expect(text).not.toContain(",@SUM");
   });
 
   it("leads with a UTF-8 BOM so a spreadsheet does not mangle a name", async () => {
@@ -747,7 +828,7 @@ describe("GET /api/audit/export.csv", () => {
     // Trailing field,from,to are empty rather than absent — a short row would
     // shift every column after it in a spreadsheet.
     expect(rows[0]?.endsWith(",,,")).toBe(true);
-    expect(rows[0]?.split(",")).toHaveLength(15);
+    expect(rows[0]?.split(",")).toHaveLength(18);
   });
 
   /**

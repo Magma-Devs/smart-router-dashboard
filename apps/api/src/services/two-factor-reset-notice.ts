@@ -1,7 +1,7 @@
 import { TWO_FACTOR_RESET_NOTICE_NOTES, type EmailDelivery } from "@sr/shared";
 import type { AuditActor, AuditWriter } from "./audit.js";
 import { emailTransportConfigured, type EmailLogFn } from "./email.js";
-import { sendTwoFactorResetEmail } from "./email-templates.js";
+import { personLabel, sendTwoFactorResetEmail } from "./email-templates.js";
 
 /**
  * Telling somebody their second factor was reset — MAG-2869.
@@ -76,7 +76,8 @@ export async function noticeTwoFactorReset(
 }
 
 /**
- * An admin as the email names them: `Name (address)`, or the address alone.
+ * An admin as the email names them: `Name (address)`, or the address alone,
+ * worded as the invitation names its inviter ({@link personLabel}).
  *
  * The address always, because the name is whatever its holder typed when they
  * joined and the address is what identifies them; for an admin abusing the
@@ -84,10 +85,7 @@ export async function noticeTwoFactorReset(
  * whitespace collapse to one space, so a name cannot add lines to the message.
  */
 export function resetByLabel(user: { name: string | null; email: string }): string {
-  // eslint-disable-next-line no-control-regex
-  const name = (user.name ?? "").replace(/[\s\u0000-\u001f\u007f-\u009f]+/g, " ").trim();
-  if (!name || name.toLowerCase() === user.email.toLowerCase()) return user.email;
-  return `${name} (${user.email})`;
+  return personLabel(user);
 }
 
 /**

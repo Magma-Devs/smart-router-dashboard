@@ -178,3 +178,29 @@ export async function revokeAuditToken(
     .returning();
   return row ?? null;
 }
+
+export interface RevokeAuditTokensCreatedByInput {
+  createdBy: string;
+  revokedBy: string;
+  revokedByName: string;
+}
+
+/**
+ * Revoke every live token one admin created, and return them — for a removal
+ * or a demotion below admin, which writes an `apikey.deleted` row for each in
+ * the same transaction.
+ */
+export async function revokeAuditTokensCreatedBy(
+  db: Database,
+  input: RevokeAuditTokensCreatedByInput,
+): Promise<AuditTokenRow[]> {
+  return db
+    .update(auditTokens)
+    .set({
+      revokedAt: sql`now()`,
+      revokedBy: input.revokedBy,
+      revokedByName: input.revokedByName,
+    })
+    .where(and(eq(auditTokens.createdBy, input.createdBy), isNull(auditTokens.revokedAt)))
+    .returning();
+}

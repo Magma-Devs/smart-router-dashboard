@@ -44,6 +44,29 @@ async function hold(page: Page, url: RegExp) {
   return { reached, release };
 }
 
+test("a short password is refused under its field, before the api is asked", async ({ page }) => {
+  let accepts = 0;
+  page.on("request", (req) => {
+    if (/\/auth\/invite\/accept$/.test(req.url())) accepts += 1;
+  });
+
+  await page.goto(`/invite/${token}`);
+  await page.getByLabel("Password", { exact: true }).fill("short");
+  await page.getByLabel("Repeat password").fill("short");
+  await page.getByRole("button", { name: "Accept invitation" }).click();
+
+  // The app's own text, not the browser's tooltip: the form is `noValidate`.
+  await expect(page.locator(".gw-card").getByRole("alert")).toHaveText(
+    "Password must be at least 8 characters.",
+  );
+  await expect(page.getByLabel("Password", { exact: true })).toHaveAttribute(
+    "aria-invalid",
+    "true",
+  );
+  // Nothing left the page, so the invitation is still there to accept below.
+  expect(accepts).toBe(0);
+});
+
 test("the form shows it is working from the click until the next page", async ({ page }) => {
   await watchForDashboardChrome(page);
   const accept = await hold(page, /\/auth\/invite\/accept$/);
@@ -80,9 +103,7 @@ test("the form shows it is working from the click until the next page", async ({
   await page.waitForURL(/\/metrics$/);
   // A new member has no authenticator and no grace period, so the dashboard
   // is shut until they set one up — from the first paint of the new page.
-  await expect(
-    page.getByRole("heading", { name: "Two-factor authentication is required" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "2FA is required" })).toBeVisible();
   expect(await dashboardChromeSeen(page), "the dashboard was drawn before the enrolment screen").toBe(
     false,
   );

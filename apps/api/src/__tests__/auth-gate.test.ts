@@ -147,7 +147,32 @@ describe("the gate, with a live database", () => {
     expect(res.statusCode).toBe(403);
     // Not 401: signing in again will not help, and saying so beats a login loop.
     expect(res.json().code).toBe("ACCOUNT_INACTIVE");
+    // An admin's act, so the sign-in page can tell them their access changed.
+    expect(res.json().endedBy).toBe("admin");
   });
+
+  it("says when an admin ended the session, as a two-factor reset does", async () => {
+    app = await buildGatedApp();
+    const { token, session } = await signedInUser();
+    await revokeSession(t.db, session.id, { reason: "admin" });
+
+    const res = await get(token);
+    expect(res.statusCode).toBe(401);
+    expect(res.json()).toMatchObject({ code: "SESSION_INVALID", endedBy: "admin" });
+  });
+
+  it.each(["self", "sign_out_all", "password_change"] as const)(
+    "leaves endedBy out when the holder's own act (%s) ended it",
+    async (reason) => {
+      app = await buildGatedApp();
+      const { token, session } = await signedInUser();
+      await revokeSession(t.db, session.id, { reason });
+
+      const body = (await get(token)).json();
+      expect(body.code).toBe("SESSION_INVALID");
+      expect(body).not.toHaveProperty("endedBy");
+    },
+  );
 
   it("refuses a session id that resolves to nothing", async () => {
     app = await buildGatedApp();
@@ -366,5 +391,20 @@ describe("GET /api/account/me", () => {
     app = await buildGatedApp();
     const res = await app.inject({ method: "GET", url: "/api/account/me" });
     expect(res.statusCode).toBe(401);
+  });
+
+  /** What the Account page's Connected accounts card reads, per provider. */
+  it("says which sign-in providers the account is linked to", async () => {
+    app = await buildGatedApp();
+    const { user, token } = await signedInUser();
+    const read = async () => (await get(token, "/api/account/me")).json().linkedProviders;
+
+    expect(await read()).toEqual({ google: false, github: false });
+
+    await t.db.update(users).set({ googleId: "google-sub-1" }).where(eq(users.id, user.id));
+    expect(await read()).toEqual({ google: true, github: false });
+
+    await t.db.update(users).set({ githubId: "github-sub-1" }).where(eq(users.id, user.id));
+    expect(await read()).toEqual({ google: true, github: true });
   });
 });

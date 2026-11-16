@@ -131,6 +131,12 @@ describe.each(CASES)("in $zone", (c) => {
     expect(dt.timeTitle(NOV_12)).toBe(`${c.nov12.dateTime}\n${NOV_12} (UTC)`);
   });
 
+  it("states an instant in UTC the way an email does, whatever the zone", () => {
+    expect(dt.fmtDateTimeUtc(NOV_12)).toBe("Nov 12, 2026, 12:22:07 UTC");
+    // Already Aug 10 in Jerusalem, still Aug 9 in UTC.
+    expect(dt.fmtDateTimeUtc(AUG_9_LATE)).toBe("Aug 9, 2026, 23:30:00 UTC");
+  });
+
   it("dates a time over 30 days old on the reader's calendar", () => {
     const now = Date.parse(AUG_9_LATE) + 45 * 86_400_000;
     expect(dt.fmtRelative(AUG_9_LATE, now)).toBe(`${c.aug9Late.day}, 2026`);

@@ -23,6 +23,9 @@ export interface Me {
   name: string | null;
   avatarUrl: string | null;
   role: Role;
+  /** Which sign-in providers the account is linked to. Absent until the first
+   *  read lands. */
+  linkedProviders?: { google: boolean; github: boolean };
   /** Absent until the first read lands, and in AUTH_MODE=disabled where these
    *  routes are not registered at all. */
   twoFactor?: MeTwoFactor;

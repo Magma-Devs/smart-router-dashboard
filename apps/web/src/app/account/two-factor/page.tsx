@@ -27,11 +27,10 @@ export default function TwoFactorSetupPage() {
     return (
       <main style={wrap}>
         <div className="gw-card" style={{ padding: 28, maxWidth: 520 }}>
-          <h2 style={{ margin: "0 0 6px", fontSize: 18 }}>Two-factor is on</h2>
+          <h2 style={{ margin: "0 0 6px", fontSize: 18 }}>2FA is on</h2>
           <p style={{ margin: "0 0 20px", fontSize: 13, color: "var(--text-3)", lineHeight: 1.55 }}>
-            You will be asked for a code from your authenticator app each time you sign in. If you
-            lose your phone, an administrator can reset this for you — nobody can read your key
-            back, so resetting is the only way.
+            You&rsquo;re asked for a code from your authenticator app each time you sign in. Lost
+            your phone? Ask an admin to reset your 2FA.
           </p>
           <button className="gw-btn gw-btn--primary" onClick={() => router.push(HOME_PATH)}>
             Back to the dashboard

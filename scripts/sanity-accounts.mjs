@@ -382,8 +382,8 @@ check("Create an account on managed — the person sets their own password");
     const mail = await awaitMail("invite", MEMBER.email);
     ok("it reached the invited address", !!mail, `nothing arrived for ${MEMBER.email}`);
     ok(
-      "with the customer named in the subject",
-      /You've been added to .+ on Smart Router/.test(mail?.subject ?? ""),
+      "with the inviter and the customer named in the subject",
+      /^.+ invited you to the Smart Router dashboard for .+$/.test(mail?.subject ?? ""),
       mail?.subject,
     );
     ok("as text as well as HTML", !!mail?.body?.text && !!mail?.body?.html);

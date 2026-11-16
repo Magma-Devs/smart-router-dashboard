@@ -56,7 +56,7 @@ describe("emailTime", () => {
     },
   );
 
-  it("writes an em dash, never 'NaN', for a Date that is not a time", () => {
-    expect(emailTime(new Date("not a time"))).toBe("—");
+  it("writes words, never 'NaN' and never a long dash, for a Date that is not a time", () => {
+    expect(emailTime(new Date("not a time"))).toBe("an unknown time");
   });
 });

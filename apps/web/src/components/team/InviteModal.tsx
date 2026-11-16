@@ -3,8 +3,10 @@
 import { useState } from "react";
 import { Modal } from "@/components/gateway/Modal";
 import { apiPost } from "@/lib/api-client";
-import { ROLES, ROLE_DESCRIPTIONS, ROLE_LABELS, type Role } from "@sr/shared";
+import { type Role } from "@sr/shared";
 import { labelStyle } from "@/lib/styles";
+import { RoleBadge, RolePicker } from "./bits";
+import { useDeploymentMode } from "./deployment-mode";
 
 interface InviteResponse {
   invite: { id: string; email: string; role: Role; expiresAt: string };
@@ -33,9 +35,14 @@ export function InviteModal({
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<InviteResponse | null>(null);
   const [copied, setCopied] = useState<"idle" | "copied" | "failed">("idle");
+  const managed = useDeploymentMode() === "managed";
 
   function reset() {
-    setEmail(""); setRole("read_only"); setError(null); setResult(null); setCopied("idle");
+    setEmail("");
+    setRole("read_only");
+    setError(null);
+    setResult(null);
+    setCopied("idle");
   }
 
   function close() {
@@ -83,10 +90,14 @@ export function InviteModal({
       title={result ? "Invitation created" : "Invite teammate"}
       footer={
         result ? (
-          <button className="gw-btn gw-btn--primary" onClick={close}>Done</button>
+          <button className="gw-btn gw-btn--primary" onClick={close}>
+            Done
+          </button>
         ) : (
           <>
-            <button className="gw-btn" disabled={busy} onClick={close}>Cancel</button>
+            <button className="gw-btn" disabled={busy} onClick={close}>
+              Cancel
+            </button>
             <button
               className="gw-btn gw-btn--primary"
               disabled={busy || !email}
@@ -102,14 +113,13 @@ export function InviteModal({
         <div style={{ display: "grid", gap: 12 }}>
           <div style={{ fontSize: 13 }}>
             <strong>{result.invite.email}</strong> has been invited as{" "}
-            {ROLE_LABELS[result.invite.role]}.
+            <RoleBadge role={result.invite.role} />
           </div>
-          {/* An invitation is not an account yet, and nothing on screen said so:
-              the first thing an admin does after inviting is look for the person
-              in Members, where they will not be until they redeem. */}
+          {/* An invitation is not an account yet: the first thing an admin
+              does after inviting is look for the person in Members. */}
           <div style={{ fontSize: 12.5, color: "var(--text-3)", lineHeight: 1.6 }}>
-            They are in <strong>Invites</strong> until they open the link and accept it. The
-            account — and their row in Members — is created at that moment, with this address.
+            They appear in Members once they accept. Until then they are in <strong>Invites</strong>
+            .
           </div>
           {result.url ? (
             <>
@@ -127,8 +137,13 @@ export function InviteModal({
               <div
                 className="gw-mono"
                 style={{
-                  fontSize: 11.5, background: "var(--bg)", border: "1px solid var(--line)",
-                  borderRadius: 7, padding: "10px 12px", wordBreak: "break-all", userSelect: "all",
+                  fontSize: 11.5,
+                  background: "var(--bg)",
+                  border: "1px solid var(--line)",
+                  borderRadius: 7,
+                  padding: "10px 12px",
+                  wordBreak: "break-all",
+                  userSelect: "all",
                 }}
               >
                 {result.url}
@@ -138,7 +153,7 @@ export function InviteModal({
               </button>
               {copied === "failed" && (
                 <div role="alert" style={{ fontSize: 12, color: "var(--err)" }}>
-                  Couldn&apos;t copy it here — select the link above and copy it by hand.
+                  Couldn&apos;t copy it here. Select the link above and copy it by hand.
                 </div>
               )}
             </>
@@ -160,44 +175,22 @@ export function InviteModal({
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />
+            {/* Managed emails the link to this address, so nobody else holds
+                it; on-prem the admin carries it, and the warning is theirs. */}
             <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 6 }}>
-              The account is created with this address. Whoever holds the link can accept it,
-              so give it to this person only.
+              {managed
+                ? "We email them a link. The account is created with this address."
+                : "The account is created with this address. Whoever holds the link can accept it, so give it to this person only."}
             </div>
           </div>
           <div>
             <div style={{ ...labelStyle, marginBottom: 8 }}>Role</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {ROLES.map((r) => (
-                <button
-                  key={r}
-                  aria-pressed={role === r}
-                  onClick={() => setRole(r)}
-                  style={{
-                    display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px",
-                    borderRadius: 8,
-                    border: "1px solid " + (role === r ? "var(--brand)" : "var(--line)"),
-                    background: role === r ? "rgba(255,57,0,0.04)" : "var(--surface)",
-                    cursor: "pointer", textAlign: "left", fontFamily: "inherit", color: "var(--text)",
-                  }}
-                >
-                  <div style={{
-                    width: 14, height: 14, borderRadius: "50%", flexShrink: 0, marginTop: 2,
-                    border: "2px solid " + (role === r ? "var(--brand)" : "var(--line-2)"),
-                    background: role === r ? "var(--brand)" : "transparent",
-                  }} />
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 600 }}>{ROLE_LABELS[r]}</div>
-                    <div style={{ fontSize: 11.5, color: "var(--text-3)", marginTop: 2 }}>
-                      {ROLE_DESCRIPTIONS[r]}
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
+            <RolePicker value={role} onChange={setRole} gap={6} />
           </div>
           {error && (
-            <div role="alert" style={{ fontSize: 12, color: "var(--err)" }}>{error}</div>
+            <div role="alert" style={{ fontSize: 12, color: "var(--err)" }}>
+              {error}
+            </div>
           )}
         </div>
       )}

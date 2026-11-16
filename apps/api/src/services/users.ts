@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, ne, sql } from "drizzle-orm";
 import { users, type Database, type User } from "@sr/db";
 import type { Role } from "@sr/shared";
 
@@ -28,6 +28,21 @@ export async function findUserByEmail(db: Database, email: string): Promise<User
     .select()
     .from(users)
     .where(and(sql`lower(${users.email}) = lower(${email})`, eq(users.status, "active")))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+/**
+ * The most recently created account at this address that is no longer active,
+ * for the audit row of a refused sign-in or reset request. Never for signing
+ * anyone in: that is {@link findUserByEmail}'s job, and it is scoped to active.
+ */
+export async function findInactiveUserByEmail(db: Database, email: string): Promise<User | null> {
+  const rows = await db
+    .select()
+    .from(users)
+    .where(and(sql`lower(${users.email}) = lower(${email})`, ne(users.status, "active")))
+    .orderBy(desc(users.createdAt))
     .limit(1);
   return rows[0] ?? null;
 }
@@ -102,7 +117,7 @@ export async function upsertOAuthUser(
     // Google. (Slice 3 makes this path link-only, which removes the last way an
     // account can appear without an invitation.)
     if (u.status !== "active") {
-      throw new Error("This account is no longer active");
+      throw new OAuthAccountInactiveError(u);
     }
     if (!u.avatarUrl && profile.avatarUrl) {
       await db.update(users).set({ avatarUrl: profile.avatarUrl }).where(eq(users.id, u.id));
@@ -146,6 +161,14 @@ export async function upsertOAuthUser(
 /** Raised when an OAuth sign-in matches no existing account. Distinct from a
  *  bad token so the route can answer 403-with-a-reason rather than 401. */
 export class OAuthAccountNotFoundError extends Error {}
+
+/** Raised when a provider id still points at an account that is not active.
+ *  Carries the account so the refusal's audit row can name it. */
+export class OAuthAccountInactiveError extends Error {
+  constructor(readonly user: User) {
+    super("This account is no longer active");
+  }
+}
 
 const PROVIDER_NAME: Record<OAuthProvider, string> = {
   google: "Google",

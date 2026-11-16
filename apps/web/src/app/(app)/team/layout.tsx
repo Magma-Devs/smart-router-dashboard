@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { HOME_PATH } from "@/lib/home-path";
+import { DeploymentModeProvider } from "@/components/team/deployment-mode";
 
 /**
  * Team does not exist without accounts.
@@ -12,9 +13,11 @@ import { HOME_PATH } from "@/lib/home-path";
  *
  * A layout rather than a check inside the page, because the page is a client
  * component and this decision belongs on the server: the same shape the login,
- * setup, invite and reset pages already use.
+ * setup, invite and reset pages already use. The deployment mode is read here
+ * for the same reason: the invite and reset-link dialogs word delivery by it.
  */
 export default function TeamLayout({ children }: { children: React.ReactNode }) {
   if (process.env.AUTH_MODE !== "enabled") redirect(HOME_PATH);
-  return children;
+  const mode = process.env.DEPLOYMENT_MODE === "managed" ? "managed" : "onprem";
+  return <DeploymentModeProvider mode={mode}>{children}</DeploymentModeProvider>;
 }

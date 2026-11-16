@@ -384,10 +384,12 @@ describe("the per-account budget", () => {
 });
 
 describe("POST /auth/password/reset", () => {
-  it("records who generated the link it redeemed", async () => {
+  it("records who generated the link it redeemed, by name", async () => {
     // The link is a bearer credential, so who USED it is unknowable; who issued
-    // it is what connects an admin-generated link to its redemption.
+    // it is what connects an admin-generated link to its redemption. A reader
+    // gets the name, never an id they would have to look up.
     const admin = await member("admin@example.com", { role: "admin" });
+    await t.db.update(users).set({ name: "Ada Admin" }).where(eq(users.id, admin.id));
     const dana = await member("dana@example.com");
     const link = await app!.inject({
       method: "POST",
@@ -396,7 +398,9 @@ describe("POST /auth/password/reset", () => {
     });
     const token = (link.json().url as string).split("/reset/")[1]!;
     await app!.inject({ method: "POST", url: "/auth/password/reset", payload: { token, password: NEW_PASSWORD } });
-    expect((await auditRow("password.reset_completed"))?.note).toContain(admin.id);
+    const note = (await auditRow("password.reset_completed"))?.note;
+    expect(note).toBe("used a reset link from Ada Admin");
+    expect(note).not.toContain(admin.id);
   });
 });
 

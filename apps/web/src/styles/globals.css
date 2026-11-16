@@ -26,6 +26,8 @@
   --warn: #f59e0b;
   --err: #ef4444;
   --info: #60a5fa;
+  /* Keyboard focus. Not the brand red: red marks errors and destructive actions. */
+  --focus: #60a5fa;
   --hover: rgba(255, 255, 255, 0.04);
   --hover-2: rgba(255, 255, 255, 0.08);
   --shadow-1: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
@@ -50,6 +52,7 @@
   --warn: #b45309;
   --err: #b91c1c;
   --info: #1d4ed8;
+  --focus: #2563eb;
   --hover: rgba(0, 0, 0, 0.03);
   --hover-2: rgba(0, 0, 0, 0.06);
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.04);
@@ -148,7 +151,7 @@ a.gw-side__brand:hover { opacity: 0.82; }
 .gw-side__user .avatar { width: 28px; height: 28px; border-radius: 999px; background: var(--brand); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; flex-shrink: 0; }
 .gw-side__user .meta { flex: 1; min-width: 0; }
 .gw-side__user .email { font-size: 12px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.gw-side__user .plan-chip { font-size: 9px; padding: 2px 6px; border-radius: 4px; background: rgba(255,57,0,0.15); color: var(--brand); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; display: inline-block; margin-top: 2px; border: 1px solid rgba(255,57,0,0.30); }
+.gw-side__user .plan-chip { font-size: 10.5px; padding: 1px 6px; border-radius: 4px; background: var(--hover-2); color: var(--text-2); font-weight: 600; display: inline-block; margin-top: 2px; border: 1px solid var(--line-2); }
 .gw-side__user .admin-chip { font-size: 9px; padding: 2px 6px; border-radius: 4px; background: rgba(252,211,77,0.12); color: var(--brand-2); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; display: inline-block; margin-top: 2px; margin-left: 6px; border: 1px solid rgba(252,211,77,0.30); }
 
 
@@ -208,6 +211,25 @@ a.gw-side__brand:hover { opacity: 0.82; }
   .gw-top__search:focus-within input { width: 200px; }
 }
 .gw-top__right .dot-ok { width: 6px; height: 6px; border-radius: 999px; background: var(--ok); box-shadow: 0 0 6px var(--ok); flex-shrink: 0; }
+/* The top bar keeps to one line at any width. The crumbs and the status pill
+   give way, each cut with an ellipsis; the other pills and the buttons keep
+   their size. Under 860 px of bar (a window under about 1100 px beside the
+   full sidebar) the root crumb goes and the buttons show only their icons. */
+.gw-top { gap: 16px; container: gw-top / inline-size; }
+.gw-top__crumbs { min-width: 0; overflow: hidden; }
+.gw-top__crumbs > * { flex-shrink: 0; white-space: nowrap; }
+.gw-top__crumbs > span { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.gw-top__right { min-width: 0; }
+.gw-top__right > * { flex-shrink: 0; }
+.gw-top__right > .pill, .gw-top__right > .gw-btn, .gw-top__right button.pill { white-space: nowrap; }
+/* The status pill: a span, or a button in a box of its own. */
+.gw-top__right > [role="status"], .gw-top__right > div:has(> button.pill) { flex-shrink: 1; min-width: 0; }
+.gw-top__right > [role="status"].pill, .gw-top__right button.pill { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.gw-top__right > [role="status"].pill > span:first-child, .gw-top__right button.pill > span:first-child { display: inline-block; vertical-align: middle; margin-right: 6px; }
+.gw-top__right button.pill > svg { margin-left: 6px; vertical-align: middle; }
+@container gw-top (max-width: 860px) {
+  .gw-top__root, .gw-top__label { display: none; }
+}
 
 /* ── Main ── */
 .gw-main { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 100vh; }
@@ -238,7 +260,7 @@ a.gw-side__brand:hover { opacity: 0.82; }
 
 /* ── Inputs ── */
 .gw-input { width: 100%; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--surface); color: var(--text); font-size: 13px; font-family: inherit; outline: none; transition: border-color 0.15s, box-shadow 0.15s; }
-.gw-input:focus { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(255,57,0,0.15); }
+.gw-input:focus { border-color: var(--focus); box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 22%, transparent); }
 /* Held while its form's request runs: what was typed is what is being sent. */
 .gw-input[readonly] { opacity: 0.6; cursor: default; }
 
@@ -308,7 +330,7 @@ table.gw-table tbody tr.gw-logrow-detail:hover > td { background: var(--bg-2); p
 .gw-lane { cursor: pointer; }
 .gw-lane:hover, .gw-lane.is-open { background: var(--bg-2); }
 .gw-lane.is-open { box-shadow: inset 2px 0 0 var(--brand); }
-.gw-lane:focus-visible, .gw-disclosure:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
+.gw-lane:focus-visible, .gw-disclosure:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 /* A button that reads as text - a disclosure's title row - and keeps its focus ring. */
 .gw-disclosure { all: unset; cursor: pointer; }
 /* "Next step" in an opened request: its own box, so the one thing to do stands apart from the facts. */

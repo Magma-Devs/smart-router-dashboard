@@ -111,6 +111,9 @@ describe("transport", () => {
   }, 20_000);
 });
 
+/** The admin who sends the invitations below. */
+const VICTORIA = { name: "Victoria Admin", email: "victoria@example.com" };
+
 describe("the invitation email", () => {
   async function render(customer?: string) {
     if (customer) process.env.CUSTOMER_NAME = customer;
@@ -120,14 +123,32 @@ describe("the invitation email", () => {
         to: "dana@example.com",
         inviteUrl: "https://dash.example.com/invite/tok3n",
         expiresInDays: 7,
+        invitedBy: VICTORIA,
+        role: "read_only",
       },
       (_m, ctx) => captured.push(ctx ?? {}),
     );
-    return { out, text: String(captured[0]?.body ?? "") };
+    return { out, text: String(captured[0]?.body ?? ""), subject: String(captured[0]?.subject ?? "") };
   }
 
-  it("names the customer in the subject", async () => {
-    expect(EMAIL_SUBJECTS.invitation("Example Co")).toBe("You've been added to Example Co on Smart Router");
+  it("names the inviter and the deployment in the subject", async () => {
+    expect(EMAIL_SUBJECTS.invitation("Example Co", "Victoria Admin")).toBe(
+      "Victoria Admin invited you to the Smart Router dashboard for Example Co",
+    );
+    const { subject } = await render("Example Co");
+    expect(subject).toBe("Victoria Admin invited you to the Smart Router dashboard for Example Co");
+  });
+
+  it("names the inviter by address in the subject when they have no name", () => {
+    process.env.CUSTOMER_NAME = "Example Co";
+    const { subject } = renderInvitationEmail({
+      to: "dana@example.com",
+      inviteUrl: "https://dash.example.com/invite/tok3n",
+      expiresInDays: 7,
+      invitedBy: { name: null, email: "victoria@example.com" },
+      role: "admin",
+    });
+    expect(subject).toBe("victoria@example.com invited you to the Smart Router dashboard for Example Co");
   });
 
   it("carries the link as text, so a stripped button still leaves a way in", async () => {
@@ -135,18 +156,48 @@ describe("the invitation email", () => {
     expect(text).toContain("https://dash.example.com/invite/tok3n");
   });
 
-  it("states the expiry and the address it works for", async () => {
+  it("states the expiry, and that the link sets up this one address's account", async () => {
     const { text } = await render();
-    expect(text).toContain("expires in 7 days");
-    expect(text).toContain("only works for dana@example.com");
+    expect(text).toContain(
+      "The link works once and expires in 7 days. " +
+        "It sets up the account for dana@example.com, so do not forward it.\n",
+    );
+    expect(text).not.toContain("only works for");
   });
 
-  it("does not name the inviter", async () => {
-    // The ticket's reasoning: an invite goes to an address nobody has verified,
-    // so a mistyped one puts a colleague's name in a stranger's inbox.
+  it("says who invited them, with their address, and the role by its label", async () => {
     const { text } = await render();
-    expect(text.toLowerCase()).not.toContain("invited by");
-    expect(text).not.toContain("@magmadevs.com");
+    expect(text).toContain("\nInvited by Victoria Admin (victoria@example.com) as Read-only.\n");
+    expect(text).not.toContain("read_only");
+  });
+
+  it.each([
+    ["requester", "Requester"],
+    ["approver", "Approver"],
+    ["admin", "Admin"],
+  ] as const)("words the %s role as the Team page does", (role, label) => {
+    const { text, html } = renderInvitationEmail({
+      to: "dana@example.com",
+      inviteUrl: "https://dash.example.com/invite/tok3n",
+      expiresInDays: 7,
+      invitedBy: { name: null, email: "victoria@example.com" },
+      role,
+    });
+    expect(text).toContain(`Invited by victoria@example.com as ${label}.`);
+    expect(html).toContain(`Invited by victoria@example.com as ${label}.`);
+  });
+
+  it("keeps a name's line breaks out of the subject and the body", () => {
+    const { subject, text } = renderInvitationEmail({
+      to: "dana@example.com",
+      inviteUrl: "https://dash.example.com/invite/tok3n",
+      expiresInDays: 7,
+      invitedBy: { name: "Victoria\r\nBcc: x@evil.example", email: "victoria@example.com" },
+      role: "read_only",
+    });
+    expect(subject).not.toMatch(/[\r\n]/);
+    expect(subject.startsWith("Victoria Bcc: x@evil.example invited you")).toBe(true);
+    expect(text).toContain("Invited by Victoria Bcc: x@evil.example (victoria@example.com) as Read-only.");
   });
 
   it("reports link-fallback delivery when nothing was sent", async () => {
@@ -183,8 +234,9 @@ describe("the password-reset email", () => {
 
   it("says what to do if it wasn't you, and that nothing has changed yet", async () => {
     const text = await render();
-    expect(text).toContain("you can ignore this email");
-    expect(text).toContain("your password won't change");
+    expect(text).toContain(
+      "If you didn't request this, you can ignore this email. Your password won't change.\n",
+    );
   });
 
   it("carries the link as text", async () => {
@@ -201,6 +253,8 @@ describe("the rules both emails follow", () => {
           to: "dana@example.com",
           inviteUrl: "https://dash.example.com/invite/tok3n",
           expiresInDays: 7,
+          invitedBy: VICTORIA,
+          role: "approver",
         })
       : renderPasswordResetEmail({
           to: "dana@example.com",
@@ -237,15 +291,21 @@ describe("the rules both emails follow", () => {
     },
   );
 
-  it("escapes what the deployment supplies before it reaches the HTML", () => {
+  it("escapes what the deployment and the inviter supply before it reaches the HTML", () => {
     process.env.CUSTOMER_NAME = 'Acme <b>&</b> "Co"';
     const { html, subject } = renderInvitationEmail({
       to: "dana@example.com",
       inviteUrl: "https://dash.example.com/invite/tok3n",
       expiresInDays: 7,
+      invitedBy: { name: "<script>x</script>", email: "v@example.com" },
+      role: "approver",
     });
-    expect(subject).toBe('You\'ve been added to Acme <b>&</b> "Co" on Smart Router');
+    expect(subject).toBe(
+      '<script>x</script> invited you to the Smart Router dashboard for Acme <b>&</b> "Co"',
+    );
     expect(html).not.toContain("<b>&</b>");
+    expect(html).not.toContain("<script>");
     expect(html).toContain("Acme &lt;b&gt;&amp;&lt;/b&gt; &quot;Co&quot;");
+    expect(html).toContain("Invited by &lt;script&gt;x&lt;/script&gt; (v@example.com) as Approver.");
   });
 });

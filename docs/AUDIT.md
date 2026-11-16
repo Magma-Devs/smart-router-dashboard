@@ -16,7 +16,8 @@ Two tables, written by one writer (`packages/db/src/audit.ts`):
 - `audit_events` — one row per event. Actor (with the name and address
   *snapshotted*, so a later rename or removal cannot rewrite history), action,
   target, an optional note, and — only for the event kinds that carry one — the
-  IP address, client and session it came from.
+  IP address, client and session it came from. Every read surface shows the
+  session as a reference rather than its id (see [Sessions](#sessions)).
 - `audit_event_changes` — for events that record a change, one row per field:
   `field`, `from`, `to`. Values are redacted at write time; no secret or node
   URL is ever stored.
@@ -26,6 +27,73 @@ Both tables are **append-only, enforced in the database**: a trigger refuses
 alter or remove a row through the product. (Operators with database access have
 a retention escape hatch — `set local audit.purge = 'on'` inside a transaction
 — which exists for data-retention law and for nothing else.)
+
+### Rows that commit with their change
+
+For the events that record how a person gets into an account, or loses the
+ability to let others in, the row is written in the same transaction as the
+change it records, and a row that cannot be written undoes the change and
+fails the request:
+
+- an admin generating a reset link (`password.reset_link_generated`);
+- a reset link being used (`password.reset_completed`, and a
+  `session.revoked` for each session it ended);
+- an invitation being redeemed (`invite.redeemed`, and for a Google or GitHub
+  redemption the session it opens and its `signin.succeeded`);
+- removing a member or changing a role, with everything those revoke (below).
+
+A refused sign-in has no change of its own to share a transaction with. The
+attempt it spent is counted before the credential is checked and commits
+then, so a refusal row that cannot be written never gives that attempt back:
+the row (`signin.failed`, or `signin.blocked` for an account that was removed)
+is written in a transaction of its own, and the request answers `500` rather
+than the usual refusal. A lockout's `signin.blocked` row is written in the
+transaction that counted the attempt, since no credential is checked between
+the two. A row written outside any transaction is reported in the api's log
+and dropped when its write fails.
+
+### What a removal or a demotion revokes
+
+Removing a member, or changing an admin to any other role, revokes what they
+handed out as an admin, in the same transaction: invitations they sent that
+nobody has redeemed (`invite.revoked`), reset links they generated that nobody
+has used (`password.reset_link_revoked`, naming the member the link was for),
+and audit tokens they created (`apikey.deleted`). The acting admin is the
+actor, and each note names who the thing came from: `created by Dana, who was
+removed` or `created by Dana, who is no longer an admin`.
+
+### When a row's time is not the time it was written
+
+`invite.expired` is recorded the first time anything notices the expiry (the
+link being opened, or an admin's Invites list), and the row's time is the
+invitation's expiry, not that later moment. The feed's order is unaffected:
+it follows the order rows were written, so a puller resuming from its cursor
+still receives the row.
+
+### What a sign-in or reset request records
+
+- A refused Google or GitHub sign-in writes `signin.failed`, with the address
+  the provider verified (when it gave one) and why: no account with this
+  address, no verified email address, or a token it would not verify.
+- A sign-in at the address of a removed account, with a password or with
+  Google or GitHub, writes `signin.blocked` against that account, with a note
+  ending `account removed`. A password sign-in there gets the same `401` as an
+  address with no account.
+- Every forgot-password request a managed deployment with a mail transport
+  accepts writes `password.reset_requested`, including the ones that send
+  nothing. The note says which: `emailed`, `email failed, no
+  link delivered`, `not re-sent, a recent link is still unused`, `not sent, no
+  account with this address`, `not sent, account removed`, or `not sent, the
+  account has no password`. The answer is the same `202` for all of them, sent
+  before the address is looked up.
+- On a managed deployment, the email telling the owner their password was
+  reset is recorded on its own `password.reset_notice` row after
+  `password.reset_completed`, since that row has already committed when the
+  email is sent.
+- "Sign out everywhere" writes a `session.revoked` for every other device and
+  a `signout` for the one it was done from.
+
+### The catalog
 
 The event vocabulary is a closed catalog
 (`packages/shared/src/constants/audit-events.ts`), and it is **published**:
@@ -44,6 +112,21 @@ Reading the record of what happened is not a privilege; changing things is.
 Newest first, filterable by group, person, object and date, with a detail
 sheet per event and an **Export CSV** button that exports what the filters
 say — not just the page on screen.
+
+A row names its event in words ("Sign-in failed", "Session ended"), its
+group, and its target by the name it had at the time. The detail sheet keeps
+the codes the API and the CSV use: the event's (`signin.failed`) and the
+target's kind and id, which is what the **Object id** filter takes. It gives
+the time twice, on the reader's clock and in UTC
+(`Nov 12, 2026, 12:22:07 UTC`), the zone the notification emails state, so a
+row can be matched with the email it sent.
+
+The **Group** filter offers the groups something in the product writes. The
+config-approval events (group `approval`) are in the catalog with no writer
+yet, so that group is not offered, and the sheet shows an **Approval request**
+only on a row that names one. `apps/web/src/components/audit/filter-groups.ts`
+holds the groups left out, and a test fails when it disagrees with the
+writers.
 
 It reads a page at a time — 25, 50 (the default) or 100 rows — with
 **Newest**, **Newer** and **Older** above and below the table and a label
@@ -135,6 +218,20 @@ Rules a puller must know:
   all **400**, never an empty page.
 - Changing `per_page` mid-pull is fine; it is not part of the cursor.
 
+Each item carries `id`, `time`, `action`, `group`, `source`, `actor`,
+`target`, `request`, `note` and `changes`, and, on the event kinds that carry
+one, a `context` of `ip`, `client` and `session`. A config event has no
+`context` key at all rather than one full of nulls.
+
+### Sessions
+
+`context.session` is a reference to the sign-in the event came from: the first
+12 hex characters of the SHA-256 of the session id. Every row that sign-in
+wrote carries the same reference, and so does the `session.revoked` row that
+ended it, as its `target.id`. The session id itself appears on no read
+surface: not the page, the export or this API. `target_type=session&target_id=`
+takes the reference, and a session id there matches nothing.
+
 ## The CSV export
 
 ```
@@ -149,8 +246,13 @@ columns empty. Columns:
 
 ```
 event_id,time,actor_name,actor_email,source,action,group,
-target_type,target_id,target_name,request,note,field,from,to
+target_type,target_id,target_name,request,note,ip,client,session,field,from,to
 ```
+
+`ip`, `client` and `session` are the event's access context (the page's
+**IP address**, **Client** and **Session**), empty on events that carry none;
+`session` and a session's `target_id` hold the [reference](#sessions), as in
+the feed.
 
 Starts with a UTF-8 BOM (Excel assumes the local codepage otherwise; scripted
 consumers read it as `utf-8-sig`), CRLF line endings, and every cell passes the
@@ -173,7 +275,8 @@ credential that can also edit routing fails their vendor review.
 - **Listed with last-used** (`GET /api/audit/tokens`, admin): name, suffix,
   creator, last use time and address, revocation. Never the hash.
 - **Revocable** (`DELETE /api/audit/tokens/:id`, admin) and dead from that
-  moment.
+  moment. Removing the admin who created it, or changing them to any other
+  role, revokes it too.
 - Its **lifecycle is logged** — `apikey.created` / `apikey.deleted` rows name
   the admin and the token — while its heartbeat lives on the row itself. A
   five-minute puller does not get to bury the log in rows that only say it is
