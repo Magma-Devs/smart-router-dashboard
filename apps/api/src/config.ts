@@ -618,6 +618,7 @@ export interface AskSettings {
   maxContextBytes: number;
   maxOutputTokens: number;
   maxSteps: number;
+  retentionDays: number;
 }
 
 export function readAskSettings(source: NodeJS.ProcessEnv = process.env): AskSettings {
@@ -639,6 +640,7 @@ export function readAskSettings(source: NodeJS.ProcessEnv = process.env): AskSet
     maxContextBytes: 64_000,
     maxOutputTokens: 2048,
     maxSteps: 8,
+    retentionDays: positiveInt(source.ASK_DATA_RETENTION_DAYS, 90),
   };
   // Exact deployment/customer mapping is runtime control-plane configuration.
   // A display name, browser field or tool result must never supply it.
@@ -652,6 +654,8 @@ export function readAskSettings(source: NodeJS.ProcessEnv = process.env): AskSet
     settings.problem = "ASK_DATA_BEDROCK_REGION is invalid";
   else if (!settings.bedrockModel || settings.bedrockModel.length > 2048)
     settings.problem = "ASK_DATA_BEDROCK_MODEL is required";
+  else if (settings.retentionDays > 90 || (source.ASK_DATA_RETENTION_DAYS !== undefined && (!/^[1-9][0-9]*$/.test(source.ASK_DATA_RETENTION_DAYS))))
+    settings.problem = "ASK_DATA_RETENTION_DAYS must be 1 to 90";
   try {
     const url = new URL(settings.mcpUrl);
     if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash)

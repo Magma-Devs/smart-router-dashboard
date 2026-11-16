@@ -94,17 +94,17 @@ describe("Ask foundation capability route", () => {
     },
   );
 
-  it("registers no question/spending endpoint in the foundation", async () => {
+  it("refuses submission until budget admission is installed", async () => {
     const { headers } = await signedIn();
     expect(
       (
         await app.inject({
           method: "POST",
-          url: "/api/ask/chats",
+          url: "/api/ask/chats/b4deca46-c815-4bc1-8075-10dc981ffbf1/runs",
           headers,
           payload: { question: "spend" },
         })
       ).statusCode,
-    ).toBe(404);
+    ).toBe(503);
   });
 });

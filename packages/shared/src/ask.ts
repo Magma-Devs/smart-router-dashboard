@@ -150,6 +150,7 @@ export interface AskChatDetail {
   chat: AskChat;
   messages: AskMessage[];
   activeRun: AskRun | null;
+  nextMessageCursor: string | null;
 }
 export interface AskChatPage {
   chats: AskChat[];
