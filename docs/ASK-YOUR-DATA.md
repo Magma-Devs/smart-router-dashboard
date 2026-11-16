@@ -154,8 +154,9 @@ pricing rather than discarding cache/reasoning billing categories.
 Every production worker is installed with `AskBudget` hooks. A shared PostgreSQL
 customer/UTC-month row serializes Ask and future Investigate spending across
 people, entry points and replicas. The default cap is 10,000,000 integer micro-USD
-($10); it is never included in customer responses. Lowering a configured cap is
-conservative across replicas; automatic upserts never raise an existing cap.
+($10); it is never included in customer responses. Automatic upserts never raise an existing cap. Cap reductions require disabled
+dispatch and a consistent replica rollout, followed by verification of the saved
+pool before resuming (see the operator runbook).
 
 Queue admission checks available capacity in the submission transaction. Before
 each paid step, the free Bedrock token counter includes the system, messages and
@@ -288,3 +289,6 @@ focus containment and Escape, with the background inert. Desktop remains nonmoda
 The full view adapts history controls to small screens. Theme tokens, reduced
 motion and keyboard/focus labels follow the existing dashboard components.
 See [MAG-4933 verification and screenshots](validation/MAG-4933/README.md).
+
+See [the readiness and pilot runbook](ASK-YOUR-DATA-OPERATIONS.md) for runtime
+delivery, free preflight, staff/retention checks, controlled activation and rollback.

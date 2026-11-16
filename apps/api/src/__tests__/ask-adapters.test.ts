@@ -49,6 +49,16 @@ describe("Ask settings and provider boundary", () => {
       expect(readAskSettings({ ...env, ...override }).problem).not.toBeNull();
   });
 
+  it("keeps cleanup within 90 days even when invalid retention blocks execution", () => {
+    for (const value of ["91", "99999999", "0", "-1", "invalid"]) {
+      const configured = readAskSettings({ ...env, ASK_DATA_RETENTION_DAYS: value });
+      expect(configured.problem).not.toBeNull();
+      expect(configured.retentionDays).toBeGreaterThanOrEqual(1);
+      expect(configured.retentionDays).toBeLessThanOrEqual(90);
+    }
+    expect(readAskSettings({ ...env, ASK_DATA_RETENTION_DAYS: "30" }).retentionDays).toBe(30);
+  });
+
   it("never invokes either provider while disabled or misconfigured", async () => {
     const fetchImpl = vi.fn<typeof fetch>();
     for (const value of [

@@ -2,7 +2,9 @@
   "name": "@sr/api",
   "version": "0.0.0",
   "private": true,
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "type": "module",
   "scripts": {
     "build": "tsc",
@@ -11,7 +13,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "recover": "tsx src/recover.ts",
-    "ask:smoke": "tsx src/ask-smoke.ts"
+    "ask:smoke": "tsx src/ask-smoke.ts",
+    "ask:preflight": "tsx src/ask-preflight.ts"
   },
   "dependencies": {
     "@aws-sdk/client-sesv2": "3.1168.0",
