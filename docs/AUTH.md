@@ -87,6 +87,12 @@ The web needs this at **runtime**, not build time — `NEXT_PUBLIC_*` is baked
 into the bundle and one published image has to serve both shapes — so it
 comes through `GET /api/config` alongside `DASHBOARD_API_URL`.
 
+The Helm chart renders `AUTH_MODE` and `DEPLOYMENT_MODE` on both pods from
+its `dashboard.auth` block (`mode`, `deploymentMode`). The fleet's tenant template turns accounts on for
+every new managed deployment (`mode: enabled`, `deploymentMode: managed`),
+and with accounts on 2FA is required of everyone
+([Two-factor](#two-factor-totp)).
+
 ## First run (on-prem)
 
 A fresh install has no accounts, so there is nobody to sign in as. The
@@ -398,7 +404,7 @@ names both people.
 | `EMAIL_REPLY_TO` | A monitored inbox, so a reply to a reset reaches somebody |
 | `EMAIL_CONFIGURATION_SET` | Keeps each environment's bounce reputation separate on a shared SES identity |
 | `SES_ENDPOINT` | Points at a local SES mock for development |
-| `CUSTOMER_NAME` | Appears in the invitation subject — an invite lands somewhere that has never heard of us, and the customer's own name is what stops it reading as spam |
+| `CUSTOMER_NAME` | Names the dashboard in every email, and in the invitation's subject ("{inviter} invited you to the Smart Router dashboard for {customer}"): an invite lands somewhere that has never heard of us, and the customer's own name is what stops it reading as spam. The fleet sets it to the tenant's name |
 
 ### Seeing the mail in development
 
@@ -500,7 +506,7 @@ mail transport` or `email failed, not delivered`).
 development not in a log line either. A rendered invitation contains a live
 token.
 
-<img src="./assets/account-emails.png" alt="The two account emails side by side, rendered by the shipping templates. Left: the invitation, subject &quot;You've been added to Example Co on Smart Router&quot;, headed &quot;Set up your account&quot;, with a Set up your account button, the same link repeated as selectable text beneath it, and a line reading &quot;The link works once and expires in 7 days. It only works for dana.okonkwo@example.com.&quot; Right: the password reset, subject &quot;Reset your Smart Router password&quot;, with a Reset password button, the link again as text, and &quot;This link expires in 1 hour. If you didn't request this, you can ignore this email — your password won't change.&quot; Neither has a footer, an unsubscribe link, or any image." width="820">
+<img src="./assets/account-emails.png" alt="The two account emails side by side, rendered by the shipping templates. Left: the invitation, subject &quot;Victoria Admin invited you to the Smart Router dashboard for Example Co&quot;, headed &quot;Set up your account&quot;, with the line &quot;Invited by Victoria Admin (victoria@example.com) as Approver.&quot;, a Set up your account button, the same link repeated as selectable text beneath it, and &quot;The link works once and expires in 7 days. It sets up the account for dana.okonkwo@example.com, so do not forward it.&quot; Right: the password reset, subject &quot;Reset your Smart Router password&quot;, with a Reset password button, the link again as text, and &quot;This link expires in 1 hour. If you didn't request this, you can ignore this email. Your password won't change.&quot; Neither has a footer, an unsubscribe link, or any image." width="820">
 
 ### The rules the copy follows
 
@@ -514,20 +520,25 @@ From the ticket, and each has a test:
   and **no `<img>` at all**: a remote image in a security email reports when it
   was opened and from where, whether or not anybody meant it as a tracking
   pixel. The wordmark is set in text.
-- **The invitation does not name the inviter.** It goes to an address nobody has
-  verified, so a mistyped one puts a colleague's name and address in a
-  stranger's inbox.
+- **The invitation names who sent it**: by name in the subject, and with their
+  address and the role it grants, by its label, in the body ("Invited by
+  Victoria Admin (victoria@example.com) as Read-only."). A resend names the
+  admin who resent it. Its last line says the link sets up the account for the
+  one address it names, so it is not forwarded.
 - **The reset says what to do if it wasn't you**, as the last line.
 - **The password-changed notice carries no link at all** — no button, no reset
   link, no sign-in link. A takeover notice with a button is one an attacker can
   copy and bait somebody into pressing. It says what to do in words, and its
-  last line says it never contains a link, so a copy that has one gives itself
-  away.
+  last line is "We never put a link in this notice. If a copy has one, don't
+  click it.", so a copy that has one gives itself away.
 - **A time reads one way in every email**: `Nov 11, 2026, 14:05 UTC` — the
   dashboard's date and 24-hour clock, with the zone written out. The dashboard
   shows the reader's own zone, which the browser reports; an email has no
   browser and an account stores no zone, so it gives UTC, the zone of the
   audit log. `emailTime` (`services/email-time.ts`) writes every one.
+- **US English, "2FA" as the feature's name, and no long dash** (an em or en
+  dash) in any subject, plain text or HTML part: a pause is " - " or two
+  sentences. `email-copy.test.ts` renders every email and checks all three.
 
 
 ### The reset password page
@@ -761,8 +772,12 @@ make dev-auth
 # sign in at http://localhost:3000/login as admin@example.com / admin1234
 # (override any of them: ADMIN_EMAIL=you@example.com make dev-auth)
 
-# prod-style — no seeded admin (the seed is refused under NODE_ENV=production):
-AUTH_SECRET=$(openssl rand -base64 32) make up-auth
+# prod-style — no seeded admin (the seed is refused under NODE_ENV=production);
+# the api refuses to boot without the last two:
+export AUTH_SECRET=$(openssl rand -base64 32) \
+  TOTP_ENCRYPTION_KEY=$(openssl rand -base64 32) \
+  INTERNAL_AUTH_SECRET=$(openssl rand -base64 32)
+make up-auth
 # open /login → it redirects to /setup; the setup token is in
 # `docker compose logs api` (or set SETUP_TOKEN, 16+ characters)
 
@@ -929,11 +944,14 @@ against an unknown address answers the same `401` a wrong password does.
 
 **9. Export.** Team → Export CSV. This is the artifact an auditor asks for
 first, and it is the whole member list, not the page you are looking at.
-Its `two_factor` column reads `yes` or `no`; a `no` is the table's "Not set
-up".
+The 2FA column reads **Not set up** in the table when someone has no
+authenticator yet, and the CSV's `two_factor` column reads `yes` or `no`. The
+dashboard is shut to someone without one until they set it up
+([`TWO-FACTOR.md`](./TWO-FACTOR.md)).
 
-**10. The audit log.** Every step above wrote a row. There is no viewer yet
-(MAG-2770), so read them directly:
+**10. The audit log.** Every step above wrote a row. Open **Audit log** in
+the sidebar: newest first, a detail sheet per row, and **Export CSV**
+([`AUDIT.md`](./AUDIT.md)). Or read the table itself:
 
 ```bash
 docker exec smart-router-dashboard-dev-postgres-1 \
@@ -963,8 +981,8 @@ make recover CMD="promote-admin  --email you@example.com"
 
 Shell access is the authorisation and these hand out nothing new — what
 they add is a `host.recovery` row per run, naming the command and the
-operator, so a recovery shows up in the log afterwards. The viewer is
-MAG-2770's and is not on this branch, so read it the way step 10 does:
+operator, so a recovery shows up in the log afterwards: on the **Audit log**
+page, filtered to the `recovery` group, or in the table:
 
 ```sql
 select occurred_at, actor_name, note from audit_events
@@ -1091,7 +1109,7 @@ Two consequences:
 
 - **An edited migration is never re-applied.** The hash is recorded but
   unused, so changing an already-applied file is a no-op on any database
-  that ran it. Fine while nothing is deployed; not a thing to rely on later.
+  that ran it. A change to the schema is always a new migration.
 - **A migration inserted *below* the high-water mark is skipped**, on any
   database that is already migrated. This is the one that bites, because
   parallel branches produce it naturally: two tickets each add a migration,
@@ -1112,11 +1130,10 @@ that exists, and boot fails) or is silently skipped.
 docker compose -f docker-compose.dev.yml --profile auth down -v
 ```
 
-Only developer machines are affected: nothing deployed sets
-`AUTH_MODE=enabled`, so no deployment has a `users` table, let alone a
-migration history. CI is unaffected too — every suite builds its database
-from empty, where the high-water mark does not exist and entries apply in
-array order regardless of their timestamps.
+Only a database that ran a build from those branches is affected. CI is
+not: every suite builds its database from empty, where the high-water mark
+does not exist and entries apply in array order regardless of their
+timestamps.
 
 > **Never change the `when` of a migration a database may already hold.** It
 > is the obvious repair and it trades a silent skip for a hard failure: on a
