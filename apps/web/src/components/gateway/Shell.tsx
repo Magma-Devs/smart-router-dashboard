@@ -12,7 +12,6 @@ import { IconMenuCollapse, IconMenuExpand, IconMoon, IconSearch, IconSun, type I
 import { useFilters } from "@/components/gateway/FiltersProvider";
 import { DeploymentHealthBadge, useDeploymentPulse } from "./DeploymentHealth";
 import { topbarFigures } from "@/lib/upstream-presentation";
-import { fmtNum } from "@/lib/format";
 import { getAuthVersion, subscribeAuth } from "@/lib/auth-store";
 import { useMe } from "@/hooks/use-me";
 import { TwoFactorCountdown, TwoFactorGate } from "@/components/auth/two-factor-gate";
@@ -266,13 +265,11 @@ function RequestSearch() {
 }
 
 function Topbar({ here, sub, incidentsEnabled }: { here: string; sub: string | null; incidentsEnabled: boolean }) {
-  // Live throughput + health for the top-bar stats (real data; CU/mo is a
-  // Lava-consumer concept the router doesn't emit, so it's omitted here).
-  // The RPS pill and the router's status describe the selected router across
-  // every chain it serves; on a chain's page only the provider counts follow
-  // the chain (`topbarFigures`).
+  // The router's status describes the selected router across every chain it
+  // serves; on a chain's page the provider counts and the list follow the
+  // chain (`topbarFigures`).
   const { data, isLoading, error } = useDeploymentPulse();
-  const { rps, health, counts } = topbarFigures(data);
+  const { health, counts } = topbarFigures(data);
   return (
     <header className="gw-top">
       <div className="gw-top__crumbs">
@@ -299,10 +296,10 @@ function Topbar({ here, sub, incidentsEnabled }: { here: string; sub: string | n
         )}
       </div>
       <div className="gw-top__right">
-        <span className="pill gw-mono" title="Live throughput">
-          {fmtNum(rps)} RPS
-        </span>
-        <DeploymentHealthBadge health={health} counts={counts} loading={!data && isLoading && !error} error={Boolean(error)} />
+        {/* Drawn only when the router or a provider needs a look; it lists which
+            providers, why and since when. No throughput figure and no
+            "operational" here: neither tells the reader anything to do. */}
+        <DeploymentHealthBadge health={health} counts={counts} attention={data?.attention} loading={!data && isLoading && !error} error={Boolean(error)} />
         {/* Router scope — global, so it sits next to the theme toggle rather
             than in any one page's header. Hides itself when the metrics can't
             be split per router. */}

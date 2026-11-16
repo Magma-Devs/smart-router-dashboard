@@ -9,8 +9,8 @@
 import { useEffect, useState } from "react";
 import { buildChainMetaByIndex, type MetricWindow, type UpstreamMetrics, type UpstreamRef } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
-import { HEALTH_RANK } from "@/lib/health";
-import { upstreamMetricColor } from "@/lib/upstream-presentation";
+import { CAUSE_SHORT, HEALTH_RANK, sinceWords } from "@/lib/health";
+import { blockBehind, upstreamMetricColor } from "@/lib/upstream-presentation";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { ExplorerBlockLink, ExplorerHomeLink } from "@/components/gateway/ExplorerLink";
 import { HealthDot, HealthTag } from "@/components/gateway/HealthTag";
@@ -20,7 +20,7 @@ import { Refreshing, Skel, SkelRows } from "@/components/gateway/Skel";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 import { useRouterFilter } from "@/hooks/use-router-options";
 
-const BLOCK_TIP = "**The head this upstream reports** - `rpc_endpoint_latest_block`, its own tip rather than the router's.\n\n**Click a height** to open it on the chain\u2019s block explorer and check it against the public chain. Chains with no verified block page show the number plain - the chain name still opens their explorer.";
+const BLOCK_TIP = "**The head this upstream reports** - `rpc_endpoint_latest_block`, its own tip rather than the router's.\n\n**Under it**, how far that is from the chain\u2019s latest block, the highest any of its providers reports: \"latest\", or how many blocks behind and how long that is.\n\n**Click a height** to open it on the chain\u2019s block explorer and check it against the public chain. Chains with no verified block page show the number plain - the chain name still opens their explorer.";
 
 /**
  * A roster row's identity — one per (endpoint × chain). A vendor reuses its
@@ -51,8 +51,23 @@ interface RosterRow {
   err: number;
 }
 
-export function PMRoster({ rows, activeKey, onSelect, timeWindow, loading = false, refreshing = false }: {
+
+/**
+ * Under a row's status word, for a provider that isn't operational: why, and
+ * on its own line since when. An operational one adds nothing here: its block
+ * is said beside the block itself.
+ */
+function statusLines(v: UpstreamMetrics): { why: string | null; since: string | null; title?: string } | null {
+  if (v.health === "operational") return null;
+  const why = v.healthCause ? CAUSE_SHORT[v.healthCause] : null;
+  const since = v.health === "unhealthy" ? sinceWords(v.healthSince, v.healthSinceOrEarlier) : null;
+  return why || since ? { why, since, title: v.healthReason } : null;
+}
+
+export function PMRoster({ rows, activeKey, onSelect, timeWindow, showChain = true, loading = false, refreshing = false }: {
   rows: UpstreamMetrics[];
+  /** False on a page already narrowed to one chain: a column saying that chain on every row adds nothing. */
+  showChain?: boolean;
   /** `upstreamKey` of the selected row. */
   activeKey: string | null;
   onSelect: (key: string) => void;
@@ -120,7 +135,7 @@ export function PMRoster({ rows, activeKey, onSelect, timeWindow, loading = fals
           <tr>
             <ThCol sortKey="upstream" sort={sort} onSort={onSort}>Upstream</ThCol>
             <ThCol sortKey="router" sort={sort} onSort={onSort}>Router</ThCol>
-            <ThCol sortKey="chain" sort={sort} onSort={onSort}>Chain</ThCol>
+            {showChain && <ThCol sortKey="chain" sort={sort} onSort={onSort}>Chain</ThCol>}
             <ThCol align="right" tip={BLOCK_TIP} sortKey="block" sort={sort} onSort={onSort}>Last reported block</ThCol>
             <ThCol align="right" sortKey="requests" sort={sort} onSort={onSort}>Total requests</ThCol>
             <ThCol align="right" sortKey="status" sort={sort} onSort={onSort}>Status</ThCol>
@@ -161,14 +176,16 @@ export function PMRoster({ rows, activeKey, onSelect, timeWindow, loading = fals
                     </span>
                   )}
                 </td>
-                <td>
-                  <ExplorerHomeLink spec={r.pm.spec}>
-                    <span style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                      <ChainBadge spec={r.pm.spec} size={16} />
-                      <span style={{ fontSize: 12, color: "var(--text-2)" }}>{r.chainName}</span>
-                    </span>
-                  </ExplorerHomeLink>
-                </td>
+                {showChain && (
+                  <td>
+                    <ExplorerHomeLink spec={r.pm.spec}>
+                      <span style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                        <ChainBadge spec={r.pm.spec} size={16} />
+                        <span style={{ fontSize: 12, color: "var(--text-2)" }}>{r.chainName}</span>
+                      </span>
+                    </ExplorerHomeLink>
+                  </td>
+                )}
                 <td style={{ textAlign: "right" }}>
                   {v.latestBlock != null ? (
                     <span style={{ display: "inline-flex", alignItems: "center", gap: 6, justifyContent: "flex-end" }}>
@@ -177,6 +194,15 @@ export function PMRoster({ rows, activeKey, onSelect, timeWindow, loading = fals
                       </ExplorerBlockLink>
                     </span>
                   ) : <span style={{ fontSize: 12, color: "var(--text-4)" }}>—</span>}
+                  {/* Against the chain's latest block: the highest any of its providers reports.
+                      Green only on an operational provider: a block it reported before it went
+                      down must not read as "fine". */}
+                  {(() => {
+                    const behind = blockBehind(v, fmtBlock);
+                    return behind ? (
+                      <div title="Against the highest block any provider of this chain reports" style={{ fontSize: 10.5, marginTop: 3, lineHeight: 1.35, whiteSpace: "nowrap", color: behind.tone === "ok" ? upstreamMetricColor(v.health, "var(--ok)") : behind.tone === "warn" ? "var(--warn)" : "var(--text-3)" }}>{behind.text}</div>
+                    ) : null;
+                  })()}
                 </td>
                 {/* No special case for a row with no traffic: `0` requests and
                     three em dashes say it in the table's own language, and keep
@@ -184,18 +210,30 @@ export function PMRoster({ rows, activeKey, onSelect, timeWindow, loading = fals
                     sentence that used to span these four cells repeated the
                     BACKUP badge two columns to the left. */}
                 <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12, color: v.requests > 0 ? "var(--text)" : "var(--text-4)" }}>{fmtReq(v.requests)}</span></td>
-                <td style={{ textAlign: "right" }}><HealthTag health={v.health} reason={v.healthReason} /></td>
+                <td style={{ textAlign: "right" }}>
+                  <HealthTag health={v.health} reason={v.healthReason} />
+                  {/* Why, on the row, and since when on a line of its own; the full sentence is the hover text. */}
+                  {(() => {
+                    const line = statusLines(v);
+                    return line ? (
+                      <div title={line.title} style={{ fontSize: 10.5, marginTop: 3, lineHeight: 1.35, color: "var(--text-3)", whiteSpace: "nowrap" }}>
+                        {line.why && <div>{line.why}</div>}
+                        {line.since && <div>{line.since}</div>}
+                      </div>
+                    ) : null;
+                  })()}
+                </td>
                 <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{v.p95Ms != null ? Math.round(v.p95Ms) + " ms" : "—"}</span></td>
                 <td style={{ textAlign: "right" }}>{(() => { const e = v.errorRate != null ? v.errorRate * 100 : null; return e != null ? <span className="gw-mono gw-tnum" style={{ fontSize: 12, color: upstreamMetricColor(v.health, e < 0.5 ? "var(--text-3)" : e < 1.5 ? "var(--warn)" : "var(--err)") }}>{e.toFixed(2)}%</span> : <span style={{ fontSize: 12, color: "var(--text-4)" }}>—</span>; })()}</td>
               </tr>
             );
           })}
           {loading && <SkelRows rows={6} cols={[
-            { w: 156 }, { w: 96 }, { w: 110 }, { w: 84, align: "right" }, { w: 62, align: "right" },
-            { w: 64, align: "right" }, { w: 56, align: "right" }, { w: 58, align: "right" },
+            { w: 156 }, { w: 96 }, ...(showChain ? [{ w: 110 }] : []), { w: 84, align: "right" as const }, { w: 62, align: "right" as const },
+            { w: 64, align: "right" as const }, { w: 56, align: "right" as const }, { w: 58, align: "right" as const },
           ]} />}
           {!loading && rows.length === 0 && (
-            <tr><td colSpan={8} style={{ padding: "24px 16px", textAlign: "center", color: "var(--text-4)", fontSize: 13 }}>No upstreams configured yet.</td></tr>
+            <tr><td colSpan={showChain ? 8 : 7} style={{ padding: "24px 16px", textAlign: "center", color: "var(--text-4)", fontSize: 13 }}>No upstreams configured yet.</td></tr>
           )}
         </tbody>
       </table>

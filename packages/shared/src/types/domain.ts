@@ -92,8 +92,14 @@ export interface UpstreamMetrics {
    */
   polls: { ok: number; failed: number } | null;
   health: HealthState;
-  /** Current health evidence or the reason measurement is unavailable. */
+  /** Why it has this health, in one plain sentence. */
   healthReason?: string;
+  /** The same as a word (`HealthCause`). */
+  healthCause?: HealthCause;
+  /** Unix seconds an unhealthy provider's trouble began; null when not known. */
+  healthSince?: number | null;
+  /** `healthSince` is the start of the day read: the trouble is at least that old. */
+  healthSinceOrEarlier?: boolean;
   latestBlock: number | null;
   /** Blocks behind the spec's best endpoint; null when unknown. */
   blockLag: number | null;
@@ -230,16 +236,42 @@ export interface Kpi {
  * upstreams are unhealthy or unreported, and the current client RPS. Six
  * reads, independent of the chain count.
  */
+/**
+ * Why a provider has the health it has, as a word the web can act on:
+ * `ok` - its block checks pass; `blocked` - the router sends it nothing (no
+ * url of its in rotation); `checks-failing` - every block check in the
+ * health window failed; `no-checks` - in rotation, but no block check came
+ * back in the window, so nothing confirms it; `no-data` - the router reports
+ * nothing about it (or nothing for one of its configured interfaces).
+ */
+export type HealthCause = "ok" | "blocked" | "checks-failing" | "no-checks" | "no-data";
+
+/** A provider that is not operational, for the top bar's list: which, why, and since when. */
+export interface ProviderAttention {
+  endpointId: string;
+  spec: string;
+  health: HealthState;
+  cause: HealthCause;
+  /** One plain sentence. */
+  reason: string;
+  /** Unix seconds its trouble began; null when not known (an `unknown` provider, or a read the store refused). */
+  since: number | null;
+  /** `since` is the start of the day read: the trouble is at least that old. */
+  sinceOrEarlier: boolean;
+}
+
 export interface DeploymentPulse {
   /** The router's health gauge; under a chain filter (`spec`), that chain's. */
   health: HealthState;
   /** Current upstream × chain status, independent of any time window; `spec` and `routerId` narrow it. */
   upstreamHealthCounts: { unhealthy: number; unknown: number };
+  /** The providers behind those counts, unhealthy first, at most 30: what the top bar lists. */
+  attention: ProviderAttention[];
   /** Client requests per second over the last 5 minutes; under a chain filter, that chain's. Null with no traffic. */
   throughputRps: number | null;
   /**
    * The whole router's health and RPS, every chain it serves (the `router`
-   * scope still applies): what the topbar's status and RPS pill show. Read
+   * scope still applies): the health is what the topbar's status shows. Read
    * apart from the two above under a chain filter; the same values without one.
    */
   allChains: { health: HealthState; throughputRps: number | null };

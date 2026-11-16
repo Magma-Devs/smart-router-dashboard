@@ -71,8 +71,8 @@ export function PMEmpty({
 
         {polls !== null && (
           <Fact
-            label={`Block polls · ${timeWindow}`}
-            title="The router polls every configured upstream for its latest block, whether or not it routes requests to it. Zero polls means the poll gate suppressed them - served traffic or a peer's poll already refreshed the tip - not that the upstream failed."
+            label={`Block checks · ${timeWindow}`}
+            title="The router asks every configured provider for its latest block, whether or not it sends it requests. None in the window means it had no need to ask - traffic or another check already gave it the block - not that the provider failed."
           >
             <span style={{ color: upstreamMetricColor(pm.health, pollColor(pm.polls)) }}>{polls}</span>
           </Fact>

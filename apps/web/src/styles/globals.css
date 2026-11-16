@@ -198,6 +198,7 @@ a.gw-side__brand:hover { opacity: 0.82; }
 .gw-top__crumbs .here { color: var(--text); font-weight: 500; }
 .gw-top__right { display: flex; align-items: center; gap: 10px; }
 .gw-top__right .pill { display: flex; align-items: center; gap: 6px; padding: 5px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 12px; color: var(--text-2); }
+.gw-attn-row:hover { background: var(--hover); }
 .gw-top__search { display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--text-4); }
 .gw-top__search:focus-within { border-color: var(--line-2); color: var(--text-3); }
 .gw-top__search input { width: 150px; border: none; background: none; outline: none; color: var(--text); font-size: 12px; font-family: inherit; }

@@ -5,6 +5,39 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.69.4]
+
+### Changed
+
+- **A provider's status says why, on the page.** The reason sat in a hover
+  tooltip, in words written for us ("no block-poll outcome reported… check the
+  router and Prometheus scrape"). Now the Upstreams tab writes it under the
+  status word on each row and in a notice on the provider's page, in plain
+  words: "No data yet for its jsonrpc endpoint: the router reports nothing
+  about it.", "Every block check failed in the last 5 minutes.", "The router
+  stopped sending it requests: none of its URLs is answering." An unhealthy
+  provider also says since when and for how long ("since 12:24 (2 h 10
+  min)"), read from the last day of the router's metrics, and what its failed
+  requests said in the last hour, in one line ("Bad gateway on 42 of 48 failed
+  attempts in the last hour"), with a link to those requests. On the roster
+  the reason and "since" sit on two lines. The notice is the status now,
+  whatever window the page is on.
+- **An operational provider says when its block is late.** On its status
+  card, beside the status: "47 s behind the chain", or that its block stopped
+  moving. Failed block checks are not said for a provider that still serves.
+- **The top bar speaks only when something needs a look.** The RPS figure and
+  "Router operational" are gone. A pill appears when the router or a provider
+  is off ("2 providers unhealthy · 3 to check") and opens a list of those
+  providers - which, on which chain, why, since when - each a link to its
+  page.
+- **Each provider's block says how far it is from the chain's latest.** Under
+  the block on the Upstreams roster: "latest", or "3 behind · 36 s" - blocks
+  behind the highest block any provider of the chain reports, and how long
+  that is. Amber from 30 seconds, or when the block stopped moving.
+- **No Chain column on a chain's own page.** With a chain picked, the roster
+  no longer repeats it on every row.
+- "Block polls" is "Block checks" everywhere it is shown.
+
 ## [0.69.3]
 
 ### Added

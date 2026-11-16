@@ -1,9 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import Fastify from "fastify";
 import { metricRoutes } from "../routes/metrics.js";
 import { MetricsService } from "../services/metrics.js";
 import type { ConfigurationService } from "../services/configuration.js";
-import { readUpstreamHealth, healthWindowSeconds } from "../services/upstream-health.js";
+import {
+  SINCE_LOOKBACK_SEC, healthWindowSeconds, providersNeedingAttention, readHealthSince, readUpstreamHealth, type UpstreamHealth,
+} from "../services/upstream-health.js";
 import type { PrometheusClient, PromVectorSample } from "../services/prometheus-client.js";
 
 // For a gauge row the value is the blocked gauge: "1" blocked, "0" serving.
@@ -165,7 +167,7 @@ describe("MAG-4226 review: configured upstream liveness", () => {
     expect(rows).toHaveLength(4);
     expect(
       rows.every(
-        (row) => row.health === "unknown" && row.healthReason?.includes("check the router"),
+        (row) => row.health === "unknown" && row.healthReason?.includes("No data yet") && row.healthCause === "no-data",
       ),
     ).toBe(true);
     expect(pulse.upstreamHealthCounts).toEqual({ unhealthy: 0, unknown: 4 });
@@ -180,7 +182,8 @@ describe("MAG-4226 review: configured upstream liveness", () => {
     );
     const row = rows.find((row) => row.endpointId === "test-upstream")!;
     expect(row.health).toBe("unhealthy");
-    expect(row.healthReason).toContain("All reported block polls failed");
+    expect(row.healthReason).toContain("Every block check failed");
+    expect(row.healthCause).toBe("checks-failing");
     expect(row.requests).toBe(0);
     expect(row.uptime).toBeNull();
     expect(rows).toHaveLength(2);
@@ -255,7 +258,7 @@ describe("MAG-4226 review: configured upstream liveness", () => {
     const { prom } = healthProm([sample("0")], [sample("1")]);
     const row = [...(await readUpstreamHealth(prom, config))][0][1];
     expect(row.health).toBe("unknown");
-    expect(row.healthReason).toContain("rest interface");
+    expect(row.healthReason).toContain("its rest endpoint");
   });
 
   it("isolates the same vendor name on different chains and filters both counts and rows", async () => {
@@ -279,6 +282,47 @@ describe("MAG-4226 review: configured upstream liveness", () => {
     expect(queries.filter((q) => q.includes("increase(")).every((q) => q.includes("[1800s]"))).toBe(
       true,
     );
+  });
+});
+
+describe("an unhealthy provider through the HTTP routes", () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  it("the roster row carries the cause and since when, and the pulse lists the providers behind its counts", async () => {
+    // Only the clock: the routes' own timers run as they are.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-06-01T12:00:20Z"));
+    const end = Math.floor(Date.now() / 1000 / 60) * 60;
+    const { prom } = healthProm([sample("1")]);
+    const ranges: string[] = [];
+    // Blocked for the last 30 minutes of the day read.
+    (prom as unknown as { queryRangeOrNull: PrometheusClient["queryRangeOrNull"] }).queryRangeOrNull = async (q: string) => {
+      ranges.push(q);
+      return [{ metric: { provider_address: "test-upstream", spec: "ETH1" }, values: Array.from({ length: 121 }, (_, k) => [end - (120 - k) * 60, k >= 90 ? "1" : "0"] as [number, string]) }];
+    };
+    const metrics = new MetricsService(prom, configured);
+    const app = Fastify();
+    app.decorate("scoped", () => ({ metrics }));
+    await app.register(metricRoutes);
+    try {
+      const rows = (await app.inject("/api/metrics/upstreams?window=5m&routerId=eth-prod")).json().upstreams as import("@sr/shared").UpstreamMetrics[];
+      const pulse = (await app.inject("/api/metrics/pulse?routerId=eth-prod")).json() as import("@sr/shared").DeploymentPulse;
+      const since = end - 30 * 60;
+      const reason = "The router stopped sending it requests: none of its URLs is answering.";
+      expect(rows.find((r) => r.endpointId === "test-upstream")).toMatchObject({
+        health: "unhealthy", healthCause: "blocked", healthReason: reason, healthSince: since, healthSinceOrEarlier: false,
+      });
+      expect(rows.find((r) => r.endpointId === "missing")).toMatchObject({ health: "unknown", healthCause: "no-data", healthSince: null, healthSinceOrEarlier: false });
+      expect(pulse.upstreamHealthCounts).toEqual({ unhealthy: 1, unknown: 1 });
+      expect(pulse.attention).toEqual([
+        { endpointId: "test-upstream", spec: "ETH1", health: "unhealthy", cause: "blocked", reason, since, sinceOrEarlier: false },
+        { endpointId: "missing", spec: "ETH1", health: "unknown", cause: "no-data", reason: expect.stringContaining("No data yet"), since: null, sinceOrEarlier: false },
+      ]);
+      // One range read each, for the blocked provider's name only.
+      expect(ranges).toEqual(Array(2).fill('max by (provider_address, spec) (smartrouter_csm_provider_blocked{provider_address=~"test-upstream"})'));
+    } finally {
+      await app.close();
+    }
   });
 });
 
@@ -373,7 +417,8 @@ describe("MAG-4226 slow-chain windows", () => {
     );
     const row = [...(await readUpstreamHealth(prom))][0][1];
     expect(row.health).toBe("unknown");
-    expect(row.healthReason).toContain("cannot confirm recovery");
+    expect(row.healthReason).toContain("nothing confirms it is working");
+    expect(row.healthCause).toBe("no-checks");
     expect(row.healthReason).toContain("30 minutes");
   });
 
@@ -385,5 +430,130 @@ describe("MAG-4226 slow-chain windows", () => {
       [sample(String(1 / 600), "BTC")],
     );
     expect([...(await readUpstreamHealth(prom))][0][1].health).toBe("operational");
+  });
+});
+
+describe("since when an unhealthy provider has been unhealthy", () => {
+  const NOW = 1_800_000_000; // a multiple of 60 s
+  const JSONRPC = { apiInterface: "jsonrpc", instance: "" };
+  const row = (endpointId: string, cause: UpstreamHealth["healthCause"], health: UpstreamHealth["health"] = "unhealthy", failingChecks = cause === "checks-failing" ? [JSONRPC] : []): UpstreamHealth =>
+    ({ endpointId, spec: "ETH1", health, healthCause: cause, healthReason: "why", healthSince: null, healthSinceOrEarlier: false, failingChecks, routerIds: [] });
+  const rowsOf = (...list: UpstreamHealth[]) => new Map(list.map((r) => [`${r.endpointId}|${r.spec}`, r]));
+  /** A value per minute over the day read, oldest first. */
+  const minutes = (v: (minutesAgo: number) => string) =>
+    Array.from({ length: SINCE_LOOKBACK_SEC / 60 + 1 }, (_, k) => [NOW - SINCE_LOOKBACK_SEC + k * 60, v(SINCE_LOOKBACK_SEC / 60 - k)] as [number, string]);
+  const client = (answer: (q: string) => unknown) => {
+    const reads: string[] = [];
+    const prom = { queryRangeOrNull: async (q: string) => { reads.push(q); return answer(q); } } as unknown as PrometheusClient;
+    return { prom, reads };
+  };
+
+  it("reads nothing while every provider is fine", async () => {
+    const { prom, reads } = client(() => []);
+    await readHealthSince(prom, rowsOf(row("a", "ok", "operational"), row("b", "no-data", "unknown")), NOW);
+    expect(reads).toEqual([]);
+  });
+
+  it("a blocked provider: the start of the run its blocked gauge has been 1, read for the unhealthy names only", async () => {
+    const { prom, reads } = client((q) =>
+      q.includes("smartrouter_csm_provider_blocked")
+        ? [{ metric: { provider_address: "Tatum", spec: "ETH1" }, values: minutes((ago) => (ago <= 130 || (ago > 600 && ago < 620) ? "1" : "0")) }]
+        : []);
+    const rows = rowsOf(row("tatum", "blocked"), row("lava", "ok", "operational"));
+    await readHealthSince(prom, rows, NOW);
+    expect(reads).toEqual(['max by (provider_address, spec) (smartrouter_csm_provider_blocked{provider_address=~"tatum"})']);
+    // An earlier blocked stretch that ended is not this one.
+    expect(rows.get("tatum|ETH1")).toMatchObject({ healthSince: NOW - 130 * 60, healthSinceOrEarlier: false });
+  });
+
+  it("a hole in the blocked gauge's series ends the run: blocked before it is another stretch", async () => {
+    // Blocked 10 h ago, the series absent from 3 h 20 min to 20 min ago, blocked again since.
+    const withHole = minutes(() => "1").filter(([t]) => { const ago = (NOW - t) / 60; return ago <= 600 && !(ago > 20 && ago < 200); });
+    const { prom } = client(() => [{ metric: { provider_address: "tatum", spec: "ETH1" }, values: withHole }]);
+    const rows = rowsOf(row("tatum", "blocked"));
+    await readHealthSince(prom, rows, NOW);
+    expect(rows.get("tatum|ETH1")).toMatchObject({ healthSince: NOW - 20 * 60, healthSinceOrEarlier: false });
+  });
+
+  it("a few missing points are not a hole: the run goes on through them", async () => {
+    const fewMissing = minutes((ago) => (ago <= 130 ? "1" : "0")).filter(([t]) => { const ago = (NOW - t) / 60; return !(ago > 40 && ago < 45); });
+    const { prom } = client(() => [{ metric: { provider_address: "tatum", spec: "ETH1" }, values: fewMissing }]);
+    const rows = rowsOf(row("tatum", "blocked"));
+    await readHealthSince(prom, rows, NOW);
+    expect(rows.get("tatum|ETH1")).toMatchObject({ healthSince: NOW - 130 * 60, healthSinceOrEarlier: false });
+  });
+
+  it("blocked for the whole day read is at least that old", async () => {
+    const { prom } = client(() => [{ metric: { provider_address: "tatum", spec: "ETH1" }, values: minutes(() => "1") }]);
+    const rows = rowsOf(row("tatum", "blocked"));
+    await readHealthSince(prom, rows, NOW);
+    expect(rows.get("tatum|ETH1")).toMatchObject({ healthSince: NOW - SINCE_LOOKBACK_SEC, healthSinceOrEarlier: true });
+  });
+
+  it("every block check failing: since the last minute a check passed", async () => {
+    const { prom, reads } = client((q) =>
+      q.includes("rpc_endpoint_fetch_latest_success")
+        ? [{ metric: { endpoint_id: "node.a", spec: "ETH1", apiInterface: "jsonrpc" }, values: minutes((ago) => (ago >= 45 ? "2" : "0")) }]
+        : []);
+    const rows = rowsOf(row("node.a", "checks-failing"));
+    await readHealthSince(prom, rows, NOW);
+    expect(reads).toEqual(['sum by (endpoint_id, spec, apiInterface, instance) (increase(rpc_endpoint_fetch_latest_success{endpoint_id=~"node\\\\.a"}[75s]))']);
+    expect(rows.get("node.a|ETH1")).toMatchObject({ healthSince: NOW - 45 * 60, healthSinceOrEarlier: false });
+  });
+
+  it("one interface failing beside one that passes: since the failing interface's last pass", async () => {
+    const series = (apiInterface: string, instance: string, v: (ago: number) => string) =>
+      ({ metric: { endpoint_id: "node-a", spec: "ETH1", apiInterface, instance }, values: minutes(v) });
+    // The verdict's own reads: jsonrpc passes on both replicas, rest fails on both.
+    const { prom: now } = healthProm(
+      [],
+      [series("jsonrpc", "a", () => "0"), series("jsonrpc", "b", () => "0")].map((s) => ({ metric: s.metric, value: [1, "3"] as [number, string] })),
+      [series("rest", "a", () => "0"), series("rest", "b", () => "0")].map((s) => ({ metric: s.metric, value: [1, "2"] as [number, string] })),
+    );
+    const rows = await readUpstreamHealth(now);
+    const [verdict] = [...rows.values()];
+    expect(verdict).toMatchObject({ health: "unhealthy", healthCause: "checks-failing" });
+    expect(verdict!.failingChecks).toEqual([{ apiInterface: "rest", instance: "a" }, { apiInterface: "rest", instance: "b" }]);
+    const { prom } = client(() => [
+      series("jsonrpc", "a", () => "2"),
+      series("jsonrpc", "b", () => "2"),
+      series("rest", "a", (ago) => (ago >= 90 ? "1" : "0")),
+      series("rest", "b", (ago) => (ago >= 200 ? "1" : "0")),
+    ]);
+    await readHealthSince(prom, rows, NOW);
+    // Not "now", which the passing interface's checks would say; the earliest of the failing ones.
+    expect(verdict).toMatchObject({ healthSince: NOW - 200 * 60, healthSinceOrEarlier: false });
+  });
+
+  it("a failing interface with no series of its own in the day read: at least a day, whatever the others passed", async () => {
+    const { prom } = client(() => [{ metric: { endpoint_id: "node-a", spec: "ETH1", apiInterface: "jsonrpc" }, values: minutes(() => "2") }]);
+    const rows = rowsOf(row("node-a", "checks-failing", "unhealthy", [{ apiInterface: "rest", instance: "" }]));
+    await readHealthSince(prom, rows, NOW);
+    expect(rows.get("node-a|ETH1")).toMatchObject({ healthSince: NOW - SINCE_LOOKBACK_SEC, healthSinceOrEarlier: true });
+  });
+
+  it("no check passed in the day read: at least a day", async () => {
+    const { prom } = client(() => []);
+    const rows = rowsOf(row("node-a", "checks-failing"));
+    await readHealthSince(prom, rows, NOW);
+    expect(rows.get("node-a|ETH1")).toMatchObject({ healthSince: NOW - SINCE_LOOKBACK_SEC, healthSinceOrEarlier: true });
+  });
+
+  it("a refused read, or a client that can't read a range, leaves it unknown", async () => {
+    const refused = rowsOf(row("tatum", "blocked"));
+    await readHealthSince(client(() => null).prom, refused, NOW);
+    expect(refused.get("tatum|ETH1")!.healthSince).toBeNull();
+    const none = rowsOf(row("tatum", "blocked"));
+    await readHealthSince({} as PrometheusClient, none, NOW);
+    expect(none.get("tatum|ETH1")!.healthSince).toBeNull();
+  });
+
+  it("lists the providers to look at: unhealthy first, the oldest trouble first, operational left out", () => {
+    const a = { ...row("a", "blocked"), healthSince: 200 };
+    const b = { ...row("b", "checks-failing"), healthSince: 100 };
+    const list = providersNeedingAttention(rowsOf(row("ok", "ok", "operational"), row("c", "no-data", "unknown"), a, b));
+    expect(list.map((p) => [p.endpointId, p.health, p.cause, p.since])).toEqual([
+      ["b", "unhealthy", "checks-failing", 100], ["a", "unhealthy", "blocked", 200], ["c", "unknown", "no-data", null],
+    ]);
   });
 });

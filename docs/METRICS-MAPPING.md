@@ -43,25 +43,50 @@ not every HTTP request; a non-advancing chain alone is not failure.
 
 The **Request success rate** card retains the historical success/total ratio
 and its fixed windows. When health is unhealthy or unknown, these percentages,
-error rates and QoS figures use neutral colours and a notice explains the
-request window and health reason. Block heights are **last reported**, latency
+error rates and QoS figures use neutral colours and a notice says the status,
+whatever window the page is on: for an unhealthy provider since when and why,
+then the error most of its failed attempts had in the last hour, from the
+router's logs (`GET /api/error-requests?upstream=`, read once when the
+provider's page opens), with a link to those requests; for a provider with no
+data, why. Block heights are **last reported**, latency
 is window-scoped, and failure-only traffic keeps its diagnostics available.
 A QoS availability score is an optimizer score, not a percentage of time up.
 There is no explicit disabled-state signal, so the UI does not invent one.
 
+Each row carries the reason as a sentence (`healthReason`) and as a word
+(`healthCause`: `ok` / `blocked` / `checks-failing` / `no-checks` /
+`no-data`); the roster says the cause in a few words under the status. An unhealthy row
+also carries since when (`healthSince`, unix seconds; `readHealthSince`):
+range reads over the last day at a one-minute step, for the unhealthy
+providers' names only, one per cause present and none while every provider is
+fine. A blocked provider: the start of the run of minutes its
+`smartrouter_csm_provider_blocked` has been 1; a hole of over five minutes in
+the series ends the run. One whose every block check fails: the last minute
+`rpc_endpoint_fetch_latest_success` rose on the interface and scrape target
+that fail, the earliest of them when several do, each point reading 75
+seconds (`countRangeSec`). A start at the edge of the day read is a lower
+bound (`healthSinceOrEarlier`, shown as "for over 24 h"). A refused read
+leaves `healthSince` null, and the row says why without it.
+
 `/api/metrics/pulse` includes `upstreamHealthCounts: { unhealthy, unknown }`
-using the same four health reads as the roster (gauge, chain rate, success
-and failure events). Chains sharing a window are grouped into PromQL union
+and `attention`, the providers behind those counts (which, on which chain,
+why, since when for an unhealthy one; unhealthy first, then the oldest
+trouble, at most 30), using the same four health reads as the roster (gauge,
+chain rate, success and failure events) and the same since reads. Chains sharing a window are grouped into PromQL union
 branches; query count is independent of the number of endpoints or chains. The optional
 `spec` and `routerId` filter these counts; `router` scopes all Prometheus
 queries. Under `spec` the health and RPS are the chain's too, and
 `allChains` carries the whole router's beside them (two reads more); the
-topbar shows `allChains`, so on a chain's page its status and RPS pill still
-describe every chain and only the provider counts follow the chain (MAG-5295).
+topbar reads the router's status from `allChains`, so on a chain's page that
+status describes every chain and only the provider counts follow the chain
+(MAG-5295). The RPS is in the pulse and the topbar does not draw it.
 Headers read the pulse every 30 seconds and make no roster,
-histogram or QoS request. They show **Checking health…**
-until the selected scope answers, a warning on fetch errors, and warning
-counts for missing upstream health. Background refresh retains the same
+histogram or QoS request. They draw a pill only when the router or a provider
+needs a look ("2 providers unhealthy · 3 to check"): nothing until the
+selected scope answers and nothing while all is well, a warning on fetch
+errors, and warning counts for missing upstream health. The pill opens the
+`attention` list, each provider a link to its page on its chain's Upstreams
+tab. Background refresh retains the same
 scope's last measurement; changing scope does not reuse another scope's data.
 
 ## Upstream history in blocks (`/api/metrics/upstream-timeline`)

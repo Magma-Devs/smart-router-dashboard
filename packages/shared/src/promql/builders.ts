@@ -275,6 +275,31 @@ export function qProviderBlockedByEndpoint(spec?: string): string {
   return `label_replace(${ROUTER_METRICS.csmProviderBlocked}${selector({ spec })}, "endpoint_id", "$1", "provider_address", "(.*)")`;
 }
 
+/** A regex matcher value naming exactly these provider names, quoted for a selector. */
+function namesRegex(names: readonly string[]): string {
+  return JSON.stringify([...new Set(names)].sort().map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"));
+}
+
+/**
+ * The blocked gauge of the named providers over time, the worst of each
+ * provider's urls per chain: 1 while the router sends it nothing. A range
+ * read of it says since when a blocked provider has been blocked.
+ */
+export function qProviderBlockedOver(names: readonly string[]): string {
+  return `max by (provider_address, spec) (${ROUTER_METRICS.csmProviderBlocked}{provider_address=~${namesRegex(names)}})`;
+}
+
+/**
+ * Block checks the named providers passed in each `step` stretch, per chain,
+ * interface and scrape target: the grain a provider's health is decided at.
+ * The last stretch with one is when an interface whose every check fails
+ * last answered. Each point reads the counting range (`countRangeSec`), a
+ * step and one scrape, so a pass between two points' scrapes is in one.
+ */
+export function qBlockChecksPassedOver(names: readonly string[], step: string): string {
+  return `sum by (endpoint_id, spec, apiInterface, instance) (increase(${ENDPOINT_METRICS.fetchLatestSuccess}{endpoint_id=~${namesRegex(names)}}[${countRangeSec(step)}s]))`;
+}
+
 /* ── Derived error math (real: total − success, clamped ≥ 0) ─────────────── */
 
 /** Absolute error count over the window (total − success), whole number. */
