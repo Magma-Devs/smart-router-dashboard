@@ -54,3 +54,27 @@ stack, or point the suite at it with the two variables above.
   spent. Generating twice inside thirty seconds therefore fails as "wrong code".
   `Authenticator.next()` waits instead; that is what the person with the phone
   does.
+
+
+## Ask your data
+
+`pnpm --filter @sr/e2e exec playwright test -c ask.playwright.config.ts` starts the
+managed Ask fixture. Auth, HTTP, the API worker, budget and PostgreSQL are real.
+Only the MCP/Bedrock boundary is replaced by `support/ask-provider-fixture.mjs`,
+loaded explicitly by the test command. It refuses production and non-fixture
+customer/model settings; product code imports no sample provider or answers.
+
+The Ask suite covers panel/full/draft continuity, minimize, real persistence,
+search/paging, copy/evidence/plain-text HTML, mobile focus/scroll, another browser
+context with no local storage, cross-tab processing/Stop, failed answers after
+reload, read-only members and personal history denial. The accounts suite also
+checks that disabled/self-hosted chat has no entry, requests or usable direct page.
+CI runs both suites on separate PostgreSQL services/runners.
+
+To let the suite own separate ports while another checkout is running, set
+`E2E_OWN_SERVERS=true`, `E2E_WEB_URL=http://localhost:<web-port>` and
+`E2E_API_URL=http://localhost:<api-port>`. Supply a dedicated local
+`E2E_DATABASE_URL`. With the two URLs and without `E2E_OWN_SERVERS`, the suite
+continues to reuse an intentionally supplied stack. Never run the destructive
+fixture reset against a database containing real data. Ask artifacts live under
+`.playwright/ask-results`; the accounts suite uses `.playwright/results`.

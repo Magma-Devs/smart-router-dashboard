@@ -25,7 +25,7 @@ const repoRoot = resolve(import.meta.dirname, "..");
  *    unreachable store is answered with empty panels by design — the honesty
  *    contract — so this exercises the same path a real outage does.
  */
-const serverEnv: Record<string, string> = {
+export const serverEnv: Record<string, string> = {
   AUTH_MODE: "enabled",
   AUTH_SECRET,
   DATABASE_URL,
@@ -96,14 +96,14 @@ export default defineConfig({
           command: "pnpm --filter @sr/api exec tsx src/main.ts",
           cwd: repoRoot,
           url: `${API_URL}/health`,
-          env: serverEnv,
+          env: { ...serverEnv, API_PORT: new URL(API_URL).port || "8000" },
           timeout: 120_000,
           reuseExistingServer: false,
           stdout: "pipe",
           stderr: "pipe",
         },
         {
-          command: "pnpm --filter @sr/web dev",
+          command: `pnpm --filter @sr/web exec next dev --port ${new URL(WEB_URL).port || "3000"}`,
           cwd: repoRoot,
           // A page, not the config route: a route handler compiles on its
           // own and proves nothing about whether the app does.

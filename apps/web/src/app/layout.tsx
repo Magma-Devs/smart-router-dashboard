@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { AuthProvider } from "@/components/auth/auth-provider";
 import "@/styles/globals.css";
+import "@/styles/ask.css";
 
 // The same two families the prototype uses — without them every metric number
 // renders in system-ui and nothing is pixel-comparable.

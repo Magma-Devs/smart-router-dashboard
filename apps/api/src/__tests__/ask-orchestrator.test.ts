@@ -187,6 +187,25 @@ describe("bounded customer tool orchestration", () => {
     const f = fixture();
     const result = await f.answer();
     expect(result.summary).toBe(content.summary);
+    const clockBody = JSON.parse(f.bodies[0]!) as {
+      messages: Array<{ content: Array<{ text: string }> }>;
+    };
+    const requestContext = JSON.parse(clockBody.messages[0]!.content[0]!.text) as {
+      request: { serverTime: string };
+    };
+    expect(Math.abs(Date.parse(requestContext.request.serverTime) - Date.now())).toBeLessThan(5000);
+    const followUp = JSON.parse(f.bodies[1]!) as {
+      messages: Array<{ content: Array<{ toolResult?: { content: Array<{ text: string }> } }> }>;
+    };
+    const toolMessage = followUp.messages
+      .flatMap((m) => m.content)
+      .find((block) => block.toolResult)?.toolResult;
+    expect(JSON.parse(toolMessage!.content[0]!.text)).toMatchObject({
+      sourceId: "gk8-metrics",
+      operationId: "metrics.query",
+      observedAt: result.evidence[0]!.observedAt,
+    });
+
     expect(result.evidence).toHaveLength(1);
     expect(result.evidence[0]).toMatchObject({
       sourceId: "gk8-metrics",

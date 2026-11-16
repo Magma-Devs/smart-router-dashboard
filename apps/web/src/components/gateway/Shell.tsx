@@ -15,12 +15,17 @@ import { topbarFigures } from "@/lib/upstream-presentation";
 import { getAuthVersion, subscribeAuth } from "@/lib/auth-store";
 import { useMe } from "@/hooks/use-me";
 import { TwoFactorCountdown, TwoFactorGate } from "@/components/auth/two-factor-gate";
+import { AskProvider, useAsk } from "@/components/ask/AskProvider";
+import { AskTrigger } from "@/components/ask/AskTrigger";
+import dynamic from "next/dynamic";
 import { ReportIncidentButton } from "@/components/incidents/ReportIncident";
 import { openRequestSearch } from "@/lib/request-search";
 import { noteSearchFrom, pageOf, startUsage, tabOf, usageSignOut, viewOpened } from "@/lib/usage";
 import { UsageConsentBar } from "./UsageConsent";
 import { roleBadgeLabel } from "./role-badge";
 import { roleChipStyle } from "@/components/team/bits";
+
+const AskDock = dynamic(() => import("@/components/ask/AskViewport").then((module) => module.AskDock), { ssr: false });
 
 export function ThemeToggle() {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
@@ -317,17 +322,53 @@ function Topbar({ here, sub, incidentsEnabled }: { here: string; sub: string | n
         <TwoFactorCountdown />
         <RequestSearch />
         <ReportIncidentButton enabled={incidentsEnabled} />
+        <AskTrigger />
         <ThemeToggle />
       </div>
     </header>
   );
 }
 
-export function Shell({ children, grafanaDashboardUrl, grafanaCustomerUsageDashboardUrl, incidentsEnabled = false }: {
+export function Shell({
+  children,
+  grafanaDashboardUrl,
+  grafanaCustomerUsageDashboardUrl,
+  incidentsEnabled = false,
+  askEnabled = false,
+}: {
   children: React.ReactNode;
   grafanaDashboardUrl?: string | null;
   grafanaCustomerUsageDashboardUrl?: string | null;
   incidentsEnabled?: boolean;
+  askEnabled?: boolean;
+}) {
+  // Unenrolled sessions never mount the chrome or personal chat state.
+  return (
+    <TwoFactorGate>
+      <ChainDrawerProvider>
+        <AskProvider enabled={askEnabled}>
+          <ShellChrome
+            grafanaDashboardUrl={grafanaDashboardUrl}
+            grafanaCustomerUsageDashboardUrl={grafanaCustomerUsageDashboardUrl}
+            incidentsEnabled={incidentsEnabled}
+          >
+            {children}
+          </ShellChrome>
+        </AskProvider>
+      </ChainDrawerProvider>
+    </TwoFactorGate>
+  );
+}
+function ShellChrome({
+  children,
+  grafanaDashboardUrl,
+  grafanaCustomerUsageDashboardUrl,
+  incidentsEnabled,
+}: {
+  children: React.ReactNode;
+  grafanaDashboardUrl?: string | null;
+  grafanaCustomerUsageDashboardUrl?: string | null;
+  incidentsEnabled: boolean;
 }) {
   const pathname = usePathname();
   const { chain } = useFilters();
@@ -338,33 +379,34 @@ export function Shell({ children, grafanaDashboardUrl, grafanaCustomerUsageDashb
     viewOpened(pageOf(pathname), tabOf(pathname, window.location.search));
   }, [pathname]);
 
+  const ask = useAsk();
   const here =
-    NAV_SECTIONS.flatMap((s) => s.items).find(
-      (i) => pathname === i.href || pathname.startsWith(`${i.href}/`),
-    )?.label ?? "Overview";
-  // Metrics on one chain: the chain is the last crumb (the chains drawer picks it).
+    pathname === "/ask"
+      ? "Ask your data"
+      : (NAV_SECTIONS.flatMap((section) => section.items).find(
+          (item) => pathname === item.href || pathname.startsWith(`${item.href}/`),
+        )?.label ?? "Overview");
   const sub = pathname === CHAIN_DRAWER_PATH && chain ? buildChainMetaByIndex(chain).name : null;
-
   return (
-    // Outside the chrome, not inside it: a blocked dashboard should not render a
-    // sidebar full of links that 403. The api refuses every request from an
-    // unenrolled session regardless — this is what the person sees instead of
-    // watching forty panels fail one by one.
-    <TwoFactorGate>
-      <ChainDrawerProvider>
-        <div className="gw-app">
-          <Sidebar grafanaDashboardUrl={grafanaDashboardUrl} grafanaCustomerUsageDashboardUrl={grafanaCustomerUsageDashboardUrl} />
-          <ChainDrawerSlot />
-          <div className="gw-main">
-            <Topbar here={here} sub={sub} incidentsEnabled={incidentsEnabled} />
-            <div className="fade-in" key={pathname}>
-              {children}
-            </div>
+    <>
+      <div
+        className={`gw-app${ask.full ? " gw-app--ask-full" : ""}${ask.visible && !ask.full && ask.mode === "panel" ? " gw-app--ask-panel" : ""}`}
+      >
+        <Sidebar
+          grafanaDashboardUrl={grafanaDashboardUrl}
+          grafanaCustomerUsageDashboardUrl={grafanaCustomerUsageDashboardUrl}
+        />
+        <ChainDrawerSlot />
+        <div className="gw-main">
+          <Topbar here={here} sub={sub} incidentsEnabled={incidentsEnabled} />
+          <div className="fade-in" key={pathname}>
+            {children}
           </div>
         </div>
-        <UsageConsentBar />
-      </ChainDrawerProvider>
-    </TwoFactorGate>
+      </div>
+      <UsageConsentBar />
+      {ask.visible && !ask.full && ask.mode !== "closed" ? <AskDock /> : null}
+    </>
   );
 }
 

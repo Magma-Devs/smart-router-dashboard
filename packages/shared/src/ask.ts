@@ -149,8 +149,10 @@ export interface AskRun {
 }
 export interface AskChatDetail {
   chat: AskChat;
+  context: AskPageContext | null;
   messages: AskMessage[];
   activeRun: AskRun | null;
+  runs: Array<Pick<AskRun, "id" | "status" | "error" | "completedAt">>;
   nextMessageCursor: string | null;
 }
 export interface AskChatPage {
@@ -161,13 +163,23 @@ export interface AskCapabilities {
   contractVersion: typeof ASK_CONTRACT_VERSION;
   enabled: boolean;
   acceptingQuestions: boolean;
+  /** Opaque customer/person cache scope; never an authorization grant. */
+  scopeId: string;
 }
 export const askPreferencesSchema = z
   .object({
     view: z.enum(["panel", "full"]),
     chatId: uuid.nullable(),
     /** A local path only. Query filters are reconstructed from typed page context. */
-    returnTo: z.enum(["/overview", "/dashboard", "/metrics", "/upstreams"]),
+    returnTo: z.enum([
+      "/overview",
+      "/dashboard",
+      "/metrics",
+      "/upstreams",
+      "/team",
+      "/audit",
+      "/account",
+    ]),
   })
   .strict();
 export type AskPreferences = z.infer<typeof askPreferencesSchema>;

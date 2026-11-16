@@ -36,6 +36,7 @@ The observability dashboard for the [Smart Router](https://github.com/Magma-Devs
 - **Self-contained** — `make up` gives you router + Prometheus + api + web from nothing. No accounts, no cloud, optional auth.
 - **Optional authentication** — `AUTH_MODE=enabled` adds Auth.js sign-in (email+password + Google/GitHub) backed by Postgres. Default is open (`disabled`) for private deployments.
 - **Usage data** — with accounts on, and only after the person at the browser accepts, Mixpanel records page views, clicks, masked session replays and heatmaps, with addresses and attributes cleaned in the browser first. Off on a self-hosted install.
+- **Managed Ask your data** — optional personal chat with authorized customer metrics/logs, shared spend limits, source evidence and panel/full history. Off by default; see [configuration and verification](docs/ASK-YOUR-DATA.md).
 
 > **Repo layout:** a pnpm/TypeScript monorepo — `apps/api` (Fastify 5 Prometheus proxy) + `apps/web` (Next.js 16) + `packages/shared` + `packages/db`. Everything runs from the repo root.
 
