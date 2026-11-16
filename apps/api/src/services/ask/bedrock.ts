@@ -69,11 +69,18 @@ export interface BedrockStep {
   usage: BedrockUsage | null;
   model: string;
   region: string;
+  receipt: BedrockReceipt;
+}
+export interface BedrockReceipt {
+  requestId: string | null;
+  providerStatus: number | null;
 }
 export interface BedrockInput {
   system: string;
   messages: BedrockMessage[];
   tools?: BedrockTool[];
+  forceTool?: boolean;
+  requestMetadata?: Record<string, string>;
 }
 
 /** No automatic model retries: a timed-out invocation may already be billable. */
@@ -88,7 +95,9 @@ export class BedrockAdapter {
     options: {
       signal?: AbortSignal;
       /** Must persist observed usage even when answer validation later fails. */
-      onUsage: (usage: BedrockUsage | null) => Promise<void>;
+      onUsage: (usage: BedrockUsage | null, receipt: BedrockReceipt) => Promise<void>;
+      /** The durable accounting layer marks potential spend before dispatch. */
+      onDispatch?: () => Promise<void>;
     },
   ): Promise<BedrockStep> {
     if (!this.settings.enabled) throw new AskFailure("ASK_DISABLED", 404);
@@ -97,9 +106,11 @@ export class BedrockAdapter {
       system: [{ text: input.system }],
       messages: input.messages,
       inferenceConfig: { maxTokens: this.settings.maxOutputTokens },
+      ...(input.requestMetadata ? { requestMetadata: input.requestMetadata } : {}),
       ...(input.tools?.length
         ? {
             toolConfig: {
+              toolChoice: input.forceTool ? { any: {} } : { auto: {} },
               tools: input.tools.map((tool) => ({
                 toolSpec: {
                   name: tool.name,
@@ -115,6 +126,9 @@ export class BedrockAdapter {
       throw new AskFailure("ASK_LIMIT_REACHED", 422);
     const endpoint = `https://bedrock-runtime.${this.settings.bedrockRegion}.amazonaws.com/model/${encodeURIComponent(this.settings.bedrockModel)}/converse`;
     let raw: unknown;
+    const receipt: BedrockReceipt = { requestId: null, providerStatus: null };
+    options.signal?.throwIfAborted();
+    await options.onDispatch?.();
     try {
       const response = await boundedFetch(
         endpoint,
@@ -133,10 +147,13 @@ export class BedrockAdapter {
           signal: options.signal,
         },
       );
+      receipt.providerStatus = response.status;
+      const requestId = response.headers.get("x-amzn-requestid");
+      if (requestId && /^[A-Za-z0-9-]{1,128}$/.test(requestId)) receipt.requestId = requestId;
       if (!response.ok) throw new AskFailure("ASK_BEDROCK_UNAVAILABLE");
       raw = await response.json();
     } catch (error) {
-      await options.onUsage(null);
+      await options.onUsage(null, receipt);
       if (
         error instanceof AskFailure &&
         ["ASK_TIMEOUT", "ASK_CANCELLED", "ASK_LIMIT_REACHED"].includes(error.code)
@@ -147,7 +164,7 @@ export class BedrockAdapter {
     const usage = usageSchema.safeParse(
       typeof raw === "object" && raw !== null && "usage" in raw ? raw.usage : undefined,
     );
-    await options.onUsage(usage.success ? usage.data : null);
+    await options.onUsage(usage.success ? usage.data : null, receipt);
     const parsed = responseSchema.safeParse(raw);
     if (!parsed.success) throw new AskFailure("ASK_INVALID_ANSWER", 502);
     if (
@@ -163,6 +180,7 @@ export class BedrockAdapter {
       usage: usage.success ? usage.data : null,
       model: this.settings.bedrockModel,
       region: this.settings.bedrockRegion,
+      receipt,
     };
   }
 }

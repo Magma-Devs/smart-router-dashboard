@@ -96,6 +96,45 @@ const readPolicy: Record<string, { kinds: string[]; parameters: z.ZodType }> = {
     kinds: ["grafana"],
     parameters: z.object({ uid: z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/) }).strict(),
   },
+  "status.chain_events": {
+    kinds: ["provider_status"],
+    parameters: z
+      .object({
+        since: timestamp.optional(),
+        until: timestamp.optional(),
+        include: z
+          .array(z.enum(["current", "provider", "measured", "changes"]))
+          .min(1)
+          .max(4)
+          .refine((v) => new Set(v).size === v.length)
+          .optional(),
+        horizonDays: z.number().int().min(1).max(90).optional(),
+        limit: z.number().int().min(1).max(500).optional(),
+        before: z
+          .string()
+          .regex(/^[A-Za-z0-9_=-]{1,4096}$/)
+          .optional(),
+        chains: z
+          .array(z.string().regex(/^[A-Z0-9]{2,32}$/))
+          .min(1)
+          .max(64)
+          .optional(),
+      })
+      .strict()
+      .refine((p) => {
+        const now = Date.now() / 1000;
+        const until = Math.floor(p.until ?? now);
+        const since = Math.floor(p.since ?? until - 86_400);
+        return (
+          (!p.before || (p.since !== undefined && p.until !== undefined)) &&
+          since >= 0 &&
+          since <= now &&
+          until > since &&
+          until - since <= 7 * 86_400 &&
+          until <= now + 300
+        );
+      }),
+  },
 };
 
 const identitySchema = z
@@ -157,6 +196,11 @@ export interface McpSnapshot {
   tools: string[];
   catalogVersion: string;
   sources: McpSource[];
+  operations: Array<{
+    sourceId: string;
+    operationId: string;
+    inputSchema: Record<string, unknown>;
+  }>;
 }
 export interface McpReadResult {
   sourceId: string;
@@ -261,7 +305,7 @@ export class McpConnection {
         name: s.name,
         kind: s.kind,
         operationIds: s.operationIds.filter((id) => {
-          const policy = readPolicy[id];
+          const policy = Object.hasOwn(readPolicy, id) ? readPolicy[id] : undefined;
           const remote = catalog.data.sources
             .find((entry) => entry.sourceId === s.id)
             ?.operations.find((op) => op.id === id);
@@ -270,7 +314,17 @@ export class McpConnection {
           );
         }),
       })),
+      operations: [],
     };
+    // The model sees only locally authored schemas, never remote tool
+    // descriptions as instructions. Runtime refinements are enforced again.
+    snapshot.operations = snapshot.sources.flatMap((source) =>
+      source.operationIds.map((operationId) => ({
+        sourceId: source.id,
+        operationId,
+        inputSchema: z.toJSONSchema(readPolicy[operationId]!.parameters) as Record<string, unknown>,
+      })),
+    );
     if (!snapshot.tools.includes("execute_operation")) throw new AskFailure("ASK_MCP_UNAVAILABLE");
     this.snapshotValue = snapshot;
     return structuredClone(snapshot);
@@ -283,7 +337,7 @@ export class McpConnection {
   ): Promise<McpReadResult> {
     const snapshot = this.snapshotValue ?? (await this.discover());
     const source = snapshot.sources.find((s) => s.id === sourceId);
-    const policy = readPolicy[operationId];
+    const policy = Object.hasOwn(readPolicy, operationId) ? readPolicy[operationId] : undefined;
     const parsed = policy?.parameters.safeParse(parameters);
     if (!source || !source.operationIds.includes(operationId) || !parsed?.success)
       throw new AskFailure("ASK_TOOL_DENIED", 403);

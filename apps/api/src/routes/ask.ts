@@ -26,6 +26,18 @@ function uuid(value: unknown): string {
 /** Current-session/customer/deployment checks cover every personal path.
  * No route invokes a provider; submission requires installed budget admission. */
 export async function askRoutes(app: FastifyInstance, opts: AskRoutesOptions = {}): Promise<void> {
+  app.setChildLoggerFactory((logger, bindings, options) =>
+    logger.child(bindings, {
+      ...options,
+      serializers: {
+        ...options.serializers,
+        req: (request: FastifyRequest) => ({
+          method: request.method,
+          url: request.url.split("?")[0],
+        }),
+      },
+    }),
+  );
   const settingsOf = () => opts.settings ?? readAskSettings();
   const personal =
     (work: (request: FastifyRequest, context: Context) => Promise<unknown>) =>
@@ -43,10 +55,14 @@ export async function askRoutes(app: FastifyInstance, opts: AskRoutesOptions = {
           store: new AskStore(app.db, settings.customerId, settings.retentionDays),
         });
       } catch (error) {
-        if (!(error instanceof AskFailure)) throw error;
+        // ORM errors can contain bound prompt/answer values. Keep them out of
+        // global application logs, which have a different retention boundary.
+        if (!(error instanceof AskFailure))
+          request.log.error({ code: "ASK_STORAGE_UNAVAILABLE" }, "Ask storage request failed");
+        const failure = error instanceof AskFailure ? error : new AskFailure("ASK_UNAVAILABLE");
         return reply
-          .status(error.statusCode)
-          .send({ code: error.code, message: error.message, statusCode: error.statusCode });
+          .status(failure.statusCode)
+          .send({ code: failure.code, message: failure.message, statusCode: failure.statusCode });
       }
     };
 

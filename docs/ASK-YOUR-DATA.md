@@ -3,7 +3,8 @@
 [MAG-4750](https://magmadevs.atlassian.net/browse/MAG-4750) owns the canonical
 scope. The [implementation and acceptance ledger](ASK-YOUR-DATA-IMPLEMENTATION.md)
 tracks all six delivery slices. This document describes MAG-4929's foundation
-and MAG-4930's durable personal history/run primitives.
+and MAG-4930's durable personal history/run primitives. MAG-4931 adds the bounded
+tool orchestrator and queue worker below; activation waits for budget admission.
 
 ## Runtime configuration
 
@@ -72,10 +73,44 @@ billable work. The user's admission is released; any future financial reservatio
 stays for reconciliation. Runs record the original session ID without a foreign
 key that would prevent normal expired-session cleanup.
 
-These are durable database primitives, not yet a production execution loop.
-MAG-4931 installs the bounded tool worker/recovery scheduling; MAG-4932 installs
-budget admission/reconciliation and actual retention deletion. The enabled UI and
-GK8 rollout remain later slices.
+The worker class implements queue/recovery scheduling, but is deliberately not
+started by the API until MAG-4932 installs durable budget hooks. The enabled UI
+and GK8 rollout remain later slices.
+
+## Bounded tool execution
+
+`AskOrchestrator` discovers the current customer catalog and gives Bedrock one
+`read_customer_data` tool. Its schemas come from the local audited policy, not
+remote descriptions. Metrics/log reads keep their 24-hour bounds; the optional
+`status.chain_events` capability has a seven-day event window, bounded chains,
+cursors and protocol-change horizon, matching the MCP main catalog.
+
+Every model step requires durable admission/dispatch/usage callbacks. The
+orchestrator checks active authorization before dispatch and before each tool
+read. Each successful data read produces server-authored provenance; a no-tool
+answer, all-source failure, malformed JSON, truncation or excessive tool loop is
+an error. Successful MCP envelopes containing an upstream API error remain
+failures. Empty, partial and unavailable data stay distinguishable.
+
+At most 8 model steps and 8 tool calls run; a step can request at most 4 tools.
+Individual tool context is capped at 12,000 bytes with explicit partial coverage;
+the whole request remains capped at 64,000 bytes. Prior personal messages are
+bounded untrusted context. Replicated sources must not be summed; correlation
+with provider status must not be presented as proof of causation.
+
+Known runtime credentials, bearer/key fields and credential-bearing URL paths
+are redacted before model context/tool records and the final answer. This is not
+general classification of arbitrary log text. Personal search terms and ORM-bound
+prompt/answer values are also excluded from ordinary application logs; structured
+internal records retain their own authorization/retention boundary.
+
+`AskWorker` claims under SQL leases, renews them while active, observes stop,
+session/lease loss and feature disable, and aborts work at shutdown/deadline.
+Stop during a pending queue claim cannot start work after shutdown. A model
+response arriving after cancellation cannot become an assistant success.
+Recovery never replays a potentially billable invocation. Unknown usage remains
+conservative; request IDs and server-authored run/step metadata support later
+reconciliation. The budget slice owns the actual accounting implementation.
 
 ## Identity and tool boundary
 

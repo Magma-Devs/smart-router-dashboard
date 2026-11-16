@@ -129,7 +129,10 @@ describe("Bedrock adapter", () => {
     const onUsage = vi.fn().mockResolvedValue(undefined);
     const result = await new BedrockAdapter(settings(), fetchImpl).converse(input, { onUsage });
     expect(result.usage).toEqual(usage);
-    expect(onUsage).toHaveBeenCalledExactlyOnceWith(usage);
+    expect(onUsage).toHaveBeenCalledExactlyOnceWith(usage, {
+      requestId: null,
+      providerStatus: 200,
+    });
     const [url, request] = fetchImpl.mock.calls[0]!;
     expect(url).toBe("https://bedrock-runtime.us-east-1.amazonaws.com/model/test-model/converse");
     expect(request?.redirect).toBe("error");
@@ -148,7 +151,10 @@ describe("Bedrock adapter", () => {
       await expect(
         new BedrockAdapter(settings(), fetchImpl).converse(input, { onUsage }),
       ).rejects.toBeInstanceOf(AskFailure);
-      expect(onUsage).toHaveBeenCalledExactlyOnceWith(usage);
+      expect(onUsage).toHaveBeenCalledExactlyOnceWith(usage, {
+        requestId: null,
+        providerStatus: 200,
+      });
       expect(fetchImpl).toHaveBeenCalledTimes(1);
     },
   );
@@ -159,7 +165,10 @@ describe("Bedrock adapter", () => {
     await expect(
       new BedrockAdapter(settings(), fetchImpl).converse(input, { onUsage }),
     ).rejects.toMatchObject({ code: "ASK_BEDROCK_UNAVAILABLE" });
-    expect(onUsage).toHaveBeenCalledExactlyOnceWith(null);
+    expect(onUsage).toHaveBeenCalledExactlyOnceWith(null, {
+      requestId: null,
+      providerStatus: null,
+    });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
@@ -171,7 +180,7 @@ describe("Bedrock adapter", () => {
     await expect(
       new BedrockAdapter(settings(), fetchImpl).converse(input, { onUsage }),
     ).rejects.toMatchObject({ code: "ASK_INVALID_ANSWER" });
-    expect(onUsage).toHaveBeenCalledWith(usage);
+    expect(onUsage).toHaveBeenCalledWith(usage, { requestId: null, providerStatus: 200 });
   });
 
   it("records missing usage as uncertain and bounds context before dispatch", async () => {
@@ -182,7 +191,7 @@ describe("Bedrock adapter", () => {
     expect(
       (await new BedrockAdapter(settings(), fetchImpl).converse(input, { onUsage })).usage,
     ).toBeNull();
-    expect(onUsage).toHaveBeenCalledWith(null);
+    expect(onUsage).toHaveBeenCalledWith(null, { requestId: null, providerStatus: 200 });
     await expect(
       new BedrockAdapter({ ...settings(), maxContextBytes: 10 }, fetchImpl).converse(input, {
         onUsage,
