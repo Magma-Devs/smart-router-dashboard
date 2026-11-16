@@ -107,10 +107,35 @@ describe("window change on the Metrics page", () => {
   it("keeps the previous window's KPI values up while the next window loads", () => {
     fixture.answer = (p) => p.includes("dashboard-summary")
       ? { data: summary, isLoading: true, isValidating: true }
-      : { data: { available: true, value: 3 }, isLoading: true, isValidating: true };
+      : p.includes("downtime-avoided")
+        ? { data: { from: 0, to: 1, stepSec: 300, seconds: 4_500, notAvoidedSeconds: 300, incidents: 3, chains: 2, strict: true, available: true }, isLoading: true, isValidating: true }
+        : { data: { available: true, value: 3 }, isLoading: true, isValidating: true };
     const html = renderToStaticMarkup(createElement(HeroPanel, { tw: "21d" }));
-    expect(html).toContain("99.99%");
+    // 3 failed of 51 million: never "100%".
+    expect(html).toContain("99.99999%");
+    expect(html).toContain("1 h 15 min");
+    expect(html).toContain("3 incidents on 2 chains");
+    // One short fact under a number: what the card means is in its tooltip.
+    expect(html).not.toContain("more with failed requests");
+    expect(html).not.toContain("kept answering");
     expect(skelCount(html)).toBe(0);
+  });
+
+  it("says no provider was failing only when the downtime read found no provider trouble", () => {
+    const card = (dt: { notAvoidedSeconds: number }) => {
+      fixture.answer = (p) => p.includes("dashboard-summary")
+        ? { data: summary, isLoading: false, isValidating: false }
+        : p.includes("downtime-avoided")
+          ? { data: { from: 0, to: 1, stepSec: 300, seconds: 0, incidents: 0, chains: 0, strict: true, available: true, ...dt }, isLoading: false, isValidating: false }
+          : { data: { available: true, value: 3 }, isLoading: false, isValidating: false };
+      return renderToStaticMarkup(createElement(HeroPanel, { tw: "1h" }));
+    };
+    // A provider was failing for 5 minutes and its chain's requests failed with it: nothing avoided, not nothing found.
+    const trouble = card({ notAvoidedSeconds: 300 });
+    expect(trouble).toContain("0 min");
+    expect(trouble).toContain("5 min with failed requests");
+    expect(trouble).not.toContain("no provider was failing");
+    expect(card({ notAvoidedSeconds: 0 })).toContain("no provider was failing");
   });
 
   it("capitalises every KPI card's label", () => {
@@ -118,8 +143,11 @@ describe("window change on the Metrics page", () => {
       ? { data: summary, isLoading: false, isValidating: false }
       : { data: { available: true, value: 3 }, isLoading: false, isValidating: false };
     const html = renderToStaticMarkup(createElement(HeroPanel, { tw: "1h" }));
-    expect(html).toContain("Successful retries");
-    expect(html).toContain("Stale responses caught");
+    for (const label of ["Requests answered", "Downtime avoided", "Saved by retry", "Failed requests", "Out-of-date answers blocked", "Answered from cache"]) {
+      expect(html).toContain(label);
+    }
+    // Without an answer from the downtime read the card claims nothing.
+    expect(html).not.toContain("NaN");
   });
 });
 

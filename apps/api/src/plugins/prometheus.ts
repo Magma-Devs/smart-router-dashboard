@@ -219,7 +219,7 @@ export const prometheusPlugin = fp(async (app: FastifyInstance) => {
     if (scopedProm === prom) return unscoped;
     return {
       metrics: new MetricsService(scopedProm, routerConfig),
-      metricsDetail: new MetricsDetailService(scopedProm, routerConfig),
+      metricsDetail: new MetricsDetailService(scopedProm, routerConfig, prom),
       metricsDashboard: new MetricsDashboardService(scopedProm),
     };
   });
