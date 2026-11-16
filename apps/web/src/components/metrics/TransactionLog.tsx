@@ -127,7 +127,7 @@ const OUTCOME_HINT: Record<TxLogRow["outcome"], string> = {
 }
 
 /** An opened row: the transaction, every provider it went to, and the response to the client, in plain words. */
-export function Details({ row, lean = false }: { row: TxLogRow; lean?: boolean }) {
+export function Details({ row }: { row: TxLogRow }) {
   const replied = row.attempts.find((a) => a.replied);
   const final: FinalAnswer =
     row.outcome === "failed" || (row.outcome === "unknown" && row.error && !replied) ? { from: "router", code: row.error?.code ?? null }
@@ -140,7 +140,7 @@ export function Details({ row, lean = false }: { row: TxLogRow; lean?: boolean }
   return (
     <RequestBreakdown spec={row.spec} chain={chainWords(row)} chainTitle={chainsTitle(row)} method={row.method === "unknown" ? "method not in the logs" : row.method}
       time={row.time} guid={row.guid} tookMs={row.replyMs} facts={row} attempts={row.attempts}
-      final={final} status={txStatusOf(row)} isWrite extra={extra} lean={lean} />
+      final={final} status={txStatusOf(row)} isWrite extra={extra} />
   );
 }
 

@@ -13,7 +13,8 @@
  * One statement per error: the outcome names the router's own, each provider
  * line names its own. The router's code, the node's code and the meaning sit
  * behind a name on hover; the provider's own words show under its line.
- * "→ client" marks the one answer that reached the client. */
+ * The last step says whose answer went back to the client; an answer from the
+ * cache is said in blue, at the top and on its line. */
 
 import {
   ERROR_SOURCE_LABELS,
@@ -44,8 +45,9 @@ export function errorName(code: string): string {
   return w.charAt(0).toUpperCase() + w.slice(1);
 }
 
-/** "Source: Provider". */
+/** "Source: Provider". Nothing for a source that isn't determined: "Source: Undetermined" tells the reader nothing. */
 export function SourceTag({ source }: { source: ErrorSource }) {
+  if (source === "unclear") return null;
   return (
     <span title={SOURCE_HINTS[source]} style={{ fontSize: 11, color: "var(--text-3)", whiteSpace: "nowrap" }}>
       Source: <span style={{ color: "var(--text)", fontWeight: 500 }}>{ERROR_SOURCE_LABELS[source]}</span>
@@ -79,8 +81,14 @@ function Section({ title, aside, children }: { title: string; aside?: React.Reac
   );
 }
 
+/** The cache, named in blue wherever an answer came from it. */
+function CacheTag() {
+  return <span className="gw-tag gw-tag--info" title="The router answered from its cache: no provider was asked.">From cache</span>;
+}
+
 /** What a provider did with its copy, in a word, where no error code names it. */
 function responseWords(a: RelayAttempt, isWrite: boolean): { words: string; color: string } {
+  if ((a.outcome === "ok" || a.replied) && isCache(a.upstream)) return { words: "Answered", color: "var(--info)" };
   if (a.outcome === "ok" || (a.outcome === "no-result" && a.replied)) return { words: isWrite ? "Took the transaction" : "Answered", color: "var(--ok)" };
   if (a.outcome === "failed") return { words: "Failed", color: "var(--err)" };
   if (a.outcome === "skipped") return { words: "Passed over", color: "var(--text-3)" };
@@ -108,10 +116,13 @@ export function stepsOf(attempts: RelayAttempt[]): { title: string; attempts: Re
   let sentBefore = false;
   return order.map((b) => {
     const group = byBatch.get(b)!;
-    const sent = group.filter((a) => a.outcome !== "skipped").map((a) => providerInWords(a.upstream));
+    const tried = group.filter((a) => a.outcome !== "skipped");
+    const sent = tried.map((a) => providerInWords(a.upstream));
     const title = !sent.length
       ? `Passed over ${andList(group.map((a) => providerInWords(a.upstream)))}`
-      : `${sentBefore ? "Then sent to" : "Sent to"} ${andList(sent)}${sent.length > 1 ? " at the same time" : ""}`;
+      // The cache is looked in, not sent to.
+      : tried.every((a) => isCache(a.upstream)) ? `${sentBefore ? "Then looked" : "Looked"} in the cache`
+        : `${sentBefore ? "Then sent to" : "Sent to"} ${andList(sent)}${sent.length > 1 ? " at the same time" : ""}`;
     if (sent.length) sentBefore = true;
     return { title, attempts: group };
   });
@@ -119,8 +130,8 @@ export function stepsOf(attempts: RelayAttempt[]): { title: string; attempts: Re
 
 const PROVIDER_COLUMNS = "minmax(110px, 1fr) minmax(150px, 2fr) 96px";
 
-/** One provider's line in a send: its name, what it answered, how long it took; its own words under it. */
-function ProviderLine({ a, isWrite, lean = false }: { a: RelayAttempt; isWrite: boolean; lean?: boolean }) {
+/** One provider's line in a send: its name, how it went, how long it took; its own words under it. */
+function ProviderLine({ a, isWrite }: { a: RelayAttempt; isWrite: boolean }) {
   const code = a.outcome === "failed" ? realCode(a) : null;
   const entry = code ? explainRouterError(code) : null;
   const r = responseWords(a, isWrite);
@@ -134,8 +145,7 @@ function ProviderLine({ a, isWrite, lean = false }: { a: RelayAttempt; isWrite: 
       background: a.replied ? "var(--surface-2)" : undefined,
     }}>
       <span style={{ display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-        <span className="gw-mono" title={a.upstream} style={{ fontSize: 12, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{providerName(a.upstream)}</span>
-        {a.replied && !lean && <span title="This provider's answer went back to the client." style={{ fontSize: 11, fontWeight: 600, color: "var(--warn)", whiteSpace: "nowrap" }}>→ client</span>}
+        <span className="gw-mono" title={a.upstream} style={{ fontSize: 12, color: isCache(a.upstream) ? "var(--info)" : "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{providerName(a.upstream)}</span>
       </span>
       <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap", minWidth: 0 }}>
         {code
@@ -198,12 +208,6 @@ export interface BreakdownProps {
   isWrite: boolean;
   /** More rows for the response: a transaction's hash, an on-chain error, why a result is unknown. */
   extra?: { label: string; value: React.ReactNode }[];
-  /**
-   * One request on a page of its own (the Find a request tab): no request or
-   * reply sizes, and no "→ client" mark on the provider - the last step says
-   * whose answer went back.
-   */
-  lean?: boolean;
 }
 
 /** A label and its value, on one line of a two-column list. */
@@ -226,7 +230,6 @@ function Id({ value }: { value: string }) {
   );
 }
 
-const fmtBytes = (n: number) => (n < 1024 ? `${fmtComma(n)} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
 
 const kvGrid: React.CSSProperties = { display: "grid", gridTemplateColumns: "max-content minmax(0, 1fr)", columnGap: 16, rowGap: 8, alignItems: "start" };
 
@@ -261,6 +264,7 @@ export function RequestBreakdown(p: BreakdownProps) {
           {/* A provider's answer names its error on its own try, below; only the router's own needs it here. */}
           {routerAnswered && finalCode && <ErrorName code={finalCode} entry={entry} />}
           {routerAnswered && entry && <SourceTag source={entry.source} />}
+          {p.final?.from === "provider" && isCache(p.final.attempt.upstream) && <CacheTag />}
           {p.status.detail && <span style={{ fontSize: 12, color: "var(--text-3)" }}>{p.status.detail}</span>}
           {p.isWrite && entry?.mayHaveGoneThrough && (
             <span title="The transaction may be on chain despite this error." style={{ fontSize: 11, fontWeight: 600, color: "var(--info)", border: "1px solid color-mix(in srgb, var(--info) 40%, transparent)", borderRadius: 4, padding: "0 6px" }}>May already be on chain</span>
@@ -290,28 +294,27 @@ export function RequestBreakdown(p: BreakdownProps) {
         <div style={{ flex: "2 1 560px", minWidth: 0 }}>
           <Section title="What happened" aside={tried || "no provider logged"}>
             <div>
-              <Step n={1} title={<>Request from the client: <span className="gw-mono">{p.method}</span>{!p.lean && facts.requestBytes != null && <span className="gw-mono gw-tnum" style={{ color: "var(--text-3)", fontWeight: 400 }}> · {fmtBytes(facts.requestBytes)}</span>}</>} />
+              <Step n={1} title={<>Request from the client: <span className="gw-mono">{p.method}</span></>} />
               {steps.map((s, i) => (
                 <Step key={i} n={i + 2} title={s.title}>
                   <div style={{ border: "1px solid var(--line)", borderRadius: 8, overflow: "hidden", background: "var(--surface)" }}>
                     <div style={{ display: "grid", gridTemplateColumns: PROVIDER_COLUMNS, columnGap: 12, padding: "6px 12px", fontSize: 11, color: "var(--text-4)" }}>
                       <span>Provider</span>
-                      <span>What it answered</span>
+                      <span>Result</span>
                       <span style={{ textAlign: "right" }}>Response time</span>
                     </div>
-                    {s.attempts.map((a, j) => <ProviderLine key={j} a={a} isWrite={p.isWrite} lean={p.lean} />)}
+                    {s.attempts.map((a, j) => <ProviderLine key={j} a={a} isWrite={p.isWrite} />)}
                   </div>
                 </Step>
               ))}
               <Step n={steps.length + 2} last title={<>Answer to the client: <span style={{ color: p.status.color }}>{p.status.label}</span></>}>
                 <div style={{ fontSize: 12, color: "var(--text-2)", display: "flex", flexWrap: "wrap", gap: 6, alignItems: "baseline" }}>
                   {p.final?.from === "provider" ? (isCache(p.final.attempt.upstream)
-                    ? <span>The answer came from the cache</span>
+                    ? <CacheTag />
                     : <span><span className="gw-mono">{p.final.attempt.upstream}</span>&apos;s answer went back</span>)
-                    : routerAnswered ? <span>No provider gave a usable answer, so the router sent its own error, named above</span>
+                    : routerAnswered ? <span>The router&apos;s own error{finalCode ? <>: <span style={{ color: "var(--text)" }}>{errorName(finalCode)}</span></> : null}</span>
                       : <span>The logs don&apos;t show an answer.</span>}
                   {p.tookMs != null && <span className="gw-mono gw-tnum" style={{ color: "var(--text-3)" }}>· after {fmtTook(p.tookMs)}</span>}
-                  {!p.lean && facts.replyBytes != null && <span className="gw-mono gw-tnum" style={{ color: "var(--text-3)" }}>· {fmtBytes(facts.replyBytes)}</span>}
                 </div>
               </Step>
             </div>

@@ -148,7 +148,8 @@ describe("log rows", () => {
     expect(html).toContain("Smart Router request ID");
     expect(html).toContain("7699463364114495303");
     expect(html).not.toMatch(/X-Request-Id|Caller request ID|Task ID|Tx ID|req-e7f0|task-k1|txid-t1/);
-    expect(html).toContain("10 B");
+    // Sizes aren't shown: they answered no question a reader had.
+    expect(html).not.toContain("10 B");
   });
 
   it("links an opened row's block numbers to a chain's explorer where one has a block page", () => {

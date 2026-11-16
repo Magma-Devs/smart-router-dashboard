@@ -6,7 +6,7 @@
  * response logged.
  * Attempts sent together sit side by side (a transaction's broadcast); one
  * batch after another is joined by arrows (a retry). The attempt whose
- * response was returned to the client is marked "→ client". An error the router didn't
+ * response was returned to the client is outlined in the result's colour. An error the router didn't
  * classify shows the node's own words - there is no "unknown error" here.
  * An opened row is drawn by request-breakdown.tsx. */
 
@@ -133,11 +133,10 @@ const MARK: Record<RelayAttempt["outcome"], string> = { ok: "✓", failed: "✗"
 
 /**
  * One attempt, as a chip. The mark says how it went (✗ red: it failed). The
- * attempt whose response was returned to the client says so - "→ client" - and is
- * outlined in the colour of what the app got, the row's result: green for a
- * good answer, orange for a provider's error. An outline alone meant nothing to
- * anyone who hadn't read the tooltip, and a red one beside an orange "Provider
- * error" read as two different things.
+ * attempt whose response was returned to the client is outlined in the colour
+ * of what the app got, the row's result: green for a good answer, orange for a
+ * provider's error. The Result column says what the client got, so the chip
+ * adds no label for it. The cache is named in blue.
  */
 function Step({ a, replyColor, quiet = false }: { a: RelayAttempt; replyColor?: string; quiet?: boolean }) {
   const mark = MARK[a.outcome];
@@ -153,11 +152,8 @@ function Step({ a, replyColor, quiet = false }: { a: RelayAttempt; replyColor?: 
   return (
     <span title={[a.replied ? "Its response was returned to the client." : null, a.note, a.message].filter(Boolean).join("\n\n") || undefined} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "3px 8px", borderRadius: 6, background: "var(--bg-2)", border: `1px solid ${a.replied ? appColor : "var(--line)"}`, fontSize: 11.5, lineHeight: 1.4, maxWidth: "100%" }}>
       <span style={{ color: markColor, fontWeight: 700 }}>{mark}</span>
-      <span className="gw-mono" style={{ color: a.outcome === "ok" || a.outcome === "failed" ? "var(--text)" : "var(--text-3)", whiteSpace: "nowrap" }}>{providerName(a.upstream)}</span>
+      <span className="gw-mono" style={{ color: isCache(a.upstream) ? "var(--info)" : a.outcome === "ok" || a.outcome === "failed" ? "var(--text)" : "var(--text-3)", whiteSpace: "nowrap" }}>{providerName(a.upstream)}</span>
       {note && <span style={{ color: a.outcome === "failed" ? "var(--text-2)" : "var(--text-4)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>· {note}</span>}
-      {a.replied && (
-        <span style={{ color: appColor, fontWeight: 600, fontSize: 10.5, whiteSpace: "nowrap", paddingLeft: 7, marginLeft: 1, borderLeft: "1px solid var(--line-2)" }}>→ client</span>
-      )}
     </span>
   );
 }
@@ -218,7 +214,7 @@ export function appGot(row: { result: string; attempts: RelayAttempt[]; error: s
  * A row's Result: what the client got, said once. The tag is the kind of
  * result in its colour; under it, the error the client got, in its sender's
  * own words (the full text on hover and in the opened row). Who sent it is the
- * chip marked "→ client", so the cell doesn't name them again.
+ * outlined chip, so the cell doesn't name them again.
  */
 export function ResultCell({ label, color, hint, error, next }: { label: string; color: string; hint?: string; error?: string | null; next?: string | null }) {
   return (
