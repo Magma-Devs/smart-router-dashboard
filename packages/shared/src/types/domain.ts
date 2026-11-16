@@ -696,6 +696,13 @@ export interface RequestLookup {
   available: boolean;
   reason?: LogUnavailable;
   row: ErrorRequestRow | null;
+  /**
+   * The same request as the Transactions tab's row, when it is a transaction
+   * (a write the spec marks stateful, or a transaction method by name): its
+   * send outcome, hash and status, read from the same lines as `row`, so one
+   * look-up answers both. Null for a read, and null whenever `row` is.
+   */
+  transaction: TxLogRow | null;
   matches?: number;
 }
 
