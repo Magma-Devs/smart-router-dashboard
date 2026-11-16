@@ -19,6 +19,12 @@ artifacts; the stable dashboard release is shared by the complete feature.
 Chart and fleet delivery use their own repositories and versioning. GK8 rollout
 uses the resulting released dashboard image and the fresh checkpoint below.
 
+The draft aggregate candidate is `release/MAG-4750-managed-ask`. It keeps main's
+version while the slices are reviewed. Before making it ready, reconcile the
+accepted integration state and current main, apply review fixes and perform the
+single version bump and fold the [pending notes](ASK-YOUR-DATA-RELEASE-NOTES.md)
+into that version's changelog entry. Its branch images remain validation artifacts.
+
 ## Runtime delivery
 
 Both web and API require `AUTH_MODE=enabled`, `DEPLOYMENT_MODE=managed` and the same

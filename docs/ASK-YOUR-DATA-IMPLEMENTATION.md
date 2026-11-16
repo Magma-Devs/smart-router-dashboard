@@ -22,6 +22,14 @@ and integration testing, one final integration-to-main release PR reconciles
 current main, bumps `VERSION` once to the agreed next release, and runs the final
 checks. The release number is chosen at that point; none is reserved here.
 
+`release/MAG-4750-managed-ask` is the draft aggregate candidate for that final
+release. It collects the combined stack against current main while the slice
+PRs remain available for review, keeps main's `VERSION`, and holds a
+[pending release-note fragment](ASK-YOUR-DATA-RELEASE-NOTES.md). Before it becomes ready, synchronize it with the accepted
+integration state and current main, apply review fixes, and make the one final
+version bump and one changelog version entry. The draft does not replace the
+slice reviews or authorize rollout.
+
 | Slice | Implementation | Acceptance evidence |
 | --- | --- | --- |
 | MAG-4929 | Shared contracts, strict structured answer validation, managed/live-session gate, server-only Bedrock and MCP adapters, exact customer credential verification, controlled operator smoke | Offline adapter/auth tests; current provider/catalog smoke or exact unavailable access recorded |
