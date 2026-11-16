@@ -177,6 +177,8 @@ function retriesWords(r: ErrorRequestRow): string | null {
 export function statusOf(r: ErrorRequestRow): BreakdownProps["status"] {
   // The list's own words, so a row reads the same opened and closed.
   const { label, color } = RESULT[r.result];
+  // A failed cross-validation is named for what happened: "Router error · Hash consensus error" told the reader nothing.
+  if (r.result === "failed" && r.errorCode === "PROTOCOL_HASH_CONSENSUS_ERROR") return { label: "Providers disagreed", color };
   if (r.result === "write-unknown") return { label, color: "var(--text-3)", detail: "May have been sent. Look up the hash before signing a new one." };
   return { label, color: r.result === "unknown" ? "var(--text-3)" : color };
 }
@@ -290,7 +292,7 @@ export function useErrorList({ chainFilter, win, upstream, initialRange = null, 
 
 export type ErrorList = ReturnType<typeof useErrorList>;
 
-export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialRange = null, list, groupNonce = 0 }: {
+export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialRange = null, list, groupNonce = 0, lineErrType = null }: {
   chainFilter: string | null;
   win: MetricWindow;
   /** Controlled from the tab, so a bar on the Upstreams tab can open its own requests. */
@@ -302,6 +304,8 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
   list: ErrorList;
   /** Bumped when a timeline line is opened: the list groups that line's requests by error. */
   groupNonce?: number;
+  /** The error type the opened line's requests carry (a disagreed line's cross-validation error): the list opens on it. */
+  lineErrType?: string | null;
 }) {
   const [picked, setResult] = useState<ResultPick | typeof AUTO>(AUTO);
   const [retry, setRetry] = useState<RetryFilter>(ALL);
@@ -317,7 +321,7 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
   const [grouped, setGrouped] = useState(false);
   const [groupKey, setGroupKey] = useState<string | null>(null);
   const [seenNonce, setSeenNonce] = useState(groupNonce);
-  if (seenNonce !== groupNonce) { setSeenNonce(groupNonce); setGrouped(true); setGroupKey(null); setPage(0); }
+  if (seenNonce !== groupNonce) { setSeenNonce(groupNonce); setGrouped(true); setGroupKey(null); setPage(0); setErrType(lineErrType ?? ALL); }
   // Back / Forward: the look-up follows the URL.
   useEffect(() => {
     const onPop = () => setLookupId(requestFromUrl());
@@ -594,7 +598,7 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
                       <Flow attempts={r.attempts} end={stopMarker(r)} replyColor={RESULT[r.result].color} quietReplied={r.result === "error-reply"} />
                     </td>
                     <td style={{ verticalAlign: "top", maxWidth: 0 }}>
-                      <ResultCell {...RESULT[r.result]} error={resultError(r)} />
+                      <ResultCell {...RESULT[r.result]} label={statusOf(r).label} error={resultError(r)} />
                     </td>
                     <td style={{ textAlign: "right", verticalAlign: "top" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{fmtTook(r.totalMs)}</span></td>
                   </tr>

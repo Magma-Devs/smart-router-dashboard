@@ -5,6 +5,38 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.69.3]
+
+### Added
+
+- **Providers disagreed, on the Errors tab's timeline.** A third kind of
+  line, beside failed attempts and error replies: requests the router
+  returned no answer for because the providers' answers didn't match and not
+  enough of them agreed (cross-validation). One line per chain and method;
+  two methods at once on one chain make it chain-wide, the shape a fork or a
+  provider behind on everything takes. Opening a line lists its requests,
+  filtered to the cross-validation error. Under the timeline, **Outvoted**
+  names the providers whose answer to a cross-validated request was not the
+  one the router returned, with how many times in the window: the answer
+  differed from the agreed one, it was an error, or the request found no
+  agreement. The router's counter does not tell the three apart. An opened
+  request that failed this way shows the rule as chips - "2 of 3 must
+  agree", "2 answered", "No two agreed" - read from the line the router
+  writes with the request's ID (`quorum` on the row, in the list and on a
+  look-up by ID), the providers whose answers were
+  compared, and the block asked for beside the router's latest, with how far
+  apart they were ("41 blocks behind" in orange, "3 blocks ahead" in red). The answers themselves aren't in the router's logs, so which provider
+  said what is not shown. The error carries no next step. Such a request is
+  titled "Providers disagreed", opened and in the list, not "Router error ·
+  Hash consensus error".
+
+### Changed
+
+- The cross-validation error's words: "The providers' answers didn't match,
+  so the router returned no answer rather than guess. A provider behind the
+  head, or a fork." with a next step: ask each provider for the same block
+  directly and compare.
+
 ## [0.69.2]
 
 ### Added

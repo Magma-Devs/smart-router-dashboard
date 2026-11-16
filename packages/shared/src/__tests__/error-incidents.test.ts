@@ -9,7 +9,7 @@ const at = (k: number) => T0 + k * STEP;
 const END = at(N - 1);
 
 /** A series that is `base` everywhere, with `bursts` of [fromStretch, toStretch, count]. */
-function series(kind: "failed" | "reply", spec: string, provider: string, bursts: [number, number, number][], base = 0): ErrorIncidentSeries {
+function series(kind: "failed" | "reply" | "disagreed", spec: string, provider: string, bursts: [number, number, number][], base = 0): ErrorIncidentSeries {
   const pts: [number, number][] = [];
   for (let k = 0; k < N; k++) {
     const b = bursts.find(([a, z]) => k >= a && k <= z);
@@ -20,6 +20,27 @@ function series(kind: "failed" | "reply", spec: string, provider: string, bursts
 const detect = (s: ErrorIncidentSeries[], windowFrom?: number) => detectErrorIncidents(s, STEP, T0, END, windowFrom);
 
 describe("detectErrorIncidents", () => {
+  it("providers disagreeing is a line per chain and method, at a floor of 5 per 5 minutes; the same method on two chains never joins", () => {
+    const { lines } = detect([
+      series("disagreed", "ETH1", "eth_getBlockByNumber", [[100, 103, 6]]),
+      series("disagreed", "BASE", "eth_getBlockByNumber", [[101, 104, 6]]),
+      series("disagreed", "BASE", "eth_call", [[100, 101, 4]]),
+    ]);
+    expect(lines.map((l) => [l.kind, l.shape, l.chains[0]!.spec, l.providers, l.count])).toEqual([
+      ["disagreed", "incident", "BASE", ["eth_getBlockByNumber"], 24],
+      ["disagreed", "incident", "ETH1", ["eth_getBlockByNumber"], 24],
+    ]);
+  });
+
+  it("two methods disagreeing on one chain at once is chain-wide: the chain forked or a provider is behind on everything", () => {
+    const { lines } = detect([
+      series("disagreed", "ETH1", "eth_getBlockByNumber", [[100, 103, 6]]),
+      series("disagreed", "ETH1", "eth_getBalance", [[101, 103, 5]]),
+    ]);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({ kind: "disagreed", shape: "chain-wide", providers: ["eth_getBalance", "eth_getBlockByNumber"], count: 39 });
+  });
+
   it("one burst at one provider is one incident, with its span and count", () => {
     const { lines } = detect([series("failed", "NEAR", "blockdaemon", [[100, 103, 50]])]);
     expect(lines).toHaveLength(1);
@@ -123,7 +144,7 @@ describe("detectErrorIncidents", () => {
     // At 5-minute steps one hot stretch at the floor is not yet a line; twice the floor is.
     expect(detect([series("failed", "NEAR", "lava", [[100, 100, 19]])]).lines).toEqual([]);
     expect(detect([series("failed", "NEAR", "lava", [[100, 100, 20]])]).lines).toHaveLength(1);
-    expect(ERROR_INCIDENT_RULES.minCount).toEqual({ failed: 20, reply: 100 });
+    expect(ERROR_INCIDENT_RULES.minCount).toEqual({ failed: 20, reply: 100, disagreed: 10 });
   });
 
   it("keeps a line that reaches into the window, and leaves out one whose last stretch ends as it opens", () => {

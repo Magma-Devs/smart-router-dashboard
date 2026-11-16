@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
-import { RECORDED, qErrorRepliesBySpecProvider, qFailedTriesBySpecProvider, qFailedTriesBySpecProviderRecorded, qRecordedSamplesPerStep, setRecordedReads } from "@sr/shared";
+import { RECORDED, qDisagreementsBySpecMethod, qErrorRepliesBySpecProvider, qFailedTriesBySpecProvider, qFailedTriesBySpecProviderRecorded, qRecordedSamplesPerStep, setRecordedReads } from "@sr/shared";
 import { buildApp } from "../app.js";
 
 /**
@@ -100,12 +100,13 @@ describe("GET /api/metrics/error-incidents · failed tries from recorded series 
   const RECORDED_FAILED = qFailedTriesBySpecProviderRecorded("1800s");
   const RAW_FAILED = qFailedTriesBySpecProvider("1800s");
   const REPLIES = qErrorRepliesBySpecProvider("1800s");
+  const DISAGREED = qDisagreementsBySpecMethod("1800s");
 
   it("reads them at 30 days where the history reaches the step before the read; error replies stay raw", async () => {
     // The recorded burst ends the window; the raw one, three days in, must not show.
     const ranges = store({ recorded: burst(NOW - 3600, NOW), raw: burst(NOW - 27 * DAY, NOW - 27 * DAY + 3600) });
     const body = await incidents("/api/metrics/error-incidents?window=30d");
-    expect(ranges.map((r) => r.query).sort()).toEqual([RECORDED_FAILED, qRecordedSamplesPerStep("1800s"), REPLIES].sort());
+    expect(ranges.map((r) => r.query).sort()).toEqual([RECORDED_FAILED, qRecordedSamplesPerStep("1800s"), REPLIES, DISAGREED].sort());
     for (const r of ranges) expect([r.start, r.end, r.step]).toEqual([NOW - 30 * DAY, NOW, "1800s"]);
     expect(body).toMatchObject({ from: NOW - 30 * DAY, to: NOW, stepSec: 1800, available: true, failed: [] });
     // The relay cache is left out, as on the raw read.
@@ -125,7 +126,7 @@ describe("GET /api/metrics/error-incidents · failed tries from recorded series 
     for (const ageSec of [900, null]) {
       const ranges = store({ ageSec, raw: burst(NOW - 3600, NOW) });
       const body = await incidents("/api/metrics/error-incidents?window=30d");
-      expect(ranges.map((r) => r.query).sort()).toEqual([RAW_FAILED, REPLIES].sort());
+      expect(ranges.map((r) => r.query).sort()).toEqual([RAW_FAILED, REPLIES, DISAGREED].sort());
       expect(ranges.some((r) => r.query.includes(":rate2m15s"))).toBe(false);
       expect(body.lines).toHaveLength(1);
       await app!.close();
@@ -137,7 +138,7 @@ describe("GET /api/metrics/error-incidents · failed tries from recorded series 
   it("reads raw at 30 days when the history covers the window but not the stretch before its first point", async () => {
     const ranges = store({ historySec: 30 * DAY + 1800 });
     await incidents("/api/metrics/error-incidents?window=30d");
-    expect(ranges.map((r) => r.query).sort()).toEqual([RAW_FAILED, REPLIES].sort());
+    expect(ranges.map((r) => r.query).sort()).toEqual([RAW_FAILED, REPLIES, DISAGREED].sort());
   });
 
   it("reads raw at 7 days and below, at 5-minute steps", async () => {

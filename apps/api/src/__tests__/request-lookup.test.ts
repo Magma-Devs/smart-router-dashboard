@@ -141,6 +141,30 @@ describe("looking a request up by a GUID that carries its second", () => {
     expect(reads).toEqual([minutesOf(SEC)]);
   });
 
+  it("a request that failed cross-validation carries the rule it failed, from the router's own line", async () => {
+    const CV_SEC = NOW_SEC - 1_800;
+    const CV_GUID = mint(CV_SEC, 9);
+    const lines = [
+      ev(CV_SEC * 1000 + 90, {
+        GUID: CV_GUID, method: "eth_getBlockByNumber", chain: "ETH1", selection: "cross_validation", outcome: "no_answer", stop_reason: "CrossValidation",
+        served_by: "", status: 500, has_reply: false, error_code: "PROTOCOL_HASH_CONSENSUS_ERROR", latency_ms: 90,
+        attempts: [
+          { upstream: "node-a", outcome: "ok", error_code: "", message: "", batch: 0, sent_ms: 1, latency_ms: 60, returned_to_client: false },
+          { upstream: "node-b", outcome: "ok", error_code: "", message: "", batch: 0, sent_ms: 1, latency_ms: 80, returned_to_client: false },
+        ],
+      }),
+      at(CV_SEC * 1000 + 89, {
+        GUID: CV_GUID, failureReason: "no-agreement", successCount: "2", agreementThreshold: "2", nodeErrorCount: "0",
+        error: "cross-validation failed: agreement threshold not reached {nilReplies:0,results:2,maxMatchingResults:1,agreementThreshold:2,maxParticipants:3}",
+        message: "cross-validation failed: successful responses did not reach a diverse quorum",
+      }),
+    ];
+    const r = await new ErrorRequestsService(lokiOf(lines).loki, '{service="router"}').lookup(CV_GUID, LAST_30D);
+    expect(r.row).toMatchObject({ guid: CV_GUID, errorCode: "PROTOCOL_HASH_CONSENSUS_ERROR", quorum: { needed: 2, answered: 2, nodeErrors: 0, reason: "no-agreement", agreed: 1, asked: 3 } });
+    // A request without that line carries no rule.
+    expect((await new ErrorRequestsService(lokiOf(LINES).loki, '{service="router"}').lookup(GUID, LAST_30D)).row?.quorum).toBeUndefined();
+  });
+
   it("a transaction looked up as a request carries its send row too, from the same read", async () => {
     const { loki, reads } = lokiOf([TX_ACCEPTED]);
     const svc = new ErrorRequestsService(loki, '{service="router"}');

@@ -5,7 +5,8 @@
  * A read runs the list's finders: line filters whose lines find its requests,
  * each read newest first up to its limit. It keeps the `cap` requests with the
  * newest finder lines, and reads the rest of the lines of those it found by a
- * line other than their relay_end (`linesForGuids`). Loki opens every chunk of
+ * line other than their relay_end (`linesForGuids`) - and of those whose
+ * relay_end the list says is not the whole row (`needsRest`). Loki opens every chunk of
  * the selected streams a read spans, whatever its filters match, so a read
  * costs its span.
  *
@@ -78,6 +79,12 @@ export interface ListPlan<Row> {
   cap: number;
   /** The rows a set of lines makes, one per request and from its lines alone - so a request's row can be kept. */
   rowsOf: (lines: RouterLine[]) => Row[];
+  /**
+   * A relay_end whose row needs other lines of its request too: they are read
+   * as the lines of a request found without its relay_end are. A request
+   * whose other lines Loki didn't return keeps the row its relay_end makes.
+   */
+  needsRest?: (end: RouterLine) => boolean;
   /** What the rows depend on besides the lines (the values file): a head made on another is not built on. */
   basis: string;
   /**
@@ -94,7 +101,7 @@ interface Seen {
   tsMs: number;
   /** Null for a line the parser drops: it still counts against the finder's limit. */
   guid: string | null;
-  /** The line, when it is a relay_end: its request's row is read from it alone. */
+  /** The line, when it is a relay_end: its request's row is read from it alone, or with the rest of its lines (`needsRest`). */
   end?: RouterLine;
 }
 
@@ -221,12 +228,14 @@ export async function readList<Row extends { guid: string; time: number }>(
   const cuts = seen.flatMap((pass, i) => (pass.length >= plan.finders[i]!.limit ? [pass[pass.length - 1]!.tsMs] : []));
   const nextBefore = readOnFrom(order, plan.cap, [...cuts, ...unreadCut], range.endMs);
 
-  // A request found by its relay_end is read from it alone; the others need
-  // the rest of their lines - unless the head holds them whole already.
+  // A request found by its relay_end is read from it alone, unless the list
+  // wants more of it (`needsRest`); the others need the rest of their lines -
+  // unless the head holds them whole already.
   const newest = new Map(order);
   const isKept = new Set(kept);
   const ends = seen.flat().flatMap((s) => (s.end && isKept.has(s.end.guid) ? [s.end] : []));
-  const inHand = new Set(ends.map((l) => l.guid));
+  const wantsRest = new Set(ends.filter((l) => plan.needsRest?.(l)).map((l) => l.guid));
+  const inHand = new Set(ends.map((l) => l.guid).filter((g) => !wantsRest.has(g)));
   const followed = new Map<string, Followed<Row>>();
   const need: string[] = [];
   for (const g of kept) {
@@ -250,19 +259,20 @@ export async function readList<Row extends { guid: string; time: number }>(
       plan.follow.perGuid,
       Math.min(Date.now(), Math.max(...times) + plan.follow.afterMs),
     );
-    if (got === null) return null;
-    unread = got.unread.length;
-    const read = plan.rowsOf(got.lines);
+    // A request with its relay_end in hand has a row without the rest: it is never unread.
+    if (got === null && need.some((g) => !wantsRest.has(g))) return null;
+    const late = new Set(got ? got.unread : need);
+    unread = [...late].filter((g) => !wantsRest.has(g)).length;
+    const read = plan.rowsOf([...(got?.lines ?? []), ...ends.filter((l) => needed.has(l.guid))]);
     rows.push(...read);
     const rowOf = new Map(read.map((r) => [r.guid, r]));
-    const late = new Set(got.unread);
     for (const g of need) {
       if (late.has(g)) continue;
       const n = newest.get(g)!;
       followed.set(g, { row: rowOf.get(g) ?? null, newest: n, done: n + plan.follow.afterMs <= range.endMs - LATE_MS });
     }
   }
-  rows.push(...plan.rowsOf(ends));
+  rows.push(...plan.rowsOf(ends.filter((l) => inHand.has(l.guid))));
   return { read: { rows: rows.sort(newestRowFirst), unread, found: true, nextBefore }, head: head(followed) };
 }
 

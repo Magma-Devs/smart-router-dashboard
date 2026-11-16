@@ -30,8 +30,12 @@ export const providerName = (upstream: string) => (upstream === CACHED ? "Cache"
 export const providerInWords = (upstream: string) => (upstream === CACHED ? "the cache" : upstream);
 export const isCache = (upstream: string) => upstream === CACHED;
 
+/** Codes whose own words say nothing to a reader: named for what happened, in the words the Errors timeline uses. */
+const CODE_NAMES: Record<string, string> = { PROTOCOL_HASH_CONSENSUS_ERROR: "providers disagreed" };
+
 /** The router's error code in plain words: NODE_RATE_LIMITED → "rate limited". */
 export function codeWords(code: string): string {
+  if (CODE_NAMES[code]) return CODE_NAMES[code];
   return code.replace(/^(PROTOCOL|NODE|CHAIN|USER)_/, "").toLowerCase().replace(/_/g, " ");
 }
 

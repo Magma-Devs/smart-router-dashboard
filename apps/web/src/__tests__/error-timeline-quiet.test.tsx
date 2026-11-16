@@ -33,7 +33,7 @@ const line = (over: Partial<ErrorIncidentLine> = {}): ErrorIncidentLine => ({
 const steadyRow: SteadyError = { kind: "reply", spec: "ETH1", provider: "alpha", perMinute: 4, presence: 0.9 };
 
 const report = (over: Partial<ErrorIncidentsReport> = {}): ErrorIncidentsReport => ({
-  from: 0, to: 86400, stepSec: 300, lines: [], steady: [], available: true, failed: [], ...over,
+  from: 0, to: 86400, stepSec: 300, lines: [], steady: [], outvoted: [], available: true, failed: [], ...over,
 });
 
 const timeline = (data: ErrorIncidentsReport) => {

@@ -17,7 +17,7 @@ import { useApi } from "@/hooks/use-api";
 import { fmtComma, fmtPct } from "@/lib/format";
 import { TT } from "@/lib/tooltips";
 import { ALL, ErrorRequests, useErrorList } from "./ErrorRequests";
-import { ErrorIncidents, KIND, SHAPE, lineTitle } from "./ErrorIncidents";
+import { ErrorIncidents, KIND, SHAPE, lineTitle, DISAGREED_CODE } from "./ErrorIncidents";
 import { rangeWords } from "./request-log";
 import type { ExactRange } from "./request-log";
 import { useFilters } from "@/components/gateway/FiltersProvider";
@@ -40,6 +40,9 @@ export interface ErrorsFocus {
   range: ExactRange | null;
 }
 
+/** The kind of the line opened, if any. */
+const onLineKind = (l: { kind: string } | undefined) => l?.kind ?? null;
+
 export function ErrorsBreakdown({ chainFilter, win, focus = null, onFocus }: {
   chainFilter: string | null;
   win: MetricWindow;
@@ -56,7 +59,10 @@ export function ErrorsBreakdown({ chainFilter, win, focus = null, onFocus }: {
      narrows the list to its chain; one provider's, to that provider. Picking
      other times in the list lets go of the line and of its chain. */
   const [opened, setOpened] = useState<{ line: ErrorIncidentLine; range: ExactRange } | null>(null);
-  const lineSpec = opened && opened.line.providers.length > 1 ? opened.line.chains[0]?.spec ?? null : null;
+  // A disagreed line's "providers" are methods: its chain is always the filter.
+  const lineSpec = opened && (opened.line.kind === "disagreed" || opened.line.providers.length > 1) ? opened.line.chains[0]?.spec ?? null : null;
+  // Its requests carry the cross-validation error: the list opens on that type.
+  const lineErrType = onLineKind(opened?.line) === "disagreed" ? DISAGREED_CODE : null;
   const onPick = (r: ExactRange | null) => {
     report(upstream, r);
     setOpened((o) => (o && r && r.from === o.range.from && r.to === o.range.to ? o : null));
@@ -74,7 +80,7 @@ export function ErrorsBreakdown({ chainFilter, win, focus = null, onFocus }: {
   const openLine = (line: ErrorIncidentLine, stepSec: number) => {
     // A line still going runs to the click, not to its last full stretch: its newest requests are in the read.
     const range = { from: (line.start - stepSec) * 1000, to: line.ongoing ? Date.now() : Math.min(line.end * 1000, Date.now()) };
-    const u = line.providers.length === 1 ? line.providers[0]! : ALL;
+    const u = line.kind !== "disagreed" && line.providers.length === 1 ? line.providers[0]! : ALL;
     setOpened({ line, range });
     list.pick(range);
     setUpstream(u);
@@ -174,7 +180,7 @@ export function ErrorsBreakdown({ chainFilter, win, focus = null, onFocus }: {
           </div>
         )}
         <ErrorRequests chainFilter={chainFilter ?? lineSpec} win={win} upstream={upstream} onUpstream={pickUpstream}
-          initialRange={initialRange} list={list} groupNonce={groupNonce} />
+          initialRange={initialRange} list={list} groupNonce={groupNonce} lineErrType={lineErrType} />
       </div>
     </div>
   );
