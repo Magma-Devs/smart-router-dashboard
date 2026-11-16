@@ -217,3 +217,37 @@ export function menuFocusAfter(key: string, current: number, count: number): num
       return null;
   }
 }
+
+// ── Menu placement ───────────────────────────────────────────────────────────
+
+export interface Box {
+  top: number;
+  bottom: number;
+  right: number;
+}
+
+/**
+ * Where a row's menu goes: under its button with the right edges aligned, or
+ * above it when there is no room below, kept 8 px inside the viewport.
+ */
+export function menuPosition(
+  button: Box,
+  menu: { width: number; height: number },
+  viewport: { width: number; height: number },
+): { left: number; top: number } {
+  const left = Math.min(Math.max(button.right - menu.width, 8), viewport.width - menu.width - 8);
+  const below = button.bottom + 4;
+  const above = button.top - 4 - menu.height;
+  const top = below + menu.height > viewport.height - 8 && above >= 8 ? above : below;
+  return { left, top };
+}
+
+/**
+ * What a scroll does to an open menu: it follows its button while the button
+ * is on screen, and closes once the button has scrolled out of view. A page
+ * scrolls under an open menu on its own (content loading above the table
+ * moves it), and closing on every scroll took the menu away mid-click.
+ */
+export function menuOnScroll(button: Box, viewportHeight: number): "follow" | "close" {
+  return button.bottom <= 0 || button.top >= viewportHeight ? "close" : "follow";
+}

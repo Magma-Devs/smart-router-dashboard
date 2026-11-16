@@ -7,6 +7,8 @@ import {
   memberActions,
   memberListUpdates,
   menuFocusAfter,
+  menuOnScroll,
+  menuPosition,
   pendingCount,
   twoFactorCell,
   visibleInvites,
@@ -239,5 +241,39 @@ describe("menuFocusAfter", () => {
     expect(menuFocusAfter("End", 0, 4)).toBe(3);
     expect(menuFocusAfter("a", 1, 4)).toBeNull();
     expect(menuFocusAfter("ArrowDown", -1, 0)).toBeNull();
+  });
+});
+
+describe("menuPosition", () => {
+  const viewport = { width: 1024, height: 700 };
+  const menu = { width: 170, height: 150 };
+
+  it("opens under the button with the right edges aligned", () => {
+    expect(menuPosition({ top: 100, bottom: 130, right: 900 }, menu, viewport)).toEqual({
+      left: 730,
+      top: 134,
+    });
+  });
+
+  it("opens above the button when there is no room below", () => {
+    expect(menuPosition({ top: 600, bottom: 630, right: 900 }, menu, viewport).top).toBe(446);
+  });
+
+  it("stays 8 px inside the viewport's edges", () => {
+    expect(menuPosition({ top: 100, bottom: 130, right: 100 }, menu, viewport).left).toBe(8);
+    expect(menuPosition({ top: 100, bottom: 130, right: 1100 }, menu, viewport).left).toBe(846);
+  });
+});
+
+describe("menuOnScroll", () => {
+  it("follows the button while any of it is on screen", () => {
+    expect(menuOnScroll({ top: 300, bottom: 330, right: 900 }, 700)).toBe("follow");
+    expect(menuOnScroll({ top: -20, bottom: 10, right: 900 }, 700)).toBe("follow");
+    expect(menuOnScroll({ top: 690, bottom: 720, right: 900 }, 700)).toBe("follow");
+  });
+
+  it("closes once the button has scrolled out of view", () => {
+    expect(menuOnScroll({ top: -40, bottom: -10, right: 900 }, 700)).toBe("close");
+    expect(menuOnScroll({ top: 700, bottom: 730, right: 900 }, 700)).toBe("close");
   });
 });

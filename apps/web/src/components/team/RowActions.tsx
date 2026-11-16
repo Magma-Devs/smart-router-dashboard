@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { menuFocusAfter, type RowAction } from "./team-state";
+import { menuFocusAfter, menuOnScroll, menuPosition, type RowAction } from "./team-state";
 
 /**
  * One "..." button per table row, opening that row's actions as a menu, so a
@@ -11,21 +11,35 @@ import { menuFocusAfter, type RowAction } from "./team-state";
  * The ARIA menu pattern: Enter, Space or an arrow opens it on an item; arrows,
  * Home and End move; Escape closes it and returns focus to the button; Tab or
  * a click anywhere else closes it. It is portalled to <body>, so the table
- * card's clipping cannot cut it off, and a scroll or resize closes it.
+ * card's clipping cannot cut it off. It follows its button through a scroll,
+ * and a resize, or a scroll that takes the button off screen, closes it.
  */
 export function RowActions({ label, actions }: { label: string; actions: RowAction[] }) {
   const [open, setOpen] = useState<null | "first" | "last">(null);
-  const [anchor, setAnchor] = useState<DOMRect | null>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
   const items = useRef<(HTMLButtonElement | null)[]>([]);
   const menuId = useId();
 
   function show(focus: "first" | "last") {
-    const r = trigger.current?.getBoundingClientRect();
-    if (!r) return;
-    setAnchor(r);
+    if (!trigger.current) return;
     setOpen(focus);
+  }
+
+  // Straight on the DOM, so the menu appears where it belongs on its first
+  // paint and follows its button without a render per scroll event.
+  function place() {
+    const el = menu.current;
+    const button = trigger.current?.getBoundingClientRect();
+    if (!el || !button) return;
+    const { left, top } = menuPosition(
+      button,
+      { width: el.offsetWidth, height: el.offsetHeight },
+      { width: window.innerWidth, height: window.innerHeight },
+    );
+    el.style.left = `${left}px`;
+    el.style.top = `${top}px`;
+    el.style.visibility = "visible";
   }
 
   function close(returnFocus: boolean) {
@@ -33,23 +47,13 @@ export function RowActions({ label, actions }: { label: string; actions: RowActi
     if (returnFocus) trigger.current?.focus();
   }
 
-  // Placed once it has a size, straight on the DOM, so it appears where it
-  // belongs on its first paint: under the button, right edges aligned, or
-  // above it when there is no room below.
   useLayoutEffect(() => {
-    const el = menu.current;
-    if (!open || !anchor || !el) return;
-    const w = el.offsetWidth;
-    const h = el.offsetHeight;
-    const left = Math.min(Math.max(anchor.right - w, 8), window.innerWidth - w - 8);
-    const below = anchor.bottom + 4;
-    const top =
-      below + h > window.innerHeight - 8 && anchor.top - 4 - h >= 8 ? anchor.top - 4 - h : below;
-    el.style.left = `${left}px`;
-    el.style.top = `${top}px`;
-    el.style.visibility = "visible";
+    if (!open) return;
+    place();
     items.current[open === "last" ? actions.length - 1 : 0]?.focus();
-  }, [open, anchor, actions.length]);
+    // Focus moves only when the menu opens, never on a later render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -60,7 +64,9 @@ export function RowActions({ label, actions }: { label: string; actions: RowActi
     };
     const onScroll = (e: Event) => {
       if (menu.current?.contains(e.target as Node)) return;
-      setOpen(null);
+      const button = trigger.current?.getBoundingClientRect();
+      if (!button || menuOnScroll(button, window.innerHeight) === "close") setOpen(null);
+      else place();
     };
     const onResize = () => setOpen(null);
     document.addEventListener("pointerdown", onPointerDown, true);
@@ -129,7 +135,6 @@ export function RowActions({ label, actions }: { label: string; actions: RowActi
         </svg>
       </button>
       {open &&
-        anchor &&
         typeof document !== "undefined" &&
         createPortal(
           <div

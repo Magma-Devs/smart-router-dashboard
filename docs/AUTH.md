@@ -1095,6 +1095,8 @@ some people can see is not one; only an admin changes it.
   full width. Reset 2FA is disabled, with the reason, for someone with nothing
   to clear. The menu follows the ARIA menu pattern: arrows, Home and End move,
   Escape closes it and returns focus to the button, a click outside closes it.
+  It stays with its button when the page scrolls, and closes once the button
+  is off screen.
 - **A change shows at once.** After Change role, Reset 2FA or Remove, the row
   takes the api's confirmed answer straight away and the list is read again;
   a confirmation above the table says what happened, and for a 2FA reset on
