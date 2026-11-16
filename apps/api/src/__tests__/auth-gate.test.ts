@@ -367,4 +367,19 @@ describe("GET /api/account/me", () => {
     const res = await app.inject({ method: "GET", url: "/api/account/me" });
     expect(res.statusCode).toBe(401);
   });
+
+  /** What the Account page's Connected accounts card reads, per provider. */
+  it("says which sign-in providers the account is linked to", async () => {
+    app = await buildGatedApp();
+    const { user, token } = await signedInUser();
+    const read = async () => (await get(token, "/api/account/me")).json().linkedProviders;
+
+    expect(await read()).toEqual({ google: false, github: false });
+
+    await t.db.update(users).set({ googleId: "google-sub-1" }).where(eq(users.id, user.id));
+    expect(await read()).toEqual({ google: true, github: false });
+
+    await t.db.update(users).set({ githubId: "github-sub-1" }).where(eq(users.id, user.id));
+    expect(await read()).toEqual({ google: true, github: true });
+  });
 });

@@ -95,6 +95,9 @@ export async function accountRoutes(app: FastifyInstance) {
         name: me.user.name,
         avatarUrl: me.user.avatarUrl,
         role: me.user.role,
+        // The Account page lists these beside the providers the deployment
+        // offers, which only the web's env knows.
+        linkedProviders: { google: Boolean(me.user.googleId), github: Boolean(me.user.githubId) },
         twoFactor: {
           enrolled: twoFactor.enrolled,
           enrolmentRequired: twoFactor.enrolmentRequired,

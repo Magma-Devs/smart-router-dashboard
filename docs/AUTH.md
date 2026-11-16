@@ -643,6 +643,10 @@ Three things to know here, because they change what `AUTH_MODE=enabled` means:
   `signin.failed` for an address with no account, a provider account with no
   verified address or a token the provider would not verify, and
   `signin.blocked` for a removed account.
+  The Account page's **Connected accounts** card lists each provider the
+  deployment offers as Linked or Not linked for the signed-in account
+  (`linkedProviders` on `GET /api/account/me`), and is absent when none is
+  offered. Nothing there links or unlinks one.
 
   MAG-2729 puts social sign-in out of scope, on revocation grounds: a
   personal account outlives someone leaving the customer's company. Google
@@ -886,6 +890,10 @@ and their address can be invited again as a new account — try it.
 **6. Your own account.** Account → Change password signs out your *other*
 devices and keeps the one you are using. Active sessions lists every
 device with what it is and where from; sign one out and watch it go.
+About this deployment, at the bottom, is the build: its version, its commit
+when the image recorded one (`GIT_COMMIT`), its runtime mode (the api's
+`NODE_ENV`) only when that is not `production`, which every published image
+runs as, and when the api started and its uptime.
 
 Sign in from a second browser to see two sessions, then use "Sign out
 everywhere" — which signs out the tab you are in too, deliberately.
@@ -1189,7 +1197,7 @@ from the sessions list, signing out everywhere (the other devices; the one it
 was done from is `signout`), a removal, a password reset, a two-factor reset,
 or a password change (for the other devices).
 
-<img src="./assets/account-sessions.png" alt="The Account page, scrolled down: a Connected accounts card saying a Google or GitHub sign-in with a matching verified address links itself; a Two-factor authentication card marked On, saying you are asked for a code from your authenticator app at each sign-in and that only an administrator can reset it if you lose your phone, because nobody can read your key back; a Change password card with current, new and repeat fields and a note that other devices will be signed out while this one stays; and an Active sessions card listing an unrecognised device with its own Sign out button and this device as Chrome on Linux, highlighted, plus a Sign out everywhere button." width="560">
+<img src="./assets/account-sessions.png" alt="The Account page, scrolled down: a Connected accounts card listing Google as Linked and GitHub as Not linked; a 2FA card marked On, saying you are asked for a code from your authenticator app at each sign-in and to ask an admin to reset your 2FA if you lose your phone; a Change password card with current, new and repeat fields and a note that other devices will be signed out while this one stays; and an Active sessions card listing an unrecognized device with its own Sign out button and this device as Chrome on Linux, outlined in blue, plus a Sign out everywhere button." width="560">
 
 Session rows are **never deleted on revoke** — a revoked session is
 evidence, and the audit log's access events reference it. Nor are they
