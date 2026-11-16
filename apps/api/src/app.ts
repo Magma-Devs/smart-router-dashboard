@@ -26,6 +26,7 @@ import { announceSetupToken } from "./services/setup.js";
 import { clientRateLimitKey } from "./services/forwarded-client.js";
 import { auditRoutes } from "./routes/audit.js";
 import { auditTokenRoutes } from "./routes/audit-tokens.js";
+import { askRoutes } from "./routes/ask.js";
 
 /**
  * `TRUST_PROXY` as a hop count, in the shape Fastify's types accept.
@@ -108,6 +109,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     // is disabled.
     await app.register(auditRoutes);
     await app.register(auditTokenRoutes);
+    await app.register(askRoutes);
 
     // Once the database is up, mint + log the first-run token if this install
     // still needs one. Not awaited: `dbReady` retries forever by design, and
