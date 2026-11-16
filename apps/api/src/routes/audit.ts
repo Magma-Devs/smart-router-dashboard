@@ -91,7 +91,10 @@ const AUDIT_FILTER_PROPS = {
     description: "Event group, repeatable",
   },
   target_type: { type: "string" as const, description: "Object kind, e.g. endpoint" },
-  target_id: { type: "string" as const, description: "Object id, e.g. ep_8143" },
+  target_id: {
+    type: "string" as const,
+    description: "Object id, e.g. ep_8143; for a session, the reference the feed shows",
+  },
   order: {
     type: "string" as const,
     enum: ["asc", "desc"],
@@ -435,8 +438,8 @@ export async function auditRoutes(app: FastifyInstance) {
         description:
           "The same events as GET /api/audit/events, flattened to one row per changed field " +
           "(events with nothing to diff get one row with the field columns empty). " +
-          "Values are already redacted; no secret or node URL appears. Streamed, so the whole " +
-          "matching history is returned rather than a page.",
+          "Values are already redacted; no secret or node URL appears, and a session appears as " +
+          "its reference. Streamed, so the whole matching history is returned rather than a page.",
         querystring: {
           type: "object" as const,
           properties: { ...AUDIT_FILTER_PROPS },

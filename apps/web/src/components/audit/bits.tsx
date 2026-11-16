@@ -183,7 +183,11 @@ export function AuditDetail({ event }: { event: AuditEventRecord }) {
             <Field label="Client">{event.context.client ?? DASH}</Field>
             <Field label="Session">
               {event.context.session ? (
-                <span className="gw-mono" style={{ fontSize: 11 }}>
+                <span
+                  className="gw-mono"
+                  style={{ fontSize: 12 }}
+                  title="A reference to the sign-in. Every entry from the same sign-in shows the same one."
+                >
                   {event.context.session}
                 </span>
               ) : (

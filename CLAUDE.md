@@ -797,6 +797,13 @@ the log; the accounts, 2FA and config-approval tasks only emit into it.
   The viewer asks for `order=desc`; a customer's tooling takes the default and
   pulls oldest-first on a schedule. Deliberately the same code path — a screen
   that could disagree with what a security team pulls is worse than no screen.
+- **A session is a reference on every read surface.** `toRecord`
+  (`audit-read.ts`) serves `context.session`, and the `target.id` of a
+  `session` target, as `auditSessionRef(id)`: the first 12 hex characters of
+  the id's SHA-256. The page, the export and the pull API never carry the id a
+  session token addresses, and the rows of one sign-in still share a value.
+  `target_id` takes the reference (`sha256()` in SQL); a session id there
+  matches nothing.
 - **The cursor is gap-free by construction, not by timing.** `seq` is handed
   out at `INSERT`, not at `COMMIT`, so two writers can take 100 and 101 and
   commit in the other order; a reader trusting `seq` alone serves 101, the

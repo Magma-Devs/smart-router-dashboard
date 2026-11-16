@@ -36,6 +36,7 @@ export {
   AUDIT_PAGE_DEFAULT,
   AUDIT_PAGE_MAX,
   auditFilterFingerprint,
+  auditSessionRef,
   checkAuditCursor,
   decodeAuditCursor,
   encodeAuditCursor,

@@ -16,7 +16,8 @@ Two tables, written by one writer (`packages/db/src/audit.ts`):
 - `audit_events` — one row per event. Actor (with the name and address
   *snapshotted*, so a later rename or removal cannot rewrite history), action,
   target, an optional note, and — only for the event kinds that carry one — the
-  IP address, client and session it came from.
+  IP address, client and session it came from. Every read surface shows the
+  session as a reference rather than its id (see [Sessions](#sessions)).
 - `audit_event_changes` — for events that record a change, one row per field:
   `field`, `from`, `to`. Values are redacted at write time; no secret or node
   URL is ever stored.
@@ -135,6 +136,20 @@ Rules a puller must know:
   all **400**, never an empty page.
 - Changing `per_page` mid-pull is fine; it is not part of the cursor.
 
+Each item carries `id`, `time`, `action`, `group`, `source`, `actor`,
+`target`, `request`, `note` and `changes`, and, on the event kinds that carry
+one, a `context` of `ip`, `client` and `session`. A config event has no
+`context` key at all rather than one full of nulls.
+
+### Sessions
+
+`context.session` is a reference to the sign-in the event came from: the first
+12 hex characters of the SHA-256 of the session id. Every row that sign-in
+wrote carries the same reference, and so does the `session.revoked` row that
+ended it, as its `target.id`. The session id itself appears on no read
+surface: not the page, the export or this API. `target_type=session&target_id=`
+takes the reference, and a session id there matches nothing.
+
 ## The CSV export
 
 ```
@@ -151,6 +166,8 @@ columns empty. Columns:
 event_id,time,actor_name,actor_email,source,action,group,
 target_type,target_id,target_name,request,note,field,from,to
 ```
+
+A session's `target_id` holds the [reference](#sessions), as in the feed.
 
 Starts with a UTF-8 BOM (Excel assumes the local codepage otherwise; scripted
 consumers read it as `utf-8-sig`), CRLF line endings, and every cell passes the
