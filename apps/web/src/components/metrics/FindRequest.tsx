@@ -53,10 +53,7 @@ export function FindRequest({ win }: { win: MetricWindow }) {
           </div>
           <button type="submit" disabled={!typed} style={{ ...filterSelectStyle, height: 36, padding: "0 16px", cursor: typed ? "pointer" : "default", color: typed ? "var(--text)" : "var(--text-4)", fontWeight: 600 }}>Find</button>
         </form>
-        <p style={{ margin: "10px 0 0", fontSize: 12, color: "var(--text-3)", lineHeight: 1.5 }}>
-          Any request the router handled, answered or not: what was asked, every provider it went to, what each one answered, and what the client got.
-          Paste the request ID from the router&apos;s error message or its response headers, the transaction&apos;s hash, or the request ID your own app sent.
-        </p>
+        <p style={{ margin: "10px 0 0", fontSize: 12, color: "var(--text-3)" }}>Any request, answered or not.</p>
       </div>
       {id && <Found key={id + win} id={id} win={win} onClose={() => find(null)} />}
     </div>
