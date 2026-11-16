@@ -10,6 +10,18 @@ Each slice receives a separate pull request with its tests and evidence. Depende
 branches may be stacked; their descriptions name their base and prerequisite PRs.
 No slice enables customer spending before durable admission and cost enforcement.
 
+The complete feature ships in **one stable dashboard release**. The foundation
+targets `integration/MAG-4750-managed-ask`; later slices retain their stacked
+bases for review. Individual slices do not merge directly into `main` and do not
+bump `VERSION`. Branch image builds are integration artifacts.
+
+The repository permits squash merges only. After each slice lands in integration,
+rebase the next slice and its descendants onto that integration tip, dropping the
+merged parent's old commits, and rerun their checks. Once all slices pass review
+and integration testing, one final integration-to-main release PR reconciles
+current main, bumps `VERSION` once to the agreed next release, and runs the final
+checks. The release number is chosen at that point; none is reserved here.
+
 | Slice | Implementation | Acceptance evidence |
 | --- | --- | --- |
 | MAG-4929 | Shared contracts, strict structured answer validation, managed/live-session gate, server-only Bedrock and MCP adapters, exact customer credential verification, controlled operator smoke | Offline adapter/auth tests; current provider/catalog smoke or exact unavailable access recorded |
@@ -83,8 +95,9 @@ bounded; direct IDs always require ownership checks.
 
 ## Acceptance ledger
 
-All items below start **pending**, independent of a PR being opened or merged.
-Each implementation slice adds dated commands/results and remaining limits.
+An item is checked only with corresponding observed evidence. Each slice records
+dated commands/results and remaining limits; opening or merging its PR does not
+establish acceptance.
 
 - [x] Customer identity, source ownership and read-only enforcement — adapter tests and [scoped live checks](validation/MAG-4934/LIVE.md)
 - [x] Managed/customer flags and current-session gate on UI and API — [browser evidence](validation/MAG-4933/README.md), API/HTTP gate checks
@@ -97,7 +110,7 @@ Each implementation slice adds dated commands/results and remaining limits.
 - [x] Browser panel/full flow, minimize, navigation, reload, copy and stop — [browser evidence](validation/MAG-4933/README.md)
 - [x] Internal authorized staff read/export and customer denial — [actual staff OAuth/runtime checks](validation/MAG-4934/staff-runtime.json)
 - [x] Observable scheduled retention with tested cutoffs — actual HTTP/PostgreSQL and [flag-off scheduled runtime check](validation/MAG-4934/staff-runtime.json)
-- [ ] Runtime secret/config delivery and current Bedrock model/region access
+- [ ] Runtime secret/config delivery and current Bedrock model/region access — [fleet delivery implementation](https://github.com/Magma-Devs/smart-router-infrastructure/pull/1494) is prepared; deployed scoped Secrets, released pins and a fresh exact-image checkpoint remain required
 - [x] Current customer MCP discovery and bounded actual data read — [dated scoped live checks](validation/MAG-4934/LIVE.md)
 - [ ] GK8 cap, feature enable/disable and operational rollback verified
 - [ ] Dated GK8 pilot start; 60-day product measurement handed to MAG-4642
@@ -108,33 +121,42 @@ No acceptance item is complete without the corresponding observed evidence.
 
 ## Pull request progress
 
-- [PR #389](https://github.com/Magma-Devs/smart-router-dashboard/pull/389): foundation,
-  contracts and adapters. Current live access is still pending (Bedrock HTTP 403;
-  expired `magma` AWS session). This does not block independent database/UI work.
-- [PR #390](https://github.com/Magma-Devs/smart-router-dashboard/pull/390) adds the durable data model, authenticated history/preferences routes
-  and SQL lifecycle primitives. Actual HTTP/PostgreSQL verifies ownership,
-  idempotency, concurrency, lease fencing and recovery. Production worker
-  scheduling, financial reconciliation and UI acceptance stay open.
-- [PR #393](https://github.com/Magma-Devs/smart-router-dashboard/pull/393) adds bounded read-only orchestration, structured/source-attributed
-  answers and a lease-aware queue worker. It stays inactive in the API until
-  actual budget admission/reconciliation is installed by MAG-4932.
+The dashboard review order below feeds the integration branch, followed by one
+final dashboard release PR to main:
 
-- [PR #394](https://github.com/Magma-Devs/smart-router-dashboard/pull/394) installs actual customer/month accounting, internal staff records and
-  physical retention. API admission/worker activation now require valid dated
-  pricing and a supported free token counter. Deployment flags remain off.
+1. [PR #389](https://github.com/Magma-Devs/smart-router-dashboard/pull/389): shared
+   contracts, managed/live-session gates and customer-scoped server adapters.
+2. [PR #390](https://github.com/Magma-Devs/smart-router-dashboard/pull/390): durable
+   personal chats, history/preferences and fenced runs. Actual HTTP/PostgreSQL
+   verifies ownership, idempotency, concurrency, lease fencing and recovery.
+3. [PR #393](https://github.com/Magma-Devs/smart-router-dashboard/pull/393): bounded
+   read-only orchestration, source/time evidence and a lease-aware queue worker.
+4. [PR #394](https://github.com/Magma-Devs/smart-router-dashboard/pull/394): shared
+   customer/month accounting, internal staff records and physical retention.
+   Paid admission requires current pricing and the same-model free counter.
+5. [PR #396](https://github.com/Magma-Devs/smart-router-dashboard/pull/396): complete
+   panel/full/mobile chat UX and deterministic browser verification against the
+   real API/database, including personal history, session changes and cancellation.
+6. [PR #400](https://github.com/Magma-Devs/smart-router-dashboard/pull/400): runtime
+   Compose configuration, free provider preflight and the operational runbook.
+7. [PR #401](https://github.com/Magma-Devs/smart-router-dashboard/pull/401): native
+   Sonnet 5 protocol/accounting, structured presentation and exact-image build
+   metadata. Separate real-provider browser receipts cover full view and
+   panel/minimize/full navigation. Actual staff OAuth, read/export, customer-admin
+   denial, grant revocation and scheduled retention pass with the flag off.
 
-- [PR #396](https://github.com/Magma-Devs/smart-router-dashboard/pull/396) adds the complete panel/full UI and real-browser verification. The
-  customer feature remains off in deployments; no live runtime/pilot acceptance
-  is inferred from the synthetic provider used for deterministic browser checks.
+[Dated provider/runtime receipts and limits](validation/MAG-4934/LIVE.md) preserve
+the scope of each check. Earlier expired-access observations are historical;
+they do not describe the successful later provider checks.
 
-- MAG-4934 adds runtime Compose wiring, a free configuration/provider preflight
-  and the [operational runbook](ASK-YOUR-DATA-OPERATIONS.md). Live provider, staff,
-  fleet secret/pin delivery and the controlled GK8 rehearsal remain open.
+[Chart #189](https://github.com/Magma-Devs/smart-router-helm-chart/pull/189)
+provides workload configuration/schema and backend-only Secret references.
+[Fleet #1494 / MAG-5359](https://github.com/Magma-Devs/smart-router-infrastructure/pull/1494)
+provides selected-customer configuration, enable/disable, fresh exact-image
+checkpoints and Owner credential sealing. The chart and fleet retain their own
+delivery paths and do not allocate additional stable dashboard versions.
 
-- The MAG-4934 native-provider follow-up renews SSO, verifies current customer-only
-  MCP reads, and fixes Sonnet 5 protocol/accounting and structured presentation.
-  Three real browser questions and all ten metered model steps succeed. Separately,
-  actual staff OAuth/read/export, admin denial, revocation and scheduled retention
-  pass with the flag off. [Dated metadata receipts and limits](validation/MAG-4934/LIVE.md)
-  supersede earlier expired-access observations. Permanent fleet delivery and the
-  deployed GK8 rehearsal/pilot remain pending; no production flag was enabled.
+Permanent runtime credentials, released pins and the deployed GK8
+enable/disable/rollback rehearsal remain pending. The actual pilot start belongs
+to MAG-4642 after that handoff. No customer flag, Secret or pin is changed by
+these implementation PRs.
