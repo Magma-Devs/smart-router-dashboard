@@ -17,8 +17,6 @@ import { useOpening } from "@/hooks/use-opening";
 import { useRouterFilter } from "@/hooks/use-router-options";
 import { Refreshing, SkelLine, SkelRows } from "@/components/gateway/Skel";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
-import { Tip } from "@/components/gateway/Tip";
-import { TT } from "@/lib/tooltips";
 import { fmtComma } from "@/lib/format";
 import { linkRequest, requestFromUrl } from "@/lib/request-in-url";
 import { coveredSpan, groupBuckets, groupErrors, type ErrorGroup } from "@/lib/error-groups";
@@ -235,10 +233,12 @@ function LookupPanel({ id, rangeQ, rangeWords, onClose }: { id: string; rangeQ: 
   );
 }
 
-function Seg<T extends string>({ value, onChange, options }: {
+export function Seg<T extends string>({ value, onChange, options, atLeast = false }: {
   value: T;
   onChange: (v: T) => void;
   options: { key: T; label: string; count?: number; color?: string; title?: string }[];
+  /** The counts cover only the rows loaded so far, older ones not yet read: "300+", never a bare "300" that reads as the total. A zero stays "0"; its hover says the same. */
+  atLeast?: boolean;
 }) {
   return (
     <div className="gw-segctl">
@@ -246,7 +246,7 @@ function Seg<T extends string>({ value, onChange, options }: {
         <button key={o.key} title={o.title} className={value === o.key ? "on" : ""} onClick={() => onChange(o.key)} style={{ padding: "5px 11px", whiteSpace: "nowrap" }}>
           {o.color && <span style={{ display: "inline-block", width: 7, height: 7, borderRadius: 999, background: o.color, marginRight: 6, verticalAlign: "middle" }} />}
           {o.label}
-          {o.count != null && <span className="gw-tnum" style={{ marginLeft: 6, color: "var(--text-4)" }}>{fmtComma(o.count)}</span>}
+          {o.count != null && <span className="gw-tnum" title={atLeast ? "In the requests loaded so far. Load older ones below the list to count more." : undefined} style={{ marginLeft: 6, color: "var(--text-4)" }}>{fmtComma(o.count)}{atLeast && o.count > 0 ? "+" : ""}</span>}
         </button>
       ))}
     </div>
@@ -445,16 +445,16 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
   return (
     <div ref={listRef} className="gw-card gw-log-card" style={{ padding: 0, overflow: "clip", scrollMarginTop: 72, ...headVar }}>
       <div ref={headRef} style={stickyListHeader}>
-        {/* What the list holds: how many, what came of them, and the times it covers. */}
+        {/* What the list holds: what came of the requests, and the times it covers. The count is on "All", once. */}
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <span style={{ display: "inline-flex", alignItems: "center", fontSize: 12, fontWeight: 600, color: "var(--text-2)" }}>
-            Requests with an error<Tip text={TT.errorRequests!} />
-            {head && <span style={{ fontWeight: 400, color: "var(--text-4)", marginLeft: 8 }}>{fmtComma(rows.length)}{rows.length !== allRows.length ? ` of ${fmtComma(allRows.length)}` : ""}</span>}
+            Requests with an error
             <span style={{ marginLeft: 8, display: "inline-flex" }}><Refreshing show={log.refreshing} label="Reading newer requests" /></span>
           </span>
           <Seg
             value={result}
             onChange={reset(setResult)}
+            atLeast={log.more}
             options={[
               // No counts before the first read lands: a 0 there would be a claim.
               { key: ALL, label: "All", count: head ? narrowed.length : undefined },
