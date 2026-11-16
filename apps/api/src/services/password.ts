@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
 import { createHash, randomBytes } from "node:crypto";
+import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from "@sr/shared";
 
 /** bcrypt cost 12 — same as lava-connect (industry default). */
 const BCRYPT_COST = 12;
@@ -47,9 +48,11 @@ export async function verifyPasswordOrDecoy(
  * symbol") and **no forced expiry**: scheduled rotation makes people choose
  * worse passwords, and rotation belongs on evidence of compromise. What does
  * real work is checking the password against known-breached corpora, below.
+ *
+ * The lengths live in `@sr/shared` beside `PASSWORD_RULE`, the wording every
+ * form shows, so the rule stated and the rule enforced are one pair of numbers.
  */
-export const PASSWORD_MIN_LENGTH = 8;
-export const PASSWORD_MAX_LENGTH = 64;
+export { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH };
 
 /**
  * bcrypt truncates at 72 **bytes** and says nothing about it. 64 characters is

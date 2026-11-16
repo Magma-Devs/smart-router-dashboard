@@ -31,6 +31,7 @@ export interface AuditActorRecord {
 /** What was acted on, named as it was at the time. */
 export interface AuditTargetRecord {
   type: string;
+  /** For a `session`, its reference, as in `AuditContextRecord.session`. */
   id: string;
   name: string | null;
 }
@@ -40,6 +41,8 @@ export interface AuditContextRecord {
   ip: string | null;
   /** Parsed device string, e.g. "Chrome 141 / macOS". */
   client: string | null;
+  /** A short reference to the sign-in, not its id: 12 hex characters, the
+   *  same on every row that sign-in wrote. */
   session: string | null;
 }
 

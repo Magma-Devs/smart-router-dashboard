@@ -1,15 +1,14 @@
 # MAG-2729 — requirement coverage
 
 Every line of [MAG-2729](https://magmadevs.atlassian.net/browse/MAG-2729) ("Dashboard v2 (1/4) —
-Accounts and team") against what is on the branch, so the ticket can be checked off rather than
+Accounts and team") against what implements it, so the ticket can be checked off rather than
 taken on trust.
 
 | | |
 |---|---|
-| As of | 27 Sep 2026, `feat/MAG-2870-account-emails` (#147), rebased onto `main` after #121 and #122 merged |
 | Parent epic | [MAG-2686](https://magmadevs.atlassian.net/browse/MAG-2686) — Dashboard v2, config change + SOC 2 |
 | Design | [`ACCOUNTS-DESIGN.md`](./ACCOUNTS-DESIGN.md) (#109) · operator guide [`AUTH.md`](./AUTH.md) |
-| Acceptance | **11/11** of the checks on the ticket pass — [§4](#4-the-acceptance-checks) |
+| Acceptance | **11/11** of the checks on the ticket pass — [§4](#4-the-acceptance-checks), run at `8594841` ([§8](#8-how-this-was-verified)) |
 
 ## Verdict
 
@@ -20,17 +19,23 @@ sibling tickets.
 deployment shapes — 11/11 managed, 10/10 on-prem, where the eleventh is managed-only. [§4](#4-the-acceptance-checks)
 has the list and how each is exercised.
 
-**Managed-mode delivery has landed too.** It belongs to
+**Managed-mode delivery** belongs to
 [MAG-2870](https://magmadevs.atlassian.net/browse/MAG-2870) — "Account emails and the reset password
 page", carved out of this ticket deliberately, _"so the copy and the screen have one owner rather
-than being buried in the accounts ticket"_ — and that ticket is implemented in
-[#147](https://github.com/Magma-Devs/smart-router-dashboard/pull/147), on this branch. So the
-managed rows below are now green rather than deferred: invitations and resets are emailed, over SES.
+than being buried in the accounts ticket"_ — implemented in
+[#147](https://github.com/Magma-Devs/smart-router-dashboard/pull/147): invitations and resets are
+emailed, over SES.
 
-What remains belongs to three sibling tickets: the shared-login cutover ([MAG-3002](https://magmadevs.atlassian.net/browse/MAG-3002)), cancelling a
-removed person's pending config changes (MAG-2731 owns that table), and the audit log's own viewer,
-filtering and export (MAG-2770). This ticket emits into MAG-2770's writer; it does not own the
-reading side.
+**The audit log and 2FA are built, by their own tickets.** This ticket emits into MAG-2770's writer;
+the **Audit log** page reads it, with filters and a CSV export, and a pull API serves a security
+team's tooling ([`AUDIT.md`](./AUDIT.md)). 2FA is MAG-2730's and is required of everyone once
+accounts are on ([`TWO-FACTOR.md`](./TWO-FACTOR.md)), so the members table's 2FA column reads Yes
+or No. The fleet's tenant template turns accounts on for every new managed deployment
+([`AUTH.md`](./AUTH.md#deployment-modes)).
+
+What remains belongs to two sibling tickets: the shared-login cutover
+([MAG-3002](https://magmadevs.atlassian.net/browse/MAG-3002)) and cancelling a removed person's
+pending config changes (MAG-2731 owns that table).
 
 Three places where the code disagreed with the ticket were found and fixed on the branch — see
 [§7](#7-mismatches-found-and-fixed). The third arrived after the audit rather than during it:
@@ -120,7 +125,7 @@ Seven pull requests, stacked. `#115` is MAG-2770's writer, merged in because sli
 | An invite can only create the account it was issued for (replaced "redeemable only by the address it was sent to", 26 Aug 2026) | ✅ | **Structural**: the account is created with the invitation's address. A password redemption supplies no address. A Google or GitHub redemption supplies the provider's verified one, because those stay as ways in (§1); it must equal the invited address, or the route answers 403 and names the address to use |
 | Single-use; 7 days managed, 24 hours on-prem | ✅ | Exactly as specified |
 | Pending tab with sent and expiry dates; resend and revoke | ✅ | Resend mints a new token and kills the old link. Expiry needs no sweeper — the first read that observes it stamps the row, so `invite.expired` fires once |
-| Members table: name, email, role, 2FA, last active, joined | ✅ | 2FA renders `—`, not "No" — it is MAG-2730's, and "No" would be true today and wrong the day it ships |
+| Members table: name, email, role, 2FA, last active, joined | ✅ | 2FA reads Yes or No, from whether the person has set up an authenticator (MAG-2730); a No is red |
 | Change role, remove | ✅ | |
 | Removal is a state change, not a row deletion | ✅ | Sessions die immediately, the name stays in the log permanently, the address can be invited again |
 | Removal needs no approval; a dialog naming the person is enough | ✅ | |
@@ -129,7 +134,8 @@ Seven pull requests, stacked. `#115` is MAG-2770's writer, merged in because sli
 
 ### 3 · Audit log
 
-The log itself is MAG-2770. This ticket emits into it. All sixteen events are in the typed catalog
+The log itself is MAG-2770, read on the **Audit log** page ([`AUDIT.md`](./AUDIT.md)). This ticket
+emits into it. All sixteen events are in the typed catalog
 **and** fire from a call site — checked separately, because being catalogued does not mean being
 emitted. The last to arrive was `password.reset_requested`, which fires from the managed `POST
 /auth/password/forgot` that [MAG-2870](https://magmadevs.atlassian.net/browse/MAG-2870) turned on.
@@ -159,7 +165,7 @@ rename cannot rewrite history.
 | 7 | A removed person's sessions die, **pending requests are cancelled**, history stays, email re-invitable | ◐ three of four; cancellation is MAG-2731's |
 | 8 | Demoting someone takes effect on their current session | ✅ |
 | 9 | The member list shows role and last active, and exports | ✅ |
-| 10 | Every event is a row in the log, and the log filters and exports safely | ✅ emission; filtering and export are MAG-2770's |
+| 10 | Every event is a row in the log, and the log filters and exports safely | ✅ emission here; the **Audit log** page filters and exports it (MAG-2770) |
 
 ---
 
@@ -225,10 +231,8 @@ to `/login` and type — but a script can. It waits past the boundary now, and s
 | | State | Owner |
 |---|---|---|
 | Pending config changes cancelled on removal | `onMemberDeactivated` is a documented empty seam | MAG-2731 |
-| Shared login disabled at cutover | Not this repo. Per deployment, and blocked on this ticket merging — named accounts have to exist before the shared one can go | [MAG-3002](https://magmadevs.atlassian.net/browse/MAG-3002) |
+| Shared login disabled at cutover | Not this repo. Per deployment: named accounts have to exist before the shared one can go | [MAG-3002](https://magmadevs.atlassian.net/browse/MAG-3002) |
 | ~~Managed "Forgot password?" link on `/login`~~ | **Built.** `/forgot-password`, linked from the sign-in page; on-prem it says there is no mail server and points at an administrator | — |
-| Audit viewer, filtering, export | Out of scope by ticket text | MAG-2770 |
-| 2FA column populated | Out of scope by ticket text | MAG-2730 |
 | AWS/SES setup so managed can actually send | The code ships in MAG-2870; the verified domain, sandbox exit, DNS records and chart env do not. On-prem is unaffected — it sends nothing by design | [MAG-3003](https://magmadevs.atlassian.net/browse/MAG-3003) |
 
 ---
@@ -276,16 +280,14 @@ of an account takeover if the wrong person asked — which is also why the api r
 admin's address and device attached. There is no password field, and no endpoint that would accept
 one.
 
-### Cause 3 — sequencing. Four items another ticket must own.
+### Cause 3 — sequencing. Two items another ticket must own.
 
-Not oversights; the ticket hands most of them away in its own text.
+Not oversights: each needs something this repo does not hold.
 
 | | Why it cannot be done here |
 |---|---|
 | **Pending config changes cancelled on removal** | The ticket does ask for this, but MAG-2731 creates the change-request table — there is literally nothing to cancel yet. `onMemberDeactivated` is an empty function with a docblock saying so, so it lands in MAG-2731's path rather than being quietly dropped. **This is the handoff worth chasing**, because it is a requirement of *this* ticket that somebody else has to satisfy |
 | **Shared login disabled at cutover** | Not this repo. The chart change is ours, the customer-operated box is theirs |
-| **Audit viewer, filtering, export** | "The audit log moved out of this task into MAG-2770." We emit; they read |
-| **2FA column populated** | "Populated by task 3" (MAG-2730). The column renders `—` rather than "No", so it does not assert something that becomes false the day 2FA ships |
 
 ### The two "partial" marks, so they are not misread
 

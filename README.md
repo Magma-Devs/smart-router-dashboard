@@ -117,10 +117,13 @@ api checks. Without them everything works, only slower on long windows.
 Two modes via `AUTH_MODE` (full guide: [`docs/AUTH.md`](./docs/AUTH.md)):
 
 - **`disabled`** (default) — no login, no database. The dashboard opens straight on Metrics. For private/self-hosted deployments.
-- **`enabled`** — Auth.js v5 sign-in backed by Postgres (Drizzle), bcrypt credentials + optional Google/GitHub (each button appears only when its client id/secret pair is set), HS256 JWT shared between web and api. The first admin is created at `/setup` with the installer's setup token; everyone after that is invited.
+- **`enabled`** — Auth.js v5 sign-in backed by Postgres (Drizzle), bcrypt credentials + optional Google/GitHub (each button appears only when its client id/secret pair is set), HS256 JWT shared between web and api. The first admin is created at `/setup` with the installer's setup token; everyone after that is invited. Everyone sets up 2FA ([`docs/TWO-FACTOR.md`](./docs/TWO-FACTOR.md)), and every sign-in and account change is a row on the **Audit log** page ([`docs/AUDIT.md`](./docs/AUDIT.md)).
 
 ```bash
-AUTH_SECRET=$(openssl rand -base64 32) make up-auth
+export AUTH_SECRET=$(openssl rand -base64 32) \
+  TOTP_ENCRYPTION_KEY=$(openssl rand -base64 32) \
+  INTERNAL_AUTH_SECRET=$(openssl rand -base64 32)
+make up-auth
 # open :3000 — a fresh install redirects to /setup
 # setup token: the SETUP_TOKEN you set, or: docker compose logs api | grep -iE 'setup_?token'
 # (make dev-auth seeds a development admin instead — see docs/AUTH.md)

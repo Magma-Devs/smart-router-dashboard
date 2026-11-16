@@ -168,10 +168,8 @@ describe("the email", () => {
   it("says what happened, to which account, on which deployment", () => {
     const { subject, text } = render();
     expect(subject).toBe(EMAIL_SUBJECTS.two_factor_reset("Example Co"));
-    expect(subject).toBe("Your Smart Router two-factor authentication was reset");
-    expect(text).toContain(
-      "Two-factor authentication was reset on your account (dana@example.com)",
-    );
+    expect(subject).toBe("Your Smart Router 2FA was reset");
+    expect(text).toContain("2FA was reset on your account (dana@example.com)");
     expect(text).toContain("the Smart Router dashboard for Example Co");
   });
 
@@ -201,7 +199,7 @@ describe("the email", () => {
     expect(text).toContain("signed out on every device");
     expect(text).toContain("you'll be asked to set up an authenticator app again");
     expect(text).toContain(
-      "If you didn't ask for this, report it to your security team or another administrator",
+      "If you didn't ask for this, report it to your security team or another administrator right away.",
     );
     expect(html).toContain("If you didn't ask for this");
   });
@@ -276,7 +274,7 @@ describe("an admin's reset, managed, with a transport", () => {
     expect(ses.sent).toHaveLength(1);
     const mail = ses.sent[0]!;
     expect(mail.to).toEqual(["dana@example.com"]);
-    expect(mail.subject).toBe("Your Smart Router two-factor authentication was reset");
+    expect(mail.subject).toBe("Your Smart Router 2FA was reset");
     expect(mail.text).toContain("Reset by: Victoria Admin (victoria@example.com)\n");
     // To the minute, between the request going in and its answer coming back.
     const when = whenOf(mail.text);
@@ -303,7 +301,7 @@ describe("an admin's reset, managed, with a transport", () => {
     // The reset's own row is untouched: still in the reset's transaction,
     // still naming both people.
     const [resetRow] = await rows("2fa.reset");
-    expect(resetRow?.note).toBe("two-factor reset for dana@example.com");
+    expect(resetRow?.note).toBe("2FA reset for dana@example.com");
     expect(resetRow?.actorUserId).toBe(admin.id);
   });
 

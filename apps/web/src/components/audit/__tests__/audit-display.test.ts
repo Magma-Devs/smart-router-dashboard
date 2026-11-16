@@ -1,5 +1,13 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it } from "vitest";
-import { targetLabel } from "@/components/audit/bits";
+import {
+  actorEmail,
+  approvalField,
+  AuditDetail,
+  auditSheetHeading,
+  targetName,
+} from "@/components/audit/bits";
 import { auditExportPath, EMPTY_FILTERS, hasAnyFilter } from "@/components/audit/useAuditFeed";
 import type { AuditEventRecord } from "@sr/shared";
 
@@ -25,19 +33,111 @@ function event(over: Partial<AuditEventRecord> = {}): AuditEventRecord {
   };
 }
 
-describe("targetLabel", () => {
-  it("shows the name it had at the time, with the id that outlives a rename", () => {
-    expect(targetLabel(event())).toBe("eth-jsonrpc (ep_8143)");
+/** A refused sign-in for an address with no account: the typed address is
+ *  both the actor's name and email, and the target is that address. */
+const failedSignIn = (over: Partial<AuditEventRecord> = {}): AuditEventRecord =>
+  event({
+    action: "signin.failed",
+    group: "access",
+    actor: { type: "user", id: null, name: "dana@example.com", email: "dana@example.com" },
+    target: null,
+    note: "unknown address",
+    context: { ip: "203.0.113.7", client: "Firefox 140 / Linux", session: null },
+    ...over,
   });
 
-  it("falls back to the id alone rather than printing an empty bracket", () => {
-    expect(targetLabel(event({ target: { type: "endpoint", id: "ep_8143", name: null } }))).toBe(
-      "ep_8143",
-    );
+const detail = (e: AuditEventRecord) =>
+  renderToStaticMarkup(createElement(AuditDetail, { event: e }));
+const count = (html: string, text: string) => html.split(text).length - 1;
+
+describe("targetName", () => {
+  it("shows the name it had at the time and leaves the id to the detail sheet", () => {
+    expect(targetName(event())).toBe("eth-jsonrpc");
+  });
+
+  it("falls back to the kind of object rather than a long id", () => {
+    const unnamed = event({
+      target: { type: "session", id: "4f1e9a0c-1b2d-4e3f-8a9b-0c1d2e3f4a5b", name: null },
+    });
+    expect(targetName(unnamed)).toBe("session");
   });
 
   it("is null when the event acted on nothing", () => {
-    expect(targetLabel(event({ target: null }))).toBeNull();
+    expect(targetName(event({ target: null }))).toBeNull();
+  });
+});
+
+describe("actorEmail", () => {
+  it("is the address when it says more than the name", () => {
+    expect(actorEmail(event().actor)).toBe("dana@customer.com");
+  });
+
+  /** A failed sign-in records the typed address as the name too. */
+  it("is null when the name already is the address, in any case", () => {
+    expect(actorEmail(failedSignIn().actor)).toBeNull();
+    expect(
+      actorEmail({ type: "user", id: null, name: "Dana@Example.com", email: "dana@example.com" }),
+    ).toBeNull();
+  });
+
+  it("is null for an actor with no address", () => {
+    expect(actorEmail({ type: "host", id: null, name: "root", email: null })).toBeNull();
+  });
+});
+
+describe("approvalField", () => {
+  it("names the request a change came from", () => {
+    expect(approvalField(event({ request: "req_31" }))).toEqual({ request: "req_31" });
+  });
+
+  /** Approval events are not written, so "not required" would describe a
+   *  check that does not exist. */
+  it("shows no field while approvals are not written", () => {
+    expect(approvalField(event())).toBeNull();
+    expect(approvalField(failedSignIn())).toBeNull();
+  });
+
+  it("says not required for a config change once approvals are written, and nothing for a sign-in", () => {
+    expect(approvalField(event(), true)).toBe("not required");
+    expect(approvalField(failedSignIn(), true)).toBeNull();
+  });
+});
+
+describe("auditSheetHeading", () => {
+  it("titles the sheet with the event's name and its group's name", () => {
+    expect(auditSheetHeading(failedSignIn())).toEqual({
+      title: "Sign-in failed",
+      sub: "dana@example.com · Access",
+    });
+    expect(auditSheetHeading(event({ action: "2fa.reset", group: "2fa" })).sub).toBe(
+      "Dana Levi · 2FA",
+    );
+  });
+});
+
+describe("AuditDetail", () => {
+  /** The emails state times in UTC; the sheet gives the instant in UTC beside
+   *  the reader's own, so a row can be matched with the notice it sent. */
+  it("gives the time in UTC as well", () => {
+    expect(detail(event())).toMatch(
+      /<time dateTime="2026-08-09T14:22:07.000Z"[^>]*>Aug 9, 2026, 14:22:07 UTC<\/time>/,
+    );
+  });
+
+  it("keeps the event's code and the target's id", () => {
+    const html = detail(event());
+    expect(html).toContain("endpoint.providers.changed");
+    expect(html).toContain("eth-jsonrpc");
+    expect(html).toContain("endpoint · ep_8143");
+  });
+
+  it("shows no approval field while approvals are not written", () => {
+    expect(detail(event())).not.toContain("Approval request");
+    expect(detail(event({ request: "req_31" }))).toContain("req_31");
+  });
+
+  it("names a failed sign-in's address once", () => {
+    expect(count(detail(failedSignIn()), "dana@example.com")).toBe(1);
   });
 });
 

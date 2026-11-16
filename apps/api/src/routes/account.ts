@@ -95,6 +95,9 @@ export async function accountRoutes(app: FastifyInstance) {
         name: me.user.name,
         avatarUrl: me.user.avatarUrl,
         role: me.user.role,
+        // The Account page lists these beside the providers the deployment
+        // offers, which only the web's env knows.
+        linkedProviders: { google: Boolean(me.user.googleId), github: Boolean(me.user.githubId) },
         twoFactor: {
           enrolled: twoFactor.enrolled,
           enrolmentRequired: twoFactor.enrolmentRequired,
@@ -130,7 +133,7 @@ export async function accountRoutes(app: FastifyInstance) {
           statusCode: 409,
           error: "Conflict",
           message:
-            "Two-factor authentication is already set up for this account. An administrator can reset it if you have lost your phone.",
+            "2FA is already set up for this account. Lost your phone? Ask an admin to reset your 2FA.",
         });
       }
 
@@ -143,7 +146,7 @@ export async function accountRoutes(app: FastifyInstance) {
             statusCode: 409,
             error: "Conflict",
             message:
-              "Two-factor authentication is already set up for this account. An administrator can reset it if you have lost your phone.",
+              "2FA is already set up for this account. Lost your phone? Ask an admin to reset your 2FA.",
           });
         }
       } catch (err) {
@@ -155,8 +158,7 @@ export async function accountRoutes(app: FastifyInstance) {
         return reply.code(503).send({
           statusCode: 503,
           error: "Service Unavailable",
-          message:
-            "Two-factor authentication is not configured on this deployment. TOTP_ENCRYPTION_KEY is not set.",
+          message: "2FA isn't set up on this deployment. Ask whoever runs it.",
         });
       }
 
@@ -386,12 +388,24 @@ export async function accountRoutes(app: FastifyInstance) {
 
       // Everything, this device included — and the cutoff too, so a token we
       // hold no row for dies with the rest.
-      const count = (await signOutEverywhere(db, me.id, { reason: "sign_out_all", by: me.id })).length;
+      const ended = await signOutEverywhere(db, me.id, { reason: "sign_out_all", by: me.id });
+      const count = ended.length;
+      // One row per session, as every other way a session ends has: this
+      // device is its holder signing out, and every other one is revoked.
+      for (const id of ended.filter((s) => s !== me.sessionId)) {
+        await audit.write({
+          action: "session.revoked",
+          actor: { id: me.id, kind: "user" },
+          target: { type: "session", id, name: me.user.email },
+          access: accessFrom(request, me.sessionId),
+          note: "signed out everywhere",
+        });
+      }
       await audit.write({
         action: "signout",
         actor: { id: me.id, kind: "user" },
         access: accessFrom(request, me.sessionId),
-        note: `signed out of ${count} device${count === 1 ? "" : "s"}`,
+        note: `signed out everywhere, ${count} device${count === 1 ? "" : "s"}`,
       });
 
       return { ok: true, revoked: count };

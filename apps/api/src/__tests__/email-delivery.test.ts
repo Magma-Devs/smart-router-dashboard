@@ -122,7 +122,7 @@ describe("inviting on-prem", () => {
     // The role and expiry MAG-2729 asks this row for come first; the delivery
     // record is what follows the semicolon.
     expect(await lastNote("member.invited")).toMatch(
-      /^as read_only, expires \S+; link shown to the admin$/,
+      /^as Read-only, expires \S+; link shown to the admin$/,
     );
   });
 });
@@ -162,7 +162,7 @@ describe("inviting on managed, with no transport configured", () => {
     // The role and expiry MAG-2729 asks this row for come first; the delivery
     // record is what follows the semicolon.
     expect(await lastNote("member.invited")).toMatch(
-      /^as read_only, expires \S+; link shown to the admin$/,
+      /^as Read-only, expires \S+; link shown to the admin$/,
     );
   });
 
@@ -255,6 +255,47 @@ describe("forgot-password on managed, with a transport", () => {
   const forgot = (email: string) =>
     app!.inject({ method: "POST", url: "/auth/password/forgot", payload: { email } });
 
+  /** Every `password.reset_requested` row, as (address, note), by address. */
+  async function requestNotes(): Promise<Array<{ email: string | null; note: string | null }>> {
+    const rows = await t.db
+      .select({ email: auditEvents.actorEmail, note: auditEvents.note })
+      .from(auditEvents)
+      .where(eq(auditEvents.action, "password.reset_requested"))
+      .orderBy(auditEvents.actorEmail);
+    return rows;
+  }
+
+  it("records a request that sends nothing, saying why, in the reply every address gets", async () => {
+    await managedWithDana();
+    const [removed] = await t.db
+      .insert(users)
+      .values({ email: "gone@example.com", status: "removed", removedAt: new Date() })
+      .returning();
+    await t.db.insert(users).values({ email: "oauth@example.com", githubId: "gh-1" });
+
+    const replies = await Promise.all(
+      ["nobody@example.com", "gone@example.com", "oauth@example.com"].map((e) => forgot(e)),
+    );
+    for (const r of replies) {
+      expect(r.statusCode).toBe(202);
+      expect(r.json()).toEqual({ ok: true });
+    }
+
+    await expect.poll(() => requestNotes()).toHaveLength(3);
+    expect(await requestNotes()).toEqual([
+      { email: "gone@example.com", note: "not sent, account removed" },
+      { email: "nobody@example.com", note: "not sent, no account with this address" },
+      { email: "oauth@example.com", note: "not sent, the account has no password" },
+    ]);
+    // The removed account is named, as a refused sign-in at its address is.
+    const [row] = await t.db
+      .select({ actor: auditEvents.actorUserId })
+      .from(auditEvents)
+      .where(eq(auditEvents.actorEmail, "gone@example.com"));
+    expect(row?.actor).toBe(removed!.id);
+    expect(ses.sent).toEqual([]);
+  });
+
   it("emails the link, answers 202 for every address, and never returns the link", async () => {
     await managedWithDana();
 
@@ -264,7 +305,11 @@ describe("forgot-password on managed, with a transport", () => {
     expect(known.statusCode).toBe(202);
     expect(known.json()).toEqual({ ok: true });
     expect(unknown.json()).toEqual(known.json());
-    expect(await waitForNote("password.reset_requested")).toBe("emailed");
+    await expect.poll(() => requestNotes()).toHaveLength(2);
+    expect(await requestNotes()).toEqual([
+      { email: "dana@example.com", note: "emailed" },
+      { email: "nobody@example.com", note: "not sent, no account with this address" },
+    ]);
     expect(ses.sent.map((m) => m.to)).toEqual([["dana@example.com"]]);
     expect(ses.sent[0]!.text).toMatch(/https:\/\/dash\.example\.com\/reset\/[A-Za-z0-9_-]+/);
   });
@@ -431,7 +476,11 @@ describe("the reset-link preview", () => {
     for (const answer of answers) {
       expect(answer).toEqual({
         status: 410,
-        body: { statusCode: 410, error: "Gone", message: "This link has expired." },
+        body: {
+          statusCode: 410,
+          error: "Gone",
+          message: "This link no longer works. It may have been used, replaced or expired.",
+        },
       });
     }
   });
@@ -469,9 +518,39 @@ describe("inviting on managed, with a transport", () => {
     expect(body).not.toHaveProperty("url");
     expect(ses.sent).toHaveLength(1);
     expect(ses.sent[0]!.to).toEqual(["dana@example.com"]);
-    expect(ses.sent[0]!.subject).toBe("You've been added to Example Co on Smart Router");
+    // The inviter is the admin who sent it (`boot` names them "Admin"), and the
+    // role is the one picked, by its label.
+    expect(ses.sent[0]!.subject).toBe(
+      "Admin invited you to the Smart Router dashboard for Example Co",
+    );
+    expect(ses.sent[0]!.text).toContain("Invited by Admin (admin@example.com) as Approver.");
     expect(ses.sent[0]!.text).toMatch(/https:\/\/dash\.example\.com\/invite\/[A-Za-z0-9_-]+/);
-    expect(await lastNote("member.invited")).toMatch(/^as approver, expires \S+; emailed$/);
+    expect(await lastNote("member.invited")).toMatch(/^as Approver, expires \S+; emailed$/);
+  });
+
+  it("names the admin who resent it, and the invitation's role, on a resend", async () => {
+    const token = await boot("managed");
+    setEnv({ ...fakeSesEnv(ses), CUSTOMER_NAME: "Example Co" });
+    resetEmailClientForTests();
+    const created = await app!.inject({
+      method: "POST",
+      url: "/api/team/invites",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { email: "dana@example.com", role: "requester" },
+    });
+    const id = created.json().invite.id as string;
+    const res = await app!.inject({
+      method: "POST",
+      url: `/api/team/invites/${id}/resend`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(ses.sent).toHaveLength(2);
+    expect(ses.sent[1]!.subject).toBe(
+      "Admin invited you to the Smart Router dashboard for Example Co",
+    );
+    expect(ses.sent[1]!.text).toContain("Invited by Admin (admin@example.com) as Requester.");
   });
 
   it("hands the admin the link when SES refuses, and says the email failed", async () => {
@@ -483,7 +562,7 @@ describe("inviting on managed, with a transport", () => {
     expect(body.deliveryFallback).toBe(true);
     expect(String(body.url)).toContain("https://dash.example.com/invite/");
     expect(await lastNote("member.invited")).toMatch(
-      /^as approver, expires \S+; email failed, link shown to the admin$/,
+      /^as Approver, expires \S+; email failed, link shown to the admin$/,
     );
   });
 });

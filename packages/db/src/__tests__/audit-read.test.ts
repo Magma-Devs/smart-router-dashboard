@@ -4,6 +4,7 @@ import { createTestDb, type TestDb } from "../testing.js";
 import { createAuditWriter } from "../audit.js";
 import {
   auditFilterFingerprint,
+  auditSessionRef,
   checkAuditCursor,
   decodeAuditCursor,
   encodeAuditCursor,
@@ -283,6 +284,78 @@ describe("listAuditEvents", () => {
     const first = await listAuditEvents(t.db);
     const again = await listAuditEvents(t.db);
     expect(again.items[0]?.id).toBe(first.items[0]?.id);
+  });
+});
+
+describe("session references", () => {
+  const SID = "6f1c2a9e-4b7d-4e0a-9c3f-1d2e3f4a5b6c";
+  const OTHER = "0b8e7d6c-5a4f-4e3d-8c2b-1a0f9e8d7c6b";
+
+  /** A sign-in, a revoke of that session, and one config row whose object
+   *  id happens to look like a reference. */
+  async function seed(): Promise<void> {
+    const w = writer();
+    await w.write({
+      action: "signin.succeeded",
+      actor: { id: null, kind: "system" },
+      access: { ip: "203.0.113.64", client: "Chrome 141 / macOS", sessionId: SID },
+    });
+    await w.write({
+      action: "session.revoked",
+      actor: { id: null, kind: "system" },
+      target: { type: "session", id: SID, name: "dana@customer.com" },
+      access: { ip: "203.0.113.64", client: "Chrome 141 / macOS", sessionId: OTHER },
+    });
+    await w.write({
+      action: "endpoint.deleted",
+      actor: { id: null, kind: "system" },
+      target: { type: "endpoint", id: "abcdef012345", name: "eth-jsonrpc" },
+      changes: [{ field: "host", from: "eth.example.com", to: "(deleted)" }],
+    });
+  }
+
+  it("is 12 hex characters, the same for the same id and different for another", () => {
+    expect(auditSessionRef(SID)).toMatch(/^[0-9a-f]{12}$/);
+    expect(auditSessionRef(SID)).toBe(auditSessionRef(SID.toUpperCase()));
+    expect(auditSessionRef(SID)).not.toBe(auditSessionRef(OTHER));
+    expect(SID.replaceAll("-", "")).not.toContain(auditSessionRef(SID));
+  });
+
+  it("names a session by its reference and never by its id", async () => {
+    await seed();
+    const page = await listAuditEvents(t.db);
+
+    expect(JSON.stringify(page.items)).not.toContain(SID);
+    expect(JSON.stringify(page.items)).not.toContain(OTHER);
+    const [signin, revoked, deleted] = page.items;
+    expect(signin?.context?.session).toBe(auditSessionRef(SID));
+    expect(revoked?.context?.session).toBe(auditSessionRef(OTHER));
+    expect(revoked?.target).toEqual({
+      type: "session",
+      id: auditSessionRef(SID),
+      name: "dana@customer.com",
+    });
+    // Any other object keeps its own id.
+    expect(deleted?.target?.id).toBe("abcdef012345");
+  });
+
+  it("filters a session target by the reference the feed shows, not by its id", async () => {
+    await seed();
+
+    const byRef = await listAuditEvents(t.db, { targetId: auditSessionRef(SID) });
+    expect(byRef.items.map((i) => i.action)).toEqual(["session.revoked"]);
+
+    const byTypedRef = await listAuditEvents(t.db, {
+      targetType: "session",
+      targetId: auditSessionRef(SID).toUpperCase(),
+    });
+    expect(byTypedRef.items.map((i) => i.action)).toEqual(["session.revoked"]);
+
+    expect((await listAuditEvents(t.db, { targetId: SID })).items).toEqual([]);
+
+    // An object id shaped like a reference still matches as itself.
+    const byObject = await listAuditEvents(t.db, { targetId: "abcdef012345" });
+    expect(byObject.items.map((i) => i.action)).toEqual(["endpoint.deleted"]);
   });
 });
 

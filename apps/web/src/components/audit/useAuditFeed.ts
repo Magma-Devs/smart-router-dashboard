@@ -27,7 +27,7 @@ import {
  */
 
 export interface AuditFilters {
-  /** One of `AUDIT_GROUPS`, or empty for all. */
+  /** One of `FILTER_GROUPS`, or empty for all. */
   group: string;
   /** Email address. The API also takes a user id, but a free-text box that
    *  rejects "dana" is a poor control, so this one is labelled and validated

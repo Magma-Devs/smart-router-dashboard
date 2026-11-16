@@ -5,7 +5,15 @@ import { signIn } from "next-auth/react";
 import { TOTP_DIGITS } from "@sr/shared";
 import { apiUrl } from "@/lib/api-client";
 import { HOME_PATH } from "@/lib/home-path";
+import { AuthHeader, AuthScreen } from "./auth-screen";
+import { emailProblem, hasErrors } from "./field-checks";
+import { Field, FormError } from "./form-fields";
 import { enabledProviders, type ProviderFlags } from "./oauth-providers";
+
+/** A lockout is not a wrong password: saying "invalid" to someone with the
+ *  right one sends them to try again, which keeps them locked. 15 minutes is the
+ *  api's window (`LOCKOUT_WINDOW_MS`), the longest a lock can last. */
+export const LOCKED = "Too many failed attempts. Try again in 15 minutes, or reset your password.";
 
 /**
  * Sign-in: email and password, then — for an account with an authenticator —
@@ -37,6 +45,13 @@ type Stage =
    *  the httpOnly handoff cookie and `handoff` names the provider instead. */
   | { name: "code"; challenge: string | null; handoff?: "google" | "github" };
 
+/** What the first step checks before asking the api. Says nothing about the
+ *  account: an empty field and a malformed address, nothing more. */
+function credentialErrors(email: string, password: string) {
+  return { email: emailProblem(email), password: password ? null : "Enter your password." };
+}
+const NO_ERRORS = { email: null, password: null };
+
 interface SignInPhaseOne {
   twoFactorRequired?: boolean;
   challenge?: string;
@@ -45,10 +60,14 @@ interface SignInPhaseOne {
 export function LoginForm({
   providers,
   pendingCode,
+  notice,
 }: {
   providers: ProviderFlags;
   /** Back from a Google or GitHub sign-in whose account has an authenticator. */
   pendingCode?: { email: string; provider: "google" | "github" };
+  /** Why the browser was sent here (`lib/sign-in-notice.ts`), shown above the
+   *  form. Never a sign-in failure, which stays generic. */
+  notice?: string | null;
 }) {
   const [email, setEmail] = useState(pendingCode?.email ?? "");
   const [password, setPassword] = useState("");
@@ -59,6 +78,7 @@ export function LoginForm({
       : { name: "credentials" },
   );
   const [error, setError] = useState<string | null>(null);
+  const [submitted, setSubmitted] = useState(false);
   const [busy, setBusy] = useState(false);
   const codeRef = useRef<HTMLInputElement>(null);
   const providerBadges = enabledProviders(providers);
@@ -67,10 +87,6 @@ export function LoginForm({
    *  gives a generic error with no hint about which factor failed" — so the
    *  wording cannot change between the two screens either. */
   const GENERIC = "Invalid email or password.";
-  /** A lockout is not a wrong password: saying "invalid" to someone with the
-   *  right one sends them to try again, which keeps them locked. */
-  const LOCKED =
-    "Too many failed attempts on this account. It unlocks within 15 minutes — or ask an administrator for a reset link.";
   /** The per-network limit, not the account's lockout — and not a wrong
    *  password, which is what "invalid" would tell somebody who typed it right. */
   const THROTTLED = "Too many sign-in attempts from this network. Wait a minute and try again.";
@@ -82,12 +98,18 @@ export function LoginForm({
     setStage({ name: "credentials" });
     setCode("");
     setPassword("");
+    setSubmitted(false);
     setError(message);
     if (window.location.search) window.history.replaceState(null, "", "/login");
   }
 
+  // Shown once a submit has been tried, then kept current as they type.
+  const fieldErrors = submitted ? credentialErrors(email, password) : NO_ERRORS;
+
   async function submitCredentials(e: FormEvent) {
     e.preventDefault();
+    setSubmitted(true);
+    if (hasErrors(credentialErrors(email, password))) return;
     setBusy(true);
     setError(null);
     try {
@@ -163,69 +185,42 @@ export function LoginForm({
   }
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "var(--bg)",
-        padding: 24,
-      }}
-    >
+    <AuthScreen>
       <div className="gw-card" style={{ width: "100%", maxWidth: 380, padding: 32 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/magma-logo.png"
-            width={32}
-            height={32}
-            alt="Magma"
-            style={{ objectFit: "contain" }}
-          />
-          <div>
-            <div style={{ fontWeight: 700, fontSize: 16 }}>Smart Router Dashboard</div>
-            <div style={{ fontSize: 12, color: "var(--text-3)" }}>
-              {stage.name === "code" ? "Enter your authenticator code" : "Sign in to continue"}
-            </div>
-          </div>
-        </div>
+        <AuthHeader
+          title="Smart Router Dashboard"
+          subtitle={stage.name === "code" ? "Enter your authenticator code" : "Sign in to continue"}
+        />
 
         {stage.name === "credentials" ? (
-          <form onSubmit={submitCredentials} style={{ display: "grid", gap: 12 }}>
-            <label style={{ display: "grid", gap: 6, fontSize: 12, color: "var(--text-2)" }}>
-              Email
-              <input
-                className="gw-input"
-                type="email"
-                autoComplete="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-              />
-            </label>
-            <label style={{ display: "grid", gap: 6, fontSize: 12, color: "var(--text-2)" }}>
-              Password
-              <input
-                className="gw-input"
-                type="password"
-                autoComplete="current-password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-              />
-            </label>
-
-            {error && (
-              <div
-                role="alert"
-                style={{ fontSize: 12, color: "var(--danger, #f43)", marginTop: -4 }}
+          <form noValidate onSubmit={submitCredentials} style={{ display: "grid", gap: 12 }}>
+            {notice && (
+              <p
+                role="status"
+                style={{ fontSize: 12.5, color: "var(--text-2)", lineHeight: 1.6, margin: 0 }}
               >
-                {error}
-              </div>
+                {notice}
+              </p>
             )}
+            <Field
+              label="Email"
+              type="email"
+              autoComplete="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              error={fieldErrors.email}
+            />
+            <Field
+              label="Password"
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              error={fieldErrors.password}
+            />
+
+            <FormError message={error} />
 
             <button
               className="gw-btn gw-btn--primary"
@@ -236,9 +231,9 @@ export function LoginForm({
               {busy ? "Signing in…" : "Sign in"}
             </button>
             {/* Managed sends a link; on-prem's api answers 404 and the page says
-                to ask an administrator. Shown in both shapes rather than hidden
-                on-prem — somebody who cannot sign in needs a next step, and a
-                missing link is not one. */}
+              to ask an administrator. Shown in both shapes rather than hidden
+              on-prem — somebody who cannot sign in needs a next step, and a
+              missing link is not one. */}
             <a
               href="/forgot-password"
               style={{
@@ -253,7 +248,7 @@ export function LoginForm({
             </a>
           </form>
         ) : (
-          <form onSubmit={submitCode} style={{ display: "grid", gap: 12 }}>
+          <form noValidate onSubmit={submitCode} style={{ display: "grid", gap: 12 }}>
             <p style={{ fontSize: 12, color: "var(--text-3)", margin: 0 }}>
               Open your authenticator app and enter the {TOTP_DIGITS}-digit code for{" "}
               <strong style={{ color: "var(--text-2)" }}>{email}</strong>.
@@ -269,7 +264,6 @@ export function LoginForm({
                 autoComplete="one-time-code"
                 pattern="[0-9]*"
                 maxLength={TOTP_DIGITS}
-                required
                 value={code}
                 onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
                 placeholder="000000"
@@ -277,14 +271,7 @@ export function LoginForm({
               />
             </label>
 
-            {error && (
-              <div
-                role="alert"
-                style={{ fontSize: 12, color: "var(--danger, #f43)", marginTop: -4 }}
-              >
-                {error}
-              </div>
-            )}
+            <FormError message={error} />
 
             <button
               className="gw-btn gw-btn--primary"
@@ -302,7 +289,7 @@ export function LoginForm({
               Back
             </button>
             <p style={{ fontSize: 11, color: "var(--text-4)", margin: 0, textAlign: "center" }}>
-              Lost your phone? An administrator can reset your two-factor setup.
+              Lost your phone? An administrator can reset your 2FA.
             </p>
           </form>
         )}
@@ -329,7 +316,12 @@ export function LoginForm({
                   key={p.id}
                   type="button"
                   className="gw-btn gw-btn--ghost"
-                  style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 8,
+                  }}
                   onClick={() => void signIn(p.id, { redirectTo: HOME_PATH })}
                 >
                   {p.icon}
@@ -340,6 +332,6 @@ export function LoginForm({
           </>
         )}
       </div>
-    </main>
+    </AuthScreen>
   );
 }

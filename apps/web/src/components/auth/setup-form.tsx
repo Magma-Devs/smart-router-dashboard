@@ -5,6 +5,9 @@ import { signIn } from "next-auth/react";
 import { apiUrl } from "@/lib/api-client";
 import { HOME_PATH } from "@/lib/home-path";
 import { BusyButton } from "@/components/gateway/BusyButton";
+import { AuthHeader, AuthScreen } from "./auth-screen";
+import { emailProblem, hasErrors, newPasswordErrors } from "./field-checks";
+import { Field, FormError, NewPasswordFields } from "./form-fields";
 
 /**
  * First-run: the screen that turns a fresh install into one with a named admin.
@@ -24,15 +27,21 @@ export function SetupForm({ mode }: { mode: "managed" | "onprem" }) {
   // Two requests and then a page load sit behind one click; the label says
   // which of them is running, so a slow one never looks like nothing.
   const [busyLabel, setBusyLabel] = useState("Creating…");
+  const [submitted, setSubmitted] = useState(false);
 
+  // Every field's error once a submit has been tried; a mismatch shows sooner.
+  const errorsFor = (tried: boolean) => ({
+    token: tried && !token ? "Enter the setup token." : null,
+    email: tried ? emailProblem(email) : null,
+    ...newPasswordErrors(password, repeat, tried),
+  });
+  const fieldErrors = errorsFor(submitted);
   const mismatch = repeat.length > 0 && password !== repeat;
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    if (password !== repeat) {
-      setError("Those passwords don't match.");
-      return;
-    }
+    setSubmitted(true);
+    if (hasErrors(errorsFor(true))) return;
     setBusyLabel("Creating…");
     setBusy(true);
     setError(null);
@@ -75,131 +84,69 @@ export function SetupForm({ mode }: { mode: "managed" | "onprem" }) {
     }
   }
 
-  const labelStyle = { display: "grid", gap: 6, fontSize: 12, color: "var(--text-2)" } as const;
-
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "var(--bg)",
-        padding: 24,
-      }}
-    >
+    <AuthScreen>
       <div className="gw-card" style={{ width: "100%", maxWidth: 420, padding: 32 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/magma-logo.png" width={32} height={32} alt="Magma" style={{ objectFit: "contain" }} />
-          <div>
-            <div style={{ fontWeight: 700, fontSize: 16 }}>Set up this dashboard</div>
-            <div style={{ fontSize: 12, color: "var(--text-3)" }}>
-              Create the first administrator
-            </div>
-          </div>
-        </div>
+        <AuthHeader title="Set up this dashboard" subtitle="Create the first administrator" />
 
-        <p style={{ fontSize: 12.5, color: "var(--text-2)", marginTop: 0, marginBottom: 20, lineHeight: 1.6 }}>
-          {/* Explicit separators: JSX trims the whitespace bordering an
-              expression, and React splits the text nodes, so a bare " — " here
-              renders flush against the preceding word. */}
+        <p
+          style={{
+            fontSize: 12.5,
+            color: "var(--text-2)",
+            marginTop: 0,
+            marginBottom: 20,
+            lineHeight: 1.6,
+          }}
+        >
           Nothing else opens until this is done. You&apos;ll need the setup token{" "}
-          {mode === "onprem" ? "printed by the installer" : "we sent you"}
-          {" — "}it proves you&apos;re the person who installed this, and it&apos;s
-          only needed once.
+          {mode === "onprem" ? "printed by the installer" : "we sent you"}. It proves you&apos;re
+          the person who installed this, and it&apos;s only needed once.
         </p>
 
-        <form onSubmit={onSubmit} style={{ display: "grid", gap: 12 }}>
-          <label style={labelStyle}>
-            Setup token
-            <input
-              className="gw-input"
-              readOnly={busy}
-              type="password"
-              autoComplete="off"
-              required
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              placeholder="From the installer output"
-            />
-          </label>
-          <label style={labelStyle}>
-            <span>
-              Your name <span style={{ color: "var(--text-3)" }}>(optional)</span>
-            </span>
-            <input
-              className="gw-input"
-              readOnly={busy}
-              type="text"
-              autoComplete="name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Dana Levi"
-            />
-          </label>
-          <label style={labelStyle}>
-            Email
-            <input
-              className="gw-input"
-              readOnly={busy}
-              type="email"
-              autoComplete="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@yourcompany.com"
-            />
-          </label>
-          <label style={labelStyle}>
-            Password
-            <input
-              className="gw-input"
-              readOnly={busy}
-              type="password"
-              autoComplete="new-password"
-              required
-              minLength={8}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="At least 8 characters"
-            />
-          </label>
-          <label style={labelStyle}>
-            Repeat password
-            <input
-              className="gw-input"
-              readOnly={busy}
-              type="password"
-              autoComplete="new-password"
-              required
-              value={repeat}
-              onChange={(e) => setRepeat(e.target.value)}
-              placeholder="••••••••"
-              aria-invalid={mismatch}
-            />
-          </label>
+        <form noValidate onSubmit={onSubmit} style={{ display: "grid", gap: 12 }}>
+          <Field
+            label="Setup token"
+            readOnly={busy}
+            type="password"
+            autoComplete="off"
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+            placeholder="From the installer output"
+            error={fieldErrors.token}
+          />
+          <Field
+            label={
+              <span>
+                Your name <span style={{ color: "var(--text-3)" }}>(optional)</span>
+              </span>
+            }
+            readOnly={busy}
+            type="text"
+            autoComplete="name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Dana Levi"
+          />
+          <Field
+            label="Email"
+            readOnly={busy}
+            type="email"
+            autoComplete="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@yourcompany.com"
+            error={fieldErrors.email}
+          />
+          <NewPasswordFields
+            password={password}
+            repeat={repeat}
+            onPassword={setPassword}
+            onRepeat={setRepeat}
+            errors={fieldErrors}
+            readOnly={busy}
+          />
 
-          <p style={{ fontSize: 11.5, color: "var(--text-3)", margin: "2px 0 0", lineHeight: 1.5 }}>
-            Any characters, 8 to 64. Checked against known breached passwords — there are no
-            other rules, and it never expires.
-          </p>
-
-          {(error ?? (mismatch ? "Those passwords don't match." : null)) && (
-            <div
-              role="alert"
-              style={{
-                fontSize: 12,
-                color: "var(--err)",
-                background: "rgba(239,68,68,0.08)",
-                border: "1px solid rgba(239,68,68,0.25)",
-                borderRadius: 7,
-                padding: "8px 10px",
-              }}
-            >
-              {error ?? "Those passwords don't match."}
-            </div>
-          )}
+          <FormError message={error} />
 
           <BusyButton
             className="gw-btn gw-btn--primary"
@@ -213,6 +160,6 @@ export function SetupForm({ mode }: { mode: "managed" | "onprem" }) {
           </BusyButton>
         </form>
       </div>
-    </main>
+    </AuthScreen>
   );
 }
