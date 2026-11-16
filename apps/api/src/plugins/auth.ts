@@ -317,6 +317,10 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
     // CORS preflights carry no headers and are answered by @fastify/cors.
     if (request.method === "OPTIONS") return;
 
+    // These three read-only routes authenticate a current MCP staff principal
+    // independently. A dashboard JWT/admin role never grants record access.
+    if (request.method === "GET" && ["/api/internal/ask/records", "/api/internal/ask/export", "/api/internal/ask/health"].includes(request.url.split("?")[0] ?? "")) return;
+
     const isPublic = isPublicPath(request.url);
 
     // An audit token is a different kind of principal, so it is resolved before

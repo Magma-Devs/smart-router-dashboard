@@ -384,3 +384,4 @@ export type LoginAttempt = typeof loginAttempts.$inferSelect;
  *  `import * as schema` still sees every table. */
 export * from "./schema-audit.js";
 export * from "./schema-ask.js";
+export * from "./schema-ask-accounting.js";

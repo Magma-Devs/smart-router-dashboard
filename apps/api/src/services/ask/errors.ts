@@ -9,6 +9,7 @@ const messages: Record<AskErrorCode, string> = {
   ASK_CONFLICT: "This retry does not match the original question.",
   ASK_ACTIVE_RUN: "A question is already processing. Wait or stop it first.",
   ASK_BUDGET_LIMIT: "Your customer's question limit has been reached. Please try again next month.",
+  ASK_BUDGET_BUSY: "Other questions are using the available capacity. Please try again shortly.",
   ASK_MCP_UNAVAILABLE: "Your data sources are temporarily unavailable.",
   ASK_IDENTITY_MISMATCH: "Your data connection could not be verified.",
   ASK_TOOL_DENIED: "The requested data operation is unavailable.",

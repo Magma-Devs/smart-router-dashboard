@@ -13,6 +13,7 @@ import type { AskSettings } from "../../config.js";
 import {
   BedrockAdapter,
   type BedrockMessage,
+  type BedrockInput,
   type BedrockReceipt,
   type BedrockUsage,
 } from "./bedrock.js";
@@ -22,7 +23,11 @@ import { redactAskData, redactAskText } from "./redact.js";
 
 export interface AskExecutionHooks {
   checkActive: () => Promise<void>;
-  beforeModelStep: (bounds: { inputBytes: number; outputTokens: number }) => Promise<string>;
+  beforeModelStep: (bounds: {
+    input: BedrockInput;
+    inputBytes: number;
+    outputTokens: number;
+  }) => Promise<string>;
   modelDispatched: (stepId: string) => Promise<void>;
   recordUsage: (
     stepId: string,
@@ -163,6 +168,7 @@ export class AskOrchestrator {
         if (Buffer.byteLength(JSON.stringify(input)) > this.settings.maxContextBytes)
           throw new AskFailure("ASK_LIMIT_REACHED", 422);
         const stepId = await hooks.beforeModelStep({
+          input,
           inputBytes: this.settings.maxContextBytes,
           outputTokens: this.settings.maxOutputTokens,
         });
@@ -230,7 +236,29 @@ export class AskOrchestrator {
             throw new AskFailure("ASK_TOOL_DENIED", 403);
           const { sourceId, operationId, parameters } = request.data;
           const started = performance.now();
-          const rawResult = await connection.read(sourceId, operationId, parameters);
+          let rawResult: McpReadResult;
+          try {
+            rawResult = await connection.read(sourceId, operationId, parameters);
+          } catch (error) {
+            await hooks.recordTool({
+              sourceId,
+              operationId,
+              parameters: redactAskData(parameters, secrets) as Record<string, unknown>,
+              ok: false,
+              latencyMs: Math.round(performance.now() - started),
+              evidence: {
+                id: randomUUID(),
+                sourceId,
+                operationId,
+                observedAt: new Date().toISOString(),
+                from: iso(parameters.start ?? parameters.since ?? parameters.time),
+                to: iso(parameters.end ?? parameters.until ?? parameters.time),
+                coverage: "unavailable",
+                truncated: false,
+              },
+            });
+            throw error;
+          }
           const result = {
             ...rawResult,
             ok: rawResult.ok && record(rawResult.data)?.status !== "error",

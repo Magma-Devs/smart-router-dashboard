@@ -34,7 +34,8 @@ budget and execution. MAG-4751 self-hosted distribution remains a separate produ
   and newer explicitly attributed response shapes only after strict validation.
   `chain_events` is capability-dependent. Missing status evidence is reported.
 - PostgreSQL is the durable queue. Submission atomically commits a run, personal
-  active-run lock and bounded budget reservation. Workers claim with leases and
+  active-run lock and budget eligibility. Each paid step first counts tokens
+  for free, then atomically reserves a bounded cost. Workers claim with leases and
   fencing tokens; each step records usage. No work depends on a browser connection.
   A crashed in-flight provider call is uncertain, never blindly replayed or freed.
 - Run states: queued, running, cancelling, succeeded, failed, cancelled,
@@ -42,8 +43,9 @@ budget and execution. MAG-4751 self-hosted distribution remains a separate produ
   while preserving uncertain financial reservations for reconciliation.
 - Idempotency keys are scoped to customer and person; a reused key with a different
   request returns a conflict. The same retry returns the existing run.
-- Reserve integer USD microdollars against the run's original UTC calendar month,
-  including across month rollover. Default cap: $10/customer/month shared across
+- Reserve integer USD microdollars against the paid step's UTC calendar month
+  using PostgreSQL time. Dispatch rechecks that month; an undispatched reservation
+  crossing rollover is released after interruption, never charged to another month. Default cap: $10/customer/month shared across
   people and Ask/Investigate. Version model/region prices and include all billable
   usage categories. Missing usage retains a conservative reservation.
 - Answers have bounded summary/sections and server-authored source/time evidence.
@@ -112,6 +114,10 @@ No acceptance item is complete without the corresponding observed evidence.
   and SQL lifecycle primitives. Actual HTTP/PostgreSQL verifies ownership,
   idempotency, concurrency, lease fencing and recovery. Production worker
   scheduling, financial reconciliation and UI acceptance stay open.
-- MAG-4931 adds bounded read-only orchestration, structured/source-attributed
+- [PR #393](https://github.com/Magma-Devs/smart-router-dashboard/pull/393) adds bounded read-only orchestration, structured/source-attributed
   answers and a lease-aware queue worker. It stays inactive in the API until
   actual budget admission/reconciliation is installed by MAG-4932.
+
+- MAG-4932 installs actual customer/month accounting, internal staff records and
+  physical retention. API admission/worker activation now require valid dated
+  pricing and a supported free token counter. Deployment flags remain off.
