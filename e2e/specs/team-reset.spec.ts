@@ -4,11 +4,11 @@ import { enrolledMember, expect, signInThroughUi, test } from "../support/fixtur
 /**
  * Clearing somebody's authenticator from the team page — the lost-phone path.
  *
- * The api route has its own tests. This is about the three things around it: the
- * button appears only on a row that has something to clear, the confirmation
- * names the person before anything happens (an admin one row off is the failure
- * this guards against), and the row updates without a reload so the admin can
- * see it worked.
+ * The api route has its own tests. This is about the things around it: the
+ * row's menu offers it only where there is something to clear, the
+ * confirmation names the person before anything happens (an admin one row off
+ * is the failure this guards against), and the row updates without a reload,
+ * with a confirmation, so the admin can see it worked.
  */
 
 let member: Required<SeededMember>;
@@ -34,21 +34,32 @@ test("an admin clears a member's authenticator, and the row says so", async ({
   await expect(row).toBeVisible();
   await expect(row.getByText("Yes", { exact: true })).toBeVisible();
 
-  await row.getByRole("button", { name: "Reset 2FA" }).click();
+  await row.getByRole("button", { name: `Actions for ${member.name}` }).click();
+  await page.getByRole("menuitem", { name: "Reset 2FA" }).click();
 
   // Naming them is the whole point of the confirmation.
   const modal = page.locator(".gw-modal");
-  await expect(modal).toContainText("Reset two-factor authentication");
+  await expect(modal).toContainText("Reset 2FA");
   await expect(modal).toContainText(member.name);
   await expect(modal).toContainText(member.email);
   await expect(modal).toContainText("They are signed out of every device immediately.");
 
-  await modal.getByRole("button", { name: "Reset two-factor" }).click();
+  await modal.getByRole("button", { name: "Reset 2FA" }).click();
 
   await expect(modal).toHaveCount(0);
-  await expect(row.getByText("No", { exact: true })).toBeVisible();
-  // Nothing left to clear, so nothing offers to.
-  await expect(row.getByRole("button", { name: "Reset 2FA" })).toHaveCount(0);
+  await expect(row.getByText("Not set up", { exact: true })).toBeVisible();
+  // The page has other status regions (the top bar's health), so find ours by its words.
+  await expect(
+    page.getByRole("status").filter({ hasText: `2FA reset for ${member.name}.` }),
+  ).toBeVisible();
+  // Nothing left to clear, so the menu item no longer acts.
+  await row.getByRole("button", { name: `Actions for ${member.name}` }).click();
+  await expect(page.getByRole("menuitem", { name: "Reset 2FA" })).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("menu")).toHaveCount(0);
 });
 
 test("a member with no authenticator is not offered a reset", async ({ page, operator }) => {
@@ -62,9 +73,16 @@ test("a member with no authenticator is not offered a reset", async ({ page, ope
   await page.goto("/team");
 
   const row = page.getByRole("row", { name: new RegExp(unenrolled.email) });
-  await expect(row.getByText("No", { exact: true })).toBeVisible();
-  await expect(row.getByRole("button", { name: "Reset 2FA" })).toHaveCount(0);
-  // The controls that do not depend on an authenticator are still there, so an
-  // empty cell cannot pass for a row that failed to render.
-  await expect(row.getByRole("button", { name: "Change role" })).toBeVisible();
+  await expect(row.getByText("Not set up", { exact: true })).toBeVisible();
+  await row.getByRole("button", { name: `Actions for ${unenrolled.name}` }).click();
+  await expect(page.getByRole("menuitem", { name: "Reset 2FA" })).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  // The actions that do not depend on an authenticator still act, so a
+  // disabled item cannot pass for a menu that failed to render.
+  await expect(page.getByRole("menuitem", { name: "Change role" })).not.toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
 });

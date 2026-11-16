@@ -5,7 +5,8 @@ import { signIn, signOut } from "next-auth/react";
 import { apiUrl } from "@/lib/api-client";
 import { HOME_PATH } from "@/lib/home-path";
 import { BusyButton } from "@/components/gateway/BusyButton";
-import { ROLE_DESCRIPTIONS, ROLE_LABELS, type Role } from "@sr/shared";
+import { ROLE_DESCRIPTIONS, type Role } from "@sr/shared";
+import { RoleBadge } from "@/components/team/bits";
 import { enabledProviders, type ProviderFlags } from "./oauth-providers";
 
 /**
@@ -158,7 +159,7 @@ export function InviteForm({
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline" }}>
             <span style={{ fontSize: 11, color: "var(--text-3)" }}>Role</span>
-            <span className="gw-tag gw-tag--info" style={{ fontSize: 11 }}>{ROLE_LABELS[role]}</span>
+            <RoleBadge role={role} />
           </div>
           <div style={{ fontSize: 11.5, color: "var(--text-3)", lineHeight: 1.5 }}>
             {ROLE_DESCRIPTIONS[role]}

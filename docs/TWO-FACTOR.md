@@ -233,8 +233,8 @@ export.
 
 ## Lost phone
 
-An admin resets it: `POST /api/team/members/:id/2fa/reset`, or the **Reset 2FA**
-button on `/team`. Three writes, each load-bearing:
+An admin resets it: `POST /api/team/members/:id/2fa/reset`, or **Reset 2FA** in
+the member's row menu on `/team`. Three writes, each load-bearing:
 
 1. the secret is **destroyed**, not disabled — nothing left to restore, and
    nothing an admin could read back;

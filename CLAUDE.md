@@ -922,8 +922,8 @@ each poll's timer at its normal cadence. The phases run on the wall clock,
 so a laptop that slept through the hour wakes up paused instead of polling
 first. A hidden tab doesn't poll at all (SWR's default). **The standalone
 page is exempt** (`idleGateApplies`): it is for shared and wall screens that
-nobody touches, so it never slows or pauses. The Team page's member list and
-the Account page's sessions call `useSWR` directly, outside the gate.
+nobody touches, so it never slows or pauses. The Account page's sessions
+call `useSWR` directly, outside the gate.
 
 ## API endpoints
 

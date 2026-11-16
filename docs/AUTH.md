@@ -338,10 +338,13 @@ deployment with no mail transport (`AWS_REGION` unset), for every address and
 writing nothing, because a link nobody receives would still kill any live one
 the member holds.
 
-On-prem, an admin starts one from the member's row on the Team page, which shows the
-link once; it lands on `/reset/<token>`. A new link kills any earlier one, and
-so does the admin's own removal or demotion below admin: their unused links die
-with a `password.reset_link_revoked` row each.
+In both modes an admin can also start one from the member's row on the Team page
+(`POST /api/team/members/:id/reset-link`). That link is never emailed: the page
+shows it once for the admin to hand over, and `created_by` names the admin. The
+dialog says so, and on managed it points at **Forgot your password?** as the
+emailed way. Either link lands on `/reset/<token>`. A new link kills any
+earlier one, and so does the admin's own removal or demotion below admin: their
+unused links die with a `password.reset_link_revoked` row each.
 
 `POST /auth/password/reset`, in **one transaction**, claims the token with a
 conditional update, writes the hash, **revokes every session for the account**
@@ -844,7 +847,8 @@ genuinely nothing left to retry against, and that is what stops somebody
 grinding codes against one password.
 
 **3. Invite someone.** Team → Invite. Pick a role; the description under
-each says what it can do.
+each says what it can do today (a requester and an approver have
+read-only's access: see [Roles](#roles)).
 
 - On-prem has no mail server, so the link is shown **once** and you copy
   it. Open it in a private window: the invited address is fixed text, not
@@ -854,14 +858,16 @@ each says what it can do.
   an invited person gets no grace period, and the only thing their session
   opens is enrolment. Set it up and the dashboard appears underneath,
   without another sign-in.
-- That person is now in the members table, with **Yes** under 2FA. A **No**
-  there is someone the dashboard is shut to until they set one up — they
-  joined and have not enrolled, or an admin reset theirs — or the first
-  admin inside their grace period. One that stays "No" is the thing to stop
-  on.
+- That person is now in the members table, with **Yes** under 2FA. **Not
+  set up** there is someone the dashboard is shut to until they set one up
+  (they joined and have not enrolled, or an admin reset theirs), or the
+  first admin inside their grace period. One that stays "Not set up" is the
+  thing to stop on.
 - Open the same link again: dead. Single-use.
 
-**4. Change a role.** Team → Change role. It takes effect on whatever that
+**4. Change a role.** Team → **...** on their row → Change role. The row
+shows the new role as soon as the api confirms it, with a confirmation above
+the table. It takes effect on whatever that
 person has open *right now*, not at their next sign-in — the api reads the
 role from the row on every request.
 
@@ -869,7 +875,7 @@ To watch that: sign in as them in a private window, leave the Team page
 open, demote them to Read-only from your window, and have them act. The
 admin-only controls stop working immediately.
 
-**5. Remove someone.** Team → Remove. The dialog says what will happen,
+**5. Remove someone.** Team → **...** on their row → Remove. The dialog says what will happen,
 because "remove" reads like a deletion and this deliberately is not one.
 Their sessions die within one request, their name stays in the audit log,
 and their address can be invited again as a new account — try it.
@@ -883,7 +889,7 @@ everywhere" — which signs out the tab you are in too, deliberately.
 
 **7. Password reset, on-prem.** **An admin never sets someone else's
 password** — they generate a link, and only the holder chooses the value.
-Team → **Reset link** on a member's row. It asks first — a new link also
+Team → **...** on a member's row → **Reset link**. It asks first — a new link also
 kills any the member already holds — then shows the link once, with a copy
 button.
 
@@ -912,9 +918,8 @@ against an unknown address answers the same `401` a wrong password does.
 
 **9. Export.** Team → Export CSV. This is the artifact an auditor asks for
 first, and it is the whole member list, not the page you are looking at.
-The two-factor column reads `—` in the table and is **blank** in the CSV,
-rather than "No" — two-factor is MAG-2730 and has not shipped, so "No"
-would be true today and wrong the day it does.
+Its `two_factor` column reads `yes` or `no`; a `no` is the table's "Not set
+up".
 
 **10. The audit log.** Every step above wrote a row. There is no viewer yet
 (MAG-2770), so read them directly:
@@ -931,7 +936,7 @@ people-events don't — except `invite.redeemed`, which the ticket asks to
 carry the address it was redeemed from — and no token, link or password
 appears anywhere.
 
-**11. Lost phone.** Team → Reset 2FA on that member. Their sessions end
+**11. Lost phone.** Team → **...** on that member's row → Reset 2FA. Their sessions end
 immediately and their key is destroyed rather than disabled — there is
 nothing to restore and nothing you could have read. They sign in with
 their password and meet the enrolment screen again. The log carries a
@@ -973,9 +978,11 @@ so they can't drift into disagreeing about who may do what:
 
 `roleAtLeast(role, minimum)` is the only comparison; an **unrecognised
 role is unprivileged**, so a row written by a newer build during a rolling
-deploy fails safe rather than open. The proposing/approving columns are
-enforced by the config-change flow (MAG-2731) — this layer defines the
-vocabulary and gates people-management.
+deploy fails safe rather than open. No config-change flow uses the
+proposing and approving columns yet (MAG-2731), so a requester or an
+approver has read-only's access, and the invite, change-role and join
+screens describe both as "Same access as Read-only for now." This layer
+defines the vocabulary and gates people-management.
 
 The web uses the same helper to decide which controls to render. That is
 **cosmetic only**: hiding a button is not a permission check, and the api
@@ -1013,12 +1020,33 @@ some people can see is not one; only an admin changes it.
   by the people in the list, and the file opens in a spreadsheet. It starts
   with a UTF-8 byte-order mark, without which Excel reads it in the system code
   page, and line endings are CRLF (RFC 4180).
-- **2FA reads Yes or No**, and a No is red. A No is someone the dashboard is
-  shut to until they set up an authenticator — they joined and have not
-  enrolled, or an admin reset theirs — or the first admin inside their grace
-  period. One that stays No is the thing a reviewer should stop on.
+- **2FA reads Yes or Not set up.** "Not set up" is amber, not red: it asks for
+  attention and is not an error. Its tooltip says "Can't use the dashboard
+  until they set it up", because they joined and have not enrolled, or an
+  admin reset theirs. The exception is the first admin inside their grace
+  period: inviting needs 2FA, so nobody has joined yet to read their row, and
+  on their own row the tooltip counts the days left instead. One that stays
+  "Not set up" is the thing a reviewer should stop on.
+- **Each row's actions are one "..." menu**: Change role, Reset link, Reset 2FA
+  and Remove, the same four on every row, so a row is as wide at 1024 px as at
+  full width. Reset 2FA is disabled, with the reason, for someone with nothing
+  to clear. The menu follows the ARIA menu pattern: arrows, Home and End move,
+  Escape closes it and returns focus to the button, a click outside closes it.
+- **A change shows at once.** After Change role, Reset 2FA or Remove, the row
+  takes the api's confirmed answer straight away and the list is read again;
+  a confirmation above the table says what happened, and for a 2FA reset on
+  managed, that the member was emailed.
+- **The Invites tab counts pending invitations**, and lists only those until
+  "Show revoked and expired" is ticked. States read Pending, Expired and
+  Revoked, in an outlined chip that no role uses. A pending or expired
+  invitation offers Resend (a new link and a new expiry; the old link stops
+  working) and Revoke, which asks first.
+- **Each role has one colour**, `ROLE_COLORS` in
+  `packages/shared/src/constants/roles.ts`, drawn by `RoleBadge` on the Team
+  page, in the invite and change-role dialogs and on the join page. None is
+  red, which is for errors and destructive actions.
 
-<img src="./assets/team-members.png" alt="The Team page's Members tab: a table of five people with columns for member, role, 2FA, last active and joined. Two admins are listed first, then an approver, a requester and a read-only member. The 2FA column reads Yes for four of them and a red No for the read-only member, whose authenticator an administrator has reset, so she sets up a new one at her next sign-in. Every row except the signed-in admin's own has Change role, Reset link and Remove buttons, and each member with an authenticator also has Reset 2FA; Reset link opens a dialog that confirms first and then shows the link once." width="100%">
+<img src="./assets/team-members.png" alt="The Team page's Members tab: a table of five people with columns for member, role, 2FA, last active and joined. Two admins are listed first, then an approver, a requester and a read-only member, each role in its own colour chip. The 2FA column reads Yes for four of them and an amber Not set up for the read-only member, whose authenticator an administrator has reset, so she sets up a new one at her next sign-in. Every row except the signed-in admin's own ends in a three-dot button that opens a menu of Change role, Reset link, Reset 2FA and Remove; Reset link opens a dialog that confirms first and then shows the link once." width="100%">
 
 ## JWT shape
 

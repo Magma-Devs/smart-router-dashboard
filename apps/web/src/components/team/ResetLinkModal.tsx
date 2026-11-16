@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Modal } from "@/components/gateway/Modal";
 import { apiSend } from "@/lib/api-client";
 import type { MemberSummary } from "./ChangeRoleModal";
+import { useDeploymentMode } from "./deployment-mode";
 
 interface ResetLinkResponse {
   url: string;
@@ -18,10 +19,10 @@ interface ResetLinkResponse {
  * the holder chooses the value — there is deliberately no password field here,
  * and the api has no endpoint that would accept one.
  *
- * The link is shown once and copied by hand, on every deployment: only the
- * holder's own request (Forgot password, managed) is emailed. So the copy says
- * "nothing is emailed" rather than "this deployment has no mail server", which
- * would be false on managed.
+ * The link is shown once and copied by hand, on every deployment: the api
+ * never emails it. The one reset that is emailed is the holder's own request
+ * (Forgot your password?), on a managed deployment with mail, so the dialog
+ * points there on managed.
  *
  * It sits behind a confirmation rather than firing on click because generating
  * one is the first half of an account takeover if the wrong person asked for
@@ -42,6 +43,7 @@ export function ResetLinkModal({
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ResetLinkResponse | null>(null);
   const [copied, setCopied] = useState<"idle" | "copied" | "failed">("idle");
+  const managed = useDeploymentMode() === "managed";
 
   function reset() {
     setBusy(false);
@@ -142,7 +144,7 @@ export function ResetLinkModal({
           </button>
           {copied === "failed" && (
             <div role="alert" style={{ fontSize: 12, color: "var(--err)" }}>
-              Couldn&apos;t copy it here — select the link above and copy it by hand.
+              Couldn&apos;t copy it here. Select the link above and copy it by hand.
             </div>
           )}
           <div style={{ fontSize: 11.5, color: "var(--text-3)", lineHeight: 1.6 }}>
@@ -160,8 +162,14 @@ export function ResetLinkModal({
             will be able to set a new password using a single-use link.
           </div>
           <ul style={{ margin: 0, paddingLeft: 18, color: "var(--text-2)", fontSize: 12.5 }}>
-            <li>You never see or choose their password — only they do.</li>
-            <li>Nothing is emailed — you hand the link over yourself.</li>
+            <li>You never see or choose their password. Only they do.</li>
+            <li>This link is never emailed. You hand it over yourself.</li>
+            {managed && (
+              <li>
+                They can also get a link by email themselves, from Forgot your password? on the
+                sign-in page.
+              </li>
+            )}
             <li>It is shown once, and cannot be read back afterwards.</li>
             <li>Using it ends every session that account currently has.</li>
           </ul>
