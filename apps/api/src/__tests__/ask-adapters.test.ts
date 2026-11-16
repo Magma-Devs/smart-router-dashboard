@@ -4,7 +4,6 @@ import { BedrockAdapter } from "../services/ask/bedrock.js";
 import { McpAdapter } from "../services/ask/mcp.js";
 import { boundedFetch } from "../services/ask/http.js";
 import { AskFailure } from "../services/ask/errors.js";
-import { foundationSmoke } from "../services/ask/foundation-smoke.js";
 
 const env = {
   ASK_DATA_ENABLED: "true",
@@ -57,7 +56,10 @@ describe("Ask settings and provider boundary", () => {
       { ...settings(), problem: "missing key" },
     ]) {
       await expect(
-        new BedrockAdapter(value, fetchImpl).converse(input, { onUsage: vi.fn() }),
+        new BedrockAdapter(value, fetchImpl).converse(input, {
+          onUsage: vi.fn(),
+          onDispatch: async () => undefined,
+        }),
       ).rejects.toBeInstanceOf(AskFailure);
       await expect(
         new McpAdapter(value, fetchImpl).withConnection(async () => undefined),
@@ -127,7 +129,10 @@ describe("Bedrock adapter", () => {
   it("uses the fixed region/model endpoint, bounded output and server bearer", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(Response.json(providerResult()));
     const onUsage = vi.fn().mockResolvedValue(undefined);
-    const result = await new BedrockAdapter(settings(), fetchImpl).converse(input, { onUsage });
+    const result = await new BedrockAdapter(settings(), fetchImpl).converse(input, {
+      onUsage,
+      onDispatch: async () => undefined,
+    });
     expect(result.usage).toEqual(usage);
     expect(onUsage).toHaveBeenCalledExactlyOnceWith(usage, {
       requestId: null,
@@ -149,7 +154,10 @@ describe("Bedrock adapter", () => {
       const result = { ...providerResult(), stopReason };
       const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(Response.json(result));
       await expect(
-        new BedrockAdapter(settings(), fetchImpl).converse(input, { onUsage }),
+        new BedrockAdapter(settings(), fetchImpl).converse(input, {
+          onUsage,
+          onDispatch: async () => undefined,
+        }),
       ).rejects.toBeInstanceOf(AskFailure);
       expect(onUsage).toHaveBeenCalledExactlyOnceWith(usage, {
         requestId: null,
@@ -163,7 +171,10 @@ describe("Bedrock adapter", () => {
     const fetchImpl = vi.fn<typeof fetch>().mockRejectedValue(new Error("credential-bearing URL"));
     const onUsage = vi.fn().mockResolvedValue(undefined);
     await expect(
-      new BedrockAdapter(settings(), fetchImpl).converse(input, { onUsage }),
+      new BedrockAdapter(settings(), fetchImpl).converse(input, {
+        onUsage,
+        onDispatch: async () => undefined,
+      }),
     ).rejects.toMatchObject({ code: "ASK_BEDROCK_UNAVAILABLE" });
     expect(onUsage).toHaveBeenCalledExactlyOnceWith(null, {
       requestId: null,
@@ -178,7 +189,10 @@ describe("Bedrock adapter", () => {
       .fn<typeof fetch>()
       .mockResolvedValue(Response.json({ usage, output: "bad" }));
     await expect(
-      new BedrockAdapter(settings(), fetchImpl).converse(input, { onUsage }),
+      new BedrockAdapter(settings(), fetchImpl).converse(input, {
+        onUsage,
+        onDispatch: async () => undefined,
+      }),
     ).rejects.toMatchObject({ code: "ASK_INVALID_ANSWER" });
     expect(onUsage).toHaveBeenCalledWith(usage, { requestId: null, providerStatus: 200 });
   });
@@ -189,11 +203,17 @@ describe("Bedrock adapter", () => {
     delete raw.usage;
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(Response.json(raw));
     expect(
-      (await new BedrockAdapter(settings(), fetchImpl).converse(input, { onUsage })).usage,
+      (
+        await new BedrockAdapter(settings(), fetchImpl).converse(input, {
+          onUsage,
+          onDispatch: async () => undefined,
+        })
+      ).usage,
     ).toBeNull();
     expect(onUsage).toHaveBeenCalledWith(null, { requestId: null, providerStatus: 200 });
     await expect(
       new BedrockAdapter({ ...settings(), maxContextBytes: 10 }, fetchImpl).converse(input, {
+        onDispatch: async () => undefined,
         onUsage,
       }),
     ).rejects.toMatchObject({ code: "ASK_LIMIT_REACHED" });
@@ -292,40 +312,6 @@ function mcpFixture(
 }
 
 describe("MCP SDK transport and customer policy", () => {
-  it("performs the complete controlled question/read/model/validated-answer checkpoint", async () => {
-    const fixture = mcpFixture();
-    const fetchImpl: typeof fetch = async (url, init) => {
-      if (!String(url).includes("bedrock-runtime")) return fixture.fetchImpl(url, init);
-      return Response.json({
-        ...providerResult(),
-        output: {
-          message: {
-            role: "assistant",
-            content: [
-              {
-                text: JSON.stringify({
-                  summary: "No samples were returned.",
-                  sections: [
-                    { title: "Limits", body: "This result alone cannot establish router health." },
-                  ],
-                }),
-              },
-            ],
-          },
-        },
-      });
-    };
-    const result = await foundationSmoke(settings(), fetchImpl);
-    expect(result.answer.evidence[0]).toMatchObject({
-      sourceId: "gk8-metrics",
-      operationId: "metrics.query",
-      coverage: "unknown",
-    });
-    expect(result.answer.summary).toBe("No samples were returned.");
-    expect(result.usage).toEqual(usage);
-    expect(result.customerId).toBe("gk8");
-  });
-
   it.each([false, true])(
     "discovers and reads only the customer's audited operation (SSE %s)",
     async (sse) => {

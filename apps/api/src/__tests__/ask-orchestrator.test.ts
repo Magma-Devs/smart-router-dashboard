@@ -428,6 +428,23 @@ describe("bounded customer tool orchestration", () => {
     expect(f.hooks.recordUsage).not.toHaveBeenCalled();
   });
 
+  it("records the attempted source/operation when its read transport fails", async () => {
+    const f = fixture();
+    vi.spyOn(McpConnection.prototype, "read").mockRejectedValueOnce(
+      new AskFailure("ASK_MCP_UNAVAILABLE"),
+    );
+    await expect(f.answer()).rejects.toMatchObject({ code: "ASK_MCP_UNAVAILABLE" });
+    expect(f.hooks.recordTool).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceId: "gk8-metrics",
+        operationId: "metrics.query",
+        ok: false,
+        evidence: expect.objectContaining({ coverage: "unavailable" }),
+      }),
+    );
+    expect(f.fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
   it("rechecks active authorization before a tool read after a model response", async () => {
     const f = fixture();
     let checks = 0;

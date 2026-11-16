@@ -2,7 +2,17 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { SignJWT } from "jose";
 import { eq, sql } from "drizzle-orm";
-import { askChats, askMessages, askRuns, createDb, migrate, users, type DbHandle } from "@sr/db";
+import {
+  askBudgetMonths,
+  askModelSteps,
+  askChats,
+  askMessages,
+  askRuns,
+  createDb,
+  migrate,
+  users,
+  type DbHandle,
+} from "@sr/db";
 import { enrolledTwoFactor } from "@sr/db/testing";
 import { readAskSettings } from "../config.js";
 import { authPlugin, SESSION_JWT_AUDIENCE, SESSION_JWT_ISSUER } from "../plugins/auth.js";
@@ -10,6 +20,8 @@ import { askRoutes } from "../routes/ask.js";
 import { createSession, revokeSession } from "../services/sessions.js";
 import { AskStore, type AskAdmission } from "../services/ask/store.js";
 import { BedrockAdapter } from "../services/ask/bedrock.js";
+import { AskBudget } from "../services/ask/budget.js";
+import { AskRetention } from "../services/ask/retention.js";
 import { AskFailure } from "../services/ask/errors.js";
 import type { AskChatDetail, AskChatPage, AskPreferences, AskRun } from "@sr/shared";
 
@@ -162,7 +174,7 @@ suite("Ask HTTP backed by independent PostgreSQL connections", () => {
   });
   beforeEach(async () => {
     await handles[0]!.db.execute(
-      sql`truncate ask_preferences, ask_messages, ask_runs, ask_chats restart identity cascade`,
+      sql`truncate ask_staff_access, ask_maintenance, ask_tool_events, ask_model_steps, ask_budget_months, ask_preferences, ask_messages, ask_runs, ask_chats restart identity cascade`,
     );
     rejectAdmission = false;
   });
@@ -511,5 +523,132 @@ suite("Ask HTTP backed by independent PostgreSQL connections", () => {
       .where(eq(askRuns.id, submitted.body.id));
     expect((await submit(replica, alice, id, key)).status).toBe(404);
     expect((await request(a, alice, `/chats/${id}`)).body.messages).toEqual([]);
+  });
+  function accounting(index = 0, customerId = "customer-a", limit = 1000n) {
+    const settings = { ...readAskSettings(), customerId, retentionDays: 90 };
+    return new AskBudget(handles[index]!.db, settings, {
+      monthlyLimitMicroUsd: limit,
+      counter: { mode: "runtime", model: "anthropic.fixture" },
+      pricing: {
+        version: "test-only",
+        model: "anthropic.fixture",
+        region: "us-east-1",
+        validFrom: "2026-01-01T00:00:00Z",
+        validUntil: "2030-01-01T00:00:00Z",
+        source: "https://aws.amazon.com/bedrock/pricing/",
+        input: "1000000",
+        output: "2000000",
+        cacheRead: "100000",
+        cacheWrite5m: "1250000",
+        cacheWrite1h: "2000000",
+      },
+    });
+  }
+  it("atomically reserves one shared pool under twelve competing people/replicas", async () => {
+    const money = [accounting(0), accounting(1)];
+    const paidApi = await server(handles[0]!, "customer-a", money[0]!.admit);
+    const runs = [];
+    for (let i = 0; i < 12; i++) {
+      const person = await actor();
+      const id = await chat(paidApi, person);
+      const response = await submit(paidApi, person, id);
+      expect(response.status).toBe(200);
+      const claimed = await aStore.claim(60_000);
+      expect(claimed).not.toBeNull();
+      runs.push(claimed!);
+    }
+    const reservations = await Promise.allSettled(
+      runs.map((run, index) =>
+        money[index % 2]!.reserve(run, 200, 50, index % 2 ? "investigate" : "ask"),
+      ),
+    );
+    expect(reservations.filter((r) => r.status === "fulfilled")).toHaveLength(2);
+    for (const r of reservations)
+      if (r.status === "rejected") expect(r.reason).toMatchObject({ code: "ASK_BUDGET_BUSY" });
+    const [pool] = await handles[0]!.db.select().from(askBudgetMonths);
+    expect(pool).toMatchObject({ reservedMicroUsd: 1000n, spentMicroUsd: 0n });
+    expect(await handles[0]!.db.select().from(askModelSteps)).toHaveLength(2);
+  });
+  it("denies exhausted admission atomically over HTTP without storing a prompt", async () => {
+    const blocked = await server(handles[0]!, "customer-a", accounting(0, "customer-a", 0n).admit);
+    const id = await chat(blocked, alice);
+    const response = await submit(blocked, alice, id);
+    expect(response).toMatchObject({ status: 429, body: { code: "ASK_BUDGET_LIMIT" } });
+    expect(await handles[0]!.db.select().from(askRuns)).toHaveLength(0);
+    expect(await handles[0]!.db.select().from(askMessages)).toHaveLength(0);
+  });
+  it("settles concurrent duplicate late receipts once after cancellation while another customer stays open", async () => {
+    const first = accounting(0);
+    const second = accounting(1);
+    const paidApi = await server(handles[0]!, "customer-a", first.admit);
+    const id = await chat(paidApi, alice);
+    const response = await submit(paidApi, alice, id);
+    expect(response.status).toBe(200);
+    const run = (await aStore.claim(60_000))!;
+    const step = await first.reserve(run, 100, 50);
+    await first.dispatched(run, step);
+    const otherChat = await chat(b, bob);
+    const other = await submit(b, bob, otherChat);
+    expect(other.status).toBe(200);
+    await request(paidApi, alice, `/runs/${run.id}/cancel`, "POST");
+    await aStore.fail(run.id, run.leaseToken!, "ASK_CANCELLED");
+    await second.reconcile(run.id);
+    const receipt = { requestId: "late-synthetic-receipt", providerStatus: 200 };
+    const usage = { inputTokens: 10, outputTokens: 5, totalTokens: 15 };
+    await Promise.all([
+      first.usage(run.id, step, usage, receipt),
+      second.usage(run.id, step, usage, receipt),
+    ]);
+    const [pool] = await handles[0]!.db.select().from(askBudgetMonths);
+    expect(pool).toMatchObject({ spentMicroUsd: 20n, reservedMicroUsd: 0n });
+    expect((await request(b, bob, `/runs/${other.body.id}`)).body.status).toBe("queued");
+    expect((await request(paidApi, alice, `/runs/${run.id}`)).body.status).toBe("cancelled");
+  });
+  it("keeps a dispatched reservation across retention deletion and settles a later receipt", async () => {
+    const money = accounting(0);
+    const paidApi = await server(handles[0]!, "customer-a", money.admit);
+    const id = await chat(paidApi, alice);
+    expect((await submit(paidApi, alice, id)).status).toBe(200);
+    const run = (await aStore.claim(60_000))!;
+    const step = await money.reserve(run, 100, 50);
+    await money.dispatched(run, step);
+    await aStore.fail(run.id, run.leaseToken!, "ASK_INTERRUPTED");
+    await money.reconcile(run.id);
+    await handles[0]!.db
+      .update(askRuns)
+      .set({ expiresAt: new Date(0) })
+      .where(eq(askRuns.id, run.id));
+    expect(await new AskRetention(handles[1]!.db, "customer-a", 30).sweep(0)).toBe(1);
+    expect(await handles[0]!.db.select().from(askRuns)).toHaveLength(0);
+    expect((await handles[0]!.db.select().from(askBudgetMonths))[0]?.reservedMicroUsd).toBe(300n);
+    await money.usage(
+      run.id,
+      step,
+      { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
+      { requestId: "after-retention", providerStatus: 200 },
+    );
+    expect((await handles[0]!.db.select().from(askBudgetMonths))[0]).toMatchObject({
+      spentMicroUsd: 20n,
+      reservedMicroUsd: 0n,
+    });
+  });
+  it("redacts credential text before the HTTP submission reaches PostgreSQL", async () => {
+    const money = accounting(0);
+    const paidApi = await server(handles[0]!, "customer-a", money.admit);
+    const id = await chat(paidApi, alice);
+    const response = await submit(
+      paidApi,
+      alice,
+      id,
+      crypto.randomUUID(),
+      "Check token Bearer private-test-credential-123456 and https://example.test/private?api_key=secret",
+    );
+    expect(response.status).toBe(200);
+    const [row] = await handles[0]!.db.select().from(askRuns);
+    expect(row!.question).not.toContain("private-test-credential");
+    expect(row!.question).not.toContain("api_key=secret");
+    expect(row!.question).toContain("[redacted]");
+    const detail = await request(paidApi, alice, `/chats/${id}`);
+    expect(JSON.stringify(detail.body)).not.toContain("private-test-credential");
   });
 });

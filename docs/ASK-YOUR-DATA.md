@@ -110,7 +110,7 @@ Stop during a pending queue claim cannot start work after shutdown. A model
 response arriving after cancellation cannot become an assistant success.
 Recovery never replays a potentially billable invocation. Unknown usage remains
 conservative; request IDs and server-authored run/step metadata support later
-reconciliation. The budget slice owns the actual accounting implementation.
+reconciliation. The budget service owns actual atomic accounting and conservative reconciliation.
 
 ## Identity and tool boundary
 
@@ -145,27 +145,106 @@ with a fixed server-selected region/model and explicit maxTokens. No temperature
 is sent. Context is capped at 64,000 UTF-8 bytes; output at 2048 tokens. The adapter
 does not retry potentially billable invocations. Its required usage callback runs
 before output validation, including malformed/truncated answers. Missing usage
-and transport failures are explicitly uncertain; later budget admission must keep
-their reservation until reconciliation. Usage fields are retained for versioned
+and transport failures are explicitly uncertain; budget accounting keeps
+their reservation until authoritative reconciliation. Usage fields are retained for versioned
 pricing rather than discarding cache/reasoning billing categories.
+
+## Budget, internal records and retention
+
+Every production worker is installed with `AskBudget` hooks. A shared PostgreSQL
+customer/UTC-month row serializes Ask and future Investigate spending across
+people, entry points and replicas. The default cap is 10,000,000 integer micro-USD
+($10); it is never included in customer responses. Lowering a configured cap is
+conservative across replicas; automatic upserts never raise an existing cap.
+
+Queue admission checks available capacity in the submission transaction. Before
+each paid step, the free Bedrock token counter includes the system, messages and
+tool schema. A bounded input margin and maximum output are priced at the highest
+configured input/cache rate, then reserved atomically. A second transaction proves
+the run/session/lease is current and marks dispatch before the network call.
+Both use PostgreSQL UTC time; a reservation cannot cross a month boundary at
+dispatch. A new step after rollover reserves against the new month.
+
+There is no guessed default price. Set `ASK_DATA_PRICING_JSON` to a verified,
+versioned rate card matching the exact model and region. Required keys are
+`version`, `model`, `region`, `validFrom`, `validUntil`, `source` (the official AWS
+Bedrock pricing URL), and `input`, `output`, `cacheRead`, `cacheWrite5m`,
+`cacheWrite1h`. Rates are **decimal strings of integer micro-USD per million
+tokens**; for example, a hypothetical $3/million rate is `"3000000"`. This is a
+format example, not a current model price. Verify all actual rates, service tier,
+region/profile and validity interval before activation. Expired or missing pricing
+blocks paid execution, while retention and accounting recovery continue.
+
+Set `ASK_DATA_TOKEN_COUNTER` to `runtime` or `mantle` and
+`ASK_DATA_TOKEN_COUNTER_MODEL` to the corresponding supported identifier of the
+same Anthropic model. Runtime CountTokens is not available for every CRIS-only
+model. Mantle requires the explicit base model ID and the appropriate project
+permission. An unsupported/denied counter fails closed; it never falls back to
+paid inference. The API needs the applicable `bedrock:CountTokens` or
+`bedrock-mantle:CountTokens` grant in addition to inference permission. See
+[AWS token counting](https://docs.aws.amazon.com/bedrock/latest/userguide/count-tokens.html)
+and [Converse token inputs](https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ConverseTokensRequest.html).
+
+Usage settlement locks the same monthly pool and is idempotent, including late
+receipts after cancellation, lease loss or content deletion. It uses the step's
+saved price version. Non-cached input, cache reads, TTL-specific writes and output
+are billed separately according to
+[AWS caching semantics](https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html)
+and [usage fields](https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_TokenUsage.html).
+Missing usage, unsupported fields or an unverified cache TTL keep the full
+reservation uncertain. Never-dispatched reservations are released after terminal
+state/recovery. Dispatched reservations are never freed merely because the user
+stopped, an HTTP request failed, or a process restarted. Authoritative late usage
+can settle them. Provider bound violations persist observed spending before
+halting the run. Operators must investigate unresolved request IDs with provider
+usage evidence; never clear a hold simply to restore capacity.
+
+Questions are redacted before persistence. Ordinary application logs contain fixed
+error codes and paths, not prompts, answer values, source payloads or search terms.
+Structured internal records combine retained runs/questions/person IDs/times,
+answers/errors, tool parameters/evidence/latency, and every model step's usage,
+price version, request receipt and cost. No model or MCP credential is exposed.
+
+`GET /api/internal/ask/records`, `/export`, and `/health` are independent internal
+read endpoints, **not customer-admin routes**. Each request verifies the presented
+MCP OAuth credential's current `whoami`: explicit `access: staff`, read-only scope,
+nonempty subject and a grant including this server-configured customer. The chat's
+customer-only credential is never substituted. A dashboard JWT, customer admin
+role, email domain or guessed ID grants no staff access. No customer override is
+accepted. Staff reads/exports are themselves recorded with the verified subject.
+
+Records/export accept only `cursor` (UUID) and `limit` (1-50, default 20). UUID
+keyset pagination is deterministic within retained data; concurrent insertions and
+retention can change later pages. Export is bounded NDJSON, one run per line plus
+a final `kind: page` line with `nextCursor`; follow that cursor for another page.
+It does not put prompts or filters into a download URL. Health exposes retention
+attempt/success/error and uncertain steps/monthly accounting only to verified
+staff. Monitor missing/stale `lastSuccessAt`, `ASK_RETENTION_FAILED` and unresolved
+usage; normal application errors use fixed `ASK_*` codes.
+
+A retryable sweep runs every minute after database readiness, even with the feature
+flag off or pricing unavailable. It serializes through a PostgreSQL maintenance
+row, deletes at most 500 expired terminal runs per pass, and cascades message/tool
+content. History/record reads enforce expiry before physical deletion. Customer
+retention is 1-90 days. Empty expired chats, stale preferences and old staff access
+records are cleaned as well. Minimal accounting without prompt/person fields
+survives; deletion never resets spending or frees uncertain dispatches.
 
 ## Controlled operator checkpoint
 
-With all runtime configuration already injected securely into the API process:
+With a current dashboard session and the API URL securely injected into the
+operator process as `ASK_DATA_SMOKE_SESSION_TOKEN` and `ASK_DATA_SMOKE_API_URL`:
 
 ```sh
 ASK_DATA_SMOKE=true pnpm --filter @sr/api ask:smoke
 ```
 
-This reads one authorized metric (`count(up)`) and makes one bounded model call,
-then validates the structured answer with server evidence. It is an operator
-development check, not a customer spending route. Never put tokens directly in
-shell history or commit an environment file. The command prints metadata and
-usage only; no raw customer values, answer text or credential is printed.
+This submits one real question through the normal authenticated API, shared budget,
+worker, MCP and Bedrock path, then validates the persisted answer. The earlier
+unmetered foundation probe has been removed. A session is revocable and must be
+obtained through the normal login process. Never put its value in shell history.
+The command prints IDs and evidence metadata only; no raw values/answer/credential.
+A successful smoke is not browser UX, semantic quality or GK8 pilot acceptance.
 
-Adapter tests use mocked upstreams through the real MCP SDK. Persistence tests
-also use actual network HTTP, independent PostgreSQL connections, multiple API
-instances and synthetic current sessions. See
-[MAG-4930 validation](validation/MAG-4930/README.md). Live providers, the production
-worker/accounting integration, browser flows and GK8 rollout remain explicit
-later acceptance items.
+See [MAG-4932 validation](validation/MAG-4932/README.md) for actual PostgreSQL tests
+and the remaining live-provider/runtime/browser/rollout acceptance limits.

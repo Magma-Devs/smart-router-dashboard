@@ -1,8 +1,9 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { ASK_CONTRACT_VERSION, type AskCapabilities } from "@sr/shared";
+import { ASK_CONTRACT_VERSION, askSubmitSchema, type AskCapabilities } from "@sr/shared";
 import { readAskSettings, type AskSettings } from "../config.js";
 import { requireAuth, type AuthUser } from "../plugins/auth.js";
+import { redactAskText } from "../services/ask/redact.js";
 import { AskFailure } from "../services/ask/errors.js";
 import { AskStore, type AskAdmission } from "../services/ask/store.js";
 
@@ -11,6 +12,7 @@ export interface AskRoutesOptions {
   settings?: AskSettings;
   /** Installed only by the budget slice. No default financial bypass. */
   admit?: AskAdmission;
+  ready?: () => boolean;
 }
 interface Context {
   me: AuthUser;
@@ -79,7 +81,7 @@ export async function askRoutes(app: FastifyInstance, opts: AskRoutesOptions = {
     const result: AskCapabilities = {
       contractVersion: ASK_CONTRACT_VERSION,
       enabled: true,
-      acceptingQuestions: Boolean(opts.admit) && !settings.problem,
+      acceptingQuestions: Boolean(opts.admit) && (opts.ready?.() ?? true) && !settings.problem,
     };
     return result;
   });
@@ -114,12 +116,23 @@ export async function askRoutes(app: FastifyInstance, opts: AskRoutesOptions = {
   app.post(
     "/api/ask/chats/:id/runs",
     personal((request, { me, store, settings }) => {
-      if (!opts.admit || settings.problem) throw new AskFailure("ASK_UNAVAILABLE");
+      if (!opts.admit || settings.problem || !(opts.ready?.() ?? true))
+        throw new AskFailure("ASK_UNAVAILABLE");
       return store.submit(
         me.id,
         me.sessionId,
         uuid((request.params as { id: unknown }).id),
-        request.body,
+        (() => {
+          const parsed = askSubmitSchema.safeParse(request.body);
+          if (!parsed.success) throw new AskFailure("ASK_INVALID_REQUEST", 400);
+          return {
+            ...parsed.data,
+            question: redactAskText(parsed.data.question, [
+              settings.mcpToken,
+              settings.bedrockToken,
+            ]),
+          };
+        })(),
         opts.admit,
       );
     }),

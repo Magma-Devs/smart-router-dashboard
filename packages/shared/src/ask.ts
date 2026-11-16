@@ -27,6 +27,7 @@ export const askErrorCodeSchema = z.enum([
   "ASK_CONFLICT",
   "ASK_ACTIVE_RUN",
   "ASK_BUDGET_LIMIT",
+  "ASK_BUDGET_BUSY",
   "ASK_MCP_UNAVAILABLE",
   "ASK_IDENTITY_MISMATCH",
   "ASK_TOOL_DENIED",

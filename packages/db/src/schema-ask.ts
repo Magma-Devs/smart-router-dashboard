@@ -73,6 +73,7 @@ export const askRuns = pgTable(
       foreignColumns: [askChats.id, askChats.customerId, askChats.ownerId],
     }).onDelete("cascade"),
     uniqueIndex("ask_runs_owned").on(t.id, t.chatId, t.customerId, t.ownerId),
+    uniqueIndex("ask_runs_customer").on(t.id, t.customerId),
     uniqueIndex("ask_runs_idempotency").on(t.customerId, t.ownerId, t.idempotencyKey),
     uniqueIndex("ask_runs_one_active_person")
       .on(t.customerId, t.ownerId)
