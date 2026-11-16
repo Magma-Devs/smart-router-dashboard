@@ -44,6 +44,29 @@ async function hold(page: Page, url: RegExp) {
   return { reached, release };
 }
 
+test("a short password is refused under its field, before the api is asked", async ({ page }) => {
+  let accepts = 0;
+  page.on("request", (req) => {
+    if (/\/auth\/invite\/accept$/.test(req.url())) accepts += 1;
+  });
+
+  await page.goto(`/invite/${token}`);
+  await page.getByLabel("Password", { exact: true }).fill("short");
+  await page.getByLabel("Repeat password").fill("short");
+  await page.getByRole("button", { name: "Accept invitation" }).click();
+
+  // The app's own text, not the browser's tooltip: the form is `noValidate`.
+  await expect(page.locator(".gw-card").getByRole("alert")).toHaveText(
+    "Password must be at least 8 characters.",
+  );
+  await expect(page.getByLabel("Password", { exact: true })).toHaveAttribute(
+    "aria-invalid",
+    "true",
+  );
+  // Nothing left the page, so the invitation is still there to accept below.
+  expect(accepts).toBe(0);
+});
+
 test("the form shows it is working from the click until the next page", async ({ page }) => {
   await watchForDashboardChrome(page);
   const accept = await hold(page, /\/auth\/invite\/accept$/);

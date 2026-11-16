@@ -139,7 +139,7 @@ makes a restored backup and a locked-out install recoverable — but it means
 the token stays security-relevant for the life of the deployment, and it
 sits in the pod log. Rotate `SETUP_TOKEN` if that log is widely readable.
 
-<img src="./assets/first-run-setup.png" alt="The first-run page: a single card headed &quot;Set up this dashboard — create the first administrator&quot;, explaining that nothing else opens until this is done and that the setup token is printed by the installer. Fields for the setup token, an optional name, email, password and repeat password, with a note that any characters are accepted from 8 to 64, that the password is checked against known breached passwords, and that there are no other rules and it never expires." width="450">
+<img src="./assets/first-run-setup.png" alt="The first-run page: a single card headed &quot;Set up this dashboard — create the first administrator&quot;, explaining that nothing else opens until this is done and that the setup token is printed by the installer. Fields for the setup token, an optional name, email, password and repeat password, with the rule &quot;8 to 64 characters, spaces allowed. Passwords found in known data breaches are refused.&quot; under the password field." width="450">
 
 `POST /auth/setup` re-checks the zero-user condition **inside the
 transaction**, behind an advisory lock — the check outside it is only
@@ -223,7 +223,7 @@ distinguishing them would tell a stranger which of those a guessed token hit; a
 404 for "never issued" beside a 410 for the rest would have said it in the
 status line while the message withheld it.
 
-<img src="./assets/invite-redemption.png" alt="The invitation redemption page: a card headed &quot;Join this dashboard&quot;, with a panel restating the invitation — the address it was sent to, shown as fixed text rather than an editable field, the role Approver, and a line describing what that role can do. Below it, optional name, password and repeat-password fields, a note that any characters are accepted from 8 to 64 and checked against known breached passwords, and an Accept invitation button." width="440">
+<img src="./assets/invite-redemption.png" alt="The invitation redemption page: a card headed &quot;Join this dashboard&quot;, with a panel restating the invitation — the address it was sent to, shown as fixed text rather than an editable field, the role Approver, and a line describing what that role can do. Below it, optional name, password and repeat-password fields, with the rule &quot;8 to 64 characters, spaces allowed. Passwords found in known data breaches are refused.&quot; under the password field, and an Accept invitation button." width="440">
 
 > **OAuth is link-only from here on.** `upsertOAuthUser` used to fall through to
 > an insert, which was correct while accounts came only from a seed. With
@@ -298,6 +298,14 @@ first one anyone set.
   the process, and `Add-Padding` keeps response size from leaking the
   prefix's hit count.
 
+Every screen that sets a password (Join, Setup, Reset and the Account page's
+Change password) states the rule in one sentence, `PASSWORD_RULE` in
+`@sr/shared`: "8 to 64 characters, spaces allowed. Passwords found in known data
+breaches are refused." The two lengths sit beside it and the api enforces those
+same constants. The forms check the length themselves, counted in code points
+as the api counts, and say so under the field before anything is sent; the
+byte guard and the breach check stay the api's.
+
 The breach check **fails open**, with a logged reason, for a
 reason a hosted product doesn't have: an on-prem deployment may have no
 egress at all, and failing closed would make the first admin account
@@ -352,6 +360,11 @@ emailed way. Either link lands on `/reset/<token>`. A new link kills any
 earlier one, and so does the admin's own removal or demotion below admin: their
 unused links die with a `password.reset_link_revoked` row each.
 
+A dead link (used, replaced by a newer one, expired, or never issued) answers
+`410` with one message, "This link no longer works. It may have been used,
+replaced or expired.", and the page says the same, whether the preview found it
+dead or the link was spent while its form was open.
+
 `POST /auth/password/reset`, in **one transaction**, claims the token with a
 conditional update, writes the hash, **revokes every session for the account**
 — per-device rows *and* the `signed_out_all_at` cutoff — **clears the
@@ -365,7 +378,7 @@ owner use the new password at once; it does not stop anyone re-tripping it.
 It does **not** sign anyone in. A reset link that logs you in is a reset link
 worth stealing.
 
-<img src="./assets/password-reset.png" alt="The password reset page: a card headed &quot;Choose a new password&quot;, with new-password and repeat-password fields and a note that setting it signs out every device on the account, that any characters are accepted from 8 to 64, and that the password is checked against known breached passwords." width="420">
+<img src="./assets/password-reset.png" alt="The password reset page: a card headed &quot;Choose a new password&quot;, with new-password and repeat-password fields, the rule &quot;8 to 64 characters, spaces allowed. Passwords found in known data breaches are refused.&quot; under the first, and a note that setting it signs out every device on the account." width="420">
 
 **Changing your own password** (`POST /api/account/password`) requires the
 current one and signs out your *other* devices, keeping the tab you are in.
@@ -543,7 +556,7 @@ From the ticket, and each has a test:
 
 ### The reset password page
 
-<img src="./assets/reset-password-states.png" alt="The three states of the reset password page, captured against a running stack. Setting a password: heading &quot;Choose a new password&quot; with the address dana.okonkwo@example.com underneath, New password and Repeat password fields, the rule &quot;8 to 64 characters. Any characters, including spaces.&quot; shown beneath the first field before typing, and a Save password button. Done: &quot;Your password has been changed. You have been signed out everywhere else.&quot; and a Sign in button. Dead link: &quot;This link has expired&quot;, with on-prem wording asking an administrator to generate a new one, and a Go to sign in button." width="900">
+<img src="./assets/reset-password-states.png" alt="The three states of the reset password page, captured against a running stack. Setting a password: heading &quot;Choose a new password&quot; with the address dana.okonkwo@example.com underneath, New password and Repeat password fields, the rule &quot;8 to 64 characters, spaces allowed. Passwords found in known data breaches are refused.&quot; shown beneath the first field before typing, and a Save password button. Done: headed &quot;Password changed&quot;, with &quot;Your password has been changed. You have been signed out everywhere else.&quot; and a Sign in button. Dead link: &quot;This link no longer works&quot; and &quot;It may have been used, replaced or expired.&quot;, with on-prem wording asking an administrator to generate a new one, and a Go to sign in button." width="900">
 
 ### Checking the whole thing
 
@@ -568,8 +581,10 @@ first check is about a fresh one.
 Each address has a budget of **5 attempts per 15 minutes**, counted whether or
 not an account exists, case-insensitively — so a lockout says nothing about
 membership. Past it, sign-in and the current-password check both answer `423`
-with `Retry-After`, and the login form says the account is locked rather than
-that the password is wrong.
+with `Retry-After`, and the login form says "Too many failed attempts. Try again
+in 15 minutes, or reset your password." rather than that the password is wrong.
+15 minutes is the window, so it is the longest a lock lasts: the lock lifts 15
+minutes after the window's first attempt.
 
 The attempt is **counted before the credential is checked**: the upsert hands
 each request its own count, so a parallel burst gets exactly the budget, not
@@ -718,6 +733,25 @@ Browser ── Continue with Google ──▶ dashboard.<t>  (AUTH_REDIRECT_PROX
   mocks: the forward with the query intact, a state signed with another secret,
   a dashboard off the pattern, no state, a provider with no client id, and what
   the proxy logs (never the code or the state).
+
+## The pages outside the dashboard
+
+Sign-in, setup, forgot password, join (`/invite/<token>`) and reset
+(`/reset/<token>`) are drawn without the dashboard's frame, inside
+`AuthScreen` (`components/auth/auth-screen.tsx`). It applies the theme the top
+bar's toggle saved (`sr:theme` in local storage) on mount, as the dashboard
+does, so these pages are light or dark with it; with nothing saved they are
+dark, the dashboard's default.
+
+Their forms, and the Account page's Change password card, set `noValidate` and
+check their own fields, so the browser draws no tooltip of its own. There is one
+error style, red text: a field's error sits directly under that field, and an
+error no field owns (the api refused, or could not be reached) sits directly
+above the submit button, next to the action that produced it. Every field has a
+visible label, and no password field has a placeholder.
+
+On Join, the "Accept with Google" and "Accept with GitHub" buttons sit above the
+password form, divided from it by "or set a password".
 
 ## Bootstrap admin seed — development only
 
@@ -1180,6 +1214,17 @@ AUTH_REQUIRED` on a request that carried a token, and `403 ACCOUNT_INACTIVE` —
 by signing the browser out and going to `/login`, so a device revoked or
 removed from somewhere else stops looking signed in. A route's own 401 (a wrong
 current password), a role `403 FORBIDDEN`, and a `503` never sign anyone out.
+
+When an admin's act ended the session, the refusal also carries `endedBy:
+"admin"`: every `ACCOUNT_INACTIVE` (a removal), and a `SESSION_INVALID` whose
+row was revoked as `member_removed` or `admin` (a two-factor reset, or the host's
+recovery command). The web then goes to `/login?reason=access_changed`, and the
+sign-in page says "Your session ended. An admin changed your access." The page
+reads only the reasons `lib/sign-in-notice.ts` lists, each fixed text, and a
+sign-in failure itself stays generic. The holder's own sign-out, a password
+change or reset, and an expiry carry no `endedBy`. A role change ends no
+session: the role is read from the row on every request, so a demotion lands on
+the session in flight and its next refused action answers `403 FORBIDDEN`.
 
 **Two revocation mechanisms, both needed.** They do different jobs:
 

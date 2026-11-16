@@ -97,7 +97,7 @@ export const EMAIL_FIELD = { type: "string" as const, format: "email", maxLength
 /** One message for every dead reset link. MAG-2870: "The same message for both
  *  cases. Telling someone a link was already used also tells an attacker it was
  *  already used." */
-const RESET_GONE = "This link has expired.";
+const RESET_GONE = "This link no longer works. It may have been used, replaced or expired.";
 
 /** `password.reset_requested` notes for the requests that send nothing. */
 const RESET_REQUEST_UNKNOWN_NOTE = "not sent, no account with this address";

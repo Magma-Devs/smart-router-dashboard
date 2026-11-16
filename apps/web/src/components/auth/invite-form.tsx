@@ -7,6 +7,9 @@ import { HOME_PATH } from "@/lib/home-path";
 import { BusyButton } from "@/components/gateway/BusyButton";
 import { ROLE_DESCRIPTIONS, type Role } from "@sr/shared";
 import { RoleBadge } from "@/components/team/bits";
+import { AuthHeader, AuthScreen } from "./auth-screen";
+import { hasErrors, newPasswordErrors } from "./field-checks";
+import { Field, FormError, NewPasswordFields } from "./form-fields";
 import { enabledProviders, type ProviderFlags } from "./oauth-providers";
 
 /**
@@ -21,9 +24,9 @@ import { enabledProviders, type ProviderFlags } from "./oauth-providers";
  *  error screen would only have said "something went wrong". */
 const HANDOFF_ERRORS: Record<string, string> = {
   email_mismatch:
-    "That Google account is not the address this invitation was sent to. Sign in with the invited account, or set a password below instead.",
+    "That Google account is not the address this invitation was sent to. Sign in with the invited account, or set a password instead.",
   invite_failed:
-    "That invitation could not be accepted. It may have expired or already been used — ask an administrator for a new link.",
+    "That invitation could not be accepted. It may have expired or already been used. Ask an administrator for a new link.",
 };
 
 export function InviteForm({
@@ -50,6 +53,7 @@ export function InviteForm({
   // Accepting, signing in and the page load behind one click: the label says
   // which is running, so a slow one never looks like nothing.
   const [busyLabel, setBusyLabel] = useState("Joining…");
+  const [submitted, setSubmitted] = useState(false);
 
   /**
    * Redeem with a social account — any provider the deployment offers, not
@@ -75,19 +79,20 @@ export function InviteForm({
       if (!parked.ok) throw new Error("handoff refused");
       await signIn(provider, { callbackUrl: HOME_PATH });
     } catch {
-      setError("Could not start that sign-in. Please try again, or set a password below.");
+      setError("Could not start that sign-in. Please try again, or set a password instead.");
       setBusy(false);
     }
   }
 
+  const fieldErrors = newPasswordErrors(password, repeat, submitted);
   const mismatch = repeat.length > 0 && password !== repeat;
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    if (password !== repeat) {
-      setError("Those passwords don't match.");
-      return;
-    }
+    // The form is `noValidate`: a short password gets this text under its
+    // field, in the app's style, not the browser's tooltip.
+    setSubmitted(true);
+    if (hasErrors(newPasswordErrors(password, repeat, true))) return;
     setBusyLabel("Joining…");
     setBusy(true);
     setError(null);
@@ -117,28 +122,10 @@ export function InviteForm({
     }
   }
 
-  const labelStyle = { display: "grid", gap: 6, fontSize: 12, color: "var(--text-2)" } as const;
-
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "var(--bg)",
-        padding: 24,
-      }}
-    >
+    <AuthScreen>
       <div className="gw-card" style={{ width: "100%", maxWidth: 420, padding: 32 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/magma-logo.png" width={32} height={32} alt="Magma" style={{ objectFit: "contain" }} />
-          <div>
-            <div style={{ fontWeight: 700, fontSize: 16 }}>Join this dashboard</div>
-            <div style={{ fontSize: 12, color: "var(--text-3)" }}>Smart Router Dashboard</div>
-          </div>
-        </div>
+        <AuthHeader title="Join this dashboard" subtitle="Smart Router Dashboard" />
 
         {/* The invitation, restated. Not editable — the account is created with
             this address server-side, so an editable field could only lie. */}
@@ -205,70 +192,30 @@ export function InviteForm({
           </>
         )}
 
-        <form onSubmit={onSubmit} style={{ display: "grid", gap: 12 }}>
-          <label style={labelStyle}>
-            <span>
-              Your name <span style={{ color: "var(--text-3)" }}>(optional)</span>
-            </span>
-            <input
-              className="gw-input"
-              readOnly={busy}
-              type="text"
-              autoComplete="name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Dana Levi"
-            />
-          </label>
-          <label style={labelStyle}>
-            Password
-            <input
-              className="gw-input"
-              readOnly={busy}
-              type="password"
-              autoComplete="new-password"
-              required
-              minLength={8}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="At least 8 characters"
-            />
-          </label>
-          <label style={labelStyle}>
-            Repeat password
-            <input
-              className="gw-input"
-              readOnly={busy}
-              type="password"
-              autoComplete="new-password"
-              required
-              value={repeat}
-              onChange={(e) => setRepeat(e.target.value)}
-              placeholder="••••••••"
-              aria-invalid={mismatch}
-            />
-          </label>
+        <form noValidate onSubmit={onSubmit} style={{ display: "grid", gap: 12 }}>
+          <Field
+            label={
+              <span>
+                Your name <span style={{ color: "var(--text-3)" }}>(optional)</span>
+              </span>
+            }
+            readOnly={busy}
+            type="text"
+            autoComplete="name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Dana Levi"
+          />
+          <NewPasswordFields
+            password={password}
+            repeat={repeat}
+            onPassword={setPassword}
+            onRepeat={setRepeat}
+            errors={fieldErrors}
+            readOnly={busy}
+          />
 
-          <p style={{ fontSize: 11.5, color: "var(--text-3)", margin: "2px 0 0", lineHeight: 1.5 }}>
-            Any characters, 8 to 64. Checked against known breached passwords — there are no
-            other rules, and it never expires.
-          </p>
-
-          {(error ?? (mismatch ? "Those passwords don't match." : null)) && (
-            <div
-              role="alert"
-              style={{
-                fontSize: 12,
-                color: "var(--err)",
-                background: "rgba(239,68,68,0.08)",
-                border: "1px solid rgba(239,68,68,0.25)",
-                borderRadius: 7,
-                padding: "8px 10px",
-              }}
-            >
-              {error ?? "Those passwords don't match."}
-            </div>
-          )}
+          <FormError message={error} />
 
           <BusyButton
             className="gw-btn gw-btn--primary"
@@ -282,7 +229,7 @@ export function InviteForm({
           </BusyButton>
         </form>
       </div>
-    </main>
+    </AuthScreen>
   );
 }
 
@@ -292,29 +239,23 @@ export function InviteForm({
  *  guessed token hit. */
 export function InviteDead() {
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "var(--bg)",
-        padding: 24,
-      }}
-    >
-      <div className="gw-card" style={{ width: "100%", maxWidth: 400, padding: 32, textAlign: "center" }}>
+    <AuthScreen>
+      <div
+        className="gw-card"
+        style={{ width: "100%", maxWidth: 400, padding: 32, textAlign: "center" }}
+      >
         <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 8 }}>
           This invitation link no longer works
         </div>
         <p style={{ fontSize: 13, color: "var(--text-2)", lineHeight: 1.6, margin: "0 0 20px" }}>
-          It may already have been used, or it may have expired. Ask an administrator to send
-          you a new one.
+          It may already have been used, or it may have expired. Ask an administrator to send you a
+          new one.
         </p>
         <a className="gw-btn" href="/login" style={{ justifyContent: "center" }}>
           Go to sign in
         </a>
       </div>
-    </main>
+    </AuthScreen>
   );
 }
 
@@ -344,16 +285,7 @@ export function InviteSignedIn({
 }) {
   const sameAddress = signedInAs.toLowerCase() === invitedEmail.toLowerCase();
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "var(--bg)",
-        padding: 24,
-      }}
-    >
+    <AuthScreen>
       <div className="gw-card" style={{ width: "100%", maxWidth: 430, padding: 32 }}>
         <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 10 }}>
           You are already signed in
@@ -385,7 +317,7 @@ export function InviteSignedIn({
           )}
         </div>
       </div>
-    </main>
+    </AuthScreen>
   );
 }
 

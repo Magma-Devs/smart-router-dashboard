@@ -34,7 +34,12 @@ describe("previewReset", () => {
   });
 
   it("calls a 410 dead — the api's one answer for used, expired and never issued", async () => {
-    vi.stubGlobal("fetch", respond(410, { message: "This link has expired." }));
+    vi.stubGlobal(
+      "fetch",
+      respond(410, {
+        message: "This link no longer works. It may have been used, replaced or expired.",
+      }),
+    );
     expect(await preview()).toEqual({ state: "dead" });
   });
 

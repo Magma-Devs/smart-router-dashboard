@@ -115,11 +115,20 @@ export const AUTH_ERROR_CODES = {
 
 type AuthErrorCode = (typeof AUTH_ERROR_CODES)[keyof typeof AUTH_ERROR_CODES];
 
+/** `endedBy` on a refused session: somebody other than the holder ended it, so
+ *  the web's sign-in page can say an admin changed their access. */
+export const SESSION_ENDED_BY_ADMIN = "admin";
+
+/** `revoked_reason` values that are an admin's act on the account: a removal, a
+ *  two-factor reset, the host's recovery command. */
+const ADMIN_REVOKE_REASONS = new Set(["member_removed", "admin"]);
+
 function sendAuthError(
   reply: FastifyReply,
   statusCode: number,
   code: AuthErrorCode,
   message: string,
+  endedBy?: typeof SESSION_ENDED_BY_ADMIN,
 ): FastifyReply {
   const error =
     statusCode === 401
@@ -129,7 +138,11 @@ function sendAuthError(
         : statusCode === 503
           ? "Service Unavailable"
           : "Error";
-  if (!reply.sent) void reply.status(statusCode).send({ error, message, statusCode, code });
+  if (!reply.sent) {
+    void reply
+      .status(statusCode)
+      .send({ error, message, statusCode, code, ...(endedBy ? { endedBy } : {}) });
+  }
   return reply;
 }
 
@@ -153,23 +166,32 @@ function isPublicPath(url: string): boolean {
 
 /** How a failed session lookup is reported. `user_inactive` is the only one
  *  that isn't "sign in again" — a suspended or removed person signing in again
- *  won't help, and saying so beats an infinite login loop. */
-function rejectionResponse(reason: SessionRejection): {
+ *  won't help, and saying so beats an infinite login loop. `endedBy` is set when
+ *  an admin's act ended the session; the holder's own sign-out, a password
+ *  change and an expiry leave it out. */
+function rejectionResponse(
+  reason: SessionRejection,
+  revokedReason?: string | null,
+): {
   status: number;
   code: AuthErrorCode;
   message: string;
+  endedBy?: typeof SESSION_ENDED_BY_ADMIN;
 } {
   if (reason === "user_inactive") {
     return {
       status: 403,
       code: AUTH_ERROR_CODES.accountInactive,
       message: "This account is no longer active",
+      endedBy: SESSION_ENDED_BY_ADMIN,
     };
   }
+  const byAdmin = reason === "revoked" && ADMIN_REVOKE_REASONS.has(revokedReason ?? "");
   return {
     status: 401,
     code: AUTH_ERROR_CODES.sessionInvalid,
     message: "Session has ended, please sign in again",
+    ...(byAdmin ? { endedBy: SESSION_ENDED_BY_ADMIN } : {}),
   };
 }
 
@@ -342,9 +364,12 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
     const check = await checkSession(db, claims.sid, claims.iat);
     if (!check.ok) {
       if (isPublic) return;
-      const { status, code, message } = rejectionResponse(check.reason);
+      const { status, code, message, endedBy } = rejectionResponse(
+        check.reason,
+        check.revokedReason,
+      );
       request.log.debug({ sid: claims.sid, reason: check.reason }, "session rejected");
-      return sendAuthError(reply, status, code, message);
+      return sendAuthError(reply, status, code, message, endedBy);
     }
 
     request.authUser = {

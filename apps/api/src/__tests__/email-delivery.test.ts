@@ -476,7 +476,11 @@ describe("the reset-link preview", () => {
     for (const answer of answers) {
       expect(answer).toEqual({
         status: 410,
-        body: { statusCode: 410, error: "Gone", message: "This link has expired." },
+        body: {
+          statusCode: 410,
+          error: "Gone",
+          message: "This link no longer works. It may have been used, replaced or expired.",
+        },
       });
     }
   });

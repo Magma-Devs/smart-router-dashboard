@@ -453,11 +453,12 @@ herself.
    expires in 1 hour"*, and a last line saying what to do if it wasn't her.
 7. Click the link. The page shows **her address** under the heading, so somebody
    with two accounts knows which one they are changing, and the rule *"8 to 64
-   characters. Any characters, including spaces."* is shown **before** the
-   field rather than after a failure.
+   characters, spaces allowed. Passwords found in known data breaches are
+   refused."* is shown under the field **before** anything is typed rather than
+   after a failure.
 8. Set a new password (`dana-picked-a-new-one-2231`) → **Save password**.
-9. It says *"Your password has been changed. You have been signed out everywhere
-   else."* and offers **Sign in** — it does **not** drop her into the dashboard.
+9. It is headed **"Password changed"**, says *"Your password has been changed.
+   You have been signed out everywhere else."* and offers **Sign in** — it does **not** drop her into the dashboard.
    A reset link that signs you in is a reset link worth stealing.
 10. Switch to **Safari**. Click anything. She is signed out.
 11. Sign in with the **new** password — works. Try the old one — refused.
@@ -491,7 +492,7 @@ whoever holds one **cannot tell which**:
 | **Never issued** | a guessed or invented token |
 
 1. You just spent a link in check 8. Paste **the same link** in again →
-   *"This link has expired."*
+   *"This link no longer works. It may have been used, replaced or expired."*
 2. Invent one: http://localhost:3000/reset/a-token-that-was-never-issued →
    **word for word the same page.**
 3. If you would rather not spend a link to see this, use the third case instead:
