@@ -1,0 +1,559 @@
+{
+  "timestamp": "2026-11-16T19:14:30.718Z",
+  "environment": "isolated local dashboard/API/PostgreSQL with real staging MCP and Bedrock",
+  "customerId": "gk8",
+  "rawDataInArtifact": false,
+  "credentialsSaved": false,
+  "preflight": {
+    "ok": true,
+    "timestamp": "2026-11-16T19:14:47.219Z",
+    "customerId": "gk8",
+    "model": "global.anthropic.claude-sonnet-5",
+    "region": "us-east-1",
+    "pricingVersion": "aws-global-sonnet5-20261116",
+    "pricingValidUntil": "2026-11-17T00:00:00Z",
+    "monthlyLimitMicroUsd": "10000000",
+    "retentionDays": 90,
+    "sourceCount": 3,
+    "operations": [
+      "metrics.query",
+      "metrics.query_range",
+      "metrics.labels",
+      "metrics.label_values",
+      "metrics.series",
+      "metrics.metadata",
+      "logs.query",
+      "logs.query_range",
+      "logs.labels",
+      "logs.label_values",
+      "logs.series",
+      "grafana.search",
+      "grafana.dashboard"
+    ],
+    "counter": {
+      "mode": "mantle",
+      "model": "anthropic.claude-sonnet-5"
+    },
+    "countedTokens": 580,
+    "limits": [
+      "No source data read or paid inference",
+      "No API, browser, internal staff or pilot acceptance"
+    ]
+  },
+  "pricing": {
+    "version": "aws-global-sonnet5-20261116",
+    "model": "global.anthropic.claude-sonnet-5",
+    "region": "us-east-1",
+    "validFrom": "2026-11-16T00:00:00Z",
+    "validUntil": "2026-11-17T00:00:00Z",
+    "source": "https://aws.amazon.com/bedrock/pricing/",
+    "input": "2000000",
+    "output": "10000000",
+    "cacheRead": "200000",
+    "cacheWrite5m": "2500000",
+    "cacheWrite1h": "4000000"
+  },
+  "browser": {
+    "timestamp": "2026-11-16T19:15:57.298Z",
+    "rawDataInArtifact": false,
+    "credentialsSaved": false,
+    "records": [
+      {
+        "runId": "01eb3196-f4e1-485b-b6d3-06a5dbf136b2",
+        "chatId": "5f9d3c36-d1f2-459d-9bd7-a163670ce2b4",
+        "status": "succeeded",
+        "contractValid": true,
+        "evidence": [
+          {
+            "id": "57856186-df99-45b0-be64-ecd5141d7172",
+            "sourceId": "gk8-metrics",
+            "operationId": "metrics.query",
+            "observedAt": "2026-11-16T19:14:59.689Z",
+            "from": "2026-11-16T19:14:55.000Z",
+            "to": "2026-11-16T19:14:55.000Z",
+            "coverage": "complete",
+            "truncated": false
+          }
+        ]
+      },
+      {
+        "runId": "c7baa939-4684-414d-bfd7-18693ce0bc41",
+        "chatId": "5f9d3c36-d1f2-459d-9bd7-a163670ce2b4",
+        "status": "succeeded",
+        "contractValid": true,
+        "evidence": [
+          {
+            "id": "25a7c62b-2e91-48d7-9096-00fae50ed7a5",
+            "sourceId": "gk8-logs",
+            "operationId": "logs.labels",
+            "observedAt": "2026-11-16T19:15:13.324Z",
+            "from": "2026-11-16T19:10:09.000Z",
+            "to": "2026-11-16T19:15:09.000Z",
+            "coverage": "unknown",
+            "truncated": false
+          },
+          {
+            "id": "97b42c26-155f-4692-97c3-df6f3e6b092f",
+            "sourceId": "gk8-logs",
+            "operationId": "logs.label_values",
+            "observedAt": "2026-11-16T19:15:16.446Z",
+            "from": "2026-11-16T19:10:09.000Z",
+            "to": "2026-11-16T19:15:09.000Z",
+            "coverage": "unknown",
+            "truncated": false
+          },
+          {
+            "id": "378443d7-3b63-47a8-b305-5f1b60f6bdac",
+            "sourceId": "gk8-logs",
+            "operationId": "logs.query_range",
+            "observedAt": "2026-11-16T19:15:19.907Z",
+            "from": "2026-11-16T19:10:09.000Z",
+            "to": "2026-11-16T19:15:09.000Z",
+            "coverage": "empty",
+            "truncated": false
+          },
+          {
+            "id": "903ad0de-78cd-4692-b693-b12341fc933b",
+            "sourceId": "gk8-logs",
+            "operationId": "logs.label_values",
+            "observedAt": "2026-11-16T19:15:24.982Z",
+            "from": "2026-11-16T19:10:09.000Z",
+            "to": "2026-11-16T19:15:09.000Z",
+            "coverage": "unknown",
+            "truncated": false
+          },
+          {
+            "id": "49e6b0e2-10b7-495e-9c3c-9153dcbb8f3f",
+            "sourceId": "gk8-logs",
+            "operationId": "logs.query_range",
+            "observedAt": "2026-11-16T19:15:25.840Z",
+            "from": "2026-11-16T19:10:09.000Z",
+            "to": "2026-11-16T19:15:09.000Z",
+            "coverage": "empty",
+            "truncated": false
+          },
+          {
+            "id": "cfa3e0a9-2759-41a3-af02-a9eeaf950fb3",
+            "sourceId": "gk8-logs",
+            "operationId": "logs.query_range",
+            "observedAt": "2026-11-16T19:15:30.543Z",
+            "from": "2026-11-16T19:10:09.000Z",
+            "to": "2026-11-16T19:15:09.000Z",
+            "coverage": "partial",
+            "truncated": true
+          }
+        ]
+      },
+      {
+        "runId": "07f095f9-8832-4e3b-aaca-554adbb0399e",
+        "chatId": "5f9d3c36-d1f2-459d-9bd7-a163670ce2b4",
+        "status": "succeeded",
+        "contractValid": true,
+        "evidence": [
+          {
+            "id": "3d6b8aa2-bbd2-46a5-9201-39840b1fafe8",
+            "sourceId": "gk8-grafana",
+            "operationId": "grafana.search",
+            "observedAt": "2026-11-16T19:15:47.936Z",
+            "coverage": "empty",
+            "truncated": false
+          }
+        ]
+      }
+    ]
+  },
+  "modelSteps": [
+    {
+      "id": "1de4171d-b0fd-4230-a3f2-80ecca64a406",
+      "runId": "01eb3196-f4e1-485b-b6d3-06a5dbf136b2",
+      "model": "global.anthropic.claude-sonnet-5",
+      "state": "settled",
+      "usage": {
+        "inputTokens": 3899,
+        "totalTokens": 4014,
+        "outputTokens": 115,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 0
+      },
+      "reservedMicroUsd": "36856",
+      "chargedMicroUsd": "8948",
+      "providerRequestId": "d2687ef0-c699-44bd-83e0-0a2122f3c120",
+      "providerStatus": 200
+    },
+    {
+      "id": "c5b5d2cc-90d5-4bc6-8c31-c06a4dc8cfec",
+      "runId": "01eb3196-f4e1-485b-b6d3-06a5dbf136b2",
+      "model": "global.anthropic.claude-sonnet-5",
+      "state": "settled",
+      "usage": {
+        "inputTokens": 4633,
+        "totalTokens": 4848,
+        "outputTokens": 215,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 0
+      },
+      "reservedMicroUsd": "39940",
+      "chargedMicroUsd": "11416",
+      "providerRequestId": "f0f3d52a-516b-4878-a33a-4c0083974602",
+      "providerStatus": 200
+    },
+    {
+      "id": "d9a40109-040f-4341-88a5-6306ee28364b",
+      "runId": "c7baa939-4684-414d-bfd7-18693ce0bc41",
+      "model": "global.anthropic.claude-sonnet-5",
+      "state": "settled",
+      "usage": {
+        "inputTokens": 4196,
+        "totalTokens": 4310,
+        "outputTokens": 114,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 0
+      },
+      "reservedMicroUsd": "38104",
+      "chargedMicroUsd": "9532",
+      "providerRequestId": "425389ec-40dc-45c8-b692-1a9f7c0e0557",
+      "providerStatus": 200
+    },
+    {
+      "id": "ee4c23ba-f95c-4e98-8227-1c05d07456b2",
+      "runId": "c7baa939-4684-414d-bfd7-18693ce0bc41",
+      "model": "global.anthropic.claude-sonnet-5",
+      "state": "settled",
+      "usage": {
+        "inputTokens": 4929,
+        "totalTokens": 5055,
+        "outputTokens": 126,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 0
+      },
+      "reservedMicroUsd": "41184",
+      "chargedMicroUsd": "11118",
+      "providerRequestId": "5b9d2837-e28c-404b-ac0e-8352a7e6600b",
+      "providerStatus": 200
+    },
+    {
+      "id": "ea978a70-431d-4384-a8f6-753ce910d3dd",
+      "runId": "c7baa939-4684-414d-bfd7-18693ce0bc41",
+      "model": "global.anthropic.claude-sonnet-5",
+      "state": "settled",
+      "usage": {
+        "inputTokens": 5789,
+        "totalTokens": 5935,
+        "outputTokens": 146,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 0
+      },
+      "reservedMicroUsd": "44800",
+      "chargedMicroUsd": "13038",
+      "providerRequestId": "d9f4d1f6-b044-4ac6-8a99-ac4176be33a6",
+      "providerStatus": 200
+    },
+    {
+      "id": "4db2c4cf-27d0-431d-a8c4-d0ff91254bf4",
+      "runId": "c7baa939-4684-414d-bfd7-18693ce0bc41",
+      "model": "global.anthropic.claude-sonnet-5",
+      "state": "settled",
+      "usage": {
+        "inputTokens": 7862,
+        "totalTokens": 8158,
+        "outputTokens": 296,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 0
+      },
+      "reservedMicroUsd": "53512",
+      "chargedMicroUsd": "18684",
+      "providerRequestId": "73e01edf-6ef4-4a95-ab7b-bc183ac2bfed",
+      "providerStatus": 200
+    },
+    {
+      "id": "8c592ec0-005e-4986-a4f9-ccd8f6e43fad",
+      "runId": "c7baa939-4684-414d-bfd7-18693ce0bc41",
+      "model": "global.anthropic.claude-sonnet-5",
+      "state": "settled",
+      "usage": {
+        "inputTokens": 10231,
+        "totalTokens": 10377,
+        "outputTokens": 146,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 0
+      },
+      "reservedMicroUsd": "63460",
+      "chargedMicroUsd": "21922",
+      "providerRequestId": "c11f1c4b-932e-495b-83bd-af3aa2a22119",
+      "providerStatus": 200
+    },
+    {
+      "id": "c8c86b10-00f3-4f62-ae3e-3861f944fd68",
+      "runId": "c7baa939-4684-414d-bfd7-18693ce0bc41",
+      "model": "global.anthropic.claude-sonnet-5",
+      "state": "settled",
+      "usage": {
+        "inputTokens": 14931,
+        "totalTokens": 15692,
+        "outputTokens": 761,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 0
+      },
+      "reservedMicroUsd": "83200",
+      "chargedMicroUsd": "37472",
+      "providerRequestId": "5b60c924-b5b6-4cce-9a37-9e18b6fc3fea",
+      "providerStatus": 200
+    },
+    {
+      "id": "a9bd854c-64b8-47b2-aeaa-c17e4934e138",
+      "runId": "07f095f9-8832-4e3b-aaca-554adbb0399e",
+      "model": "global.anthropic.claude-sonnet-5",
+      "state": "settled",
+      "usage": {
+        "inputTokens": 5043,
+        "totalTokens": 5153,
+        "outputTokens": 110,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 0
+      },
+      "reservedMicroUsd": "41664",
+      "chargedMicroUsd": "11186",
+      "providerRequestId": "7a17cce0-294d-40ea-acc1-5cfa407fd917",
+      "providerStatus": 200
+    },
+    {
+      "id": "e7ce18f3-4b06-4b8a-a91e-e54d0f2a7171",
+      "runId": "07f095f9-8832-4e3b-aaca-554adbb0399e",
+      "model": "global.anthropic.claude-sonnet-5",
+      "state": "settled",
+      "usage": {
+        "inputTokens": 5729,
+        "totalTokens": 6441,
+        "outputTokens": 712,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokens": 0
+      },
+      "reservedMicroUsd": "44540",
+      "chargedMicroUsd": "18578",
+      "providerRequestId": "25d07f0b-3a51-441e-836a-76cd786eafa9",
+      "providerStatus": 200
+    }
+  ],
+  "tools": [
+    {
+      "sourceId": "gk8-metrics",
+      "operationId": "metrics.query",
+      "ok": "success",
+      "latencyMs": 1026
+    },
+    {
+      "sourceId": "gk8-logs",
+      "operationId": "logs.labels",
+      "ok": "success",
+      "latencyMs": 534
+    },
+    {
+      "sourceId": "gk8-logs",
+      "operationId": "logs.label_values",
+      "ok": "success",
+      "latencyMs": 486
+    },
+    {
+      "sourceId": "gk8-logs",
+      "operationId": "logs.query_range",
+      "ok": "success",
+      "latencyMs": 538
+    },
+    {
+      "sourceId": "gk8-logs",
+      "operationId": "logs.label_values",
+      "ok": "success",
+      "latencyMs": 878
+    },
+    {
+      "sourceId": "gk8-logs",
+      "operationId": "logs.query_range",
+      "ok": "success",
+      "latencyMs": 853
+    },
+    {
+      "sourceId": "gk8-logs",
+      "operationId": "logs.query_range",
+      "ok": "success",
+      "latencyMs": 1102
+    },
+    {
+      "sourceId": "gk8-grafana",
+      "operationId": "grafana.search",
+      "ok": "success",
+      "latencyMs": 983
+    }
+  ],
+  "validationAccounting": {
+    "currentRunChargeMicroUsd": "161894",
+    "cumulativeLocalPool": [
+      {
+        "customerId": "gk8",
+        "month": "2026-11",
+        "limitMicroUsd": "10000000",
+        "spentMicroUsd": "722016",
+        "reservedMicroUsd": "72504"
+      }
+    ],
+    "earlierUnknownSteps": [
+      {
+        "id": "1c3a6136-2000-42fa-9198-87103abb266f",
+        "runId": "2f3e2580-3367-480b-bdb3-228278ef8612",
+        "model": "global.anthropic.claude-sonnet-5",
+        "state": "uncertain",
+        "usage": null,
+        "reservedMicroUsd": "36252",
+        "chargedMicroUsd": null,
+        "providerRequestId": "69bc7cdc-6b4c-446f-96b7-30cc2ac18d21",
+        "providerStatus": 200
+      },
+      {
+        "id": "11304b89-e14a-4bde-a1c5-284b35a8f683",
+        "runId": "46df0c38-9864-4e4c-af53-43e782a1d5e8",
+        "model": "global.anthropic.claude-sonnet-5",
+        "state": "uncertain",
+        "usage": null,
+        "reservedMicroUsd": "36252",
+        "chargedMicroUsd": null,
+        "providerRequestId": "6f55b5de-efaf-489c-ab24-f6c39220e7b9",
+        "providerStatus": 200
+      }
+    ],
+    "uncertainHoldExplanation": "Original responses lacked a fully validated usage receipt. Their reservations remain held; success of a later response is not evidence to release an earlier hold."
+  },
+  "cleanup": {
+    "testChatContentDeleted": true,
+    "accountingPreserved": true,
+    "testMcpKeyRevoked": true,
+    "testMcpParameterDeleted": true,
+    "testBedrockCredentialDeleted": true,
+    "testPolicyDeleted": true,
+    "testUserDeleted": true
+  },
+  "providerProtocol": {
+    "observedResponses": 10,
+    "allHttp200": true,
+    "allKnownClientTools": true,
+    "allServerToolUsageEmpty": true,
+    "readSample": {
+      "status": 200,
+      "contentType": "application/json",
+      "requestId": "d2687ef0-c699-44bd-83e0-0a2122f3c120",
+      "topLevelKeys": [
+        "metrics",
+        "output",
+        "stopReason",
+        "usage"
+      ],
+      "outputKeys": [
+        "message"
+      ],
+      "messageKeys": [
+        "content",
+        "role"
+      ],
+      "stopReason": "tool_use",
+      "usageKeys": [
+        "cacheReadInputTokenCount",
+        "cacheReadInputTokens",
+        "cacheWriteInputTokenCount",
+        "cacheWriteInputTokens",
+        "inputTokens",
+        "outputTokens",
+        "serverToolUsage",
+        "totalTokens"
+      ],
+      "serverToolUsageType": "object",
+      "serverToolUsageKeys": [],
+      "numericServerToolUsage": {},
+      "numericUsage": {
+        "cacheReadInputTokenCount": 0,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokenCount": 0,
+        "cacheWriteInputTokens": 0,
+        "inputTokens": 3899,
+        "outputTokens": 115,
+        "totalTokens": 4014
+      },
+      "blocks": [
+        {
+          "text": false,
+          "toolUse": true,
+          "toolRequestType": "tool_use",
+          "toolUseProtocolKeys": [
+            "input",
+            "name",
+            "toolUseId",
+            "type"
+          ],
+          "knownTool": true,
+          "presentation": false,
+          "inputType": "object",
+          "reasoningContent": false,
+          "unknownBlockCount": 0
+        }
+      ]
+    },
+    "presentationSample": {
+      "status": 200,
+      "contentType": "application/json",
+      "requestId": "f0f3d52a-516b-4878-a33a-4c0083974602",
+      "topLevelKeys": [
+        "metrics",
+        "output",
+        "stopReason",
+        "usage"
+      ],
+      "outputKeys": [
+        "message"
+      ],
+      "messageKeys": [
+        "content",
+        "role"
+      ],
+      "stopReason": "tool_use",
+      "usageKeys": [
+        "cacheReadInputTokenCount",
+        "cacheReadInputTokens",
+        "cacheWriteInputTokenCount",
+        "cacheWriteInputTokens",
+        "inputTokens",
+        "outputTokens",
+        "serverToolUsage",
+        "totalTokens"
+      ],
+      "serverToolUsageType": "object",
+      "serverToolUsageKeys": [],
+      "numericServerToolUsage": {},
+      "numericUsage": {
+        "cacheReadInputTokenCount": 0,
+        "cacheReadInputTokens": 0,
+        "cacheWriteInputTokenCount": 0,
+        "cacheWriteInputTokens": 0,
+        "inputTokens": 4633,
+        "outputTokens": 215,
+        "totalTokens": 4848
+      },
+      "blocks": [
+        {
+          "text": false,
+          "toolUse": true,
+          "toolRequestType": "tool_use",
+          "toolUseProtocolKeys": [
+            "input",
+            "name",
+            "toolUseId",
+            "type"
+          ],
+          "knownTool": true,
+          "presentation": true,
+          "presentationContractValid": true,
+          "presentationIssues": [],
+          "inputType": "object",
+          "reasoningContent": false,
+          "unknownBlockCount": 0
+        }
+      ]
+    }
+  }
+}

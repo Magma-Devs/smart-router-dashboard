@@ -45,8 +45,9 @@ chart implementation PRs.
 1. Securely inject the intended API configuration into the operator process from
    the approved secret source. Keep the deployed flag off. Confirm the exact
    customer mapping and that the MCP grant is customer-only, read-only and not a
-   staff/multi-customer credential. Never broaden IAM or substitute another
-   credential to make a rejected check pass.
+   staff/multi-customer credential. Never fall back to a broader or cross-account
+   runtime credential after a rejected check. Provisioning a new intended
+   identity requires its own reviewed, narrowly scoped configuration.
 2. Verify the current model/profile, region, counter mapping and all billing
    categories against the official AWS pricing and service documentation. Save
    the dated rate-card version/source/validity as evidence. There is no default
@@ -79,6 +80,11 @@ If `magma` uses an expired AWS SSO session, the operator renews it with
 --profile magma`. This refreshes local CLI credentials; it neither grants missing
 permissions nor renews an independent Bedrock bearer. Do not save secrets in shell
 history, PR bodies, screenshots, transcripts or ordinary application logs.
+
+The [16 November live follow-up](validation/MAG-4934/LIVE.md) records renewed
+SSO, actual scoped source reads and the native provider compatibility work.
+Its disposable local stack and temporary credentials are validation evidence;
+they do not establish permanent runtime delivery or a deployed pilot.
 
 ## Internal records and retention checkpoint
 
