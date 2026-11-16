@@ -5,6 +5,20 @@ Scope: [MAG-4934](https://magmadevs.atlassian.net/browse/MAG-4934), following th
 flags stay off until the current runtime checkpoints below have evidence. A green
 fixture suite or a published image does not establish a live pilot.
 
+## Single dashboard release
+
+The implementation slices land in `integration/MAG-4750-managed-ask`, with
+stacked bases for review. The repository permits squash merges only: after a
+slice lands, rebase the next slice and its descendants onto the updated
+integration branch and rerun checks. Individual slices leave `VERSION` alone.
+
+After the complete feature passes review and integration testing, one final
+integration-to-main PR reconciles current main and bumps `VERSION` once to the
+agreed next release. Choose the number then. Branch image builds are validation
+artifacts; the stable dashboard release is shared by the complete feature.
+Chart and fleet delivery use their own repositories and versioning. GK8 rollout
+uses the resulting released dashboard image and the fresh checkpoint below.
+
 ## Runtime delivery
 
 Both web and API require `AUTH_MODE=enabled`, `DEPLOYMENT_MODE=managed` and the same
