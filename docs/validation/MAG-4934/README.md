@@ -1,5 +1,9 @@
 # MAG-4934 runtime preparation evidence
 
+The [native provider and internal runtime follow-up](LIVE.md) supersedes the
+expired-SSO/provider-access status below. The original slice's local checks
+remain recorded here; live follow-up evidence does not imply a deployed pilot.
+
 16 November 2026. This slice follows dashboard [PR #396](https://github.com/Magma-Devs/smart-router-dashboard/pull/396)
 (UI; Quality Gate and both Browser jobs passed on `4ad43cb3`).
 

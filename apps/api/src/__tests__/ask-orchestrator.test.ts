@@ -70,6 +70,13 @@ function provider(blocks: unknown[], stopReason = "tool_use") {
   return { output: { message: { role: "assistant", content: blocks } }, stopReason, usage };
 }
 const final = (value: unknown = content) => provider([{ text: JSON.stringify(value) }], "end_turn");
+const presentation = (value: unknown = content) => ({
+  toolUse: {
+    toolUseId: "answer-1",
+    name: "present_answer",
+    input: value,
+  },
+});
 
 function fixture(
   options: { data?: unknown; fail?: boolean; status?: boolean; responses?: unknown[] } = {},
@@ -183,6 +190,83 @@ function fixture(
 afterEach(() => vi.restoreAllMocks());
 
 describe("bounded customer tool orchestration", () => {
+  it("presents a validated local answer after a successful read using forced tools", async () => {
+    const f = fixture({ responses: [provider([tool()]), provider([presentation()])] });
+    expect((await f.answer()).summary).toBe(content.summary);
+    const requests = f.bodies.map((body) => JSON.parse(body));
+    expect(
+      requests[0].toolConfig.tools.map((t: { toolSpec: { name: string } }) => t.toolSpec.name),
+    ).toEqual(["read_customer_data"]);
+    expect(
+      requests[1].toolConfig.tools.map((t: { toolSpec: { name: string } }) => t.toolSpec.name),
+    ).toEqual(["read_customer_data", "present_answer"]);
+    expect(requests[1].toolConfig.toolChoice).toEqual({ any: {} });
+    const format = requests[1].toolConfig.tools[1].toolSpec;
+    expect(format.strict).toBe(true);
+    expect(format.inputSchema.json).toMatchObject({
+      additionalProperties: false,
+      properties: {
+        summary: { type: "string", description: "At least 1 characters. At most 500 characters." },
+        sections: { type: "array", minItems: 1 },
+      },
+    });
+    const schemaText = JSON.stringify(format.inputSchema.json);
+    for (const key of ["maxLength", "minLength", "maxItems"])
+      expect(schemaText).not.toContain(`"${key}"`);
+    expect(f.call.mock.calls.filter(([call]) => call.name === "execute_operation")).toHaveLength(1);
+    expect(f.hooks.recordUsage).toHaveBeenCalledTimes(2);
+  });
+  it.each([
+    [presentation(), tool()],
+    [presentation(), presentation()],
+    [presentation(), { text: "extra prose" }],
+    [presentation({ ...content, evidence: [] })],
+    [presentation({ ...content, summary: "x".repeat(501) })],
+  ])(
+    "rejects mixed presentation or invalid arguments without another MCP or model call",
+    async (...blocks) => {
+      const f = fixture({ responses: [provider([tool()]), provider(blocks)] });
+      await expect(f.answer()).rejects.toMatchObject({ code: "ASK_INVALID_ANSWER" });
+      expect(f.call.mock.calls.filter(([call]) => call.name === "execute_operation")).toHaveLength(
+        1,
+      );
+      expect(f.hooks.recordUsage).toHaveBeenCalledTimes(2);
+    },
+  );
+  it("rejects a presentation before any actual read", async () => {
+    const f = fixture({ responses: [provider([presentation()])] });
+    await expect(f.answer()).rejects.toMatchObject({ code: "ASK_INVALID_ANSWER" });
+    expect(f.call.mock.calls.some(([call]) => call.name === "execute_operation")).toBe(false);
+  });
+  it.each(["json", ""])(
+    "accepts one complete %s JSON fence without another paid step",
+    async (language) => {
+      const f = fixture({
+        responses: [
+          provider([tool()]),
+          provider(
+            [{ text: `\x60\x60\x60${language}\n${JSON.stringify(content)}\n\x60\x60\x60` }],
+            "end_turn",
+          ),
+        ],
+      });
+      expect((await f.answer()).summary).toBe(content.summary);
+      expect(f.fetchImpl).toHaveBeenCalledTimes(2);
+      expect(f.hooks.recordUsage).toHaveBeenCalledTimes(2);
+    },
+  );
+  it.each([
+    `Explanation\n\x60\x60\x60json\n${JSON.stringify(content)}\n\x60\x60\x60`,
+    `\x60\x60\x60json\n${JSON.stringify(content)}\n\x60\x60\x60\nExtra prose`,
+    `\x60\x60\x60javascript\n${JSON.stringify(content)}\n\x60\x60\x60`,
+    `\x60\x60\x60json\n${JSON.stringify({ ...content, evidence: [] })}\n\x60\x60\x60`,
+    `\x60\x60\x60json\n${JSON.stringify({ ...content, summary: "x".repeat(501) })}\n\x60\x60\x60`,
+  ])("rejects prose, other languages and invalid contracts inside a fence", async (text) => {
+    const f = fixture({ responses: [provider([tool()]), provider([{ text }], "end_turn")] });
+    await expect(f.answer()).rejects.toMatchObject({ code: "ASK_INVALID_ANSWER" });
+    expect(f.hooks.recordUsage).toHaveBeenCalledTimes(2);
+    expect(f.fetchImpl).toHaveBeenCalledTimes(2);
+  });
   it("reserves/accounts every model step, reads actual authorized data and authors provenance", async () => {
     const f = fixture();
     const result = await f.answer();
@@ -191,9 +275,20 @@ describe("bounded customer tool orchestration", () => {
       messages: Array<{ content: Array<{ text: string }> }>;
     };
     const requestContext = JSON.parse(clockBody.messages[0]!.content[0]!.text) as {
-      request: { serverTime: string };
+      request: {
+        serverTime: string;
+        serverUnixSeconds: number;
+        recentWindows: { last5Minutes: { start: number; end: number } };
+      };
     };
     expect(Math.abs(Date.parse(requestContext.request.serverTime) - Date.now())).toBeLessThan(5000);
+    expect(Date.parse(requestContext.request.serverTime)).toBe(
+      requestContext.request.serverUnixSeconds * 1000,
+    );
+    expect(requestContext.request.recentWindows.last5Minutes).toEqual({
+      start: requestContext.request.serverUnixSeconds - 300,
+      end: requestContext.request.serverUnixSeconds,
+    });
     const followUp = JSON.parse(f.bodies[1]!) as {
       messages: Array<{ content: Array<{ toolResult?: { content: Array<{ text: string }> } }> }>;
     };
@@ -357,11 +452,23 @@ describe("bounded customer tool orchestration", () => {
     const calls = fixture({
       responses: [
         provider([tool(), tool("gk8-metrics", "metrics.query", { query: "up" }, "second")]),
+        provider([presentation()]),
       ],
     });
     calls.settings.maxToolCalls = 1;
-    await expect(calls.answer()).rejects.toMatchObject({ code: "ASK_LIMIT_REACHED" });
+    expect((await calls.answer()).summary).toBe(content.summary);
     expect(calls.hooks.recordTool).toHaveBeenCalledTimes(1);
+    const afterLimit = JSON.parse(calls.bodies[1]!);
+    expect(
+      afterLimit.toolConfig.tools.map((t: { toolSpec: { name: string } }) => t.toolSpec.name),
+    ).toEqual(["present_answer"]);
+    expect(afterLimit.messages.at(-1).content).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          toolResult: expect.objectContaining({ toolUseId: "second", status: "error" }),
+        }),
+      ]),
+    );
     vi.restoreAllMocks();
     const context = fixture();
     context.settings.maxContextBytes = 100;

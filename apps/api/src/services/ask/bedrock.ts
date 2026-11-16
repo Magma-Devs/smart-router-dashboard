@@ -7,6 +7,7 @@ export interface BedrockTool {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  strict?: boolean;
 }
 export interface BedrockMessage {
   role: "user" | "assistant";
@@ -37,6 +38,43 @@ const usageSchema = z
   })
   .strict();
 export type BedrockUsage = z.infer<typeof usageSchema>;
+const wireUsageSchema = usageSchema
+  .extend({
+    cacheReadInputTokenCount: count.optional(),
+    cacheWriteInputTokenCount: count.optional(),
+    // No server tools are requested. Only an absent/empty server-tool receipt
+    // proves there is no additional, unpriced usage category to reconcile.
+    serverToolUsage: z
+      .union([z.object({}).strict(), z.array(z.never()).max(0)])
+      .nullable()
+      .optional(),
+  })
+  .superRefine((value, context) => {
+    for (const [tokens, legacy] of [
+      [value.cacheReadInputTokens, value.cacheReadInputTokenCount],
+      [value.cacheWriteInputTokens, value.cacheWriteInputTokenCount],
+    ]) {
+      if (tokens !== undefined && legacy !== undefined && tokens !== legacy)
+        context.addIssue({ code: "custom", message: "Conflicting cache usage counters" });
+    }
+  })
+  .transform(
+    ({
+      cacheReadInputTokenCount,
+      cacheWriteInputTokenCount,
+      serverToolUsage: _serverToolUsage,
+      ...value
+    }) => ({
+      ...value,
+      ...(value.cacheReadInputTokens === undefined && cacheReadInputTokenCount !== undefined
+        ? { cacheReadInputTokens: cacheReadInputTokenCount }
+        : {}),
+      ...(value.cacheWriteInputTokens === undefined && cacheWriteInputTokenCount !== undefined
+        ? { cacheWriteInputTokens: cacheWriteInputTokenCount }
+        : {}),
+    }),
+  );
+
 const responseSchema = z
   .object({
     output: z.object({
@@ -53,8 +91,12 @@ const responseSchema = z
                       toolUseId: z.string().min(1).max(200),
                       name: z.string().min(1).max(200),
                       input: z.record(z.string(), z.unknown()),
+                      // Native client calls may carry tool_use or null.
+                      // Server-tool discriminators remain rejected.
+                      type: z.literal("tool_use").nullable().optional(),
                     })
-                    .strict(),
+                    .strict()
+                    .transform(({ type: _type, ...tool }) => tool),
                 })
                 .strict(),
             ]),
@@ -87,11 +129,18 @@ export interface BedrockInput {
   requestMetadata?: Record<string, string>;
 }
 
-function converseBody(input: BedrockInput, maxOutputTokens: number) {
+function converseBody(input: BedrockInput, maxOutputTokens: number, model: string) {
+  // Sonnet 5 enables adaptive thinking by default. The bounded JSON/tool
+  // contract consumes text/tool blocks only, so select its documented off mode.
+  const disableThinking =
+    /^(?:(?:global|us|eu|apac|au|in)\.)?anthropic\.claude-sonnet-5(?:[-.:]|$)/.test(model);
   return {
     system: [{ text: input.system }],
     messages: input.messages,
     inferenceConfig: { maxTokens: maxOutputTokens },
+    ...(disableThinking
+      ? { additionalModelRequestFields: { thinking: { type: "disabled" } } }
+      : {}),
     ...(input.requestMetadata ? { requestMetadata: input.requestMetadata } : {}),
     ...(input.tools?.length
       ? {
@@ -102,6 +151,7 @@ function converseBody(input: BedrockInput, maxOutputTokens: number) {
                 name: tool.name,
                 description: tool.description,
                 inputSchema: { json: tool.inputSchema },
+                ...(tool.strict ? { strict: true } : {}),
               },
             })),
           },
@@ -124,7 +174,7 @@ export class BedrockAdapter {
     signal?: AbortSignal,
   ): Promise<number> {
     if (!this.settings.enabled || this.settings.problem) throw new AskFailure("ASK_UNAVAILABLE");
-    const runtime = converseBody(input, this.settings.maxOutputTokens);
+    const runtime = converseBody(input, this.settings.maxOutputTokens, this.settings.bedrockModel);
     const body =
       counter.mode === "runtime"
         ? {
@@ -138,6 +188,7 @@ export class BedrockAdapter {
           }
         : {
             model: counter.model,
+            ...runtime.additionalModelRequestFields,
             system: input.system,
             messages: input.messages.map((message) => ({
               role: message.role,
@@ -167,6 +218,7 @@ export class BedrockAdapter {
                     name: tool.name,
                     description: tool.description,
                     input_schema: tool.inputSchema,
+                    ...(tool.strict ? { strict: true } : {}),
                   })),
                   tool_choice: { type: input.forceTool ? "any" : "auto" },
                 }
@@ -225,7 +277,9 @@ export class BedrockAdapter {
   ): Promise<BedrockStep> {
     if (!this.settings.enabled) throw new AskFailure("ASK_DISABLED", 404);
     if (this.settings.problem) throw new AskFailure("ASK_UNAVAILABLE");
-    const body = JSON.stringify(converseBody(input, this.settings.maxOutputTokens));
+    const body = JSON.stringify(
+      converseBody(input, this.settings.maxOutputTokens, this.settings.bedrockModel),
+    );
     if (Buffer.byteLength(body) > this.settings.maxContextBytes)
       throw new AskFailure("ASK_LIMIT_REACHED", 422);
     const endpoint = `https://bedrock-runtime.${this.settings.bedrockRegion}.amazonaws.com/model/${encodeURIComponent(this.settings.bedrockModel)}/converse`;
@@ -265,10 +319,12 @@ export class BedrockAdapter {
         throw error;
       throw new AskFailure("ASK_BEDROCK_UNAVAILABLE");
     }
-    const usage = usageSchema.safeParse(
+    const usage = wireUsageSchema.safeParse(
       typeof raw === "object" && raw !== null && "usage" in raw ? raw.usage : undefined,
     );
     await options.onUsage(usage.success ? usage.data : null, receipt);
+    if (!usage.success && typeof raw === "object" && raw !== null && "usage" in raw)
+      throw new AskFailure("ASK_INVALID_ANSWER", 502);
     const parsed = responseSchema.safeParse(raw);
     if (!parsed.success) throw new AskFailure("ASK_INVALID_ANSWER", 502);
     if (

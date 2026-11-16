@@ -31,7 +31,9 @@ const input: BedrockInput = {
       ],
     },
   ],
-  tools: [{ name: "read", description: "Fixture read", inputSchema: { type: "object" } }],
+  tools: [
+    { name: "read", description: "Fixture read", inputSchema: { type: "object" }, strict: true },
+  ],
   forceTool: true,
 };
 describe("free Bedrock token preflight", () => {
@@ -55,7 +57,9 @@ describe("free Bedrock token preflight", () => {
       messages: input.messages,
       toolConfig: {
         toolChoice: { any: {} },
-        tools: [{ toolSpec: { name: "read", inputSchema: { json: { type: "object" } } } }],
+        tools: [
+          { toolSpec: { name: "read", strict: true, inputSchema: { json: { type: "object" } } } },
+        ],
       },
     });
     expect(JSON.stringify(body)).not.toContain("maxTokens");
@@ -82,6 +86,7 @@ describe("free Bedrock token preflight", () => {
       model: "anthropic.fixture",
       system: input.system,
       tool_choice: { type: "any" },
+      tools: [{ strict: true }],
       messages: [
         { content: [{ type: "tool_use", id: "read-1" }] },
         { content: [{ type: "tool_result", tool_use_id: "read-1", is_error: true }] },
@@ -102,5 +107,26 @@ describe("free Bedrock token preflight", () => {
     ).rejects.toThrow();
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(String(fetchImpl.mock.calls[0]![0])).not.toContain("/converse");
+  });
+});
+
+// Sonnet 5's default thinking mode must match the actual invocation setting.
+describe("Sonnet 5 counter configuration", () => {
+  it("counts with the same disabled thinking setting as Converse", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ input_tokens: 123 }));
+    const adapter = new BedrockAdapter(
+      { ...settings, bedrockModel: "global.anthropic.claude-sonnet-5" },
+      fetchImpl,
+    );
+    await expect(
+      adapter.countTokens(
+        { system: "Fixture", messages: [{ role: "user", content: [{ text: "Question" }] }] },
+        { mode: "mantle", model: "anthropic.claude-sonnet-5" },
+      ),
+    ).resolves.toBe(123);
+    expect(JSON.parse(String(fetchImpl.mock.calls[0]![1]!.body))).toMatchObject({
+      thinking: { type: "disabled" },
+      model: "anthropic.claude-sonnet-5",
+    });
   });
 });

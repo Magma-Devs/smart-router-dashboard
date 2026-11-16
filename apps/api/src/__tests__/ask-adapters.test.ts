@@ -59,6 +59,17 @@ describe("Ask settings and provider boundary", () => {
     expect(readAskSettings({ ...env, ASK_DATA_RETENTION_DAYS: "30" }).retentionDays).toBe(30);
   });
 
+  it("selects the documented non-thinking mode for Sonnet 5 structured tool responses", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(Response.json(providerResult()));
+    await new BedrockAdapter(
+      { ...settings(), bedrockModel: "global.anthropic.claude-sonnet-5" },
+      fetchImpl,
+    ).converse(input, { onUsage: vi.fn(), onDispatch: async () => undefined });
+    expect(JSON.parse(String(fetchImpl.mock.calls[0]![1]!.body))).toMatchObject({
+      additionalModelRequestFields: { thinking: { type: "disabled" } },
+    });
+  });
+
   it("never invokes either provider while disabled or misconfigured", async () => {
     const fetchImpl = vi.fn<typeof fetch>();
     for (const value of [
@@ -198,6 +209,101 @@ describe("Bedrock adapter", () => {
     const fetchImpl = vi
       .fn<typeof fetch>()
       .mockResolvedValue(Response.json({ usage, output: "bad" }));
+    await expect(
+      new BedrockAdapter(settings(), fetchImpl).converse(input, {
+        onUsage,
+        onDispatch: async () => undefined,
+      }),
+    ).rejects.toMatchObject({ code: "ASK_INVALID_ANSWER" });
+    expect(onUsage).toHaveBeenCalledWith(usage, { requestId: null, providerStatus: 200 });
+  });
+
+  it.each([null, "tool_use"])(
+    "normalizes client marker %s and matching cache aliases without double billing",
+    async (marker) => {
+      const onUsage = vi.fn();
+      const raw = {
+        ...providerResult(),
+        usage: {
+          ...usage,
+          cacheReadInputTokens: 7,
+          cacheReadInputTokenCount: 7,
+          cacheWriteInputTokenCount: 0,
+          serverToolUsage: null,
+        },
+        output: {
+          message: {
+            role: "assistant",
+            content: [
+              {
+                toolUse: {
+                  type: marker,
+                  toolUseId: "client-read",
+                  name: "read_customer_data",
+                  input: {},
+                },
+              },
+            ],
+          },
+        },
+        stopReason: "tool_use",
+      };
+      const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(Response.json(raw));
+      const result = await new BedrockAdapter(settings(), fetchImpl).converse(input, {
+        onUsage,
+        onDispatch: async () => undefined,
+      });
+      expect(result.message.content).toEqual([
+        { toolUse: { toolUseId: "client-read", name: "read_customer_data", input: {} } },
+      ]);
+      expect(result.usage).toEqual({ ...usage, cacheReadInputTokens: 7, cacheWriteInputTokens: 0 });
+      expect(onUsage).toHaveBeenCalledExactlyOnceWith(result.usage, {
+        requestId: null,
+        providerStatus: 200,
+      });
+    },
+  );
+
+  it.each([
+    { cacheReadInputTokens: 7, cacheReadInputTokenCount: 8 },
+    { serverToolUsage: { webSearchRequests: 1 } },
+    { futureBilledTokens: 1 },
+  ])("retains uncertainty and stops on conflicting or unpriced usage: %s", async (extra) => {
+    const onUsage = vi.fn();
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(Response.json({ ...providerResult(), usage: { ...usage, ...extra } }));
+    await expect(
+      new BedrockAdapter(settings(), fetchImpl).converse(input, {
+        onUsage,
+        onDispatch: async () => undefined,
+      }),
+    ).rejects.toMatchObject({ code: "ASK_INVALID_ANSWER" });
+    expect(onUsage).toHaveBeenCalledExactlyOnceWith(null, { requestId: null, providerStatus: 200 });
+  });
+
+  it("does not execute a server-tool request even with the local tool's name", async () => {
+    const onUsage = vi.fn();
+    const raw = {
+      ...providerResult(),
+      output: {
+        message: {
+          role: "assistant",
+          content: [
+            {
+              toolUse: {
+                type: "server_tool_use",
+                toolUseId: "server-read",
+                name: "read_customer_data",
+                input: {},
+              },
+            },
+          ],
+        },
+      },
+      stopReason: "tool_use",
+    };
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(Response.json(raw));
     await expect(
       new BedrockAdapter(settings(), fetchImpl).converse(input, {
         onUsage,

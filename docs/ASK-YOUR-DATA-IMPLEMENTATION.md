@@ -86,19 +86,19 @@ bounded; direct IDs always require ownership checks.
 All items below start **pending**, independent of a PR being opened or merged.
 Each implementation slice adds dated commands/results and remaining limits.
 
-- [ ] Customer identity, source ownership and read-only enforcement
-- [ ] Managed/customer flags and current-session gate on UI and API
+- [x] Customer identity, source ownership and read-only enforcement — adapter tests and [scoped live checks](validation/MAG-4934/LIVE.md)
+- [x] Managed/customer flags and current-session gate on UI and API — [browser evidence](validation/MAG-4933/README.md), API/HTTP gate checks
 - [x] Two customers and personal ownership through HTTP/real PostgreSQL — [MAG-4930 evidence](validation/MAG-4930/README.md)
-- [ ] Separate API replicas, idempotency, leases, crash/restart and cancellation
-- [ ] Every model step reserved/accounted; shared-customer concurrency and rollover
-- [ ] Malicious prompts/logs cannot change tools, customer, endpoint or credentials
-- [ ] Answer contract, evidence/time context, missing/partial/truncated data
-- [ ] Personal history, search, pagination, direct links and last view
-- [ ] Browser panel/full flow, minimize, navigation, reload, copy and stop
-- [ ] Internal authorized staff read/export and customer denial
-- [ ] Observable scheduled retention with tested cutoffs
+- [x] Separate API replicas, idempotency, leases, crash/restart and cancellation — [HTTP/PostgreSQL evidence](validation/MAG-4930/README.md)
+- [x] Every model step reserved/accounted; shared-customer concurrency and rollover — [budget evidence](validation/MAG-4932/README.md) and [actual provider receipts](validation/MAG-4934/native-browser.json)
+- [x] Malicious prompts/logs cannot change tools, customer, endpoint or credentials — [orchestration policy checks](validation/MAG-4931/README.md)
+- [x] Answer contract, evidence/time context, missing/partial/truncated data — orchestration tests and [native browser checks](validation/MAG-4934/LIVE.md)
+- [x] Personal history, search, pagination, direct links and last view — [browser evidence](validation/MAG-4933/README.md)
+- [x] Browser panel/full flow, minimize, navigation, reload, copy and stop — [browser evidence](validation/MAG-4933/README.md)
+- [x] Internal authorized staff read/export and customer denial — [actual staff OAuth/runtime checks](validation/MAG-4934/staff-runtime.json)
+- [x] Observable scheduled retention with tested cutoffs — actual HTTP/PostgreSQL and [flag-off scheduled runtime check](validation/MAG-4934/staff-runtime.json)
 - [ ] Runtime secret/config delivery and current Bedrock model/region access
-- [ ] Current customer MCP discovery and bounded actual data read
+- [x] Current customer MCP discovery and bounded actual data read — [dated scoped live checks](validation/MAG-4934/LIVE.md)
 - [ ] GK8 cap, feature enable/disable and operational rollback verified
 - [ ] Dated GK8 pilot start; 60-day product measurement handed to MAG-4642
 
@@ -130,3 +130,11 @@ No acceptance item is complete without the corresponding observed evidence.
 - MAG-4934 adds runtime Compose wiring, a free configuration/provider preflight
   and the [operational runbook](ASK-YOUR-DATA-OPERATIONS.md). Live provider, staff,
   fleet secret/pin delivery and the controlled GK8 rehearsal remain open.
+
+- The MAG-4934 native-provider follow-up renews SSO, verifies current customer-only
+  MCP reads, and fixes Sonnet 5 protocol/accounting and structured presentation.
+  Three real browser questions and all ten metered model steps succeed. Separately,
+  actual staff OAuth/read/export, admin denial, revocation and scheduled retention
+  pass with the flag off. [Dated metadata receipts and limits](validation/MAG-4934/LIVE.md)
+  supersede earlier expired-access observations. Permanent fleet delivery and the
+  deployed GK8 rehearsal/pilot remain pending; no production flag was enabled.
