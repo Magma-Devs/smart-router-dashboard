@@ -18,11 +18,14 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   when the window has bursts; and "Always present"
   is one short line, drawn only when there are such errors. A kind picked
   from the filter that has no bursts says so in the header ("No bursts of
-  failed attempts in the last 1 day").
+  failed attempts in the last 1 day"). When Prometheus did not answer and no
+  burst is drawn, the header gives no count: the warning under it says the
+  timeline may be missing bursts.
 - **The request list's counts say when they are partial.** "Requests with an
   error 300" beside "All 300" said the same number twice, and 300 was only
   the rows loaded, not the total. The number beside the title is gone, and
-  while older requests are not loaded the filter's counts read "300+".
+  while older requests are not loaded the filter's counts read "300+";
+  a count of 0 stays "0", and hovering it says the same.
   The (i) beside the title is gone too.
 
 ## [0.69.0]

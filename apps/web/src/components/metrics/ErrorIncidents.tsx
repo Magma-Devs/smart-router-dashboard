@@ -103,6 +103,7 @@ export function ErrorIncidents({ chainFilter, win, openKey, onOpen }: {
         </span>
         <span style={{ fontSize: 12, color: "var(--text-4)" }}>
           {isLoading ? <SkelLine w={220} />
+            : data && !data.available && !lines.length ? null
             : data ? <>{lines.length ? fmtComma(lines.length) : "No"} {lines.length === 1 ? "burst" : "bursts"}{kind !== "all" && !lines.length ? ` of ${KIND[kind].noun}` : ""} in the last {winWords}{ongoing ? <>, <span style={{ color: "var(--err)" }}>{ongoing} still going</span></> : null}</>
             : null}
         </span>

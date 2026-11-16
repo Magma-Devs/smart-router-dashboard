@@ -232,11 +232,11 @@ function LookupPanel({ id, rangeQ, rangeWords, onClose }: { id: string; rangeQ: 
   );
 }
 
-function Seg<T extends string>({ value, onChange, options, atLeast = false }: {
+export function Seg<T extends string>({ value, onChange, options, atLeast = false }: {
   value: T;
   onChange: (v: T) => void;
   options: { key: T; label: string; count?: number; color?: string; title?: string }[];
-  /** The counts cover only the rows loaded so far, older ones not yet read: "300+", never a bare "300" that reads as the total. */
+  /** The counts cover only the rows loaded so far, older ones not yet read: "300+", never a bare "300" that reads as the total. A zero stays "0"; its hover says the same. */
   atLeast?: boolean;
 }) {
   return (
@@ -245,7 +245,7 @@ function Seg<T extends string>({ value, onChange, options, atLeast = false }: {
         <button key={o.key} title={o.title} className={value === o.key ? "on" : ""} onClick={() => onChange(o.key)} style={{ padding: "5px 11px", whiteSpace: "nowrap" }}>
           {o.color && <span style={{ display: "inline-block", width: 7, height: 7, borderRadius: 999, background: o.color, marginRight: 6, verticalAlign: "middle" }} />}
           {o.label}
-          {o.count != null && <span className="gw-tnum" title={atLeast && o.count > 0 ? "In the requests loaded so far. Load older ones below the list to count more." : undefined} style={{ marginLeft: 6, color: "var(--text-4)" }}>{fmtComma(o.count)}{atLeast && o.count > 0 ? "+" : ""}</span>}
+          {o.count != null && <span className="gw-tnum" title={atLeast ? "In the requests loaded so far. Load older ones below the list to count more." : undefined} style={{ marginLeft: 6, color: "var(--text-4)" }}>{fmtComma(o.count)}{atLeast && o.count > 0 ? "+" : ""}</span>}
         </button>
       ))}
     </div>
