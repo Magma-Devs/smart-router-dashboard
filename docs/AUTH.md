@@ -139,7 +139,7 @@ makes a restored backup and a locked-out install recoverable — but it means
 the token stays security-relevant for the life of the deployment, and it
 sits in the pod log. Rotate `SETUP_TOKEN` if that log is widely readable.
 
-<img src="./assets/first-run-setup.png" alt="The first-run page: a single card headed &quot;Set up this dashboard — create the first administrator&quot;, explaining that nothing else opens until this is done and that the setup token is printed by the installer. Fields for the setup token, an optional name, email, password and repeat password, with the rule &quot;8 to 64 characters, spaces allowed. Passwords found in known data breaches are refused.&quot; under the password field." width="450">
+<img src="./assets/first-run-setup.png" alt="The first-run page: a single card headed &quot;Set up this dashboard&quot;, subtitled &quot;Create the first administrator&quot;, explaining that nothing else opens until this is done and that the setup token is printed by the installer. Fields for the setup token, an optional name, email, password and repeat password, with the rule &quot;8 to 64 characters, spaces allowed. Passwords found in known data breaches are refused.&quot; under the password field." width="450">
 
 `POST /auth/setup` re-checks the zero-user condition **inside the
 transaction**, behind an advisory lock — the check outside it is only
@@ -1261,7 +1261,7 @@ from the sessions list, signing out everywhere (the other devices; the one it
 was done from is `signout`), a removal, a password reset, a two-factor reset,
 or a password change (for the other devices).
 
-<img src="./assets/account-sessions.png" alt="The Account page, scrolled down: a Connected accounts card listing Google as Linked and GitHub as Not linked; a 2FA card marked On, saying you are asked for a code from your authenticator app at each sign-in and to ask an admin to reset your 2FA if you lose your phone; a Change password card with current, new and repeat fields and a note that other devices will be signed out while this one stays; and an Active sessions card listing an unrecognized device with its own Sign out button and this device as Chrome on Linux, outlined in blue, plus a Sign out everywhere button." width="560">
+<img src="./assets/account-sessions.png" alt="The Account page: a 2FA card marked On, saying you are asked for a code from your authenticator app each time you sign in and to ask an admin to reset your 2FA if you lose your phone; a Change password card with labeled current, new and repeat fields, the password rule under the new one and a note that other devices will be signed out while this one stays; an Active sessions card listing this device as Chrome on Windows, outlined in blue, and an unrecognized device with its own Sign out button, plus a Sign out everywhere button; and the top of an About this deployment card. A deployment that offers Google or GitHub sign-in also shows a Connected accounts card, Linked or Not linked per provider." width="560">
 
 Session rows are **never deleted on revoke** — a revoked session is
 evidence, and the audit log's access events reference it. Nor are they
