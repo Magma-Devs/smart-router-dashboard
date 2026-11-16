@@ -77,10 +77,10 @@ export function ErrorIncidents({ chainFilter, win, openKey, onOpen }: {
   const [all, setAll] = useState(false);
   const [steadyOpen, setSteadyOpen] = useState(false);
 
-  // Nothing in the window, of any kind: there is nothing to filter, so the
-  // filter isn't drawn, and a kind picked on a busier window no longer applies.
-  const anything = (data?.lines.length ?? 0) + (data?.steady.length ?? 0) > 0;
-  const kind = anything ? picked : "all";
+  // The filter is over the bursts. With none in the window it isn't drawn, and
+  // a kind picked on a busier window no longer applies.
+  const hasBursts = (data?.lines.length ?? 0) > 0;
+  const kind = hasBursts ? picked : "all";
   const lines = (data?.lines ?? []).filter((l) => kind === "all" || l.kind === kind);
   const shown = all ? lines : lines.slice(0, FIRST_LANES);
   const steady = (data?.steady ?? []).filter((s) => kind === "all" || s.kind === kind);
@@ -107,7 +107,7 @@ export function ErrorIncidents({ chainFilter, win, openKey, onOpen }: {
             : null}
         </span>
         <span style={{ flex: 1 }} />
-        {anything && (
+        {hasBursts && (
           <div className="gw-segctl">
             {(["all", "failed", "reply"] as const).map((k) => (
               <button key={k} className={kind === k ? "on" : ""} onClick={() => { setKind(k); setAll(false); }} style={{ padding: "5px 11px", whiteSpace: "nowrap" }}

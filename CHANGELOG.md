@@ -15,7 +15,7 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   errors below come in all the time, at their usual level.", and the "Always
   present" line under it - beside a filter with nothing to filter. Now the
   header says "No bursts in the last 1 day", once; the filter is drawn only
-  when the window has bursts or always-present errors; and "Always present"
+  when the window has bursts; and "Always present"
   is one short line, drawn only when there are such errors. A kind picked
   from the filter that has no bursts says so in the header ("No bursts of
   failed attempts in the last 1 day").
