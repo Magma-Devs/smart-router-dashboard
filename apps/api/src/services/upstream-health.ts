@@ -1,4 +1,7 @@
-import { ENDPOINT_METRICS, qProviderBlockedByEndpoint, selector, type HealthState } from "@sr/shared";
+import {
+  ENDPOINT_METRICS, qBlockChecksPassedOver, qProviderBlockedByEndpoint, qProviderBlockedOver, selector,
+  type HealthCause, type HealthState, type ProviderAttention,
+} from "@sr/shared";
 import type { ConfigurationService } from "./configuration.js";
 import type { PrometheusClient, PromVectorSample } from "./prometheus-client.js";
 
@@ -17,13 +20,23 @@ export interface UpstreamHealth {
   endpointId: string;
   spec: string;
   health: HealthState;
+  /** One plain sentence: what the reader is told. */
   healthReason: string;
+  healthCause: HealthCause;
+  /** Unix seconds an unhealthy provider's trouble began (`readHealthSince`); null when not known. */
+  healthSince: number | null;
+  healthSinceOrEarlier: boolean;
+  /** The interfaces and scrape targets whose every block check fails: the series a checks-failing "since" is read from. */
+  failingChecks: { apiInterface: string; instance: string }[];
   routerIds: string[];
 }
 
 const rank: Record<HealthState, number> = { operational: 0, unknown: 1, unhealthy: 2 };
-const missing =
-  "No current health measurement or successful block polls reported; check the router and Prometheus scrape.";
+/* The reasons, in words a client reads: a "block check" is the router asking
+   a provider for its latest block, which it does whether or not it sends the
+   provider requests. No store or scrape is named: the reader can check neither. */
+export const NO_DATA_REASON = "No data yet: the router reports nothing about it.";
+const missing = NO_DATA_REASON;
 
 /** Four reads, independent of fleet size; shared by the roster and the pulse's counts. */
 export async function readUpstreamHealth(
@@ -83,7 +96,7 @@ export async function readUpstreamHealth(
     const key = upstreamKey(endpointId, chain);
     let row = rows.get(key);
     if (!row) {
-      row = { endpointId, spec: chain, health: "unknown", healthReason: missing, routerIds: [] };
+      row = { endpointId, spec: chain, health: "unknown", healthReason: missing, healthCause: "no-data", healthSince: null, healthSinceOrEarlier: false, failingChecks: [], routerIds: [] };
       rows.set(key, row);
     }
     return row;
@@ -100,7 +113,7 @@ export async function readUpstreamHealth(
       expected.set(key, interfaces);
     }
   }
-  type Signal = { rowKey: string; iface: string; gauge?: HealthState; ok: number; failed: number };
+  type Signal = { rowKey: string; iface: string; instance: string; gauge?: HealthState; ok: number; failed: number };
   const signals = new Map<string, Signal>();
   const add = (sample: PromVectorSample, kind: "gauge" | "ok" | "failed") => {
     const id = sample.metric.endpoint_id;
@@ -109,8 +122,9 @@ export async function readUpstreamHealth(
     ensure(id, chain);
     const rowKey = upstreamKey(id, chain);
     const iface = sample.metric.apiInterface ?? "";
-    const key = `${rowKey}\u0000${iface}\u0000${sample.metric.instance ?? ""}`;
-    const signal = signals.get(key) ?? { rowKey, iface, ok: 0, failed: 0 };
+    const instance = sample.metric.instance ?? "";
+    const key = `${rowKey}\u0000${iface}\u0000${instance}`;
+    const signal = signals.get(key) ?? { rowKey, iface, instance, ok: 0, failed: 0 };
     const value = Number(sample.value[1]);
     if (kind === "gauge") {
       // The blocked gauge is 1 while the router sends the provider no traffic.
@@ -131,10 +145,11 @@ export async function readUpstreamHealth(
   failures.forEach((sample) => add(sample, "failed"));
   const resolved = new Set<string>();
   const observed = new Map<string, Set<string>>();
-  const merge = (key: string, health: HealthState, reason: string) => {
+  const merge = (key: string, health: HealthState, cause: HealthCause, reason: string) => {
     const row = rows.get(key)!;
     if (!resolved.has(key) || rank[health] > rank[row.health]) {
       row.health = health;
+      row.healthCause = cause;
       row.healthReason = reason;
     }
     resolved.add(key);
@@ -145,48 +160,104 @@ export async function readUpstreamHealth(
     interfaces.add(signal.iface);
     observed.set(signal.rowKey, interfaces);
     if (signal.gauge === "unhealthy") {
-      merge(
-        signal.rowKey,
-        "unhealthy",
-        "The router has blocked this upstream: none of its urls is in rotation.",
-      );
+      merge(signal.rowKey, "unhealthy", "blocked", "The router stopped sending it requests: none of its URLs is answering.");
     } else if (signal.failed > 0 && signal.ok === 0) {
-      merge(
-        signal.rowKey,
-        "unhealthy",
-        `All reported block polls failed in the last ${minutes} minutes.`,
-      );
+      merge(signal.rowKey, "unhealthy", "checks-failing", `Every block check failed in the last ${minutes} minutes.`);
+      rows.get(signal.rowKey)!.failingChecks.push({ apiInterface: signal.iface, instance: signal.instance });
     } else if (signal.ok > 0) {
-      merge(
-        signal.rowKey,
-        "operational",
-        signal.gauge === "operational"
-          ? `In rotation at the router, with successful block polls in the last ${minutes} minutes.`
-          : `Successful block polls reported in the last ${minutes} minutes.`,
-      );
+      merge(signal.rowKey, "operational", "ok", `Block checks passed in the last ${minutes} minutes.`);
     } else if (signal.gauge === "operational") {
       // "In rotation" is the router's default for a provider it has not taken
       // out; a url nobody polls or routes to reads so however broken it is.
       // Once poll evidence expires, it must not turn a dead endpoint green.
-      merge(
-        signal.rowKey,
-        "unknown",
-        `In rotation at the router, but no block-poll outcome reported in the last ${minutes} minutes; being in rotation alone cannot confirm recovery. Check the router and Prometheus scrape.`,
-      );
+      merge(signal.rowKey, "unknown", "no-checks", `No block check came back in the last ${minutes} minutes, so nothing confirms it is working.`);
     } else {
-      merge(signal.rowKey, "unknown", missing);
+      merge(signal.rowKey, "unknown", "no-data", missing);
     }
   }
   for (const [key, interfaces] of expected) {
     const seen = observed.get(key);
     for (const iface of interfaces) {
       if (!seen?.has(iface))
-        merge(
-          key,
-          "unknown",
-          `No current health data reported for the configured ${iface} interface; check the router and Prometheus scrape.`,
-        );
+        merge(key, "unknown", "no-data", `No data yet for its ${iface} endpoint: the router reports nothing about it.`);
     }
   }
   return routerId ? new Map([...rows].filter(([, row]) => row.routerIds.includes(routerId))) : rows;
+}
+
+/** How far back the start of an unhealthy provider's trouble is looked for, and at what step. */
+export const SINCE_LOOKBACK_SEC = 86_400;
+export const SINCE_STEP_SEC = 60;
+/** Steps with no point after which a blocked run is read as two stretches. */
+export const SINCE_GAP_STEPS = 5;
+
+/**
+ * Since when each UNHEALTHY provider has been so, written onto its row. Two
+ * range reads over the last day, narrowed to the unhealthy providers' names,
+ * and none at all when every provider is fine - the usual case. A blocked
+ * provider: the start of the run of minutes its blocked gauge has been 1, a
+ * run that ends at a hole of over `SINCE_GAP_STEPS` minutes in the series. One
+ * whose every block check fails: the last minute a check passed on the
+ * interface and scrape target that fail (`failingChecks`), the earliest of
+ * them when several do - the grain the verdict is decided at, so a passing
+ * interface says nothing about a failing one. A run that reaches the start of
+ * the day read is at least that old (`healthSinceOrEarlier`).
+ * A refused read, or a store client that can't read a range, leaves `healthSince`
+ * null: the roster says why a provider is unhealthy either way.
+ */
+export async function readHealthSince(prom: PrometheusClient, rows: Map<string, UpstreamHealth>, nowSec: number = Date.now() / 1000): Promise<void> {
+  const bad = [...rows.values()].filter((r) => r.health === "unhealthy");
+  if (!bad.length) return;
+  const names = bad.map((r) => r.endpointId);
+  const end = Math.floor(nowSec / SINCE_STEP_SEC) * SINCE_STEP_SEC;
+  const start = end - SINCE_LOOKBACK_SEC;
+  const step = `${SINCE_STEP_SEC}s`;
+  try {
+    const [blocked, passed] = await Promise.all([
+      bad.some((r) => r.healthCause === "blocked") ? prom.queryRangeOrNull(qProviderBlockedOver(names), start, end, step) : null,
+      bad.some((r) => r.healthCause === "checks-failing") ? prom.queryRangeOrNull(qBlockChecksPassedOver(names, step), start, end, step) : null,
+    ]);
+    const points = (rowsOf: typeof blocked, label: "provider_address" | "endpoint_id", r: UpstreamHealth, also?: { apiInterface: string; instance: string }): [number, number][] | null => {
+      const series = (rowsOf ?? []).find((s) => (s.metric[label] ?? "").toLowerCase() === r.endpointId.toLowerCase() && (s.metric.spec ?? "") === r.spec
+        && (!also || ((s.metric.apiInterface ?? "") === also.apiInterface && (s.metric.instance ?? "") === also.instance)));
+      return series ? series.values.map(([t, v]) => [Number(t), Number(v)] as [number, number]).sort((a, b) => a[0] - b[0]) : null;
+    };
+    const reachesStart = (t: number) => t <= start + SINCE_STEP_SEC;
+    for (const r of bad) {
+      if (r.healthCause === "blocked") {
+        const pts = points(blocked, "provider_address", r);
+        if (!pts?.length) continue;
+        let since: number | null = null;
+        // A hole in the series (the router down, or not scraped) ends the run: what was before it is another stretch.
+        for (let i = pts.length - 1; i >= 0 && pts[i]![1] >= 1; i--) {
+          if (since !== null && since - pts[i]![0] > SINCE_GAP_STEPS * SINCE_STEP_SEC) break;
+          since = pts[i]![0];
+        }
+        if (since === null) continue;
+        r.healthSince = since;
+        r.healthSinceOrEarlier = reachesStart(since);
+      } else if (r.healthCause === "checks-failing" && passed) {
+        for (const failing of r.failingChecks) {
+          const pts = points(passed, "endpoint_id", r, failing) ?? [];
+          let last: number | null = null;
+          for (let i = pts.length - 1; i >= 0; i--) if (pts[i]![1] > 0) { last = pts[i]![0]; break; }
+          const since = last ?? start;
+          if (r.healthSince !== null && r.healthSince <= since) continue;
+          r.healthSince = since;
+          r.healthSinceOrEarlier = last === null;
+        }
+      }
+    }
+  } catch {
+    // "Since when" is extra: without it the row still says what is wrong.
+  }
+}
+
+/** The providers that are not operational, unhealthy first then the oldest trouble, for the top bar's list. */
+export function providersNeedingAttention(rows: Map<string, UpstreamHealth>, limit = 30): ProviderAttention[] {
+  return [...rows.values()]
+    .filter((r) => r.health !== "operational")
+    .sort((a, b) => rank[b.health] - rank[a.health] || (a.healthSince ?? Infinity) - (b.healthSince ?? Infinity) || a.spec.localeCompare(b.spec) || a.endpointId.localeCompare(b.endpointId))
+    .slice(0, limit)
+    .map((r) => ({ endpointId: r.endpointId, spec: r.spec, health: r.health, cause: r.healthCause, reason: r.healthReason, since: r.healthSince, sinceOrEarlier: r.healthSinceOrEarlier }));
 }

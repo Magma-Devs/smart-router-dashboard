@@ -23,6 +23,7 @@ import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { PMRoster, upstreamKey, usePMRosterData } from "./PMRoster";
 import { PMStat, PMNoVal } from "./PMPanel";
 import { PMEmpty } from "./PMEmpty";
+import { upstreamCaveat } from "@/lib/upstream-presentation";
 import { PMBody } from "./PMBody";
 import type { ErrorsJump } from "../ErrorsBreakdown";
 import { LinkNotice } from "../LinkNotice";
@@ -91,7 +92,7 @@ export function UpstreamMetricsTab({ timeWindow, chainFilter, selected = null, l
         </LinkNotice>
       )}
       {/* ── roster of every upstream — click a row to drill in below ── */}
-      <PMRoster rows={visible} activeKey={pm ? upstreamKey(pm) : null} onSelect={pick} timeWindow={timeWindow} loading={rosterRes.isLoading} refreshing={rosterRes.isValidating} />
+      <PMRoster rows={visible} activeKey={pm ? upstreamKey(pm) : null} onSelect={pick} timeWindow={timeWindow} showChain={!chainFilter} loading={rosterRes.isLoading} refreshing={rosterRes.isValidating} />
 
       {pm && activeName && (
         <>
@@ -102,7 +103,9 @@ export function UpstreamMetricsTab({ timeWindow, chainFilter, selected = null, l
             <span style={{ fontSize: 12, color: "var(--text-3)" }}>· {chainName} · detailed metrics</span>
           </div>
 
-          <UpstreamHealthNotice health={pm.health} reason={pm.healthReason} />
+          <UpstreamHealthNotice health={pm.health} reason={pm.healthReason}
+            since={pm.healthSince} sinceOrEarlier={pm.healthSinceOrEarlier} spec={pm.spec} name={activeName}
+            onOpenErrors={onOpenErrors ? (r) => onOpenErrors({ spec: pm.spec, upstream: activeName, from: r.from, to: r.to }) : undefined} />
 
           {/* ════ ROW 1 — AT A GLANCE ════ */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginBottom: 12 }}>
@@ -120,6 +123,11 @@ export function UpstreamMetricsTab({ timeWindow, chainFilter, selected = null, l
                 );
               })()}
               <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 8 }}>{chainName}</div>
+              {/* What "Operational" leaves out: a block that stopped moving, or one well behind the chain. */}
+              {(() => {
+                const caveat = upstreamCaveat(pm);
+                return caveat ? <div style={{ fontSize: 11, color: "var(--warn)", marginTop: 6, lineHeight: 1.4 }}>{caveat}</div> : null;
+              })()}
             </PMStat>
 
             <PMStat label="Request success rate" tip={"**Requests this upstream answered** as a share of all requests routed to it - i.e. **success rate**, not wall-clock uptime or an SLA figure.\n\nIt is measured from real traffic, so it is empty until the router routes something here. The router's own block polls are reported separately below.\n\nThe large figure follows the window above; 1h / 24h / 7d are shown for context."}>

@@ -68,7 +68,7 @@ import {
 import { WINDOWS, alignedBounds, stepSeconds } from "@sr/shared/constants";
 import type { PrometheusClient, PromVectorSample } from "./prometheus-client.js";
 import type { ConfigurationService } from "./configuration.js";
-import { readUpstreamHealth } from "./upstream-health.js";
+import { NO_DATA_REASON, providersNeedingAttention, readHealthSince, readUpstreamHealth } from "./upstream-health.js";
 
 export function health(value: number | null): HealthState {
   if (value === null || !Number.isFinite(value)) return "unknown";
@@ -289,19 +289,28 @@ export class MetricsService {
     };
   }
 
+  /** Every provider's current health, an unhealthy one's with since when (`readHealthSince`). */
+  private async currentUpstreamHealth(spec?: string, routerId?: string) {
+    const rows = await readUpstreamHealth(this.prom, this.configSvc, spec, routerId);
+    await readHealthSince(this.prom, rows);
+    return rows;
+  }
+
   /**
    * The topbar's fields in six reads: the router's health gauge, the current
-   * client RPS, and the upstream health roll-up (four reads of its own). No
-   * window — the badge describes now. Under a chain filter the health and RPS
-   * are that chain's, and `allChains` reads the whole router's beside them,
-   * two reads more: the topbar shows those, so its status and RPS pill say
-   * the same on every page while its provider counts follow the chain.
+   * client RPS, and the upstream health roll-up (four reads of its own, and
+   * up to two range reads while a provider is unhealthy) with the providers
+   * behind its counts (`attention`). No window — the badge describes now.
+   * Under a chain filter the health and RPS are that chain's, and `allChains`
+   * reads the whole router's beside them, two reads more: the topbar shows
+   * that status, so it says the same on every page while its provider counts
+   * follow the chain.
    */
   async pulse(spec?: string, routerId?: string): Promise<DeploymentPulse> {
     const routerWide = () => Promise.all([this.prom.scalar(ROUTER_METRICS.overallHealth), this.prom.scalar(qClientRps())]);
     const [[healthGauge, throughputRps], upstreamHealth, wide] = await Promise.all([
       spec ? Promise.all([this.chainHealth(spec), this.prom.scalar(qClientRps(spec))]) : routerWide(),
-      readUpstreamHealth(this.prom, this.configSvc, spec, routerId),
+      this.currentUpstreamHealth(spec, routerId),
       spec ? routerWide() : null,
     ]);
     const [wideGauge, wideRps] = wide ?? [healthGauge, throughputRps];
@@ -311,6 +320,7 @@ export class MetricsService {
         unhealthy: [...upstreamHealth.values()].filter((row) => row.health === "unhealthy").length,
         unknown: [...upstreamHealth.values()].filter((row) => row.health === "unknown").length,
       },
+      attention: providersNeedingAttention(upstreamHealth),
       throughputRps,
       allChains: { health: health(wideGauge), throughputRps: wideRps },
       lastUpdated: new Date().toISOString(),
@@ -716,7 +726,7 @@ export class MetricsService {
       // Fallback for a router too old to publish the sampler's gauge. Same
       // numbers, but written only when a relay was routed here.
       this.prom.query(`${ENDPOINT_METRICS.selectionScore}${sel}`),
-      readUpstreamHealth(this.prom, this.configSvc, spec, routerId),
+      this.currentUpstreamHealth(spec, routerId),
       this.prom.query(`${ENDPOINT_METRICS.latestBlock}${sel}`),
       this.prom.query(
         `sum by (endpoint_id, spec) (${ENDPOINT_METRICS.requestsInFlight}${sel})`,
@@ -787,7 +797,10 @@ export class MetricsService {
           scoreSource: null,
           polls: null,
           health: "unknown",
-          healthReason: "No current health measurement or successful block polls reported; check the router and Prometheus scrape.",
+          healthReason: NO_DATA_REASON,
+          healthCause: "no-data",
+          healthSince: null,
+          healthSinceOrEarlier: false,
           latestBlock: null,
           blockLag: null,
           behindSec: null,
@@ -842,6 +855,9 @@ export class MetricsService {
       const row = ensure(status.endpointId, status.spec);
       row.health = status.health;
       row.healthReason = status.healthReason;
+      row.healthCause = status.healthCause;
+      row.healthSince = status.healthSince;
+      row.healthSinceOrEarlier = status.healthSinceOrEarlier;
     }
     for (const s of blocks) {
       const id = s.metric.endpoint_id;
