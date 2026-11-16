@@ -19,14 +19,14 @@ fall back to the raw code. `ERROR_SOURCE_LABELS` is the one word each source is 
 
 ## Where it shows
 
-The Errors tab's request list and the Transactions tab draw it
+The Errors tab's request list, the Transactions tab and the Find a request tab draw it
 (`apps/web/src/components/metrics/request-breakdown.tsx`). An opened row is a breakdown in
 three parts:
 
 | Part | What it holds |
 | --- | --- |
-| Request | Method, chain, time, duration, Smart Router's request ID (copy, logs), size, the requested block and the router's latest block |
-| Tries | One line per try at a provider, in order: result, time, the error by name and its source. The router's code and the provider's message are on hover, inline only when the source is undetermined |
+| Request | Method, chain, time, duration, Smart Router's request ID (copy, logs), the requested block and the router's latest block |
+| Tries | One line per try at a provider, in order: result, time, the error by name and, when the code determines one, its source. The router's code and the provider's message are on hover, inline only when the source is undetermined |
 | Response | Returned by, status, retries, the meaning, the provider's message and the next step (the code's `action`, left out when it is empty) |
 
 Each error is stated once, on the try it happened on; the Response names it only when the
