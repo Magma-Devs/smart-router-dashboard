@@ -5,6 +5,25 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.69.6]
+
+### Added
+
+- **A provider with no block height by design reads "No block height", not
+  "Unknown"** (MAG-5349). A provider whose every url serves only add-on methods
+  with no way to read a block height (a service that only accepts
+  transactions) is not polled by the router, by design, so its row had no
+  block-poll outcome and read a yellow **Unknown** for good. The router now
+  says so on `rpc_endpoint_url_block_tracking` (0 = not tracked by design), and
+  the provider health roll-up reads it: such a row is the new `untracked`
+  health state, shown as a neutral **No block height** chip with the reason on
+  hover, and a note (not an alert) on its detail page. Its request metrics keep
+  their colors: they are the only health evidence for it. A blocked provider
+  and failed polls still read Unhealthy first. It is not counted in the
+  topbar's "providers with no health data". One more Prometheus read per
+  roll-up (five, was four). A router that predates the series changes nothing:
+  the row reads Unknown as before.
+
 ## [0.69.5]
 
 ### Changed

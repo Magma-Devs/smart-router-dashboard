@@ -23,6 +23,13 @@ describe("MAG-4226: current health takes precedence over historical metrics", ()
     expect(upstreamHealthNotice("operational")).toBeNull();
   });
 
+  // MAG-5349: its requests are the only health evidence, so they keep their colors.
+  it("keeps the request metric colors of an untracked upstream, with a note instead of an alert", () => {
+    expect(upstreamMetricColor("untracked", "var(--ok)")).toBe("var(--ok)");
+    expect(upstreamMetricColor("untracked", "var(--warn)")).toBe("var(--warn)");
+    expect(upstreamHealthNotice("untracked")).toContain("no block height by design");
+  });
+
   it("does not call missing health down or disabled", () => {
     expect(upstreamHealthNotice("unknown")).toContain("health is not known");
     expect(upstreamHealthNotice("unknown")).not.toMatch(/disabled|down|unhealthy/i);

@@ -297,8 +297,8 @@ export class MetricsService {
   }
 
   /**
-   * The topbar's fields in six reads: the router's health gauge, the current
-   * client RPS, and the upstream health roll-up (four reads of its own, and
+   * The topbar's fields in seven reads: the router's health gauge, the current
+   * client RPS, and the upstream health roll-up (five reads of its own, and
    * up to two range reads while a provider is unhealthy) with the providers
    * behind its counts (`attention`). No window — the badge describes now.
    * Under a chain filter the health and RPS are that chain's, and `allChains`

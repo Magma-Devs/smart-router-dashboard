@@ -1,14 +1,20 @@
 import type { DeploymentPulse, HealthState, UpstreamMetrics } from "@sr/shared";
 import { durationWords } from "./health";
 
-/** A historical request statistic must not certify an unavailable upstream. */
+/**
+ * A historical request statistic must not certify an unavailable upstream.
+ * An `untracked` one keeps its color: its requests are the only evidence there is.
+ */
 export function upstreamMetricColor(health: HealthState, color: string): string {
-  return health === "operational" ? color : "var(--text-3)";
+  return health === "operational" || health === "untracked" ? color : "var(--text-3)";
 }
 
 /** The headline of a provider's health notice; null for one that is fine. */
 export function upstreamHealthNotice(health: HealthState, reason?: string): string | null {
   if (health === "operational") return null;
+  // One sentence of its own: the api's reason says the same thing, and both read as a repeat.
+  if (health === "untracked")
+    return "This provider has no block height by design: it serves only add-on methods, so the router runs no block checks on it. The request metrics below are the only health evidence for it.";
   const status = health === "unhealthy" ? "This provider is unhealthy." : "This provider's health is not known.";
   const evidence =
     reason ??

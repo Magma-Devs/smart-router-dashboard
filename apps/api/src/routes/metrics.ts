@@ -189,9 +189,9 @@ export async function metricRoutes(app: FastifyInstance, opts: MetricRoutesOptio
     },
   }, async () => app.recordedReads());
 
-  // The topbar's health badge + live RPS, on every page: six reads, no
+  // The topbar's health badge + live RPS, on every page: seven reads, no
   // window. Takes both router axes, as the upstream roster does. Under
-  // `spec`, eight: the whole router's health and RPS too (`allChains`),
+  // `spec`, nine: the whole router's health and RPS too (`allChains`),
   // which the topbar shows beside the chain's provider counts.
   app.get<{ Querystring: WindowQuery }>("/api/metrics/pulse", {
     schema: {

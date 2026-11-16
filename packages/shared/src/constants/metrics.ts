@@ -54,6 +54,10 @@ export const ENDPOINT_METRICS = {
   // with every url up and no traffic reads serving there.
   fetchLatestSuccess: "rpc_endpoint_fetch_latest_success",
   fetchLatestFails: "rpc_endpoint_fetch_latest_fails",
+  // Per url: 1 = the router tracks its head, 0 = not tracked by design (the url
+  // serves only add-on collections with no way to read the head, so it has no
+  // block polls and never will). Absent on a router older than the series.
+  urlBlockTracking: "rpc_endpoint_url_block_tracking",
   latencyBucket: "rpc_endpoint_end_to_end_latency_milliseconds_bucket",
   latencyCount: "rpc_endpoint_end_to_end_latency_milliseconds_count",
   latencySum: "rpc_endpoint_end_to_end_latency_milliseconds_sum",

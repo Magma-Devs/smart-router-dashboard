@@ -208,7 +208,11 @@ export function buildUpstreamRows(
       ? "unhealthy"
       : ms.some((m) => m.health === "operational")
         ? "operational"
-        : "unknown";
+        : // Every chain says the router does not track it by design: that is
+          // the upstream's state. Mixed with a real gap, the gap is what to show.
+          ms.length > 0 && ms.every((m) => m.health === "untracked")
+          ? "untracked"
+          : "unknown";
     const hosts = [...new Set(chainRows.map((c) => c.urlHost).filter(Boolean))];
     const catalog = matchCatalog(name, hosts);
     return {

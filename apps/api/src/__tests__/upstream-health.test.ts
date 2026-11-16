@@ -118,12 +118,14 @@ function healthProm(
   ok: PromVectorSample[] = [],
   failed: PromVectorSample[] = [],
   rates: PromVectorSample[] = [],
+  tracking: PromVectorSample[] = [],
 ) {
   const queries: string[] = [];
   const prom = {
     query: async (q: string) => {
       queries.push(q);
       if (q.startsWith("label_replace(smartrouter_csm_provider_blocked")) return gauges;
+      if (q.includes("rpc_endpoint_url_block_tracking")) return tracking;
       if (q.includes("rpc_endpoint_fetch_latest_success")) return ok;
       if (q.includes("rpc_endpoint_fetch_latest_fails")) return failed;
       if (q.includes("deriv(")) return rates;
@@ -274,10 +276,10 @@ describe("MAG-4226 review: configured upstream liveness", () => {
     expect(pulse.upstreamHealthCounts).toEqual({ unhealthy: 0, unknown: 0 });
   });
 
-  it("uses four bounded current-health queries, without traffic, QoS or histograms", async () => {
+  it("uses five bounded current-health queries, without traffic, QoS or histograms", async () => {
     const { prom, queries } = healthProm([sample("0")]);
     await readUpstreamHealth(prom, configured);
-    expect(queries).toHaveLength(4);
+    expect(queries).toHaveLength(5);
     expect(queries.every((q) => !/histogram|selection_score|requests_total/.test(q))).toBe(true);
     expect(queries.filter((q) => q.includes("increase(")).every((q) => q.includes("[1800s]"))).toBe(
       true,
@@ -355,7 +357,7 @@ describe("MAG-4226 slow-chain windows", () => {
       ],
     );
     await readUpstreamHealth(prom);
-    expect(queries).toHaveLength(4);
+    expect(queries).toHaveLength(5);
     const polls = queries.filter((q) => q.includes("increase("));
     for (const q of polls) {
       expect(q).toContain("[300s]");
@@ -430,6 +432,87 @@ describe("MAG-4226 slow-chain windows", () => {
       [sample(String(1 / 600), "BTC")],
     );
     expect([...(await readUpstreamHealth(prom))][0][1].health).toBe("operational");
+  });
+});
+
+// A provider whose every url serves only add-on methods with no way to read a
+// block height (a service that only accepts transactions) is not polled, by
+// design. The router says so on rpc_endpoint_url_block_tracking (0), and the
+// row must read that, not "Unknown": nothing is missing.
+describe("MAG-5349: a provider the router does not track by design", () => {
+  const health = async (...args: Parameters<typeof healthProm>) =>
+    [...(await readUpstreamHealth(healthProm(...args).prom))].map(([, row]) => row);
+
+  it("reads untracked, not unknown, when in rotation with no polls", async () => {
+    const [row] = await health([sample("0")], [], [], [], [sample("0")]);
+    expect(row.health).toBe("untracked");
+    expect(row.healthReason).toContain("Not tracked by design");
+  });
+
+  it("is unknown without the series: an older router, or polls really missing", async () => {
+    const [row] = await health([sample("0")]);
+    expect(row.health).toBe("unknown");
+  });
+
+  it("a tracked provider with no poll outcome is still unknown", async () => {
+    const [row] = await health([sample("0")], [], [], [], [sample("1")]);
+    expect(row.health).toBe("unknown");
+  });
+
+  it("a blocked provider is unhealthy whether tracked or not", async () => {
+    const [row] = await health([sample("1")], [], [], [], [sample("0")]);
+    expect(row.health).toBe("unhealthy");
+  });
+
+  it("failed polls still win: an older pod of the fleet may still poll it", async () => {
+    const [row] = await health([sample("0")], [], [sample("3")], [], [sample("0")]);
+    expect(row.health).toBe("unhealthy");
+  });
+
+  it("asks for the highest value per provider, so one tracked url is enough to judge it by polls", async () => {
+    const { prom, queries } = healthProm([sample("0")]);
+    await readUpstreamHealth(prom, undefined, "ETH1");
+    expect(queries).toContain(
+      'max by (endpoint_id, spec, apiInterface, instance) (rpc_endpoint_url_block_tracking{spec="ETH1"})',
+    );
+  });
+
+  it.each([false, true])(
+    "an interface judged by its polls decides the row (reverse=%s)",
+    async (reverse) => {
+      const order = (rows: PromVectorSample[]) => (reverse ? [...rows].reverse() : rows);
+      const gauges = order([sample("0"), sample("0", "ETH1", "rest")]);
+      const [working] = await health(gauges, [sample("2", "ETH1", "rest")], [], [], [sample("0")]);
+      expect(working.health).toBe("operational");
+      expect(working.healthReason).toContain("Block checks passed");
+      const [failing] = await health(gauges, [], [sample("2", "ETH1", "rest")], [], [sample("0")]);
+      expect(failing.health).toBe("unhealthy");
+      const [gap] = await health(gauges, [], [], [], [sample("0")]);
+      expect(gap.health).toBe("unknown");
+    },
+  );
+
+  it("reads untracked when every interface is untracked", async () => {
+    const rows = await health(
+      [sample("0"), sample("0", "ETH1", "rest")],
+      [],
+      [],
+      [],
+      [sample("0"), sample("0", "ETH1", "rest")],
+    );
+    expect(rows.map((row) => row.health)).toEqual(["untracked"]);
+  });
+
+  it("is not listed among the providers to check: by design is nothing to act on", async () => {
+    const rows = await readUpstreamHealth(healthProm([sample("0")], [], [], [], [sample("0")]).prom);
+    expect([...rows.values()].map((row) => [row.health, row.healthCause])).toEqual([["untracked", "untracked"]]);
+    expect(providersNeedingAttention(rows)).toEqual([]);
+  });
+
+  it("is not counted as a provider with no health data", async () => {
+    const { prom } = healthProm([sample("0")], [], [], [], [sample("0")]);
+    const pulse = await new MetricsService(prom).pulse();
+    expect(pulse.upstreamHealthCounts).toEqual({ unhealthy: 0, unknown: 0 });
   });
 });
 

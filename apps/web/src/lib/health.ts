@@ -5,27 +5,29 @@ import { fmtDayTime, fmtTime } from "./datetime";
  * ONE vocabulary for `HealthState`, the shared closed union every health-aware
  * surface reads (`/api/metrics/{chains,upstreams,…}`).
  *
- * Before this existed, four surfaces each invented their own words for the
- * same three states — "healthy / degraded / —" on the Upstreams roster,
- * "Operational / Unhealthy / —" in the Routers table, "Live · up / Down / —"
- * in the upstream deep-dive, and the raw wire word in the Try-it drawer — so
- * one upstream could read three different ways depending on which panel you
- * were looking at. The Routers table's wording won because it was the most
- * prominent; everything else now defers to these.
+ * Every surface takes its words and colors for the four states from here -
+ * the Upstreams roster, the Routers table, the upstream deep-dive, the Try-it
+ * drawer - so one upstream reads the same way on every panel.
  *
  * `unknown` means no current health measurement, not "down". It has an
  * explicit warning label so missing data is a visible problem.
+ *
+ * `untracked` is a provider the router tracks no block height on, by design.
+ * Nothing is missing and nothing is wrong, so it is neutral: "No block height".
  */
 export const HEALTH_LABEL: Record<HealthState, string> = {
   operational: "Operational",
   unhealthy: "Unhealthy",
   unknown: "Unknown",
+  untracked: "No block height",
 };
 
 export const HEALTH_COLOR: Record<HealthState, string> = {
   operational: "var(--ok)",
   unhealthy: "var(--err)",
   unknown: "var(--warn)",
+  // Neutral on purpose: nothing is wrong and nothing was measured.
+  untracked: "var(--text-3)",
 };
 
 /** Explain an unknown health state wherever it is shown. */
@@ -41,6 +43,7 @@ export const CAUSE_SHORT: Record<HealthCause, string | null> = {
   "checks-failing": "block checks failing",
   "no-checks": "no recent block check",
   "no-data": "no data yet",
+  untracked: null,
 };
 
 /** A length of time in words: "under a minute", "12 min", "2 h 10 min", "3 days". */
@@ -66,6 +69,17 @@ export function sinceWords(since: number | null | undefined, orEarlier: boolean 
   return `since ${sameDay ? fmtTime(since * 1000) : fmtDayTime(since * 1000)} (${durationWords(sec)})`;
 }
 
+/** Explain a provider the router does not track by design, wherever it is shown. */
+export const HEALTH_UNTRACKED_HINT =
+  "No block height by design: this provider serves only add-on methods and cannot report a block height, so the router runs no block polls on it. Its health is known only from the requests it serves.";
+
+/** The hover text a health state carries when the surface has no reason of its own. */
+export function healthHint(health: HealthState): string | undefined {
+  if (health === "unknown") return HEALTH_UNKNOWN_HINT;
+  if (health === "untracked") return HEALTH_UNTRACKED_HINT;
+  return undefined;
+}
+
 export function healthLabel(health: HealthState): string {
   return HEALTH_LABEL[health];
 }
@@ -78,6 +92,7 @@ export function healthColor(health: HealthState): string {
 export function healthTagClass(health: HealthState): string {
   if (health === "operational") return "gw-tag gw-tag--ok";
   if (health === "unhealthy") return "gw-tag gw-tag--err";
+  if (health === "untracked") return "gw-tag";
   return "gw-tag gw-tag--warn";
 }
 
@@ -86,4 +101,5 @@ export const HEALTH_RANK: Record<HealthState, number> = {
   unhealthy: 0,
   operational: 2,
   unknown: 1,
+  untracked: 3,
 };

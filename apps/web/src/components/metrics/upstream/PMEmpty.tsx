@@ -2,7 +2,7 @@
 
 import type { MetricWindow, UpstreamMetrics } from "@sr/shared";
 import { upstreamMetricColor } from "@/lib/upstream-presentation";
-import { healthColor, healthLabel, HEALTH_UNKNOWN_HINT } from "@/lib/health";
+import { healthColor, healthHint, healthLabel } from "@/lib/health";
 import { pollColor, pollSummary } from "@/lib/upstream-signals";
 
 /* PMEmpty — an upstream the router routed no requests to in this window.
@@ -62,7 +62,7 @@ export function PMEmpty({
       {/* Every value here is read, never assumed. A row the router does not
           report is omitted rather than filled with an optimistic default. */}
       <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 10 }}>
-        <Fact label="Status" title={pm.health === "unknown" ? HEALTH_UNKNOWN_HINT : undefined}>
+        <Fact label="Status" title={healthHint(pm.health)}>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
             <span style={{ width: 6, height: 6, borderRadius: 999, background: healthColor(pm.health), boxShadow: `0 0 6px ${healthColor(pm.health)}` }} />
             <span style={{ color: healthColor(pm.health), fontWeight: 600 }}>{healthLabel(pm.health)}</span>

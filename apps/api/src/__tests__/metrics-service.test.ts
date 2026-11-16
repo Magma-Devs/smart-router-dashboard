@@ -786,11 +786,11 @@ describe("MetricsService · chain-level figures read grouped series (MAG-4295)",
 
 // MAG-4296: the topbar read the full overview — dozens of reads, per-chain
 // series it never shows — every 30 s on every page, for three fields.
-describe("MetricsService.pulse · the topbar reads six series, not the overview (MAG-4296)", () => {
-  it("costs six reads whatever the chain count, none of them per chain", async () => {
+describe("MetricsService.pulse · the topbar reads seven series, not the overview (MAG-4296)", () => {
+  it("costs seven reads whatever the chain count, none of them per chain", async () => {
     const { prom, queries } = capturingProm({ specs: ["ETH1", "SOLANA", "APT1"] });
     const pulse = await new MetricsService(prom).pulse();
-    expect(queries).toHaveLength(6);
+    expect(queries).toHaveLength(7);
     expect(queries).toContain("smartrouter_overall_health");
     expect(queries).toContain("sum(rate(smartrouter_end_to_end_latency_milliseconds_count[5m]))");
     expect(queries.every((q) => !q.includes("histogram_quantile") && !q.startsWith("count by (spec)"))).toBe(true);
@@ -827,7 +827,7 @@ describe("MetricsService.pulse · the whole router's status and RPS beside a cha
   it("under a chain filter reads the router's gauge and every chain's RPS too, two reads more", async () => {
     const { prom, queries } = capturingProm(answers);
     const pulse = await new MetricsService(prom).pulse("ETH1");
-    expect(queries).toHaveLength(8);
+    expect(queries).toHaveLength(9);
     expect(queries).toContain("smartrouter_overall_health");
     expect(queries).toContain("sum(rate(smartrouter_end_to_end_latency_milliseconds_count[5m]))");
     expect(pulse).toMatchObject({

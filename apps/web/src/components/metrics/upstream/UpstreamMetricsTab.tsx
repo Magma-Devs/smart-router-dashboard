@@ -18,7 +18,7 @@ import { fmtNum } from "@/lib/format";
 import { uptimeColor } from "@/lib/colors";
 import { upstreamMetricColor } from "@/lib/upstream-presentation";
 import { UpstreamHealthNotice } from "@/components/metrics/upstream/UpstreamHealthNotice";
-import { HEALTH_UNKNOWN_HINT, healthColor, healthLabel } from "@/lib/health";
+import { healthColor, healthHint, healthLabel } from "@/lib/health";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { PMRoster, upstreamKey, usePMRosterData } from "./PMRoster";
 import { PMStat, PMNoVal } from "./PMPanel";
@@ -116,7 +116,7 @@ export function UpstreamMetricsTab({ timeWindow, chainFilter, selected = null, l
                 const c = healthColor(pm.health);
                 return (
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}
-                    title={pm.health === "unknown" ? HEALTH_UNKNOWN_HINT : undefined}>
+                    title={healthHint(pm.health)}>
                     <span style={{ width: 10, height: 10, borderRadius: 999, background: c, boxShadow: `0 0 8px ${c}`, flexShrink: 0 }} />
                     <span style={{ fontSize: 20, fontWeight: 700, color: c }}>{healthLabel(pm.health)}</span>
                   </div>

@@ -22,7 +22,6 @@ The window covers three expected blocks, rounded up to 5 / 15 / 30 / 60
 minutes, with a one-hour cap and a 30-minute fallback for missing, non-finite
 or non-positive rates. Bitcoin at one block per 600 seconds uses 30 minutes:
 
-
 - A failing live check, or failed block polls with no successful polls in
   the health window, means **Unhealthy** (even with health gauge = 1).
 - Successful recent block events provide operational evidence unless a live
@@ -32,6 +31,19 @@ or non-positive rates. Bitcoin at one block per 600 seconds uses 30 minutes:
 - Missing/non-finite health without successful poll evidence means **Unknown**,
   shown as a warning with the missing-data reason. A configured interface
   without evidence cannot be hidden behind a healthy interface.
+
+A provider reads **No block height** (`untracked`, neutral, not a warning) when
+`max by (endpoint_id, spec, apiInterface, instance) (rpc_endpoint_url_block_tracking)`
+is 0: the router tracks none of its urls, by design, because they serve only
+add-on methods with no way to read a block height (a service that only accepts
+transactions). It has no block polls and never will, so "no poll outcome" is
+its expected reading, not missing data. A blocked provider and failed polls
+still read Unhealthy first. It is not counted in the topbar's "no health data".
+A router that predates the series reports nothing there, and the row reads
+Unknown.
+The reading is per interface: a provider with several interfaces reads No
+block height only when every one of them is untracked, and an interface with
+poll outcomes decides the row.
 
 The worst interface/replica wins per upstream × chain. Poll evaluation keeps
 `apiInterface` and scrape `instance` until after classification; one working
@@ -241,7 +253,7 @@ client requests) against the live router:
 |---|---|
 | `/api/metrics/specs` | `count by (spec) (smartrouter_requests_total)` |
 | `/api/metrics/dashboard-summary` | `qRequestsTotal` + `qAvailability` + `qLatencyQuantile(0.95)` + stale-caught, each **twice** (current + `offset $range` prior); `count by (endpoint_id) (label_replace(smartrouter_csm_provider_blocked, …))`; `smartrouter_overall_health`; retries/cache KPIs only when `qPresence` says the family exists. No cache on this build ⇒ the documented derived "effective read p95" reduces to the node read p95 (the overall router histogram). |
-| `/api/metrics/pulse` | `smartrouter_overall_health` (under a chain filter: `1 - min by (spec) (smartrouter_csm_provider_blocked{spec})`), `qClientRps`, and the four reads of `readUpstreamHealth` — six reads, no window. Under a chain filter `allChains` adds `smartrouter_overall_health` and the unfiltered `qClientRps()`: eight |
+| `/api/metrics/pulse` | `smartrouter_overall_health` (under a chain filter: `1 - min by (spec) (smartrouter_csm_provider_blocked{spec})`), `qClientRps`, and the five reads of `readUpstreamHealth` — seven reads, no window. Under a chain filter `allChains` adds `smartrouter_overall_health` and the unfiltered `qClientRps()`: nine |
 | `/api/metrics/dashboard` | `qRpsSeriesExpr`, `qErrorCountSeriesExpr`, `qErrorRateSeriesExpr`, `qAvailabilitySeriesExpr`, `qLatencySeriesExpr(q)`; per-chain `qPerSpecRpsExpr`, per-spec success ratio, per-spec `qPerSpecLatencySeriesExpr(q)` (`sum by (spec, le)` - the one latency query that keeps a series per chain); `qPerProviderRpsExpr`; per-provider p95 `histogram_quantile(0.95, sum by (endpoint_id, le) (rate(rpc_endpoint_…_bucket[step])))`; chain list from `count by (spec)` + `1 - min by (spec) (smartrouter_csm_provider_blocked)` |
 | `/api/metrics/chains` | seven grouped reads, one row per chain, joined on `spec`: `qGroupedClientRequests`, `qGroupedAvailability` (the error rate is `1 −` that ratio, not a second read), `qGroupedLatencyQuantile(0.95)`, `qGroupedQos`, `qGroupedHealth`, `qGroupedLatestBlock`, `qGroupedUpstreams` (`count by (spec, endpoint_id)` — the row count per chain) |
 | `/api/metrics/routers-rollup` | `count by (<scope label>) (smartrouter_requests_total)` to learn which routers the collector tells apart, then the same seven reads as `/chains` `by (spec)` for the routers it cannot split (one shared row per chain) and `by (spec, <scope label>)` for the ones it can (one row per router) — at most 15 reads whatever the router count |

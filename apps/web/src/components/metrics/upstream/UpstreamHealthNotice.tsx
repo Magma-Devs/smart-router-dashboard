@@ -29,12 +29,14 @@ export function UpstreamHealthNotice({ health, reason, since, sinceOrEarlier, sp
   onOpenErrors?: (range: { from: number; to: number }) => void;
 }) {
   if (health === "operational") return null;
-  const color = health === "unhealthy" ? "var(--err)" : "var(--warn)";
+  // By design is a fact to know, not a problem to act on: no alert, no warning color.
+  const byDesign = health === "untracked";
+  const color = byDesign ? "var(--text-3)" : health === "unhealthy" ? "var(--err)" : "var(--warn)";
   const when = health === "unhealthy" ? sinceWords(since, sinceOrEarlier) : null;
   // With a time, the status and the time are one phrase; the reason follows it.
   const lead = when ? `Unhealthy ${when}.` : null;
   return (
-    <div role="alert" style={{ padding: "12px 14px", marginBottom: 12, border: `1px solid ${color}`, borderRadius: 8, background: "var(--hover)", fontSize: 13, display: "grid", gap: 6 }}>
+    <div role={byDesign ? "note" : "alert"} style={{ padding: "12px 14px", marginBottom: 12, border: `1px solid ${byDesign ? "var(--line-2)" : color}`, borderRadius: 8, background: "var(--hover)", fontSize: 13, display: "grid", gap: 6 }}>
       <div style={{ color }}>
         {lead ? <><span style={{ fontWeight: 600 }}>{lead}</span> {reason}</> : upstreamHealthNotice(health, reason)}
       </div>

@@ -4,8 +4,18 @@ import type { IncidentSeverity } from "../constants/incidents.js";
 
 export type { MetricWindow, ScoreType };
 
-/** Binary health, mirroring `*_overall_health` gauges (1 = healthy). */
-export type HealthState = "operational" | "unhealthy" | "unknown";
+/**
+ * Health, mirroring `*_overall_health` gauges (1 = healthy).
+ *
+ * `untracked` is a provider the router does not track the head of BY DESIGN:
+ * every one of its urls serves only add-on collections that declare no way to
+ * read a block height (a service that only accepts transactions is the usual
+ * case). It has no block polls and never will, so it is not `unknown` (data
+ * that should be there is missing) and not `operational` (nothing measured it).
+ * The router says so on `rpc_endpoint_url_block_tracking`. Only a provider row
+ * reads `untracked`; a router or a chain never does.
+ */
+export type HealthState = "operational" | "unhealthy" | "unknown" | "untracked";
 
 /** A single point in a time-series returned to the web. */
 export interface TimePoint {
@@ -242,9 +252,10 @@ export interface Kpi {
  * url of its in rotation); `checks-failing` - every block check in the
  * health window failed; `no-checks` - in rotation, but no block check came
  * back in the window, so nothing confirms it; `no-data` - the router reports
- * nothing about it (or nothing for one of its configured interfaces).
+ * nothing about it (or nothing for one of its configured interfaces);
+ * `untracked` - the router checks no url of it, by design.
  */
-export type HealthCause = "ok" | "blocked" | "checks-failing" | "no-checks" | "no-data";
+export type HealthCause = "ok" | "blocked" | "checks-failing" | "no-checks" | "no-data" | "untracked";
 
 /** A provider that is not operational, for the top bar's list: which, why, and since when. */
 export interface ProviderAttention {
