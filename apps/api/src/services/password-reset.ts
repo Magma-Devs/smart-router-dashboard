@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { and, eq, gt, isNull } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { passwordResets, users, type Database, type User } from "@sr/db";
 import { RESET_TTL_MS } from "@sr/shared";
 import { hashPassword } from "./password.js";
@@ -113,16 +113,18 @@ export async function selfServeResetIsCoolingDown(
 
 export type ResetRejection = "not_found" | "used" | "expired" | "user_inactive";
 
-export type ResetOutcome =
-  | {
-      ok: true;
-      user: User;
-      createdBy: string | null;
-      revokedSessionIds: string[];
-      /** The `password_updated_at` it wrote — the time the owner is told. */
-      changedAt: Date;
-    }
-  | { ok: false; reason: ResetRejection };
+export interface ConsumedReset {
+  user: User;
+  createdBy: string | null;
+  /** The generating admin's name (or address) when the link is used, for the
+   *  audit note. Null for a link the holder asked for. */
+  createdByName: string | null;
+  revokedSessionIds: string[];
+  /** The `password_updated_at` it wrote — the time the owner is told. */
+  changedAt: Date;
+}
+
+export type ResetOutcome = ({ ok: true } & ConsumedReset) | { ok: false; reason: ResetRejection };
 
 export type ResetLookup = { ok: true; user: User } | { ok: false; reason: ResetRejection };
 
@@ -170,7 +172,9 @@ export async function lookupPasswordReset(db: Database, rawToken: string): Promi
  *     password at once. It does not stop anyone re-tripping the lock after.
  *
  * One transaction, so a failure part-way cannot leave the old sessions alive
- * under the new password — the outcome (3) exists to prevent.
+ * under the new password — the outcome (3) exists to prevent. `inTransaction`
+ * runs inside it once all four have happened: the route writes the reset's
+ * audit rows there, so a reset the log cannot record does not happen.
  *
  * It deliberately does **not** sign anyone in: the person proves the new
  * password works by using it.
@@ -179,6 +183,7 @@ export async function consumePasswordReset(
   db: Database,
   rawToken: string,
   newPassword: string,
+  inTransaction?: (tx: Database, consumed: ConsumedReset) => Promise<void>,
 ): Promise<ResetOutcome> {
   const rows = await db
     .select({ reset: passwordResets, user: users })
@@ -215,14 +220,54 @@ export async function consumePasswordReset(
     const revokedSessionIds = await signOutEverywhere(txDb, row.user.id, { reason: "password_change" });
     await clearFailures(txDb, row.user.email);
 
-    return {
-      ok: true,
+    const createdBy = row.reset.createdBy;
+    const [creator] = createdBy
+      ? await tx
+          .select({ name: users.name, email: users.email })
+          .from(users)
+          .where(eq(users.id, createdBy))
+      : [];
+    const consumed: ConsumedReset = {
       user: { ...row.user, passwordHash, passwordUpdatedAt: changedAt },
-      createdBy: row.reset.createdBy,
+      createdBy,
+      createdByName: creator ? (creator.name ?? creator.email) : null,
       revokedSessionIds,
       changedAt,
-    } as const;
+    };
+    if (inTransaction) await inTransaction(txDb, consumed);
+    return { ok: true as const, ...consumed };
   });
+}
+
+/**
+ * Kill every live reset link one admin generated, and return them with the
+ * address each was for — for a removal or a demotion below admin, which writes
+ * a `password.reset_link_revoked` row for each in its transaction. Marked used,
+ * as a newer link marks the one it replaces.
+ */
+export async function revokeResetLinksCreatedBy(
+  db: Database,
+  createdBy: string,
+): Promise<Array<{ id: string; userId: string; email: string }>> {
+  const killed = await db
+    .update(passwordResets)
+    .set({ usedAt: new Date() })
+    .where(
+      and(
+        eq(passwordResets.createdBy, createdBy),
+        isNull(passwordResets.usedAt),
+        sql`${passwordResets.expiresAt} > now()`,
+      ),
+    )
+    .returning({ id: passwordResets.id, userId: passwordResets.userId });
+  if (killed.length === 0) return [];
+  const holderIds = killed.map((k) => k.userId);
+  const holders = await db
+    .select({ id: users.id, email: users.email })
+    .from(users)
+    .where(inArray(users.id, holderIds));
+  const emailOf = new Map(holders.map((h) => [h.id, h.email]));
+  return killed.map((k) => ({ ...k, email: emailOf.get(k.userId) ?? "" }));
 }
 
 /** Set a password for someone who is signed in and knows their current one.

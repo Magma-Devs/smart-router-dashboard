@@ -28,6 +28,73 @@ alter or remove a row through the product. (Operators with database access have
 a retention escape hatch — `set local audit.purge = 'on'` inside a transaction
 — which exists for data-retention law and for nothing else.)
 
+### Rows that commit with their change
+
+For the events that record how a person gets into an account, or loses the
+ability to let others in, the row is written in the same transaction as the
+change it records, and a row that cannot be written undoes the change and
+fails the request:
+
+- an admin generating a reset link (`password.reset_link_generated`);
+- a reset link being used (`password.reset_completed`, and a
+  `session.revoked` for each session it ended);
+- an invitation being redeemed (`invite.redeemed`, and for a Google or GitHub
+  redemption the session it opens and its `signin.succeeded`);
+- removing a member or changing a role, with everything those revoke (below).
+
+A refused sign-in has no change of its own to share a transaction with. The
+attempt it spent is counted before the credential is checked and commits
+then, so a refusal row that cannot be written never gives that attempt back:
+the row (`signin.failed`, or `signin.blocked` for an account that was removed)
+is written in a transaction of its own, and the request answers `500` rather
+than the usual refusal. A lockout's `signin.blocked` row is written in the
+transaction that counted the attempt, since no credential is checked between
+the two. A row written outside any transaction is reported in the api's log
+and dropped when its write fails.
+
+### What a removal or a demotion revokes
+
+Removing a member, or changing an admin to any other role, revokes what they
+handed out as an admin, in the same transaction: invitations they sent that
+nobody has redeemed (`invite.revoked`), reset links they generated that nobody
+has used (`password.reset_link_revoked`, naming the member the link was for),
+and audit tokens they created (`apikey.deleted`). The acting admin is the
+actor, and each note names who the thing came from: `created by Dana, who was
+removed` or `created by Dana, who is no longer an admin`.
+
+### When a row's time is not the time it was written
+
+`invite.expired` is recorded the first time anything notices the expiry (the
+link being opened, or an admin's Invites list), and the row's time is the
+invitation's expiry, not that later moment. The feed's order is unaffected:
+it follows the order rows were written, so a puller resuming from its cursor
+still receives the row.
+
+### What a sign-in or reset request records
+
+- A refused Google or GitHub sign-in writes `signin.failed`, with the address
+  the provider verified (when it gave one) and why: no account with this
+  address, no verified email address, or a token it would not verify.
+- A sign-in at the address of a removed account, with a password or with
+  Google or GitHub, writes `signin.blocked` against that account, with a note
+  ending `account removed`. A password sign-in there gets the same `401` as an
+  address with no account.
+- Every forgot-password request a managed deployment with a mail transport
+  accepts writes `password.reset_requested`, including the ones that send
+  nothing. The note says which: `emailed`, `email failed, no
+  link delivered`, `not re-sent, a recent link is still unused`, `not sent, no
+  account with this address`, `not sent, account removed`, or `not sent, the
+  account has no password`. The answer is the same `202` for all of them, sent
+  before the address is looked up.
+- On a managed deployment, the email telling the owner their password was
+  reset is recorded on its own `password.reset_notice` row after
+  `password.reset_completed`, since that row has already committed when the
+  email is sent.
+- "Sign out everywhere" writes a `session.revoked` for every other device and
+  a `signout` for the one it was done from.
+
+### The catalog
+
 The event vocabulary is a closed catalog
 (`packages/shared/src/constants/audit-events.ts`), and it is **published**:
 `GET /api/audit/catalog` returns every event name, its group, what it means,
@@ -193,7 +260,8 @@ credential that can also edit routing fails their vendor review.
 - **Listed with last-used** (`GET /api/audit/tokens`, admin): name, suffix,
   creator, last use time and address, revocation. Never the hash.
 - **Revocable** (`DELETE /api/audit/tokens/:id`, admin) and dead from that
-  moment.
+  moment. Removing the admin who created it, or changing them to any other
+  role, revokes it too.
 - Its **lifecycle is logged** — `apikey.created` / `apikey.deleted` rows name
   the admin and the token — while its heartbeat lives on the row itself. A
   five-minute puller does not get to bury the log in rows that only say it is

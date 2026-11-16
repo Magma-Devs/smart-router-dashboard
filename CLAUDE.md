@@ -760,6 +760,15 @@ the log; the accounts, 2FA and config-approval tasks only emit into it.
   because the log is unwell); inside a transaction it propagates, because the
   failed insert has already aborted the caller's transaction and catching it
   would turn an atomicity guarantee into a silent maybe.
+  The rows that record getting into an account go in the change's
+  transaction: a reset link generated or used, an invitation redeemed, and
+  everything a removal or role change writes, including revoking what a
+  removed or demoted admin handed out. A refused sign-in's row goes in a
+  transaction of its own (`recordRefusal` in `routes/auth.ts`), so a failed
+  write answers 500; the attempt it spent has already committed and stays
+  counted. A lockout's `signin.blocked` shares the counter's transaction.
+  `occurredAt` stamps a row noticed after the fact with the time it
+  happened (`invite.expired` carries the expiry).
 - **Redaction happens on the way in.** `audit/format.ts` is the only way values
   reach a row: `(none)` · `(new)` · `(deleted)` · `yes`/`no` · stable
   comma-joined lists · `(changed, ends a91f)`. There is no un-redacted copy in

@@ -222,10 +222,15 @@ export interface RedeemInput {
  * `WHERE redeemed_at IS NULL AND revoked_at IS NULL AND expires_at > now()`.
  * Zero rows affected means somebody else got there first, and the whole
  * transaction unwinds — so a race can't produce two accounts from one invite.
+ *
+ * `inTransaction` runs inside that transaction once the account exists. The
+ * route writes `invite.redeemed` there, so an account cannot exist without the
+ * row that says which invitation made it.
  */
 export async function redeemInvitation(
   db: Database,
   input: RedeemInput,
+  inTransaction?: (tx: Database, redeemed: { user: User; invitation: Invitation }) => Promise<void>,
 ): Promise<RedeemResult> {
   const lookup = await lookupInvitation(db, input.rawToken);
   if (!lookup.ok) {
@@ -284,6 +289,7 @@ export async function redeemInvitation(
       .set({ redeemedUserId: user.id })
       .where(eq(invitations.id, invitation.id));
 
+    if (inTransaction) await inTransaction(tx, { user, invitation });
     return { ok: true, user, invitation };
   });
 }
@@ -322,4 +328,27 @@ export async function revokeInvitation(
     .where(and(eq(invitations.id, id), isNull(invitations.redeemedAt), isNull(invitations.revokedAt)))
     .returning();
   return rows[0] ?? null;
+}
+
+/**
+ * Revoke every invitation one admin sent that is still unredeemed, expired ones
+ * included, since a resend revives those. For a removal or a demotion below
+ * admin, which writes an `invite.revoked` row for each in its transaction.
+ */
+export async function revokeInvitationsCreatedBy(
+  db: Database,
+  createdBy: string,
+  by: string,
+): Promise<Invitation[]> {
+  return db
+    .update(invitations)
+    .set({ revokedAt: new Date(), revokedBy: by })
+    .where(
+      and(
+        eq(invitations.createdBy, createdBy),
+        isNull(invitations.redeemedAt),
+        isNull(invitations.revokedAt),
+      ),
+    )
+    .returning();
 }

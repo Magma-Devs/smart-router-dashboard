@@ -531,6 +531,22 @@ describe("createAuditWriter", () => {
   });
 });
 
+describe("createAuditWriter occurredAt", () => {
+  it("records the time the caller gives, for an event noticed after it happened", async () => {
+    const expiredAt = new Date("2026-11-01T12:00:00.000Z");
+    await writer().write({
+      action: "invite.expired",
+      actor: { id: null, kind: "system" },
+      target: { type: "invite", id: "inv-1", name: "late@example.com" },
+      occurredAt: expiredAt,
+    });
+
+    const [row] = await t.db.select().from(auditEvents);
+    expect(row?.occurredAt.toISOString()).toBe(expiredAt.toISOString());
+    expect(violations).toEqual([]);
+  });
+});
+
 describe("createAuditWriter failure behaviour", () => {
   /**
    * `session_id` is a uuid and this is not one, so the insert fails. The

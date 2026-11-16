@@ -27,11 +27,13 @@ import type { AuditActionOf } from "@sr/shared";
  * what that ticket needed from the vocabulary: `2fa.enrolled`, `2fa.reset` and
  * `host.recovery` were written into the catalog ahead of the code, tagged with
  * their origin. What is still deliberately absent is `config` and `approval` —
- * MAG-2731's, and the two groups a CHECK constraint forbids from carrying an IP.
+ * MAG-2731's, and the two groups a CHECK constraint forbids from carrying an IP —
+ * apart from `apikey.deleted`: removing or demoting an admin revokes the audit
+ * tokens they created, in the same transaction as the people change.
  */
-export type AuditAction = AuditActionOf<
-  "access" | "accounts" | "people" | "setup" | "2fa" | "recovery" | "incidents"
->;
+export type AuditAction =
+  | AuditActionOf<"access" | "accounts" | "people" | "setup" | "2fa" | "recovery" | "incidents">
+  | "apikey.deleted";
 
 /**
  * The event shape is **MAG-2770's**, narrowed to the verbs this task emits.
