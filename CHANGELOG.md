@@ -25,6 +25,21 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   window; a hash or a caller's ID is read over the page's window, with
   "Search the last 30 days" offered when it isn't there.
 
+### Changed
+
+- **An opened request says less, and says what it means.** Request and reply
+  sizes are gone, and so is the "→ client" mark on a provider (in the lists'
+  chips too): the last step says whose answer went back, and the Result
+  column says what the client got. The column that read "What it answered:
+  Answered" is "Result". A router's own error is named in the last step
+  ("The router's own error: No providers available") in place of "No provider
+  gave a usable answer, so the router sent its own error, named above".
+  "Source: Undetermined" is no longer drawn: it told the reader nothing.
+- **An answer from the cache is said in blue**: a "From cache" tag beside the
+  status and in the last step, the cache's name in blue on its line and in
+  the lists' chips, and its step reads "Looked in the cache", not "Sent to
+  the cache".
+
 ## [0.68.0]
 
 ### Added

@@ -88,7 +88,7 @@ function Found({ id, win, onClose }: { id: string; win: MetricWindow; onClose: (
         ) : (
           <div style={{ display: "grid", gap: 8 }}>
             <MatchesNote matches={data?.matches} />
-            {tx ? <TxDetails row={tx} lean /> : <RequestDetails row={row} lean />}
+            {tx ? <TxDetails row={tx} /> : <RequestDetails row={row} />}
           </div>
         )}
       </div>
