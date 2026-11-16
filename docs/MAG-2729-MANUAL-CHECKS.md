@@ -34,32 +34,31 @@ admin yet to invite anybody.
 | **Safari (or Firefox) private** | the invited person's *second* device, needed once, in check 8 |
 | **A terminal** | four checks cannot be done from a browser — see below |
 | **A second terminal tab** | optional, for watching `docker logs` |
+| **An authenticator app** | 2FA is required of everyone ([`TWO-FACTOR.md`](./TWO-FACTOR.md)): the invited person sets it up on accepting the invitation, and the administrator before their first invitation in check 2 |
 
 **Two incognito windows are not two sessions.** Chrome shares one incognito
 profile across every window, so signing in twice there gives you one session,
 not two. That is why check 8 needs a genuinely different browser.
 
-### The three checks that need a terminal
+### The four checks that need a terminal
 
-Not a shortcoming of the runbook — all three are asking about things the UI
-deliberately does not offer. **Check 8 used to be here and no longer is**: the
-sign-in page now has a *Forgot your password?* link, so the whole reset flow is
-clickable.
+Not a shortcoming of the runbook: all four are asking about things the UI
+deliberately does not offer. Check 8 needs none, because the sign-in page has a
+*Forgot your password?* link and the whole reset flow is clickable.
 
 | Check | Why |
 |---|---|
 | 4 (part 2) | Submitting a rogue address alongside a token. No form lets you do this, which is the point |
 | 5 | "Refused **when attempted directly**" is a statement about the api, not the UI. A hidden button proves nothing |
 | 7 (part 2) | The buttons are absent on your own row, so proving the *server* refuses needs a direct call |
-| 11 | The audit log has no viewer yet — that is MAG-2770 |
+| 11 (part 2) | The search for leaked secrets reads every column of both audit tables at once. The **Audit log** page shows the rows; a search across all of them is a database query |
 
 ---
 
 ## Setup
 
 ```bash
-cd ~/go/smart-router-dashboard
-git checkout feat/MAG-2870-account-emails    # every MAG-2729 slice + MAG-2870
+git checkout main
 make accounts-reset && make accounts-managed
 ```
 
@@ -182,17 +181,18 @@ was refused, the account created is an admin, and `/setup` is now closed.
 **Open the inbox** at http://localhost:8005.
 
 4. The message is there. Check it against what the ticket asks for:
-   - subject **"You've been added to Example Co on Smart Router"** — the customer's
-     name, because this lands somewhere that has never heard of us
+   - subject **"{your name} invited you to the Smart Router dashboard for
+     Example Co"**: who sent it and the customer's name, because this lands
+     somewhere that has never heard of us
+   - *"Invited by {your name} ({your address}) as Approver."*, the role by the
+     label the Team page uses
    - a **Set up your account** button
    - the same link again **as plain text** underneath, because mail clients
      strip buttons and people forward these
-   - *"The link works once and expires in 7 days. It only works for
-     dana.okonkwo@example.com."*
-   - **no unsubscribe, no footer, no images** — a remote image in a security
+   - *"The link works once and expires in 7 days. It sets up the account for
+     dana.okonkwo@example.com, so do not forward it."*
+   - **no unsubscribe, no footer, no images**: a remote image in a security
      email reports when it was opened and from where
-   - **the inviter is not named.** An invite goes to an address nobody has
-     verified, so a mistyped one would put your name in a stranger's inbox
 
 **Back in the admin window** → **Team** → **Members**.
 
@@ -453,11 +453,12 @@ herself.
    expires in 1 hour"*, and a last line saying what to do if it wasn't her.
 7. Click the link. The page shows **her address** under the heading, so somebody
    with two accounts knows which one they are changing, and the rule *"8 to 64
-   characters. Any characters, including spaces."* is shown **before** the
-   field rather than after a failure.
+   characters, spaces allowed. Passwords found in known data breaches are
+   refused."* is shown under the field **before** anything is typed rather than
+   after a failure.
 8. Set a new password (`dana-picked-a-new-one-2231`) → **Save password**.
-9. It says *"Your password has been changed. You have been signed out everywhere
-   else."* and offers **Sign in** — it does **not** drop her into the dashboard.
+9. It is headed **"Password changed"**, says *"Your password has been changed.
+   You have been signed out everywhere else."* and offers **Sign in** — it does **not** drop her into the dashboard.
    A reset link that signs you in is a reset link worth stealing.
 10. Switch to **Safari**. Click anything. She is signed out.
 11. Sign in with the **new** password — works. Try the old one — refused.
@@ -491,7 +492,7 @@ whoever holds one **cannot tell which**:
 | **Never issued** | a guessed or invented token |
 
 1. You just spent a link in check 8. Paste **the same link** in again →
-   *"This link has expired."*
+   *"This link no longer works. It may have been used, replaced or expired."*
 2. Invent one: http://localhost:3000/reset/a-token-that-was-never-issued →
    **word for word the same page.**
 3. If you would rather not spend a link to see this, use the third case instead:
@@ -544,7 +545,7 @@ was re-invitable.
 
 ## 11 · The log has a row for each of the above
 
-There is no viewer yet — that is MAG-2770 — so read the table directly.
+**Admin window** → **Audit log** in the sidebar. Or read the table directly:
 
 ```bash
 docker exec smart-router-dashboard-dev-postgres-1 psql -U sr -d sr_dashboard \
@@ -553,7 +554,7 @@ docker exec smart-router-dashboard-dev-postgres-1 psql -U sr -d sr_dashboard \
 ```
 
 Look for a row from each thing you did, **including a failed sign-in** — if you
-have not produced one yet, mistype your password once and re-run:
+have not produced one yet, mistype your password once and look again:
 
 ```
 setup.completed            member.invited           member.role_changed
@@ -562,7 +563,9 @@ signin.failed              invite.revoked           password.reset_requested
                                                     password.reset_completed
 ```
 
-Role changes carry a real before/after, not a sentence:
+Role changes carry a real before/after, not a sentence: open a
+`member.role_changed` row on the page and its detail sheet lists the field with
+its old and new value. In the terminal:
 
 ```bash
 docker exec smart-router-dashboard-dev-postgres-1 psql -U sr -d sr_dashboard \

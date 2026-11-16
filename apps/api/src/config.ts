@@ -313,14 +313,15 @@ export const config = {
   deploymentMode: (env("DEPLOYMENT_MODE") ?? "onprem") as "managed" | "onprem",
 
   /**
-   * Who this deployment belongs to, as it appears in the invitation subject
-   * ("You've been added to {customer} on Smart Router").
+   * Who this deployment belongs to, as the emails name the dashboard: the
+   * invitation's subject is "{inviter} invited you to the Smart Router
+   * dashboard for {customer}". The fleet sets it to the tenant's name.
    *
    * An invitation arrives at an address that has never heard of us, so the
    * customer's own name is what stops it reading as spam. Defaults to the
-   * product name rather than a placeholder: "You've been added to Smart Router
-   * on Smart Router" is clumsy, but "You've been added to {customer}" reaching
-   * somebody's inbox is worse.
+   * product name rather than a placeholder: "the Smart Router dashboard for
+   * Smart Router" is clumsy, but "for {customer}" reaching somebody's inbox is
+   * worse.
    */
   customerName: env("CUSTOMER_NAME")?.trim() || "Smart Router",
 

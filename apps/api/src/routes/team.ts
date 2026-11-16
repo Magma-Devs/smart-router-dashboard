@@ -23,7 +23,7 @@ import { deploymentMode, publicWebOrigin } from "../config.js";
 import { EMAIL_FIELD, resolveClientContext } from "./auth.js";
 import { clearEnrolment, isEnrolled, revokeChallenges } from "../services/two-factor.js";
 import { signOutEverywhere } from "../services/sessions.js";
-import { sendInvitationEmail } from "../services/email-templates.js";
+import { sendInvitationEmail, type NamedPerson } from "../services/email-templates.js";
 import { noticeTwoFactorReset, resetByLabel } from "../services/two-factor-reset-notice.js";
 
 /**
@@ -78,10 +78,13 @@ export async function teamRoutes(app: FastifyInstance) {
     // Same reason `app.ts` re-reads AUTH_MODE and `plugins/db.ts` DATABASE_URL.
     const origin = publicWebOrigin();
     if (!origin) {
+      // The variable's name is for the operator's log; the admin is told in words.
+      reply.log.error("PUBLIC_WEB_ORIGIN is not set, so an invitation link cannot be built");
       void reply.code(500).send({
         statusCode: 500,
         error: "Internal Server Error",
-        message: "PUBLIC_WEB_ORIGIN is not configured, so invitation links cannot be built",
+        message:
+          "Invitation links can't be made on this deployment because its web address isn't set. Ask whoever runs it.",
       });
       return null;
     }
@@ -113,7 +116,7 @@ export async function teamRoutes(app: FastifyInstance) {
       error: "Forbidden",
       code: "TWO_FACTOR_REQUIRED",
       message:
-        "Set up two-factor authentication before inviting anyone. You are about to give somebody else access to this deployment.",
+        "Set up 2FA before inviting anyone. You are about to give somebody else access to this deployment.",
     });
     return false;
   }
@@ -218,6 +221,8 @@ export async function teamRoutes(app: FastifyInstance) {
         url: inviteUrl(origin, rawToken),
         expiresAt: invitation.expiresAt,
         mode,
+        invitedBy: me.user,
+        role: invitation.role,
       });
 
       // No `changes`: the catalog marks this verb carriesChanges:false. The note
@@ -286,6 +291,8 @@ export async function teamRoutes(app: FastifyInstance) {
         url: inviteUrl(origin, result.rawToken),
         expiresAt: result.invitation.expiresAt,
         mode,
+        invitedBy: me.user,
+        role: result.invitation.role,
       });
 
       await audit.write({
@@ -378,7 +385,7 @@ export async function teamRoutes(app: FastifyInstance) {
           statusCode: 409,
           error: "Conflict",
           message:
-            "You cannot reset your own two-factor authentication. Ask another administrator.",
+            "You cannot reset your own 2FA. Ask another admin.",
         });
       }
 
@@ -389,7 +396,7 @@ export async function teamRoutes(app: FastifyInstance) {
         return reply.code(409).send({
           statusCode: 409,
           error: "Conflict",
-          message: "That member has not set up two-factor authentication.",
+          message: "That member has not set up 2FA.",
         });
       }
 
@@ -423,7 +430,7 @@ export async function teamRoutes(app: FastifyInstance) {
             // "who cleared whose" without a join.
             target: { type: "member", id: target.id, name: target.email },
             access: { ...access, sessionId: me.sessionId },
-            note: `two-factor reset for ${target.email}`,
+            note: `2FA reset for ${target.email}`,
           },
           tx,
         );
@@ -436,7 +443,7 @@ export async function teamRoutes(app: FastifyInstance) {
               actor: { id: me.id, kind: "user" },
               target: { type: "session", id: sessionId, name: target.email },
               access: { ...access, sessionId: me.sessionId },
-              note: "two-factor reset",
+              note: "2FA reset",
             },
             tx,
           );
@@ -489,7 +496,15 @@ export async function teamRoutes(app: FastifyInstance) {
  */
 async function deliverInviteLink(
   app: FastifyInstance,
-  opts: { to: string; url: string; expiresAt: Date; mode: "managed" | "onprem" },
+  opts: {
+    to: string;
+    url: string;
+    expiresAt: Date;
+    mode: "managed" | "onprem";
+    /** The admin sending this link; the email names them. */
+    invitedBy: NamedPerson;
+    role: Role;
+  },
 ): Promise<{ url?: string; delivery: "email" | "link"; fallback: boolean; note: string }> {
   if (opts.mode === "onprem") {
     return { url: opts.url, delivery: "link", fallback: false, note: EMAIL_DELIVERY_NOTES.link };
@@ -497,7 +512,7 @@ async function deliverInviteLink(
 
   const days = Math.max(1, Math.round((opts.expiresAt.getTime() - Date.now()) / 86_400_000));
   const { delivery } = await sendInvitationEmail(
-    { to: opts.to, inviteUrl: opts.url, expiresInDays: days },
+    { to: opts.to, inviteUrl: opts.url, expiresInDays: days, invitedBy: opts.invitedBy, role: opts.role },
     (msg, ctx) => app.log.warn(ctx ?? {}, msg),
   );
 
@@ -538,10 +553,12 @@ export async function teamPasswordRoutes(app: FastifyInstance) {
       }
       const origin = publicWebOrigin();
       if (!origin) {
+        request.log.error("PUBLIC_WEB_ORIGIN is not set, so a reset link cannot be built");
         return reply.code(500).send({
           statusCode: 500,
           error: "Internal Server Error",
-          message: "PUBLIC_WEB_ORIGIN is not configured, so reset links cannot be built",
+          message:
+            "Reset links can't be made on this deployment because its web address isn't set. Ask whoever runs it.",
         });
       }
 

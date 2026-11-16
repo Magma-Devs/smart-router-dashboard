@@ -97,7 +97,7 @@ export const EMAIL_FIELD = { type: "string" as const, format: "email", maxLength
 /** One message for every dead reset link. MAG-2870: "The same message for both
  *  cases. Telling someone a link was already used also tells an attacker it was
  *  already used." */
-const RESET_GONE = "This link has expired.";
+const RESET_GONE = "This link no longer works. It may have been used, replaced or expired.";
 
 /** `password.reset_requested` notes for the requests that send nothing. */
 const RESET_REQUEST_UNKNOWN_NOTE = "not sent, no account with this address";
@@ -736,7 +736,8 @@ export async function authRoutes(app: FastifyInstance) {
         return reply.code(500).send({
           statusCode: 500,
           error: "Internal Server Error",
-          message: "PUBLIC_WEB_ORIGIN is not configured, so reset links cannot be built",
+          message:
+            "Reset links can't be made on this deployment because its web address isn't set. Ask whoever runs it.",
         });
       }
       const { email } = request.body as { email: string };
@@ -1153,7 +1154,7 @@ export async function authRoutes(app: FastifyInstance) {
           action: "signin.failed",
           actor: { id: claimed.user.id, kind: "user", label: email, email },
           access: { ...client.access, sessionId: null },
-          note: "two-factor secret could not be decrypted (TOTP_ENCRYPTION_KEY)",
+          note: "2FA secret could not be decrypted with this deployment's key",
         });
         return refuse();
       }
@@ -1165,7 +1166,7 @@ export async function authRoutes(app: FastifyInstance) {
           // The one place the distinction is recorded. A run of these against
           // one account means somebody holds a correct password, which reads
           // very differently from a run of "wrong password".
-          note: "wrong two-factor code",
+          note: "wrong 2FA code",
         });
         return refuse();
       }

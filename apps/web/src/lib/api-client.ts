@@ -5,6 +5,7 @@
  * lets a single published web image point at any api host.
  */
 import { parseRetryAfter } from "@/lib/retry";
+import { signInPathAfter } from "@/lib/sign-in-notice";
 
 const BUILD_BASE =
   process.env.NEXT_PUBLIC_API_URL ?? (typeof window !== "undefined" ? "" : "http://localhost:8000");
@@ -92,7 +93,8 @@ export async function apiUrl(): Promise<string> {
  * you did not authorise.
  *
  * So when the api's session gate says the session is over, the browser signs
- * out too and goes to /login. The gate says so with a machine-readable `code`
+ * out too and goes to /login, with `?reason=access_changed` when the refusal's
+ * `endedBy` says an admin ended it. The gate says so with a machine-readable `code`
  * (AUTH_ERROR_CODES in the api's plugins/auth.ts), and only these end it:
  *
  *  - **401 SESSION_INVALID** — revoked, expired, or cut off by "sign out
@@ -150,19 +152,28 @@ async function failure(
 ): Promise<ApiError> {
   let message = fallback;
   let code: string | undefined;
+  let endedBy: string | undefined;
   try {
-    const json = (await res.json()) as { message?: string; code?: string };
+    const json = (await res.json()) as { message?: string; code?: string; endedBy?: string };
     if (json.message) message = json.message;
     code = json.code;
+    endedBy = json.endedBy;
   } catch {
     /* keep the fallback */
   }
   if (shouldEndSession(res.status, code, authenticated) && !endingSession) {
     endingSession = true; // concurrent panels all fail at once; act once
-    void import("next-auth/react").then(({ signOut }) => signOut({ redirectTo: "/login" }));
+    // An admin's act gets a sentence on the sign-in page; see `sign-in-notice.ts`.
+    const redirectTo = signInPathAfter(endedBy);
+    void import("next-auth/react").then(({ signOut }) => signOut({ redirectTo }));
   }
   const retryAfterMs = res.status === 429 ? parseRetryAfter(res.headers.get("retry-after")) : null;
-  return new ApiError(res.status, message, code, retryAfterMs === null ? undefined : Date.now() + retryAfterMs);
+  return new ApiError(
+    res.status,
+    message,
+    code,
+    retryAfterMs === null ? undefined : Date.now() + retryAfterMs,
+  );
 }
 
 export async function apiGet<T>(path: string): Promise<T> {

@@ -11,6 +11,9 @@
  * | `approver`  | yes | yes | yes | no  | no  |
  * | `admin`     | yes | yes | yes | yes | yes |
  *
+ * No change flow uses the propose and approve columns yet, so a requester or
+ * an approver has a read-only member's access, and `ROLE_DESCRIPTIONS` says so.
+ *
  * This module is the single source of the ordering. The api gates on it
  * (`requireRole`) and the web uses it to decide which controls to render — and
  * the whole point of them sharing one implementation is that they can't drift
@@ -41,12 +44,28 @@ export const ROLE_LABELS: Record<Role, string> = {
   admin: "Admin",
 };
 
-/** One line each, shown beside the choice in the invite and change-role dialogs. */
+/** One line each, shown beside the role in the invite and change-role dialogs
+ *  and on the join page. Requester and approver describe the access they have
+ *  today, which is read-only's: no change flow proposes or approves anything. */
 export const ROLE_DESCRIPTIONS: Record<Role, string> = {
   read_only: "Can see the dashboard and the audit log. Cannot change anything.",
-  requester: "Can propose configuration changes for someone else to approve.",
-  approver: "Can approve changes proposed by other people.",
-  admin: "Can manage members and roles, and approve their own changes.",
+  requester: "Same access as Read-only for now.",
+  approver: "Same access as Read-only for now.",
+  admin: "Can invite and remove members, change roles, and reset passwords and 2FA.",
+};
+
+/**
+ * One colour per role, wherever a role is drawn as a chip: the Team page, the
+ * invite and change-role dialogs, the join page. None is the red, orange,
+ * amber, green or sky blue that mean error, brand, warning, healthy and a
+ * Pending invitation. The web mixes each with the theme's text colour
+ * (`RoleBadge` in apps/web).
+ */
+export const ROLE_COLORS: Record<Role, string> = {
+  read_only: "#71717a",
+  requester: "#14b8a6",
+  approver: "#6366f1",
+  admin: "#a855f7",
 };
 
 /** True when `value` is one of the four roles. */

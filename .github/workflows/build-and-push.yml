@@ -208,6 +208,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             APP_VERSION=${{ steps.version.outputs.version }}
+            GIT_COMMIT=${{ github.sha }}
             NEXT_PUBLIC_API_URL=http://localhost:8000
             NEXT_PUBLIC_LOCAL_MODE=true
           # Layer cache on GHCR; mode=max keeps the build stage's layers too (the

@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { Modal } from "@/components/gateway/Modal";
 import { apiSend } from "@/lib/api-client";
-import { ROLES, ROLE_DESCRIPTIONS, ROLE_LABELS, type Role } from "@sr/shared";
+import { isRole, type Role } from "@sr/shared";
+import { RolePicker } from "./bits";
 
 export interface MemberSummary {
   id: string;
@@ -23,7 +24,8 @@ export function ChangeRoleModal({
   open: boolean;
   onClose: () => void;
   member: MemberSummary | null;
-  onChanged: () => void;
+  /** After the api has confirmed it, with the role it confirmed. */
+  onChanged: (role: Role) => void;
 }) {
   const [role, setRole] = useState<Role>(member?.role ?? "read_only");
   const [busy, setBusy] = useState(false);
@@ -34,8 +36,15 @@ export function ChangeRoleModal({
     setBusy(true);
     setError(null);
     try {
-      await apiSend("PATCH", `/api/team/members/${member.id}`, { role });
-      onChanged();
+      const res = await apiSend<{ member?: { role?: unknown } }>(
+        "PATCH",
+        `/api/team/members/${member.id}`,
+        {
+          role,
+        },
+      );
+      const confirmed = res?.member?.role;
+      onChanged(isRole(confirmed) ? confirmed : role);
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not change that role.");
@@ -51,7 +60,9 @@ export function ChangeRoleModal({
       title={`Change role · ${member?.name || member?.email || ""}`}
       footer={
         <>
-          <button className="gw-btn" onClick={onClose}>Cancel</button>
+          <button className="gw-btn" onClick={onClose}>
+            Cancel
+          </button>
           <button
             className="gw-btn gw-btn--primary"
             disabled={busy || role === member?.role}
@@ -63,37 +74,16 @@ export function ChangeRoleModal({
       }
     >
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {ROLES.map((r) => (
-          <button
-            key={r}
-            aria-pressed={role === r}
-            onClick={() => setRole(r)}
-            style={{
-              display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px",
-              borderRadius: 8,
-              border: "1px solid " + (role === r ? "var(--brand)" : "var(--line)"),
-              background: role === r ? "rgba(255,57,0,0.04)" : "var(--surface)",
-              cursor: "pointer", textAlign: "left", fontFamily: "inherit", color: "var(--text)",
-            }}
-          >
-            <div style={{
-              width: 14, height: 14, borderRadius: "50%", flexShrink: 0, marginTop: 2,
-              border: "2px solid " + (role === r ? "var(--brand)" : "var(--line-2)"),
-              background: role === r ? "var(--brand)" : "transparent",
-            }} />
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>{ROLE_LABELS[r]}</div>
-              <div style={{ fontSize: 11.5, color: "var(--text-3)", marginTop: 2 }}>
-                {ROLE_DESCRIPTIONS[r]}
-              </div>
-            </div>
-          </button>
-        ))}
+        <RolePicker value={role} onChange={setRole} />
         <div style={{ fontSize: 11.5, color: "var(--text-3)", marginTop: 4, lineHeight: 1.5 }}>
-          This takes effect immediately, on whatever they have open right now — not at their
-          next sign-in.
+          This takes effect immediately, on whatever they have open right now, not at their next
+          sign-in.
         </div>
-        {error && <div role="alert" style={{ fontSize: 12, color: "var(--err)" }}>{error}</div>}
+        {error && (
+          <div role="alert" style={{ fontSize: 12, color: "var(--err)" }}>
+            {error}
+          </div>
+        )}
       </div>
     </Modal>
   );

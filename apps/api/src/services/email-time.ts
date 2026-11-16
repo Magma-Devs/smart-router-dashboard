@@ -17,9 +17,10 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
-/** `Nov 11, 2026, 14:05 UTC`, or an em dash for a Date that is not a time. */
+/** `Nov 11, 2026, 14:05 UTC`, or "an unknown time" for a Date that is not a
+ *  time: words, since an email carries no long dash. */
 export function emailTime(at: Date): string {
-  if (!Number.isFinite(at.getTime())) return "—";
+  if (!Number.isFinite(at.getTime())) return "an unknown time";
   return (
     `${MONTHS[at.getUTCMonth()]} ${at.getUTCDate()}, ${at.getUTCFullYear()}, ` +
     `${pad2(at.getUTCHours())}:${pad2(at.getUTCMinutes())} UTC`

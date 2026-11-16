@@ -233,8 +233,8 @@ export.
 
 ## Lost phone
 
-An admin resets it: `POST /api/team/members/:id/2fa/reset`, or the **Reset 2FA**
-button on `/team`. Three writes, each load-bearing:
+An admin resets it: `POST /api/team/members/:id/2fa/reset`, or **Reset 2FA** in
+the member's row menu on `/team`. Three writes, each load-bearing:
 
 1. the secret is **destroyed**, not disabled — nothing left to restore, and
    nothing an admin could read back;
@@ -270,7 +270,8 @@ and `notified: "on_next_signin"` otherwise.
 **On-prem nothing is emailed**; the `2fa.reset` row naming both people is the
 record there. On-prem, and wherever the email did not go, the member finds out
 at their next sign-in: their sessions just ended, and the enrolment screen says
-an administrator reset it.
+an administrator reset it. The Account page's 2FA card says the same to an
+enrolled member: "Lost your phone? Ask an admin to reset your 2FA."
 
 **Not your own.** An admin cannot reset their own second factor, or mint their
 own password-reset link (409 for both). Together those were a takeover from one

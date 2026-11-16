@@ -62,7 +62,13 @@ export type SessionRejection =
 
 export type SessionCheck =
   | { ok: true; session: Session; user: User }
-  | { ok: false; reason: SessionRejection };
+  | {
+      ok: false;
+      reason: SessionRejection;
+      /** With `revoked`: the row's `revoked_reason`, so the gate can say an
+       *  admin ended it rather than the holder. */
+      revokedReason?: string | null;
+    };
 
 /** Open a session. Returns the row so the caller can put its id in the token. */
 export async function createSession(
@@ -130,7 +136,9 @@ export async function checkSession(
 
   const { session, user } = row;
   if (user.status !== "active") return { ok: false, reason: "user_inactive" };
-  if (session.revokedAt) return { ok: false, reason: "revoked" };
+  if (session.revokedAt) {
+    return { ok: false, reason: "revoked", revokedReason: session.revokedReason };
+  }
   if (session.expiresAt.getTime() <= Date.now()) return { ok: false, reason: "expired" };
 
   if (user.signedOutAllAt) {
