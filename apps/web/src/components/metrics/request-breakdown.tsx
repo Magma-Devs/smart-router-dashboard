@@ -312,7 +312,7 @@ export function RequestBreakdown(p: BreakdownProps) {
                   {p.final?.from === "provider" ? (isCache(p.final.attempt.upstream)
                     ? <CacheTag />
                     : <span><span className="gw-mono">{p.final.attempt.upstream}</span>&apos;s answer went back</span>)
-                    : routerAnswered ? <span>The router&apos;s own error{finalCode ? <>: <span style={{ color: "var(--text)" }}>{errorName(finalCode)}</span></> : null}</span>
+                    : routerAnswered ? <span>The router&apos;s own error{finalCode && errorName(finalCode).toLowerCase() !== p.status.label.toLowerCase() ? <>: <span style={{ color: "var(--text)" }}>{errorName(finalCode)}</span></> : null}</span>
                       : <span>The logs don&apos;t show an answer.</span>}
                   {p.tookMs != null && <span className="gw-mono gw-tnum" style={{ color: "var(--text-3)" }}>· after {fmtTook(p.tookMs)}</span>}
                 </div>

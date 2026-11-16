@@ -83,7 +83,7 @@ function summarize(rows: TxLogRow[]) {
 const OUTCOME: Record<TxLogRow["outcome"], { label: string; color: string }> = TX_RESULT;
 
 /** A row's result word: the chart's, except where the send reply says the chain ran it (Sui). */
-export function resultOf(r: TxLogRow): { label: string; color: string } {
+function resultOf(r: TxLogRow): { label: string; color: string } {
   return r.outcome === "accepted" && r.txStatus === "success" ? { label: "Executed", color: "var(--ok)" } : OUTCOME[r.outcome];
 }
 
