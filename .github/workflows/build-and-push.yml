@@ -442,3 +442,55 @@ jobs:
           done
           echo "::error::release tags kept moving; latest and $MAJOR_MINOR may lag"
           exit 1
+
+  # The dashboards' sign-in redirect proxy (apps/auth-proxy) is not an image:
+  # one ES module, published on the release as `auth-proxy-<VERSION>.js` with
+  # its sha256 beside it. devops-magmadevs pins the pair in its tfvars and
+  # deploys the Worker from there (make deploy-auth-proxy); nothing here
+  # deploys it and this job holds no Cloudflare credential. A tag the
+  # tag-release job pushed fires no workflow of its own, so the publish rides
+  # this one, after the tag exists. The release is created here when the tag
+  # has none; a re-run replaces the assets and nothing else.
+  publish-auth-proxy:
+    name: Publish the auth-proxy bundle
+    needs: [build-and-push, tag-release]
+    if: github.ref_name == 'main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup pnpm and Node.js, install dependencies
+        uses: pnpm/setup@fa36a5ef7dcdefc3a7cb25655c122e00cf6e636e # v3.1.2
+        with:
+          node-version-file: .nvmrc
+          cache: true
+          require-lockfile: true
+
+      - name: Bundle the Worker
+        env:
+          VERSION: ${{ needs.build-and-push.outputs.version }}
+        run: |
+          set -euo pipefail
+          pnpm --filter @sr/auth-proxy exec wrangler deploy --dry-run --outdir dist
+          mkdir -p out
+          cp "apps/auth-proxy/dist/index.js" "out/auth-proxy-${VERSION}.js"
+          (cd out && sha256sum "auth-proxy-${VERSION}.js" > "auth-proxy-${VERSION}.js.sha256")
+          cat "out/auth-proxy-${VERSION}.js.sha256"
+
+      - name: Attach it to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.build-and-push.outputs.version }}
+        run: |
+          set -euo pipefail
+          TAG="v${VERSION}"
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --verify-tag --title "$TAG" \
+              --notes "Images: ghcr.io/${GITHUB_REPOSITORY,,}/{frontend,backend}:${VERSION}. The auth-proxy bundle is attached with its sha256; devops-magmadevs pins and deploys it. Changes: CHANGELOG.md."
+          fi
+          gh release upload "$TAG" "out/auth-proxy-${VERSION}.js" "out/auth-proxy-${VERSION}.js.sha256" --clobber
+          echo "✓ auth-proxy-${VERSION}.js attached to ${TAG}"

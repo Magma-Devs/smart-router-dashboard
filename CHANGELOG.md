@@ -21,10 +21,13 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   finishes the sign-in as before. The proxy forwards only to
   `https://dashboard.<tenant>.magmadevs.com/api/auth/callback/<the same provider>`,
   never exchanges a code and holds no client secret. Nothing changes in the
-  web: `next-auth` reads the variable itself. Deployed by
-  `.github/workflows/auth-proxy-deploy.yml` on a push to `main` that touches
-  the app; the Worker's three secrets (`AUTH_SECRET`, `GOOGLE_CLIENT_ID`,
-  `GITHUB_CLIENT_ID`) are set once with `wrangler secret put`. Documented in
+  web: `next-auth` reads the variable itself. Built here, deployed by the
+  fleet: each release attaches the bundle, `auth-proxy-<VERSION>.js` with its
+  sha256, to the `v<VERSION>` GitHub release (`build-and-push.yml`, the
+  `publish-auth-proxy` job), and devops-magmadevs pins the pair and deploys
+  the Worker, its route and its three secrets (`AUTH_SECRET`,
+  `GOOGLE_CLIENT_ID`, `GITHUB_CLIENT_ID`). This repo holds no Cloudflare
+  credential. Documented in
   `docs/AUTH.md` with what it costs: one `AUTH_SECRET` across the dashboards
   behind it (the api still opens only a session id it holds) and the one
   client's id and secret in each. `workerd`, wrangler's local runtime, joins

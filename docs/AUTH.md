@@ -655,10 +655,14 @@ Browser ── Continue with Google ──▶ dashboard.<t>  (AUTH_REDIRECT_PROX
   up in its own `sessions` table, so a cookie from one dashboard opens nothing
   on another whatever signed it. `INTERNAL_AUTH_SECRET` and
   `TOTP_ENCRYPTION_KEY` stay per deployment.
-- **Deploy and secrets.** `.github/workflows/auth-proxy-deploy.yml` runs
-  `wrangler deploy` on a push to `main` that touches `apps/auth-proxy/`.
-  `AUTH_SECRET`, `GOOGLE_CLIENT_ID` and `GITHUB_CLIENT_ID` are Worker secrets
-  set once with `wrangler secret put`. The fleet's tooling
+- **Built here, deployed by the fleet.** Each release publishes the bundle,
+  `auth-proxy-<VERSION>.js` with its sha256, on the `v<VERSION>` GitHub release
+  (the `publish-auth-proxy` job of `build-and-push.yml`). devops-magmadevs pins
+  the pair in its tfvars, deploys the Worker through the Workers API, and owns
+  the hostname, the route and the three secrets (`AUTH_SECRET`,
+  `GOOGLE_CLIENT_ID`, `GITHUB_CLIENT_ID`): its `make deploy-auth-proxy` and
+  `make set-auth-proxy-secret`. Nothing in this repo deploys it, and this repo
+  holds no Cloudflare credential. The fleet's tooling
   (smart-router-infrastructure, `make set-dashboard-oauth PROXY=yes`) puts a
   tenant behind it.
 - **Tests** (`apps/auth-proxy/src/__tests__/proxy.test.ts`) run a dashboard's
