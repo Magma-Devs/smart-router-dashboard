@@ -90,3 +90,31 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node apps/web/scripts/check-spec-sync.mjs
+
+  # A pull request's branch holds no merge commit: it is brought up to date
+  # with its base by a rebase (CLAUDE.md → Branches and versions). The
+  # "linear history" ruleset refuses such a push; this names the commits on a
+  # branch that predates the ruleset.
+  linear-history:
+    name: No merge commits
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout the pull request's head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: The branch holds no merge commit
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+          MERGES=$(git rev-list --merges "origin/${BASE_REF}..HEAD")
+          if [ -n "$MERGES" ]; then
+            echo "::error::this branch holds merge commits; rebase it onto ${BASE_REF} instead (git fetch origin && git rebase origin/${BASE_REF})"
+            git log --no-walk --format='  %h %s' $MERGES
+            exit 1
+          fi
+          echo "✓ no merge commits in origin/${BASE_REF}..HEAD"
