@@ -26,6 +26,14 @@ describe("stepsOf · each send of a request, in the order the router made them",
     expect(stepsOf([a]).map((s) => s.title)).toEqual(["Passed over blast"]);
   });
 
+  it("the cache is looked in, not sent to", () => {
+    const hit = tri("Cached", "ok", 1, { replied: true });
+    expect(stepsOf([hit])).toEqual([{ title: "Looked in the cache", attempts: [hit] }]);
+    const a = tri("tatum", "failed", 1, { code: "NODE_SERVER_ERROR" });
+    const b = tri("Cached", "ok", 2, { replied: true });
+    expect(stepsOf([a, b]).map((s) => s.title)).toEqual(["Sent to tatum", "Then looked in the cache"]);
+  });
+
   it("no tries, no steps", () => {
     expect(stepsOf([])).toEqual([]);
   });
