@@ -73,10 +73,14 @@ export function ErrorIncidents({ chainFilter, win, openKey, onOpen }: {
   const { scopeQ } = useFilters();
   const { routerIdQ } = useRouterFilter();
   const { data, isLoading, error } = useApi<ErrorIncidentsReport>(`/api/metrics/error-incidents?window=${win}${specQ}${routerIdQ}${scopeQ}`);
-  const [kind, setKind] = useState<ErrorIncidentKind | "all">("all");
+  const [picked, setKind] = useState<ErrorIncidentKind | "all">("all");
   const [all, setAll] = useState(false);
   const [steadyOpen, setSteadyOpen] = useState(false);
 
+  // Nothing in the window, of any kind: there is nothing to filter, so the
+  // filter isn't drawn, and a kind picked on a busier window no longer applies.
+  const anything = (data?.lines.length ?? 0) + (data?.steady.length ?? 0) > 0;
+  const kind = anything ? picked : "all";
   const lines = (data?.lines ?? []).filter((l) => kind === "all" || l.kind === kind);
   const shown = all ? lines : lines.slice(0, FIRST_LANES);
   const steady = (data?.steady ?? []).filter((s) => kind === "all" || s.kind === kind);
@@ -99,20 +103,22 @@ export function ErrorIncidents({ chainFilter, win, openKey, onOpen }: {
         </span>
         <span style={{ fontSize: 12, color: "var(--text-4)" }}>
           {isLoading ? <SkelLine w={220} />
-            : data ? <>{fmtComma(lines.length)} {lines.length === 1 ? "burst" : "bursts"} in the last {winWords}{ongoing ? <>, <span style={{ color: "var(--err)" }}>{ongoing} still going</span></> : null}</>
+            : data ? <>{lines.length ? fmtComma(lines.length) : "No"} {lines.length === 1 ? "burst" : "bursts"}{kind !== "all" && !lines.length ? ` of ${KIND[kind].noun}` : ""} in the last {winWords}{ongoing ? <>, <span style={{ color: "var(--err)" }}>{ongoing} still going</span></> : null}</>
             : null}
         </span>
         <span style={{ flex: 1 }} />
-        <div className="gw-segctl">
-          {(["all", "failed", "reply"] as const).map((k) => (
-            <button key={k} className={kind === k ? "on" : ""} onClick={() => { setKind(k); setAll(false); }} style={{ padding: "5px 11px", whiteSpace: "nowrap" }}
-              title={k === "failed" ? "No usable answer from the provider: a timeout, a connection error, a rate limit." : k === "reply" ? "The provider answered with an error: invalid params, pruned data." : undefined}>
-              {k !== "all" && <span style={{ display: "inline-block", width: 7, height: 7, borderRadius: 2, background: KIND[k].color, marginRight: 6, verticalAlign: "middle" }} />}
-              {k === "all" ? "All" : KIND[k].label}
-              {data && k !== "all" && <span className="gw-tnum" style={{ marginLeft: 6, color: "var(--text-4)" }}>{count(k)}</span>}
-            </button>
-          ))}
-        </div>
+        {anything && (
+          <div className="gw-segctl">
+            {(["all", "failed", "reply"] as const).map((k) => (
+              <button key={k} className={kind === k ? "on" : ""} onClick={() => { setKind(k); setAll(false); }} style={{ padding: "5px 11px", whiteSpace: "nowrap" }}
+                title={k === "failed" ? "No usable answer from the provider: a timeout, a connection error, a rate limit." : k === "reply" ? "The provider answered with an error: invalid params, pruned data." : undefined}>
+                {k !== "all" && <span style={{ display: "inline-block", width: 7, height: 7, borderRadius: 2, background: KIND[k].color, marginRight: 6, verticalAlign: "middle" }} />}
+                {k === "all" ? "All" : KIND[k].label}
+                {data && k !== "all" && <span className="gw-tnum" style={{ marginLeft: 6, color: "var(--text-4)" }}>{count(k)}</span>}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {data && !data.available && (
@@ -195,20 +201,13 @@ export function ErrorIncidents({ chainFilter, win, openKey, onOpen }: {
           )}
         </div>
       )}
-      {data && lines.length === 0 && (
-        <div style={{ padding: "16px", fontSize: 12, color: "var(--text-3)", borderTop: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--ok)", flexShrink: 0 }} />
-          No bursts of errors in the last {winWords}.{steady.length ? " The errors below come in all the time, at their usual level." : ""}
-        </div>
-      )}
-
       {data && steady.length > 0 && (
         <div style={{ borderTop: "1px solid var(--line)" }}>
           <button className="gw-disclosure" onClick={() => setSteadyOpen(!steadyOpen)} aria-expanded={steadyOpen}
             style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 16px", fontSize: 12, color: "var(--text-2)", width: "calc(100% - 32px)" }}>
             <span style={{ display: "inline-block", transform: steadyOpen ? "rotate(90deg)" : "none", transition: "transform 80ms" }}>›</span>
             Always present <span className="gw-tnum" style={{ color: "var(--text-4)" }}>{steady.length}</span>
-            <span style={{ color: "var(--text-4)" }}>· errors at their usual level most of the time, not bursts</span>
+            <span style={{ color: "var(--text-4)" }}>· at their usual level, not bursts</span>
           </button>
           {steadyOpen && (
             <table className="gw-table" style={{ width: "100%" }}>

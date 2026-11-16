@@ -5,6 +5,21 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.68.1]
+
+### Changed
+
+- **The Errors timeline draws nothing it has nothing to say with**
+  (MAG-5353). With no bursts in the window the card said so three times: "0
+  bursts" in its header, a row "No bursts of errors in the last 1 day. The
+  errors below come in all the time, at their usual level.", and the "Always
+  present" line under it - beside a filter with nothing to filter. Now the
+  header says "No bursts in the last 1 day", once; the filter is drawn only
+  when the window has bursts or always-present errors; and "Always present"
+  is one short line, drawn only when there are such errors. A kind picked
+  from the filter that has no bursts says so in the header ("No bursts of
+  failed attempts in the last 1 day").
+
 ## [0.68.0]
 
 ### Added
