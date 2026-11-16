@@ -1,5 +1,19 @@
 import { createHash } from "node:crypto";
-import { and, asc, desc, eq, gt, gte, inArray, lt, lte, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  gte,
+  inArray,
+  lt,
+  lte,
+  or,
+  sql,
+  type AnyColumn,
+  type SQL,
+} from "drizzle-orm";
 import type { AuditChangeRecord, AuditEventRecord } from "@sr/shared";
 import type { Database } from "./client.js";
 import { auditEventChanges, auditEvents } from "./schema-audit.js";
@@ -164,6 +178,51 @@ export function checkAuditCursor(
   return null;
 }
 
+/* ── Session references ───────────────────────────────────────────────────── */
+
+/** The target type the writers give a session. */
+const SESSION_TARGET = "session";
+
+const AUDIT_SESSION_REF_LENGTH = 12;
+
+const SESSION_REF_SHAPE = new RegExp(`^[0-9a-f]{${AUDIT_SESSION_REF_LENGTH}}$`, "i");
+
+/**
+ * How every read surface names a session: the first 12 hex characters of the
+ * SHA-256 of its id. Rows from one sign-in share it, so a reader can follow a
+ * session from its sign-in to its end; the id itself is never served.
+ */
+export function auditSessionRef(sessionId: string): string {
+  return createHash("sha256")
+    .update(sessionId.toLowerCase())
+    .digest("hex")
+    .slice(0, AUDIT_SESSION_REF_LENGTH);
+}
+
+/** `auditSessionRef`, in SQL, for a filter on a reference. */
+function sessionRefSql(column: AnyColumn): SQL {
+  return sql`left(encode(sha256(convert_to(lower(${column}), 'UTF8')), 'hex'), ${AUDIT_SESSION_REF_LENGTH})`;
+}
+
+/**
+ * `target_id` matches the id the feed shows: an object's own id, or a session's
+ * reference. A session target never matches on its stored id.
+ */
+function targetIdCondition(value: string): SQL {
+  const plain = and(
+    eq(auditEvents.targetId, value),
+    sql`${auditEvents.targetType} is distinct from ${SESSION_TARGET}`,
+  )!;
+  if (!SESSION_REF_SHAPE.test(value)) return plain;
+  return or(
+    plain,
+    and(
+      eq(auditEvents.targetType, SESSION_TARGET),
+      sql`${sessionRefSql(auditEvents.targetId)} = ${value.toLowerCase()}`,
+    ),
+  )!;
+}
+
 /* ── The read ─────────────────────────────────────────────────────────────── */
 
 function filterConditions(query: AuditQuery): SQL[] {
@@ -177,7 +236,7 @@ function filterConditions(query: AuditQuery): SQL[] {
   if (query.actions?.length) where.push(inArray(auditEvents.action, [...query.actions]));
   if (query.groups?.length) where.push(inArray(auditEvents.actionGroup, [...query.groups]));
   if (query.targetType) where.push(eq(auditEvents.targetType, query.targetType));
-  if (query.targetId) where.push(eq(auditEvents.targetId, query.targetId));
+  if (query.targetId) where.push(targetIdCondition(query.targetId));
   return where;
 }
 
@@ -358,7 +417,11 @@ function toRecord(row: Row, changes: AuditChangeRecord[]): AuditEventRecord {
       email: row.actorEmail,
     },
     target: row.targetId
-      ? { type: row.targetType ?? "", id: row.targetId, name: row.targetName }
+      ? {
+          type: row.targetType ?? "",
+          id: row.targetType === SESSION_TARGET ? auditSessionRef(row.targetId) : row.targetId,
+          name: row.targetName,
+        }
       : null,
     request: row.requestId,
     note: row.note,
@@ -368,7 +431,11 @@ function toRecord(row: Row, changes: AuditChangeRecord[]): AuditEventRecord {
   // a config event would imply the fields were merely unset rather than
   // structurally absent.
   if (row.ip !== null || row.client !== null || row.sessionId !== null) {
-    record.context = { ip: row.ip, client: row.client, session: row.sessionId };
+    record.context = {
+      ip: row.ip,
+      client: row.client,
+      session: row.sessionId === null ? null : auditSessionRef(row.sessionId),
+    };
   }
   return record;
 }

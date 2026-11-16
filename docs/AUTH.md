@@ -191,7 +191,10 @@ Single-use is a conditional `UPDATE … WHERE redeemed_at IS NULL AND revoked_at
 IS NULL AND expires_at > now()`, run in the same transaction as the account
 insert. Zero rows affected means somebody else got there first and the whole
 transaction unwinds — a race can't produce two accounts from one invite, and a
-crash can't leave a redeemed invite with no account.
+crash can't leave a redeemed invite with no account. The `invite.redeemed`
+audit row is written in that transaction too (with, for a Google or GitHub
+redemption, the session it opens and its `signin.succeeded`), so an account
+the log cannot record is not created.
 
 | | Managed | On-prem |
 |---|---|---|
@@ -201,7 +204,12 @@ crash can't leave a redeemed invite with no account.
 **Resending mints a new token and kills the old link**, so it replaces the
 attack surface rather than widening it. **Expiry needs no sweeper**: the first
 read that observes it stamps `expired_noted_at` conditionally, which is what
-lets `invite.expired` fire exactly once.
+lets `invite.expired` fire exactly once. The row's time is the invitation's
+expiry, not the read that noticed it.
+
+Invitations an admin sent die with that admin's access: removing them, or
+changing them to any other role, revokes every one still unredeemed, expired
+ones included (a resend would revive those), with an `invite.revoked` row each.
 
 Every dead-link reason — used, revoked, expired, never issued — returns the same
 message **and the same 410**. The holder can't act on the difference, and
@@ -298,9 +306,10 @@ on a silent timeout every time.
 and the holder chooses the value. That makes a takeover *visible*, not
 impossible: the admin holds the link and could use it themselves. What they
 cannot do is set a password silently — `password_resets.created_by` records
-who generated each link, and `password.reset_completed` names that admin when
-their link is redeemed. (lava-connect's equivalent takes a password in the
-body, which leaves nothing to see.)
+who generated each link, the link and its `password.reset_link_generated` row
+commit together, and `password.reset_completed` names that admin when their
+link is used (`used a reset link from Dana`). (lava-connect's equivalent takes
+a password in the body, which leaves nothing to see.)
 
 | | Managed | On-prem |
 |---|---|---|
@@ -318,7 +327,11 @@ nothing either. And it issues **one link per account per five minutes**: each ne
 link kills the last, so without a wait anybody who knows an address could keep
 the inbox full and every link in it dead. Inside the window the link already
 sent stays live, and the request is still recorded (`not re-sent, a recent link
-is still unused`), so a flood shows up in the log.
+is still unused`), so a flood shows up in the log. So is every request that
+sends nothing for another reason, on the same `password.reset_requested` row:
+`not sent, no account with this address`, `not sent, account removed`, or `not
+sent, the account has no password`. The row is written after the `202`, so it
+changes nothing the caller can see.
 
 On-prem it answers `404`: there is nowhere to send a link. So does a managed
 deployment with no mail transport (`AWS_REGION` unset), for every address and
@@ -326,12 +339,16 @@ writing nothing, because a link nobody receives would still kill any live one
 the member holds.
 
 On-prem, an admin starts one from the member's row on the Team page, which shows the
-link once; it lands on `/reset/<token>`. A new link kills any earlier one.
+link once; it lands on `/reset/<token>`. A new link kills any earlier one, and
+so does the admin's own removal or demotion below admin: their unused links die
+with a `password.reset_link_revoked` row each.
 
 `POST /auth/password/reset`, in **one transaction**, claims the token with a
 conditional update, writes the hash, **revokes every session for the account**
-— per-device rows *and* the `signed_out_all_at` cutoff — and **clears the
-account's lockout**. A reset is what someone does when they think they are
+— per-device rows *and* the `signed_out_all_at` cutoff — **clears the
+account's lockout**, and writes `password.reset_completed` with a
+`session.revoked` per session it ended. A row that cannot be written undoes
+the reset. A reset is what someone does when they think they are
 compromised; the transaction is what stops a failure part-way from leaving an
 attacker's session alive under the new password. Clearing the lockout lets the
 owner use the new password at once; it does not stop anyone re-tripping it.
@@ -440,16 +457,19 @@ they usually do, choose **Forgot your password?** on the sign-in page to set a
 new one, which signs out every device, and tell their administrator. It carries
 **no link** — see the rules below.
 
-| | Sent | Added to the change's audit note |
+| | Sent | Recorded in the audit log |
 |---|---|---|
-| On-prem | never, whatever the transport | nothing — the row is the record |
+| On-prem | never, whatever the transport | nothing; the change's row is the record |
 | Managed, `AWS_REGION` unset | not attempted | `owner not notified, no mail transport` |
 | Managed, SES took it | yes | `owner notified by email` |
 | Managed, SES refused it or did not answer | no | `owner not notified, email failed` |
 
 The send happens **after the change has committed**, so it can neither undo
 the change nor fail the request: a refused send comes back as a value, and the
-response is the same `200`. The request does wait for it, to know what to
+response is the same `200`. For **Change password** the outcome is the note on
+`password.changed`. For a reset link it is a `password.reset_notice` row of its
+own, written after `password.reset_completed`: that row commits with the reset,
+before anything is sent. The request does wait for it, to know what to
 record — SES answers in well under a second, and the transport's timeouts bound
 one that never answers.
 
@@ -464,16 +484,14 @@ The one fact worth keeping — did it go, or is the admin holding the link — g
 on the audit row that already describes the event. `member.invited` and
 `invite.resent` record `emailed`, `link shown to the admin`, or `email failed,
 link shown to the admin` in their `note` — on `member.invited`, after the role
-and expiry the row already carries (`as approver, expires …; emailed`).
+and expiry the row already carries (`as Approver, expires …; emailed`).
 `password.reset_requested` has no admin to hold a link, so it records `emailed`
-or `email failed, no link delivered`. The password-changed notice is recorded on
-the row of the change it reports — alone on `password.changed`, after the
-redemption on `password.reset_completed` (`redeemed a self-serve link; owner
-notified by email`). That is where somebody investigating already looks. The
-two-factor reset notice cannot ride on its event's row: `2fa.reset` commits in
-the reset's transaction, before anything is sent, so the notice's outcome is a
-row of its own, `2fa.reset_notice` (`emailed`, `not sent, no mail transport` or
-`email failed, not delivered`).
+or `email failed, no link delivered`. The password-changed notice is the note
+on `password.changed`. The notices that follow a change committed in its own
+transaction cannot ride on that change's row, so each is a row of its own:
+`password.reset_notice` after `password.reset_completed` (`owner notified by
+email`), and `2fa.reset_notice` after `2fa.reset` (`emailed`, `not sent, no
+mail transport` or `email failed, not delivered`).
 
 **The body is never persisted**, in either design — not in a table, and outside
 development not in a log line either. A rendered invitation contains a live
@@ -558,9 +576,17 @@ chooses its own `X-Forwarded-For`, and the per-IP limit follows.
 > ```
 
 `signin.blocked` names the account (when there is one), the address and how
-many attempts this window. Sign-in costs one bcrypt whether or not the address
+many attempts this window, and is written in the transaction that counted the
+attempt. Sign-in costs one bcrypt whether or not the address
 has an account — a decoy hash stands in — so timing does not answer the
 question the identical `401` refuses to.
+
+A refused sign-in's row (`signin.failed`, or `signin.blocked` with the note
+`account removed` when the address belongs to a removed account rather than to
+nobody) is written in a transaction of its own after the check, and a write
+that fails answers `500` instead of the `401`. Not in the counter's
+transaction: the attempt commits before bcrypt runs and is never given back
+because the log failed.
 
 Rows whose window has lapsed are **pruned on every attempt**, a bounded batch
 over an index on `window_start`, so the table is sized by attempts per window
@@ -610,6 +636,10 @@ Three things to know here, because they change what `AUTH_MODE=enabled` means:
   existing account — by provider id, then by email, linking the provider.
   It never creates one; a new person redeems an invitation. Avatars are
   captured backfill-only — the first provider that supplies one wins.
+  A refusal is recorded as a refused password sign-in is, with the reason:
+  `signin.failed` for an address with no account, a provider account with no
+  verified address or a token the provider would not verify, and
+  `signin.blocked` for a removed account.
 
   MAG-2729 puts social sign-in out of scope, on revocation grounds: a
   personal account outlives someone leaving the customer's company. Google
@@ -957,13 +987,18 @@ The Team page lists everyone with access and exports it as CSV — the artifact
 an access review asks for first. Every role can read it, because a review only
 some people can see is not one; only an admin changes it.
 
-- **A role change revokes nothing.** The gate reads the role from the row on
+- **A role change ends no session.** The gate reads the role from the row on
   every request, so a demotion lands on whatever the person has open. The Team
   page takes the caller's own admin controls from that row too (through the
   member list, polled every 30 seconds), not from the role in their token.
+  Changing an admin to any other role revokes what they handed out as one
+  (unredeemed invitations, unused reset links and audit tokens), with a row
+  each, in the same transaction as the change.
 - **Removal is a state change, in one transaction.** Status becomes `removed`,
   the provider ids are cleared, `signed_out_all_at` is stamped, every live
-  session is revoked, and any pending invitation to their address is revoked.
+  session is revoked, any pending invitation to their address is revoked, and
+  so is everything they handed out as an admin: invitations they sent, reset
+  links they generated and audit tokens they created.
   The row stays, so the audit log keeps their name. The partial unique index on
   email and the cleared provider ids let the same person be invited back as a
   new account, Google login included. Each change writes its audit row in the
@@ -1119,8 +1154,9 @@ signed in.
 
 **Every session that ends gets a row.** The holder signing out is `signout`.
 Anything else is one `session.revoked` per session, naming why: revoked
-from the sessions list, a removal, a password reset, or a password change
-(for the other devices).
+from the sessions list, signing out everywhere (the other devices; the one it
+was done from is `signout`), a removal, a password reset, a two-factor reset,
+or a password change (for the other devices).
 
 <img src="./assets/account-sessions.png" alt="The Account page, scrolled down: a Connected accounts card saying a Google or GitHub sign-in with a matching verified address links itself; a Two-factor authentication card marked On, saying you are asked for a code from your authenticator app at each sign-in and that only an administrator can reset it if you lose your phone, because nobody can read your key back; a Change password card with current, new and repeat fields and a note that other devices will be signed out while this one stays; and an Active sessions card listing an unrecognised device with its own Sign out button and this device as Chrome on Linux, highlighted, plus a Sign out everywhere button." width="560">
 

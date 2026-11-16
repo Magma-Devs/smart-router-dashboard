@@ -82,7 +82,10 @@ export interface AuditEventInput {
   requestId?: string;
   /** Rejection reason, self-approve note, probe-override reason. */
   note?: string;
-  /** Overrides `now()`. For backfills and for tests; callers should not set it. */
+  /**
+   * Overrides `now()`, for an event recorded after the moment it describes: an
+   * invitation's expiry is noticed on a later read and stamped with the expiry.
+   */
   occurredAt?: Date;
 }
 

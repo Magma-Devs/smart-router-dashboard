@@ -86,9 +86,9 @@ export const RESET_REQUEST_NOTES = {
 export const RESET_REQUEST_COOLING_DOWN_NOTE = "not re-sent, a recent link is still unused";
 
 /**
- * How the password-changed notice is recorded, on the row that records the
- * change itself: `password.changed` (the Account page) or
- * `password.reset_completed` (a reset link), after that row's own note.
+ * How the password-changed notice is recorded: the note on `password.changed`
+ * (the Account page), or the note on its own `password.reset_notice` row after
+ * a reset link, whose `password.reset_completed` commits before the send.
  *
  * Its own wording, not {@link EMAIL_DELIVERY_NOTES}: there is no link in this
  * message for anybody to hold. What somebody investigating a takeover needs

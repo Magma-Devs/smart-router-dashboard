@@ -760,6 +760,15 @@ the log; the accounts, 2FA and config-approval tasks only emit into it.
   because the log is unwell); inside a transaction it propagates, because the
   failed insert has already aborted the caller's transaction and catching it
   would turn an atomicity guarantee into a silent maybe.
+  The rows that record getting into an account go in the change's
+  transaction: a reset link generated or used, an invitation redeemed, and
+  everything a removal or role change writes, including revoking what a
+  removed or demoted admin handed out. A refused sign-in's row goes in a
+  transaction of its own (`recordRefusal` in `routes/auth.ts`), so a failed
+  write answers 500; the attempt it spent has already committed and stays
+  counted. A lockout's `signin.blocked` shares the counter's transaction.
+  `occurredAt` stamps a row noticed after the fact with the time it
+  happened (`invite.expired` carries the expiry).
 - **Redaction happens on the way in.** `audit/format.ts` is the only way values
   reach a row: `(none)` · `(new)` · `(deleted)` · `yes`/`no` · stable
   comma-joined lists · `(changed, ends a91f)`. There is no un-redacted copy in
@@ -797,6 +806,13 @@ the log; the accounts, 2FA and config-approval tasks only emit into it.
   The viewer asks for `order=desc`; a customer's tooling takes the default and
   pulls oldest-first on a schedule. Deliberately the same code path — a screen
   that could disagree with what a security team pulls is worse than no screen.
+- **A session is a reference on every read surface.** `toRecord`
+  (`audit-read.ts`) serves `context.session`, and the `target.id` of a
+  `session` target, as `auditSessionRef(id)`: the first 12 hex characters of
+  the id's SHA-256. The page, the export and the pull API never carry the id a
+  session token addresses, and the rows of one sign-in still share a value.
+  `target_id` takes the reference (`sha256()` in SQL); a session id there
+  matches nothing.
 - **The cursor is gap-free by construction, not by timing.** `seq` is handed
   out at `INSERT`, not at `COMMIT`, so two writers can take 100 and 101 and
   commit in the other order; a reader trusting `seq` alone serves 101, the
@@ -981,7 +997,7 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 | `POST /api/account/2fa/begin` · `/confirm` | — · `{code}` | Enrolment. `begin` returns the QR (server-rendered SVG) and the secret as text, once; `confirm` proves a code and turns 2FA on. Refused 409 for an already-enrolled account — an admin reset is the only way back |
 | `POST /api/team/members/:id/2fa/reset` | — | Admin only, and not for your own account (409). Destroys the secret, retires live challenges, signs them out everywhere, in one transaction with `2fa.reset` (naming both people) and a `session.revoked` per ended session. Then, on managed, emails the member, naming who reset it and when, and records the outcome as `2fa.reset_notice`; a failed send never undoes the reset. `notified: "email"` when it was sent, else `"on_next_signin"` (always on-prem). See [`docs/TWO-FACTOR.md`](docs/TWO-FACTOR.md) |
 | `GET /api/audit/events` | `from?`, `to?`, `actor?`, `action?` (repeatable), `group?` (repeatable), `target_type?`, `target_id?`, `order?`, `per_page?`, `after?`, `before?` | `AuditEventsResponse` — `{ items, cursor, has_more, start_cursor, has_previous }`. **`AUTH_MODE=enabled` only**; any role, no gate beyond a live session. **Oldest first by default** and resumable — feed `cursor` back as `after`; `start_cursor` as `before` reads the page ahead of this one (newer rows under `order=desc`, how the Audit log page steps back). A misspelled `action`/`group`, an `actor` that is neither a UUID nor an address, an unparseable time, `after` with `before`, and a cursor that is malformed, past the largest `xid8`, or from a different filter set or direction are all **400**, never an empty page or a 500 |
-| `GET /api/audit/export.csv` | same filters as `/api/audit/events` (no `after`/`before`/`per_page`) | The same events as a **streamed** CSV — one row per changed field sharing an `event_id`, events with nothing to diff getting one row with the field columns empty. UTF-8 BOM (Excel ignores the charset header on a downloaded file), CRLF per RFC 4180, and every field run through `escapeCsvField` so a name someone typed as `=HYPERLINK(…)` opens as text. Paged internally, so the whole matching history is served without holding it in memory |
+| `GET /api/audit/export.csv` | same filters as `/api/audit/events` (no `after`/`before`/`per_page`) | The same events as a **streamed** CSV — one row per changed field sharing an `event_id`, events with nothing to diff getting one row with the field columns empty. Each row carries the event's `ip`, `client` and `session` reference, empty on events with no access context. UTF-8 BOM (Excel ignores the charset header on a downloaded file), CRLF per RFC 4180, and every field run through `escapeCsvField` so a name someone typed as `=HYPERLINK(…)` opens as text. Paged internally, so the whole matching history is served without holding it in memory |
 | `GET /api/audit/tokens` | — | `{ tokens }` — **admin only**. Never returns a hash; a token is identified by name + last four characters, with `lastUsedAt` / `lastUsedIp` |
 | `POST /api/audit/tokens` | body `{ name }` | **admin only**. Mints a read-only pull token and returns `{ token, secret }` — the **only** time the value exists. Stored as SHA-256; lost means revoke and re-issue |
 | `DELETE /api/audit/tokens/:id` | — | **admin only**. Revokes; the token stops working on the next request. 404 when already revoked or unknown — the two are one answer so an id can't be confirmed by guessing |

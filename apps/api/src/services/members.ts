@@ -1,7 +1,16 @@
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
-import { invitations, sessions, users, type Database, type User } from "@sr/db";
+import {
+  invitations,
+  revokeAuditTokensCreatedBy,
+  sessions,
+  users,
+  type Database,
+  type User,
+} from "@sr/db";
 import { roleAtLeast, type Role } from "@sr/shared";
 import type { AuditWriter } from "./audit.js";
+import { revokeInvitationsCreatedBy } from "./invitations.js";
+import { revokeResetLinksCreatedBy } from "./password-reset.js";
 import { isEnrolled } from "./two-factor.js";
 
 /**
@@ -91,7 +100,7 @@ async function lockActorAndTarget(
   tx: Database,
   actorId: string,
   targetId: string,
-): Promise<{ actorIsAdmin: boolean; target: User | undefined }> {
+): Promise<{ actorIsAdmin: boolean; actor: User | undefined; target: User | undefined }> {
   const rows = await tx
     .select()
     .from(users)
@@ -102,8 +111,68 @@ async function lockActorAndTarget(
   const target = rows.find((r) => r.id === targetId);
   return {
     actorIsAdmin: actor?.status === "active" && actor.role === "admin",
+    actor,
     target: target?.status === "active" ? target : undefined,
   };
+}
+
+/**
+ * Revoke what an admin handed out that still works — unredeemed invitations,
+ * unused reset links and audit tokens — when they are removed or stop being an
+ * admin, one audit row each in the caller's transaction. Each of those lets
+ * somebody in, or reads the log, on the strength of a role the person no
+ * longer holds.
+ */
+async function revokeWhatTheyIssued(
+  tx: Database,
+  input: { issuer: User; actor: User; why: "removed" | "demoted" },
+  audit: AuditWriter,
+): Promise<void> {
+  const { issuer, actor } = input;
+  const issuerName = issuer.name ?? issuer.email;
+  const note = `created by ${issuerName}, who ${
+    input.why === "removed" ? "was removed" : "is no longer an admin"
+  }`;
+  const by = { id: actor.id, kind: "user" as const };
+
+  for (const invite of await revokeInvitationsCreatedBy(tx, issuer.id, actor.id)) {
+    await audit.write(
+      {
+        action: "invite.revoked",
+        actor: by,
+        target: { type: "invite", id: invite.id, name: invite.email },
+        note,
+      },
+      tx,
+    );
+  }
+  for (const link of await revokeResetLinksCreatedBy(tx, issuer.id)) {
+    await audit.write(
+      {
+        action: "password.reset_link_revoked",
+        actor: by,
+        target: { type: "member", id: link.userId, name: link.email },
+        note,
+      },
+      tx,
+    );
+  }
+  const tokens = await revokeAuditTokensCreatedBy(tx, {
+    createdBy: issuer.id,
+    revokedBy: actor.id,
+    revokedByName: actor.name ?? actor.email,
+  });
+  for (const token of tokens) {
+    await audit.write(
+      {
+        action: "apikey.deleted",
+        actor: by,
+        target: { type: "audit_token", id: token.id, name: token.name },
+        note,
+      },
+      tx,
+    );
+  }
 }
 
 /**
@@ -116,9 +185,12 @@ async function lockActorAndTarget(
  * accident is a support ticket, and doing it deliberately is what "transfer
  * then step down" is for.
  *
- * The audit row is written inside the transaction, so it and the change it
- * records commit or roll back together. Setting the role someone already has
- * changes nothing and records nothing.
+ * Demoting an admin revokes the invitations, reset links and audit tokens they
+ * created ({@link revokeWhatTheyIssued}).
+ *
+ * The audit rows are written inside the transaction, so they and the change
+ * they record commit or roll back together. Setting the role someone already
+ * has changes nothing and records nothing.
  */
 export async function changeMemberRole(
   db: Database,
@@ -128,8 +200,8 @@ export async function changeMemberRole(
   if (input.id === input.actorId) return { ok: false, reason: "self" };
 
   return db.transaction(async (tx): Promise<MemberMutation> => {
-    const { actorIsAdmin, target } = await lockActorAndTarget(tx, input.actorId, input.id);
-    if (!actorIsAdmin) return { ok: false, reason: "not_admin" };
+    const { actorIsAdmin, actor, target } = await lockActorAndTarget(tx, input.actorId, input.id);
+    if (!actorIsAdmin || !actor) return { ok: false, reason: "not_admin" };
     if (!target) return { ok: false, reason: "not_found" };
     if (target.role === input.role) return { ok: true, user: target, previousRole: target.role };
 
@@ -154,6 +226,9 @@ export async function changeMemberRole(
     if (!roleAtLeast(user.role, "approver") && roleAtLeast(target.role, "approver")) {
       await onMemberDeactivated(tx, user.id, "demoted");
     }
+    if (target.role === "admin" && user.role !== "admin") {
+      await revokeWhatTheyIssued(tx, { issuer: user, actor, why: "demoted" }, audit);
+    }
 
     return { ok: true, user, previousRole: target.role };
   });
@@ -177,10 +252,12 @@ export async function changeMemberRole(
  *  - any pending invitation to their address revoked — two admins inviting
  *    the same address at once can both pass the one-pending check, and the
  *    invitation they did not use would otherwise recreate them.
+ *  - what they handed out as an admin revoked — invitations, reset links and
+ *    audit tokens ({@link revokeWhatTheyIssued}), whatever their current role;
  *  - the audit rows — `member.removed`, then a `session.revoked` for each
  *    session it ended and an `invite.revoked` for each invitation it cancelled,
- *    all written with the transaction, so a removal the log can't record
- *    doesn't happen.
+ *    then one row per thing they had handed out, all written with the
+ *    transaction, so a removal the log can't record doesn't happen.
  *
  * Cancelling their in-flight change requests is MAG-2731's table and therefore
  * its job; the hook is `onMemberDeactivated`, called inside the transaction.
@@ -193,8 +270,8 @@ export async function removeMember(
   if (input.id === input.actorId) return { ok: false, reason: "self" };
 
   return db.transaction(async (tx): Promise<MemberMutation> => {
-    const { actorIsAdmin, target } = await lockActorAndTarget(tx, input.actorId, input.id);
-    if (!actorIsAdmin) return { ok: false, reason: "not_admin" };
+    const { actorIsAdmin, actor, target } = await lockActorAndTarget(tx, input.actorId, input.id);
+    if (!actorIsAdmin || !actor) return { ok: false, reason: "not_admin" };
     if (!target) return { ok: false, reason: "not_found" };
 
     const updated = await tx
@@ -270,6 +347,7 @@ export async function removeMember(
         tx,
       );
     }
+    await revokeWhatTheyIssued(tx, { issuer: user, actor, why: "removed" }, audit);
     await onMemberDeactivated(tx, user.id, "removed");
 
     return { ok: true, user };

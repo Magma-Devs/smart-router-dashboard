@@ -27,15 +27,18 @@ export {
   mintAuditToken,
   resolveAuditToken,
   revokeAuditToken,
+  revokeAuditTokensCreatedBy,
   touchAuditToken,
   type MintAuditTokenInput,
   type MintedAuditToken,
   type RevokeAuditTokenInput,
+  type RevokeAuditTokensCreatedByInput,
 } from "./audit-tokens.js";
 export {
   AUDIT_PAGE_DEFAULT,
   AUDIT_PAGE_MAX,
   auditFilterFingerprint,
+  auditSessionRef,
   checkAuditCursor,
   decodeAuditCursor,
   encodeAuditCursor,
