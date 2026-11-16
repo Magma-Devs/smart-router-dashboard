@@ -74,6 +74,10 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   in logs, startup errors and docs.
 - **Wording** (MAG-5351): US spelling, "2FA" as the one name for it, and no
   long dashes in what the account screens and emails say.
+- **Published images record their commit** (MAG-5351): `build-and-push.yml`
+  passes `GIT_COMMIT` (the workflow's `github.sha`) to the image build, so
+  `/version` and the Account page's **About this deployment** name the commit
+  instead of "unknown".
 
 ### Changed
 

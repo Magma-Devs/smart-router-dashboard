@@ -1107,7 +1107,7 @@ API (`apps/api/src/config.ts` is the source of truth):
 | `LOKI_ORG_ID` | unset | sent as `X-Scope-OrgID`, for a Loki that takes the org from the client; unset sends no header |
 | `LOG_LEVEL` | `info` | |
 | `TENANT_ID` | — | set by the chart, **not read**. The multi-tenant store pins `X-Scope-OrgID` from the credential that authenticated, so the api never names its own org — a config field that did would move the tenancy boundary into a values file |
-| `GIT_COMMIT` / `APP_VERSION` | `unknown` / `0.0.0` | surfaced by `/version` |
+| `GIT_COMMIT` / `APP_VERSION` | `unknown` / `0.0.0` | surfaced by `/version`; `build-and-push.yml` sets both on every published image (the commit is `github.sha`) |
 | `NODE_ENV` | `production` | non-prod enables `/docs` + pretty logs |
 
 Auth (only read when `AUTH_MODE=enabled`; the metrics path never touches the DB):
