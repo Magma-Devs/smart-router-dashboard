@@ -68,7 +68,7 @@ import type { LokiClient } from "./loki-client.js";
 import { serviceNameClash, serviceNameMatcher, StreamScope } from "./stream-scope.js";
 import type { PrometheusClient } from "./prometheus-client.js";
 import type { ConfigurationService } from "./configuration.js";
-import { isTransaction } from "./transactions.js";
+import { buildTxRows, isTransaction } from "./transactions.js";
 import {
   chainOf,
   END_MSG,
@@ -469,12 +469,16 @@ export class ErrorRequestsService {
    */
   async lookup(id: string, range: ReadRange): Promise<RequestLookup> {
     const loki = this.loki;
-    if (!loki) return { ...unavailable("unconfigured"), row: null };
-    if (!LOOKUP_ID.test(id)) return { available: true, row: null };
+    if (!loki) return { ...unavailable("unconfigured"), row: null, transaction: null };
+    if (!LOOKUP_ID.test(id)) return { available: true, row: null, transaction: null };
     const lines = await linesOfLookup(loki, this.selector, id, range);
-    if (lines === null) return { ...unavailable("unreachable"), row: null };
-    const rows = buildErrorRows(lines, new UpstreamIndex(this.routers()), true);
-    return { available: true, row: rows[0] ?? null, ...(rows.length > 1 ? { matches: rows.length } : {}) };
+    if (lines === null) return { ...unavailable("unreachable"), row: null, transaction: null };
+    const index = new UpstreamIndex(this.routers());
+    const rows = buildErrorRows(lines, index, true);
+    const row = rows[0] ?? null;
+    // A transaction's own row too, from the same lines: its send outcome and hash.
+    const transaction = row ? buildTxRows(lines, index).find((t) => t.guid === row.guid) ?? null : null;
+    return { available: true, row, transaction, ...(rows.length > 1 ? { matches: rows.length } : {}) };
   }
 
   /**

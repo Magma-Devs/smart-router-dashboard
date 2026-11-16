@@ -127,7 +127,7 @@ const OUTCOME_HINT: Record<TxLogRow["outcome"], string> = {
 }
 
 /** An opened row: the transaction, every provider it went to, and the response to the client, in plain words. */
-function Details({ row }: { row: TxLogRow }) {
+export function Details({ row }: { row: TxLogRow }) {
   const replied = row.attempts.find((a) => a.replied);
   const final: FinalAnswer =
     row.outcome === "failed" || (row.outcome === "unknown" && row.error && !replied) ? { from: "router", code: row.error?.code ?? null }

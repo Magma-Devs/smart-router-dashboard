@@ -118,9 +118,9 @@ describe("looking a request up by a GUID that carries its second", () => {
   it("a 30-day range reads only its minutes - the month is never read for it", async () => {
     const { loki, reads } = lokiOf(LINES);
     const svc = new ErrorRequestsService(loki, '{service="router"}');
-    expect(await svc.lookup(LUCKY, LAST_30D)).toEqual({ available: true, row: null });
+    expect(await svc.lookup(LUCKY, LAST_30D)).toEqual({ available: true, row: null, transaction: null });
     expect(reads).toEqual([minutesOf(LUCKY_SEC)]);
-    expect(await svc.lookup(GUID, LAST_30D)).toMatchObject({ row: { guid: GUID } });
+    expect(await svc.lookup(GUID, LAST_30D)).toMatchObject({ row: { guid: GUID }, transaction: null });
     expect(reads).toEqual([minutesOf(LUCKY_SEC), minutesOf(SEC)]);
   });
 
@@ -137,8 +137,16 @@ describe("looking a request up by a GUID that carries its second", () => {
 
   it("Loki not answering is unreachable, with nothing more read", async () => {
     const { loki, reads } = lokiOf(LINES, false);
-    expect(await new ErrorRequestsService(loki, '{service="router"}').lookup(GUID, LAST_30M)).toEqual({ available: false, reason: "unreachable", row: null });
+    expect(await new ErrorRequestsService(loki, '{service="router"}').lookup(GUID, LAST_30M)).toEqual({ available: false, reason: "unreachable", row: null, transaction: null });
     expect(reads).toEqual([minutesOf(SEC)]);
+  });
+
+  it("a transaction looked up as a request carries its send row too, from the same read", async () => {
+    const { loki, reads } = lokiOf([TX_ACCEPTED]);
+    const svc = new ErrorRequestsService(loki, '{service="router"}');
+    const r = await svc.lookup(TX_GUID, LAST_30D);
+    expect(r).toMatchObject({ available: true, row: { guid: TX_GUID, result: "ok" }, transaction: { guid: TX_GUID, outcome: "accepted", answeredBy: "node-b" } });
+    expect(reads).toEqual([minutesOf(TX_SEC)]);
   });
 
   it("a transaction is read the same way", async () => {
@@ -191,7 +199,7 @@ describe("GET /api/requests/:guid and /api/transactions/:guid with window=30d", 
 
   it("a GUID with its second reads only its minutes", async () => {
     const errors = await app.inject({ method: "GET", url: `/api/requests/${LUCKY}?window=30d` });
-    expect(errors.json()).toEqual({ available: true, row: null });
+    expect(errors.json()).toEqual({ available: true, row: null, transaction: null });
     const txs = await app.inject({ method: "GET", url: `/api/transactions/${TX_GUID}?window=30d` });
     expect(txs.json()).toEqual({ available: true, found: false, row: null });
     expect(reads).toEqual([ns(minutesOf(LUCKY_SEC)), ns(minutesOf(TX_SEC))]);
@@ -199,7 +207,7 @@ describe("GET /api/requests/:guid and /api/transactions/:guid with window=30d", 
 
   it("any other GUID reads the 30 days it was asked for", async () => {
     const res = await app.inject({ method: "GET", url: `/api/requests/${RANDOM}?window=30d` });
-    expect(res.json()).toEqual({ available: true, row: null });
+    expect(res.json()).toEqual({ available: true, row: null, transaction: null });
     expect(reads).toEqual([ns([NOW - 30 * DAY, NOW])]);
   });
 });

@@ -150,7 +150,7 @@ function routerReason(r: Pick<ErrorRequestRow, "error" | "exhausted">): string {
  * The error the client got, once, under the Result tag: the provider's own
  * words for a provider error ("pending state is not supported"), the router's
  * by its own name for a router error ("Insufficient results"). Who sent it is
- * the chip marked "→ client"; the opened row has the full text and what the
+ * the outlined chip; the opened row has the full text and what the
  * error means. Null when the client got an answer.
  */
 export function resultError(r: ErrorRequestRow): string | null {
@@ -182,7 +182,8 @@ export function statusOf(r: ErrorRequestRow): BreakdownProps["status"] {
 }
 
 /** An opened row: the request, every try, and the response to the client, in plain words. */
-function Details({ row }: { row: ErrorRequestRow }) {
+/** An opened row: the request, every try, and the response - the Find a request tab shows it too. */
+export function Details({ row }: { row: ErrorRequestRow }) {
   const replied = row.attempts.find((a) => a.replied);
   const final: FinalAnswer =
     row.result === "failed" || row.result === "write-unknown" ? { from: "router", code: row.errorCode }

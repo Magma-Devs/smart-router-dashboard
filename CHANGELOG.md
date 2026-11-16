@@ -5,6 +5,41 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.69.2]
+
+### Added
+
+- **Find a request, from any page.** A search box in the top bar takes a
+  request ID (the one in the router's error message or response headers), a
+  transaction hash or the request ID your own app sent, and opens the
+  Metrics page's new **Find a request** tab on it: what was asked, every
+  provider it went to, what each one answered, and what the client got - for
+  any request, answered or not, not only the ones the Errors and
+  Transactions tabs list. A transaction shows its send row too (Sent /
+  Refused / Outcome unknown, the hash with its explorer link), read from the
+  same lines as the request (`transaction` on `GET /api/requests/:guid`), so
+  the logs are read once. The request is in the URL (`?tab=request&request=`),
+  so a link opens it; on the Metrics page the search keeps your place in
+  history, so Back returns to the view before it. A request ID from a router
+  on smart-router v1.6.1 or later is found in about a second whatever the
+  window; a hash or a caller's ID is read over the page's window, with
+  "Search the last 30 days" offered when it isn't there.
+
+### Changed
+
+- **An opened request says less, and says what it means.** Request and reply
+  sizes are gone, and so is the "→ client" mark on a provider (in the lists'
+  chips too): the last step says whose answer went back, and the Result
+  column says what the client got. The column that read "What it answered:
+  Answered" is "Result". A router's own error is named in the last step
+  ("The router's own error: No providers available") in place of "No provider
+  gave a usable answer, so the router sent its own error, named above".
+  "Source: Undetermined" is no longer drawn: it told the reader nothing.
+- **An answer from the cache is said in blue**: a "From cache" tag beside the
+  status and in the last step, the cache's name in blue on its line and in
+  the lists' chips, and its step reads "Looked in the cache", not "Sent to
+  the cache".
+
 ## [0.69.1]
 
 ### Changed

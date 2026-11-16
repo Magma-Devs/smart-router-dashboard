@@ -148,7 +148,8 @@ describe("log rows", () => {
     expect(html).toContain("Smart Router request ID");
     expect(html).toContain("7699463364114495303");
     expect(html).not.toMatch(/X-Request-Id|Caller request ID|Task ID|Tx ID|req-e7f0|task-k1|txid-t1/);
-    expect(html).toContain("10 B");
+    // Sizes aren't shown: they answered no question a reader had.
+    expect(html).not.toContain("10 B");
   });
 
   it("links an opened row's block numbers to a chain's explorer where one has a block page", () => {
@@ -167,6 +168,48 @@ describe("log rows", () => {
     expect(html([tri("eth-tenderly", "failed"), tri("Cached", "ok", true)])).toContain("1 provider and the cache");
     expect(html([tri("Cached", "ok", true)])).toContain("the cache");
     expect(html([tri("eth-tenderly", "failed"), tri("eth-publicnode", "ok", true)])).toContain("2 providers");
+  });
+
+  describe("an opened row's wording", () => {
+    const tri = (upstream: string, outcome: "ok" | "failed", over: Partial<BreakdownProps["attempts"][number]> = {}): BreakdownProps["attempts"][number] =>
+      ({ upstream, batch: 0, outcome, replied: false, code: null, retryable: null, message: null, note: null, atMs: 0, endMs: 10, ...over });
+    const html = (over: Partial<BreakdownProps>) => renderToStaticMarkup(createElement(RequestBreakdown, breakdown({}, over)));
+    const count = (s: string, word: string) => s.split(word).length - 1;
+
+    it("tags an answer from the cache beside the status and in the last step", () => {
+      const hit = tri("Cached", "ok", { replied: true });
+      expect(count(html({ attempts: [hit], final: { from: "provider", attempt: hit } }), "From cache")).toBe(2);
+      // A cache that was looked in but didn't give the answer isn't tagged.
+      const miss = tri("Cached", "failed");
+      const sent = tri("eth-tenderly", "ok", { batch: 1, replied: true });
+      expect(html({ attempts: [miss, sent], final: { from: "provider", attempt: sent } })).not.toContain("From cache");
+    });
+
+    it("names the router's own error in the last step, once where the status already says it", () => {
+      const own = { from: "router" as const, code: "PROTOCOL_NO_PROVIDERS" };
+      const error = { label: "Router error", color: "var(--err)" };
+      expect(html({ final: own, status: error })).toMatch(/The router&#x27;s own error: <span[^>]*>No providers<\/span>/);
+      const named = html({ final: own, status: { ...error, label: "No providers" } });
+      expect(named).toContain("The router&#x27;s own error</span>");
+    });
+
+    it("doesn't mark the provider whose answer went back: the last step names it", () => {
+      const sent = tri("eth-tenderly", "ok", { replied: true });
+      const out = html({ attempts: [sent], final: { from: "provider", attempt: sent } });
+      expect(out).not.toContain("→ client");
+      expect(out).toMatch(/<span class="gw-mono">eth-tenderly<\/span>&#x27;s answer went back/);
+    });
+
+    it("draws an error's source only where its code determines one", () => {
+      const failed = (code: string) => html({ attempts: [tri("eth-tenderly", "failed", { code })] });
+      expect(failed("PROTOCOL_CONNECTION_REFUSED")).toMatch(/Source: <span[^>]*>Provider<\/span>/);
+      const unclear = failed("NODE_SERVER_ERROR");
+      expect(unclear).toContain("Server error");
+      expect(unclear).not.toContain("Source: ");
+      // The router's own error, beside the status.
+      expect(html({ final: { from: "router", code: "PROTOCOL_NO_PROVIDERS" } })).toMatch(/Source: <span[^>]*>Router<\/span>/);
+      expect(html({ final: { from: "router", code: "PROTOCOL_INSUFFICIENT_PROVIDERS" } })).not.toContain("Source: ");
+    });
   });
 
   it("says why a row has no customer", () => {
