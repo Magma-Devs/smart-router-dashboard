@@ -5,6 +5,20 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.69.7]
+
+### Changed
+
+- **The api refuses to boot on an `AUTH_SECRET` under 32 characters or still
+  a placeholder** (MAG-5368). With `AUTH_MODE=enabled` it already refused an
+  unset one; a value shaped like `__NAME__` (a deployment's unfilled
+  placeholder) or shorter than 32 characters now stops it the same way, with a
+  message naming the variable and how to generate one, never the value. A
+  secret from `openssl rand -base64 32` is 44 characters. **Upgrading:** a
+  deployment whose `AUTH_SECRET` is shorter than 32 characters stops at boot;
+  set a new one on the api and the web together, which signs everyone out
+  once.
+
 ## [0.69.6]
 
 ### Added

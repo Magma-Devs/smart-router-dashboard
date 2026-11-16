@@ -227,6 +227,25 @@ function bearerOf(request: FastifyRequest): string | null {
   return value.length > 0 ? value : null;
 }
 
+/** Shorter than any `openssl rand -base64 32` secret (44 characters). */
+export const AUTH_SECRET_MIN_LENGTH = 32;
+/** A deployment's unfilled `__NAME__` placeholder. */
+const PLACEHOLDER_SHAPE = /^__[A-Z0-9_]+__$/;
+
+/**
+ * Why a set `AUTH_SECRET` cannot sign sessions, or null when it can. A
+ * placeholder or a short string would sign every session with a value other
+ * people can know, so the api refuses it at boot the way it refuses none at
+ * all. The value itself is never part of the answer.
+ */
+export function authSecretProblem(secret: string): string | null {
+  if (PLACEHOLDER_SHAPE.test(secret.trim())) return "is still a placeholder (`__NAME__`), not a secret";
+  if (secret.length < AUTH_SECRET_MIN_LENGTH) {
+    return `is shorter than ${AUTH_SECRET_MIN_LENGTH} characters`;
+  }
+  return null;
+}
+
 export const authPlugin = fp(async (app: FastifyInstance) => {
   // Read at register time, not module-load time — test setups inject
   // AUTH_SECRET dynamically and the config snapshot would miss it.
@@ -234,6 +253,12 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
   if (!secret) {
     throw new Error(
       "AUTH_MODE=enabled requires AUTH_SECRET — generate one with `openssl rand -base64 32` (must match the web's).",
+    );
+  }
+  const secretProblem = authSecretProblem(secret);
+  if (secretProblem) {
+    throw new Error(
+      `AUTH_SECRET ${secretProblem} — generate one with \`openssl rand -base64 32\` (must match the web's).`,
     );
   }
 
