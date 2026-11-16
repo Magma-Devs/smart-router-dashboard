@@ -19,7 +19,9 @@ export const AUDIT_EVENT_LABELS: Record<AuditAction, string> = {
   "password.changed": "Password changed",
   "password.reset_requested": "Password reset requested",
   "password.reset_link_generated": "Password reset link created",
+  "password.reset_link_revoked": "Password reset link revoked",
   "password.reset_completed": "Password reset completed",
+  "password.reset_notice": "Password change email",
 
   "setup.completed": "Setup completed",
 
