@@ -1,0 +1,57 @@
+name: Deploy Auth Proxy
+
+# Deploys apps/auth-proxy — the dashboards' sign-in redirect proxy, a
+# Cloudflare Worker at auth.magmadevs.com — with `wrangler deploy`. Its own
+# workflow: a different toolchain (wrangler, not Docker) and a different
+# credential (a Cloudflare API token, not the registry), so its own failure
+# domain. The quality gate already typechecks, lints and tests the package
+# with the rest of the monorepo; this re-runs the package's own checks so a
+# dispatch from a branch cannot deploy what the gate has not seen.
+#
+# SAFE ON MERGE: the Worker holds no secret of its own in this repo. The three
+# it reads (AUTH_SECRET, GOOGLE_CLIENT_ID, GITHUB_CLIENT_ID) are Worker
+# secrets set out of band with `wrangler secret put`, and a deploy keeps them.
+#
+# Needs two repo secrets: CLOUDFLARE_API_TOKEN (Workers Scripts: Edit, plus
+# Zone DNS: Edit on the zone for the custom domain) and CLOUDFLARE_ACCOUNT_ID.
+# Until they are set, the deploy step fails and nothing is deployed.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/auth-proxy/**"
+      - ".github/workflows/auth-proxy-deploy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: auth-proxy-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy the redirect proxy
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup pnpm and Node.js, install dependencies
+        uses: pnpm/setup@fa36a5ef7dcdefc3a7cb25655c122e00cf6e636e # v3.1.2
+        with:
+          node-version-file: .nvmrc
+          cache: true
+          require-lockfile: true
+
+      - name: Type check and test the proxy
+        run: pnpm --filter @sr/auth-proxy typecheck && pnpm --filter @sr/auth-proxy test
+
+      - name: Deploy
+        # `run deploy`: `pnpm deploy` is pnpm's own command.
+        run: pnpm --filter @sr/auth-proxy run deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

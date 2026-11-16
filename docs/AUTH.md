@@ -617,6 +617,56 @@ Three things to know here, because they change what `AUTH_MODE=enabled` means:
   Team still ends every session they have, whatever they signed in with.
   Discord is not offered; its `discord_id` column is unwritten.
 
+### One callback for every dashboard: the redirect proxy
+
+A provider's client lists the redirect URIs it will send a browser back to.
+Google lists each one in full and takes no wildcard, so a dashboard that is
+its own callback is a console edit at Google for every new hostname. Auth.js
+has a built-in answer, the **redirect proxy**, and `apps/auth-proxy` is one:
+a Cloudflare Worker running `@auth/core` at the version `next-auth` pins here,
+at `https://auth.magmadevs.com/api/auth`.
+
+```
+Browser ── Continue with Google ──▶ dashboard.<t>  (AUTH_REDIRECT_PROXY_URL set)
+                                      │ authorize URL with
+                                      │   redirect_uri = https://auth.magmadevs.com/api/auth/callback/google
+                                      │   state        = signed(JWE, AUTH_SECRET) { origin: dashboard.<t>'s own callback, random }
+                                      ▼
+                                    Google ── code + state ──▶ auth.magmadevs.com/api/auth/callback/google
+                                                                 │ decodes state with the SAME AUTH_SECRET
+                                                                 │ origin on dashboard.*.magmadevs.com? same provider? else 400
+                                                                 ▼ 302
+                                                               dashboard.<t>/api/auth/callback/google?code&state
+                                                                 │ state cookie + PKCE checked as always, code exchanged,
+                                                                 │ ID token to the api — unchanged from here on
+```
+
+- **Nothing changes in the web.** `next-auth` reads `AUTH_REDIRECT_PROXY_URL`
+  itself (`setEnvDefaults`), names the proxy's callback as `redirect_uri` and
+  puts the dashboard's own callback in `state`. The chart renders the env from
+  `dashboard.auth.oauth.redirectProxyUrl`.
+- **The proxy** holds the shared `AUTH_SECRET` and the providers' client ids,
+  no client secret: it never exchanges a code. Beyond Auth.js's own behaviour it
+  forwards only to `https://dashboard.<tenant>.magmadevs.com/api/auth/callback/<the same provider>`
+  (`CALLBACK_HOST_PATTERN` in its `wrangler.jsonc`); anything else is a 400.
+- **What it costs.** Every dashboard behind the proxy signs with the same
+  `AUTH_SECRET`, and each holds the one client's id and secret. The api's
+  session check is what keeps tenants apart: a token is a `sid` the api looks
+  up in its own `sessions` table, so a cookie from one dashboard opens nothing
+  on another whatever signed it. `INTERNAL_AUTH_SECRET` and
+  `TOTP_ENCRYPTION_KEY` stay per deployment.
+- **Deploy and secrets.** `.github/workflows/auth-proxy-deploy.yml` runs
+  `wrangler deploy` on a push to `main` that touches `apps/auth-proxy/`.
+  `AUTH_SECRET`, `GOOGLE_CLIENT_ID` and `GITHUB_CLIENT_ID` are Worker secrets
+  set once with `wrangler secret put`. The fleet's tooling
+  (smart-router-infrastructure, `make set-dashboard-oauth PROXY=yes`) puts a
+  tenant behind it.
+- **Tests** (`apps/auth-proxy/src/__tests__/proxy.test.ts`) run a dashboard's
+  Auth.js sign-in start and this proxy's callback against each other with no
+  mocks: the forward with the query intact, a state signed with another secret,
+  a dashboard off the pattern, no state, a provider with no client id, and what
+  the proxy logs (never the code or the state).
+
 ## Bootstrap admin seed — development only
 
 With `ADMIN_EMAIL` + `ADMIN_PASSWORD` set **and `NODE_ENV` not
@@ -659,6 +709,7 @@ exercising the real flow.
 | `AUTH_URL` | web | Auth.js base URL (default `http://localhost:3000`) |
 | `INTERNAL_API_BASE_URL` | web | server-side api URL for Auth.js callbacks (`http://api:8000` in compose) |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | web (+ id on api) | unset = no Google button. The api needs the id to pin the token audience |
+| `AUTH_REDIRECT_PROXY_URL` | web | Auth.js's redirect proxy, the base URL of an Auth.js instance holding the same `AUTH_SECRET` (the fleet's: `https://auth.magmadevs.com/api/auth`, `apps/auth-proxy`). Set, every provider's `redirect_uri` is `<it>/callback/<provider>` and the dashboard's own callback rides in `state`; the provider's client lists the proxy's callback once for every dashboard. Unset = this dashboard is its own callback |
 | `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | web | unset = no GitHub button |
 
 ## Running it

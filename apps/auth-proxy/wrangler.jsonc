@@ -1,0 +1,49 @@
+// The dashboards' sign-in redirect proxy — one callback for every dashboard.
+//
+// Google lists each redirect URI in full and takes no wildcard, so with every
+// dashboard as its own callback each new hostname is a console edit. Auth.js's
+// redirect proxy is the built-in answer: the dashboards name THIS Worker's
+// callback to the provider and carry their own callback inside the signed
+// `state`; this Worker validates the `state` with the shared AUTH_SECRET and
+// sends the browser on (src/proxy.ts). It never exchanges a code and holds no
+// client secret.
+//
+// Deploy: the Deploy Auth Proxy workflow on a push to main that touches this
+// app, or `pnpm --filter @sr/auth-proxy run deploy` with CLOUDFLARE_API_TOKEN
+// and CLOUDFLARE_ACCOUNT_ID in the environment. The custom domain below is
+// created by the deploy (a DNS record in the zone the account owns).
+//
+// Committed values are PUBLIC: the proxy's own URL and the hostnames it may
+// forward to. The three Worker SECRETS are set out of band, once, and survive
+// deploys:
+//   wrangler secret put AUTH_SECRET        the fleet's, shared with every
+//                                          dashboard behind the proxy
+//   wrangler secret put GOOGLE_CLIENT_ID   the fleet's Google client (id only)
+//   wrangler secret put GITHUB_CLIENT_ID   the fleet's GitHub app (id only),
+//                                          when GitHub rides the proxy too
+{
+  "name": "smartrouter-dashboard-auth-proxy",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-01",
+  "workers_dev": false,
+  "routes": [{ "pattern": "auth.magmadevs.com", "custom_domain": true }],
+  "vars": {
+    // Its own base URL: what the dashboards set as AUTH_REDIRECT_PROXY_URL,
+    // and what makes Auth.js here act as the proxy rather than a sign-in.
+    "AUTH_REDIRECT_PROXY_URL": "https://auth.magmadevs.com/api/auth",
+    // The only hosts a validated state may send the browser to.
+    "CALLBACK_HOST_PATTERN": "^dashboard\\.[a-z0-9-]+\\.magmadevs\\.com$",
+  },
+  // Workers Logs on, Cloudflare's invocation log off: that log stores the
+  // request URL, and every request here carries a one-time authorization
+  // code in its query. The Worker's own lines (src/proxy.ts) name the
+  // outcome and the destination host, never the code or the state.
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+    "logs": {
+      "enabled": true,
+      "invocation_logs": false,
+    },
+  },
+}

@@ -5,6 +5,32 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.68.0]
+
+### Added
+
+- **One sign-in callback for every dashboard: `apps/auth-proxy`** (MAG-5335).
+  Google lists each redirect URI in full and takes no wildcard, so a dashboard
+  that is its own callback is a console edit at Google per hostname. Auth.js
+  has a built-in answer, the redirect proxy, and this is one: a Cloudflare
+  Worker running `@auth/core` at the version `next-auth` pins here, at
+  `https://auth.magmadevs.com/api/auth`. A dashboard with
+  `AUTH_REDIRECT_PROXY_URL` set names the proxy's callback to the provider and
+  carries its own inside the signed `state`; the proxy validates the `state`
+  with the shared `AUTH_SECRET` and sends the browser on, and the dashboard
+  finishes the sign-in as before. The proxy forwards only to
+  `https://dashboard.<tenant>.magmadevs.com/api/auth/callback/<the same provider>`,
+  never exchanges a code and holds no client secret. Nothing changes in the
+  web: `next-auth` reads the variable itself. Deployed by
+  `.github/workflows/auth-proxy-deploy.yml` on a push to `main` that touches
+  the app; the Worker's three secrets (`AUTH_SECRET`, `GOOGLE_CLIENT_ID`,
+  `GITHUB_CLIENT_ID`) are set once with `wrangler secret put`. Documented in
+  `docs/AUTH.md` with what it costs: one `AUTH_SECRET` across the dashboards
+  behind it (the api still opens only a session id it holds) and the one
+  client's id and secret in each. `workerd`, wrangler's local runtime, joins
+  `esbuild` in `allowBuilds` as off: its postinstall is a binary check the
+  deploy does not need.
+
 ## [0.67.1]
 
 ### Changed

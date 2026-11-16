@@ -51,3 +51,7 @@ overrides:
 # package, so its postinstall (a binary check) stays off.
 allowBuilds:
   esbuild: false
+  # workerd (wrangler's local runtime) ships its binary as a platform package
+  # too; its postinstall is the same binary check. `wrangler deploy` bundles
+  # and uploads without it, so it stays off.
+  workerd: false

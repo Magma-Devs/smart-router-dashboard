@@ -4,7 +4,9 @@ A Prometheus-driven observability dashboard for the [Magma Devs](https://magmade
 **Smart Router** — the process that sits in front of raw RPC endpoints and
 multiplexes, retries, hedges, caches, and cross-validates across them.
 
-A pnpm/TypeScript monorepo (Fastify API + Next.js 16 web + shared package),
+A pnpm/TypeScript monorepo (Fastify API + Next.js 16 web + shared package, plus
+`apps/auth-proxy`, a Cloudflare Worker that is the sign-in redirect proxy for
+every dashboard — [`docs/AUTH.md`](docs/AUTH.md#one-callback-for-every-dashboard-the-redirect-proxy)),
 built to the engineering standard of `~/projects/lava-connect`, with the web UI
 built 1:1 against the `SR_Dashboard/` design prototype. Everything lives at the
 repo root — `apps/`, `packages/`, `docker-compose*.yml`, `Makefile`.
@@ -1137,6 +1139,7 @@ Web — build-time vs. **runtime**:
 | `TRUST_PROXY_HOPS` | `1` (compose: `0`) | how many proxies sit in front of the web; `0` when it is published directly, which forwards no address (Next leaves a browser's own `X-Forwarded-For` intact, so nothing in it can be believed). The browser's entry is that many back from the right of `X-Forwarded-For`; the left-most is caller-supplied and never used |
 | `INTERNAL_API_BASE_URL` | (falls back to api url) | server-side api URL for Auth.js callbacks (compose sets `http://api:8000`) |
 | `{GOOGLE,GITHUB}_CLIENT_{ID,SECRET}` | (unset) | each provider's button appears only when its id+secret pair is set |
+| `AUTH_REDIRECT_PROXY_URL` | (unset) | Auth.js's redirect proxy: the base URL of an Auth.js instance holding the same `AUTH_SECRET` (the fleet's `apps/auth-proxy` at `https://auth.magmadevs.com/api/auth`). Set, each provider's `redirect_uri` is `<it>/callback/<provider>` and this dashboard's own callback rides in the signed `state`, so the provider's client lists one callback for every dashboard. Read by next-auth itself; nothing in `auth.config.ts` names it |
 
 The browser resolves its api base **once per session** from `/api/config`
 (`DASHBOARD_API_URL` → `NEXT_PUBLIC_API_URL` → `http://localhost:8000`),
