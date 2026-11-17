@@ -12,9 +12,16 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 - **Find a request searches the last 30 days, whatever the page's time
   range.** It looked only in the page's window and then said it found
   nothing "in the last 12 hours". A request ID from smart-router v1.6.1 or
-  later is still read where it was minted, in about a second; a hash or a
-  caller's ID is read over the last 30 days, the furthest a log read goes.
-  Not found now says only that the request isn't in the router's logs.
+  later is still read where it was minted, in about a second. A hash or a
+  caller's ID is searched newest first, a piece of the logs at a time, and
+  the search stops as soon as it finds the request: a recent transaction comes
+  back in seconds. Loki can't stop such a search early by itself, so a month
+  of a busy deployment's logs is terabytes; each search reads at most 4 GB
+  (one list read's cost) and starts no new piece after 30 s. On a quiet
+  deployment that is the whole 30 days; where it stops earlier, "not found"
+  says how far back it looked. The same search again within a few minutes is
+  answered without reading the logs, and the tab shows that it is searching
+  while it does.
 
 ## [0.69.7]
 

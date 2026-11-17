@@ -17,13 +17,16 @@
  * What it reads: the search is not bound to the page's time range. A request
  * ID from a router on smart-router v1.6.1 or later carries the second it was
  * sent, so it is read there, in about a second. Any other value - a
- * transaction hash, a caller's id, an older router's ID - is read over the
- * last 30 days, the furthest a log read goes. */
+ * transaction hash, a caller's id, an older router's ID - is searched over
+ * the last 30 days, newest first, until it is found or the search reaches its
+ * size or time limit (`searchLines` in the api); then "not found" says how
+ * far back it looked. */
 
 import { useEffect, useState } from "react";
 import type { RequestLookup } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
-import { SkelLine } from "@/components/gateway/Skel";
+import { Spinner } from "@/components/gateway/BusyButton";
+import { LocalTime } from "@/components/gateway/LocalTime";
 import { IconSearch } from "@/components/gateway/icons";
 import { linkRequest, requestFromUrl } from "@/lib/request-in-url";
 import { filterSelectStyle, LOOKUP_REFUSED, MatchesNote, unreadableWords } from "./request-log";
@@ -75,13 +78,19 @@ function Found({ id, onClose }: { id: string; onClose: () => void }) {
       </div>
       <div style={{ padding: "12px 16px 16px", fontSize: 12 }}>
         {isLoading ? (
-          <SkelLine w="50%" />
+          <Searching />
         ) : error && !data ? (
           <div style={{ color: "var(--text-4)" }}>{LOOKUP_REFUSED}</div>
         ) : data && !data.available ? (
           <div style={{ color: "var(--text-4)" }}>{unreadableWords(data.reason)}</div>
         ) : !row ? (
-          <div style={{ color: "var(--text-4)" }}>No request with this ID or hash in the router&apos;s logs.</div>
+          <div style={{ color: "var(--text-4)" }}>
+            {data?.searchedFrom != null ? (
+              <>Not in the router&apos;s logs back to <LocalTime t={data.searchedFrom} format="dateTime" />. Older logs were not searched.</>
+            ) : (
+              <>No request with this ID or hash in the router&apos;s logs.</>
+            )}
+          </div>
         ) : (
           <div style={{ display: "grid", gap: 8 }}>
             <MatchesNote matches={data?.matches} />
@@ -89,6 +98,18 @@ function Found({ id, onClose }: { id: string; onClose: () => void }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/** While the logs are searched: a request ID answers in about a second; a hash can take up to a minute, so after a few seconds it says it is still going. */
+function Searching() {
+  const [long, setLong] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setLong(true), 4000); return () => clearTimeout(t); }, []);
+  return (
+    <div role="status" style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--text-3)" }}>
+      <Spinner />
+      {long ? "Still searching, older logs now…" : "Searching the router's logs…"}
     </div>
   );
 }
