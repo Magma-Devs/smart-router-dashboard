@@ -24,6 +24,7 @@ import { useFilters } from "@/components/gateway/FiltersProvider";
 import { useRouterFilter } from "@/hooks/use-router-options";
 import { SkelLine, SkelValue } from "@/components/gateway/Skel";
 import { Tip } from "@/components/gateway/Tip";
+import { track } from "@/lib/usage";
 
 /** One upstream's requests over exact times (unix ms) - what a click
  *  elsewhere opens this tab on. `spec` is its chain. */
@@ -78,6 +79,7 @@ export function ErrorsBreakdown({ chainFilter, win, focus = null, onFocus }: {
   // Still on the line's times: another range picked in the list is no longer the line.
   const onLine = opened && list.range && list.range.from === opened.range.from && list.range.to === opened.range.to ? opened : null;
   const openLine = (line: ErrorIncidentLine, stepSec: number) => {
+    track("panel_open", { panel: "timeline-line" });
     // A line still going runs to the click, not to its last full stretch: its newest requests are in the read.
     const range = { from: (line.start - stepSec) * 1000, to: line.ongoing ? Date.now() : Math.min(line.end * 1000, Date.now()) };
     const u = line.kind !== "disagreed" && line.providers.length === 1 ? line.providers[0]! : ALL;

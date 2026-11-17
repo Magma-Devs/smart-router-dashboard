@@ -2,6 +2,7 @@
 
 import { Fragment, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { pageOf, tabOf, track } from "@/lib/usage";
 
 /* The (i) beside a label, and the card it opens. The card points at its (i)
  * with an arrow, opens below it - above when there's no room - and never
@@ -95,6 +96,16 @@ export function Tip({ text }: { text: string | null | undefined }) {
       a.style.bottom = above ? `${-ARROW - 1}px` : "";
       a.style.transform = above ? "rotate(225deg)" : "rotate(45deg)";
     }
+  }, [anchor]);
+
+  // Usage data: a note held open past a glance means the words around it weren't enough.
+  useEffect(() => {
+    if (!anchor) return;
+    const t = setTimeout(() => {
+      const loc = window.location;
+      track("help_open", { page: pageOf(loc.pathname), tab: tabOf(loc.pathname, loc.search) });
+    }, 800);
+    return () => clearTimeout(t);
   }, [anchor]);
 
   // A scroll moves the (i) out from under a card that stays put: close it.

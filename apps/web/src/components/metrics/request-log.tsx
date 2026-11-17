@@ -19,6 +19,7 @@ import { useGrafanaUrl } from "@/hooks/use-grafana-url";
 import { fmtDay, fmtTime, toLocalInputValue } from "@/lib/datetime";
 import { fmtComma } from "@/lib/format";
 import { requestLogsHref } from "@/lib/grafana-logs";
+import { track } from "@/lib/usage";
 
 /** The router's name for a reply that came from its cache rather than a
  *  provider. Printed as it is, "served by Cached" reads like a provider
@@ -371,7 +372,7 @@ export function TxHash({ hash, spec, full = false }: { hash: string; spec: strin
   return (
     <span onClick={keepClick} style={{ display: "inline-flex", alignItems: "center", gap: 6, minWidth: 0, maxWidth: "100%" }}>
       {url
-        ? <a className="gw-mono" href={url} target="_blank" rel="noopener noreferrer" title={`${hash} - on the chain's explorer`} style={{ ...style, color: "var(--brand)", textDecoration: "none" }}>{text}{full ? "" : " ↗"}</a>
+        ? <a className="gw-mono" href={url} target="_blank" rel="noopener noreferrer" onClick={() => track("link_out", { target: "explorer" })} title={`${hash} - on the chain's explorer`} style={{ ...style, color: "var(--brand)", textDecoration: "none" }}>{text}{full ? "" : " ↗"}</a>
         : <span className="gw-mono" title={hash} style={{ ...style, color: "var(--text-3)" }}>{text}</span>}
       <CopyButton text={hash} />
     </span>
@@ -383,7 +384,7 @@ export function RequestLogsLink({ id, startMs, tookMs }: { id: string; startMs: 
   const grafana = useGrafanaUrl();
   if (!grafana) return null;
   return (
-    <a href={requestLogsHref(grafana, id, startMs, tookMs)} target="_blank" rel="noopener noreferrer"
+    <a href={requestLogsHref(grafana, id, startMs, tookMs)} target="_blank" rel="noopener noreferrer" onClick={() => track("link_out", { target: "grafana" })}
       title="Every line the router wrote for this request, on the Grafana logs board"
       style={{ color: "var(--brand)", fontWeight: 600, textDecoration: "none", whiteSpace: "nowrap" }}>
       Logs ↗
@@ -595,10 +596,13 @@ export const filterSelectStyle: React.CSSProperties = { height: 32, padding: "0 
 /** A filter dropdown with the page's own chevron, 10 px in from the right as
  *  the text is from the left. The browser's arrow sat against the border, a
  *  different distance in each browser. */
-export function FilterSelect({ style, disabled, ...props }: React.SelectHTMLAttributes<HTMLSelectElement>) {
+export function FilterSelect({ style, disabled, usage, onChange, ...props }: React.SelectHTMLAttributes<HTMLSelectElement> & {
+  /** Which list and filter this is, for the usage data (never the value picked). */
+  usage?: { list: "errors" | "transactions"; filter: string };
+}) {
   return (
     <span style={{ position: "relative", display: "inline-flex", alignItems: "center", maxWidth: style?.maxWidth }}>
-      <select {...props} disabled={disabled} style={{ ...style, appearance: "none", WebkitAppearance: "none", paddingRight: 28, minWidth: 0 }} />
+      <select {...props} onChange={(e) => { if (usage) track("filter_use", usage); onChange?.(e); }} disabled={disabled} style={{ ...style, appearance: "none", WebkitAppearance: "none", paddingRight: 28, minWidth: 0 }} />
       <svg aria-hidden width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
         style={{ position: "absolute", right: 10, pointerEvents: "none", opacity: disabled ? 0.5 : 1 }}><polyline points="6 9 12 15 18 9" /></svg>
     </span>

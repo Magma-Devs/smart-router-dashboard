@@ -13,3 +13,4 @@ export * from "./request-log.js";
 export * from "./error-codes.js";
 export * from "./error-incidents.js";
 export * from "./downtime-avoided.js";
+export * from "./usage-events.js";

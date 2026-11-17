@@ -2,7 +2,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
-import { config, readIncidentSettings } from "./config.js";
+import { config, readIncidentSettings, readUsageSettings } from "./config.js";
 import { errorHandlerPlugin } from "./plugins/error-handler.js";
 import { swaggerPlugin } from "./plugins/swagger.js";
 import { prometheusPlugin } from "./plugins/prometheus.js";
@@ -18,6 +18,7 @@ import { routerRelayRoutes } from "./routes/routers.js";
 import { transactionRoutes } from "./routes/transactions.js";
 import { errorRequestRoutes } from "./routes/error-requests.js";
 import { incidentRoutes } from "./routes/incidents.js";
+import { usageRoutes } from "./routes/usage.js";
 import { authRoutes } from "./routes/auth.js";
 import { teamRoutes, teamPasswordRoutes, teamMemberRoutes } from "./routes/team.js";
 import { accountRoutes } from "./routes/account.js";
@@ -147,6 +148,8 @@ export async function buildApp(): Promise<FastifyInstance> {
     authMode: authMode === "enabled" ? "enabled" : "disabled",
     settings: readIncidentSettings(),
   });
+  // Usage data (MAG-5373): registered in both modes, on only with accounts on.
+  await app.register(usageRoutes, { settings: readUsageSettings() });
 
   return app;
 }

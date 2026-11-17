@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { track } from "@/lib/usage";
 
 /* Ported verbatim from the design prototype (shell.jsx CopyButton). */
 
@@ -8,6 +9,7 @@ export function CopyButton({ text, label }: { text: string; label?: string }) {
   const [done, setDone] = useState(false);
   const onClick = async () => {
     try { await navigator.clipboard.writeText(text); } catch {}
+    track("link_out", { target: "copy" });
     setDone(true);
     setTimeout(() => setDone(false), 1400);
   };

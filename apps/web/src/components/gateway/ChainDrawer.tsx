@@ -13,6 +13,7 @@ import { HEALTH_COLOR, HEALTH_LABEL, HEALTH_UNKNOWN_HINT } from "@/lib/health";
 import { errRateColor } from "@/lib/colors";
 import { fmtNum } from "@/lib/format";
 import { byAttention, chainHref, type DrawerChain } from "@/lib/chain-drawer";
+import { track } from "@/lib/usage";
 
 /* The chains drawer: a second column beside the sidebar on the Metrics page,
  * which folds the sidebar to its icons so the page doesn't carry two lists
@@ -125,11 +126,13 @@ export function ChainDrawer() {
     e.preventDefault();
     if (routerId !== null) selectRouter(null);
     select(spec);
+    track("chain_pick", spec ? { chain: spec, from: "list" } : { from: "cleared" });
   };
   const pickRouter = (id: string) => (e: React.MouseEvent) => {
     if (!plain(e)) return;
     e.preventDefault();
     selectRouter(id); // and its chain
+    track("router_pick", { from: "list" });
   };
 
   return (

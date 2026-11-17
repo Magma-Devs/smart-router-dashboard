@@ -17,7 +17,7 @@
  * router, tab, window and the tab's focus - so a copied link opens it
  * (`useScopeInUrl`, `lib/view-in-url.ts`). */
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { buildChainMetaByIndex, WINDOWS, type MetricWindow } from "@sr/shared";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 import { useChainFilter, useChainOptions, withMutedRows } from "@/hooks/use-chain-options";
@@ -42,6 +42,7 @@ import { ErrorsBreakdown, type ErrorsFocus, type ErrorsJump } from "./ErrorsBrea
 import { TransactionLog } from "./TransactionLog";
 import { FindRequest } from "./FindRequest";
 import { UpstreamMetricsTab } from "./upstream/UpstreamMetricsTab";
+import { track } from "@/lib/usage";
 
 /** The first is the default, and the only one the URL leaves out. */
 const TABS = ["metrics", "upstreams", "errors", "transactions", "request"] as const;
@@ -56,6 +57,23 @@ export function MetricsView() {
   // With the chains drawer open, the drawer is the chain and router control.
   const { visible: drawerOpen } = useChainDrawer();
   const [tab, setTab] = useState<Tab>("metrics");
+  // Usage data: every tab change, whatever made it - the tab bar, a bar or
+  // line that opens the Errors tab, the top bar's search, Back.
+  // The state opens on "metrics" and a link's ?tab= lands a moment later:
+  // that is the arrival, not a change, so counting starts once it is in place.
+  const shownTab = useRef<Tab | null>(null);
+  const [arrivalTab] = useState<Tab>(() => {
+    const t = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("tab");
+    return (TABS as readonly string[]).includes(t ?? "") ? (t as Tab) : "metrics";
+  });
+  useEffect(() => {
+    if (shownTab.current === null) {
+      if (tab === arrivalTab) shownTab.current = tab;
+      return;
+    }
+    if (shownTab.current !== tab) track("tab_change", { from: shownTab.current, to: tab });
+    shownTab.current = tab;
+  }, [tab, arrivalTab]);
   const activeChain = chain;
   const setChainFilter = (v: string) => selectChain(v === "all" ? null : v);
 
@@ -221,7 +239,7 @@ export function MetricsView() {
           {/* The Routers table compares routers: with one chain picked, its cards above say it, and the
               chains list on the left picks between a chain's routers. */}
           {!activeChain && (
-            <RouterOverview chainFilter={activeChain} timeWindow={timeWindow} onChainClick={(ch) => { setChainFilter(ch); pickTab("upstreams"); }}
+            <RouterOverview chainFilter={activeChain} timeWindow={timeWindow} onChainClick={(ch) => { setChainFilter(ch); track("chain_pick", { chain: ch, from: "router-row" }); pickTab("upstreams"); }}
               drill={{ row: focus.expand, tile: focus.tile }} linked={linked}
               onDrill={(d) => byHand((f) => ({ ...f, expand: d.row, tile: d.tile }))} />
           )}
@@ -229,7 +247,7 @@ export function MetricsView() {
       )}
       {tab === "upstreams" && (
         <UpstreamMetricsTab timeWindow={timeWindow} chainFilter={activeChain} onOpenErrors={openErrors}
-          selected={focus.upstream} linked={linked} onSelect={(p: UpstreamPick) => byHand((f) => ({ ...f, upstream: p }))} />
+          selected={focus.upstream} linked={linked} onSelect={(p: UpstreamPick) => { track("panel_open", { panel: "provider" }); return byHand((f) => ({ ...f, upstream: p })); }} />
       )}
       {tab === "errors" && (
         <ErrorsBreakdown key={errorsOpen.seq} chainFilter={activeChain} win={timeWindow} focus={errorsOpen.focus}

@@ -59,6 +59,7 @@ import {
   type ExactRange,
 } from "./request-log";
 import { RequestBreakdown, type BreakdownProps, type FinalAnswer } from "./request-breakdown";
+import { track } from "@/lib/usage";
 
 const PER_PAGE = 25;
 export const ALL = "all";
@@ -473,7 +474,7 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
           <span style={{ fontSize: 11, color: "var(--text-4)" }}>View</span>
           <Seg
             value={grouped ? "grouped" : "every"}
-            onChange={(v) => { setGrouped(v === "grouped"); setGroupKey(null); setPage(0); }}
+            onChange={(v) => { track("filter_use", { list: "errors", filter: "view" }); setGrouped(v === "grouped"); setGroupKey(null); setPage(0); }}
             options={[
               { key: "every", label: "Every request", title: "Every request on its own line, newest first." },
               { key: "grouped", label: "By error", title: "One line per way requests failed: the error, who caused it, how many, when." },
@@ -482,31 +483,31 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
           </span>
           <TimeRangeControl
             range={range}
-            onChange={(r) => { list.pick(r); setPage(0); }}
+            onChange={(r) => { track("filter_use", { list: "errors", filter: "time" }); list.pick(r); setPage(0); }}
             windowLabel={WINDOWS[win].label}
             windowMs={WINDOWS[win].rangeSeconds * 1000}
           />
         </div>
         {/* Narrowing it down, and finding one request. */}
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <FilterSelect aria-label="Retryable" value={retry} onChange={(e) => reset(setRetry)(e.target.value as RetryFilter)} style={narrowSelect}>
+          <FilterSelect usage={{ list: "errors", filter: "retryable" }} aria-label="Retryable" value={retry} onChange={(e) => reset(setRetry)(e.target.value as RetryFilter)} style={narrowSelect}>
             <option value={ALL}>Retryable or not</option>
             <option value="retryable">Retryable ({fmtComma(kinds.filter((k) => k.retryable).length)})</option>
             <option value="not-retryable">Not retryable ({fmtComma(kinds.filter((k) => k.notRetryable).length)})</option>
           </FilterSelect>
-          <FilterSelect aria-label="Error type" value={errType} onChange={(e) => reset(setErrType)(e.target.value)} style={narrowSelect} disabled={!errTypes.length}>
+          <FilterSelect usage={{ list: "errors", filter: "error-type" }} aria-label="Error type" value={errType} onChange={(e) => reset(setErrType)(e.target.value)} style={narrowSelect} disabled={!errTypes.length}>
             <option value={ALL}>All error types</option>
             {errTypes.map((t) => <option key={t.key} value={t.key}>{t.label} ({fmtComma(t.count)})</option>)}
           </FilterSelect>
-          <FilterSelect aria-label="Customer" value={customer} onChange={(e) => reset(setCustomer)(e.target.value)} style={narrowSelect} disabled={!customers.length && customer === ALL}>
+          <FilterSelect usage={{ list: "errors", filter: "customer" }} aria-label="Customer" value={customer} onChange={(e) => reset(setCustomer)(e.target.value)} style={narrowSelect} disabled={!customers.length && customer === ALL}>
             <option value={ALL}>All customers</option>
             {customers.map((c) => <option key={c.key} value={c.key}>{c.label} ({fmtComma(c.count)})</option>)}
           </FilterSelect>
-          <FilterSelect aria-label="Method" value={method} onChange={(e) => reset(setMethod)(e.target.value)} style={narrowSelect} disabled={!methods.length}>
+          <FilterSelect usage={{ list: "errors", filter: "method" }} aria-label="Method" value={method} onChange={(e) => reset(setMethod)(e.target.value)} style={narrowSelect} disabled={!methods.length}>
             <option value={ALL}>All methods</option>
             {methods.map((m) => <option key={m} value={m}>{m === "unknown" ? "method not in the logs" : m}</option>)}
           </FilterSelect>
-          <FilterSelect aria-label="Provider" value={upstream} onChange={(e) => { onUpstream(e.target.value); setPage(0); }} style={narrowSelect} disabled={!upstreams.length && upstream === ALL}>
+          <FilterSelect usage={{ list: "errors", filter: "provider" }} aria-label="Provider" value={upstream} onChange={(e) => { onUpstream(e.target.value); setPage(0); }} style={narrowSelect} disabled={!upstreams.length && upstream === ALL}>
             <option value={ALL}>All providers</option>
             {upstream !== ALL && !upstreams.some((u) => u.name === upstream) && <option value={upstream}>{upstream}</option>}
             {upstreams.map((u) => <option key={u.name} value={u.name}>{u.name} ({fmtComma(u.count)})</option>)}
@@ -548,8 +549,8 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
           span={span}
           hiddenRecovered={hiddenRecovered.length} hiddenRecoveredGroups={hiddenRecovered.length ? groupErrors(hiddenRecovered).length : 0}
           onShowRecovered={() => { setResult(ALL); setPage(0); }}
-          onOpen={(k) => { setGroupKey(k); setPage(0); setOpen(null); }}
-          more={log.more ? { loading: log.loadingOlder, failed: log.olderFailed, onLoad: log.loadOlder } : null} />
+          onOpen={(k) => { track("panel_open", { panel: "grouped-error" }); setGroupKey(k); setPage(0); setOpen(null); }}
+          more={log.more ? { loading: log.loadingOlder, failed: log.olderFailed, onLoad: () => { track("load_older", { list: "errors" }); void log.loadOlder(); } } : null} />
       ) : (
       <>
       <div className="gw-log-scroll">
@@ -574,7 +575,7 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
             {first.isLoading && <SkelRows rows={6} cols={LOG_SKEL_COLS} />}
             {pageRows.map((r) => {
               const isOpen = open === r.guid;
-              const toggle = () => toggleRow(r.guid);
+              const toggle = () => { if (open !== r.guid) track("row_open", { list: "errors", result: r.result }); toggleRow(r.guid); };
               return (
                 <Fragment key={r.guid}>
                   <tr tabIndex={0} aria-expanded={isOpen} className={`gw-logrow${isOpen ? " is-open" : ""}`} onClick={toggle} onKeyDown={onRowKey(toggle)}>
@@ -634,7 +635,7 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
         perPage={PER_PAGE}
         noun="requests"
         onPage={setPage}
-        more={log.more ? { loading: log.loadingOlder, failed: log.olderFailed, onLoad: log.loadOlder } : null}
+        more={log.more ? { loading: log.loadingOlder, failed: log.olderFailed, onLoad: () => { track("load_older", { list: "errors" }); void log.loadOlder(); } } : null}
       />}
     </div>
   );

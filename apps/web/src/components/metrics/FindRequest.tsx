@@ -23,6 +23,7 @@
 import { useEffect, useState } from "react";
 import { WINDOWS, type MetricWindow, type RequestLookup } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
+import { isLeaving, noteSearchFrom, searchKind, takeSearchFrom, track } from "@/lib/usage";
 import { SkelLine } from "@/components/gateway/Skel";
 import { IconSearch } from "@/components/gateway/icons";
 import { linkRequest, requestFromUrl } from "@/lib/request-in-url";
@@ -45,7 +46,7 @@ export function FindRequest({ win }: { win: MetricWindow }) {
     <div style={{ display: "grid", gap: 16 }}>
       <div className="gw-card">
         {/* Enter searches: the box says what it takes, and the tab's name says what it does. */}
-        <form role="search" onSubmit={(e) => { e.preventDefault(); if (typed) find(typed); }} style={{ position: "relative", maxWidth: 640 }}>
+        <form role="search" onSubmit={(e) => { e.preventDefault(); if (typed) { noteSearchFrom("request-tab"); find(typed); } }} style={{ position: "relative", maxWidth: 640 }}>
           <span style={{ position: "absolute", left: 10, top: 0, bottom: 0, display: "flex", alignItems: "center", color: "var(--text-4)" }}><IconSearch size={14} /></span>
           <input autoFocus enterKeyHint="search" aria-label="Request ID, transaction hash or your own request ID" value={draft} onChange={(e) => setDraft(e.target.value)}
             placeholder="Request ID, transaction hash or your own request ID"
@@ -60,7 +61,8 @@ export function FindRequest({ win }: { win: MetricWindow }) {
 /** The request looked up, as its opened row - a transaction's send row when it is one. The row leads with its own status, so nothing above it repeats it. */
 function Found({ id, win, onClose }: { id: string; win: MetricWindow; onClose: () => void }) {
   const [wide, setWide] = useState(false);
-  const { data, error, isLoading } = useApi<RequestLookup>(`/api/requests/${encodeURIComponent(id)}?window=${wide ? "30d" : win}`, 0);
+  const { data, error, isLoading, isValidating } = useApi<RequestLookup>(`/api/requests/${encodeURIComponent(id)}?window=${wide ? "30d" : win}`, 0);
+  useSearchUsage(id, wide, isValidating ? undefined : data, isValidating ? undefined : error);
   const row = data?.row ?? null;
   const tx = data?.transaction ?? null;
   return (
@@ -91,4 +93,28 @@ function Found({ id, win, onClose }: { id: string; win: MetricWindow; onClose: (
       </div>
     </div>
   );
+}
+
+/**
+ * The usage data's record of one look-up (MAG-5373): what kind of value it
+ * was (never the value), where it was typed, what came back, how long it
+ * took, and whether it was a wider search carried on. Once per answer.
+ */
+function useSearchUsage(id: string, older: boolean, data: RequestLookup | undefined, error: unknown) {
+  const [from] = useState(takeSearchFrom);
+  const [startedAt, setStartedAt] = useState(() => Date.now());
+  const [sentFor, setSentFor] = useState<string | null>(null);
+  const key = `${id}|${older}`;
+  if (sentFor !== null && sentFor !== key && startedAt < Date.now() - 50) {
+    // A new search on the same id (the wider one): time it from now.
+    setStartedAt(Date.now());
+    setSentFor(null);
+  }
+  useEffect(() => {
+    if (sentFor === key || (!data && !error) || isLeaving()) return;
+    const stoppedEarly = (data as { searchedFrom?: number } | undefined)?.searchedFrom != null;
+    const result = data && !data.available ? "unavailable" : !data ? "error" : data.row ? "found" : stoppedEarly ? "stopped-early" : "not-found";
+    track("search", { kind: searchKind(id), from, result, seconds: (Date.now() - startedAt) / 1000, older });
+    setSentFor(key);
+  }, [key, data, error, sentFor, id, from, startedAt, older]);
 }

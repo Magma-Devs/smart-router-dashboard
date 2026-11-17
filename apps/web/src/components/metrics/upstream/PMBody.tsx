@@ -31,6 +31,7 @@ import { barSpanWords, gridTimes, timeTicks } from "@/lib/chart-time";
 import { fmtDay, fmtDayTime, fmtTime } from "@/lib/datetime";
 import type { ErrorsJump } from "../ErrorsBreakdown";
 import { PMPanel } from "./PMPanel";
+import { track } from "@/lib/usage";
 
 /** Every chart's margins: on the left the widest axis labels' (a block
  *  height), on the right just room for the last tick - the legend sits under
@@ -260,7 +261,7 @@ export function PMBody({ pm, detail, name, timeWindow, onOpenErrors }: {
         {errTotal > 0 ? (
           <ChartRow height={160}
             chart={<ColumnChart stacks={errStacks} id={"pme" + pid} integerY xs={errTimes} barSpan={barSec} {...shared}
-              onBarClick={onOpenErrors ? (i) => onOpenErrors({ spec, upstream: name, from: barFrom(i), to: barTo(i) }) : undefined}
+              onBarClick={onOpenErrors ? (i) => { track("panel_open", { panel: "errors-bar" }); onOpenErrors({ spec, upstream: name, from: barFrom(i), to: barTo(i) }); } : undefined}
               tooltip={(i) => (
                 <>
                   <div className="gw-mono" style={{ color: "var(--text-3)", marginBottom: 6 }}>{barWords(i)}</div>

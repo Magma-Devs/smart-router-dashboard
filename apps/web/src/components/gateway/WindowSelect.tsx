@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { WINDOW_OPTIONS, WINDOWS, type MetricWindow } from "@sr/shared";
+import { track } from "@/lib/usage";
 
 /* Themed time-window dropdown — replaces the native <select> whose option list
    renders in the OS theme (white-on-blue), which looked out of place on the
@@ -48,7 +49,7 @@ export function WindowSelect({
           {WINDOW_OPTIONS.map((v) => (
             <button
               key={v}
-              onClick={() => { onChange(v); setOpen(false); }}
+              onClick={() => { if (v !== value) track("time_range_change", { from: value, to: v }); onChange(v); setOpen(false); }}
               style={{
                 width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "7px 10px",
                 borderRadius: 6, border: "none",

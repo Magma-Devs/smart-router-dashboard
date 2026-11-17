@@ -6,6 +6,7 @@ import { useApi } from "@/hooks/use-api";
 import { upstreamHealthNotice } from "@/lib/upstream-presentation";
 import { sinceWords } from "@/lib/health";
 import { errorType } from "@/components/metrics/request-log";
+import { track } from "@/lib/usage";
 
 /** How far back the router's logs are read for a provider's last errors. */
 const LOG_SPAN_MS = 3_600_000;
@@ -69,7 +70,7 @@ function LastErrors({ spec, name, onOpenErrors }: { spec: string; name: string; 
     <div style={{ fontSize: 12, color: "var(--text-2)" }}>
       <strong style={{ color: "var(--text)" }}>{top.label.charAt(0).toUpperCase() + top.label.slice(1)}</strong> on {top.count} of {failed.length}{data.more ? "+" : ""} failed attempts in the last hour
       {onOpenErrors && (
-        <button onClick={() => onOpenErrors(span)} style={{ border: "none", background: "none", color: "var(--brand)", cursor: "pointer", padding: "0 0 0 8px", fontSize: 12, fontWeight: 600, fontFamily: "inherit" }}>
+        <button onClick={() => { track("panel_open", { panel: "see-requests" }); onOpenErrors(span); }} style={{ border: "none", background: "none", color: "var(--brand)", cursor: "pointer", padding: "0 0 0 8px", fontSize: 12, fontWeight: 600, fontFamily: "inherit" }}>
           See the requests
         </button>
       )}

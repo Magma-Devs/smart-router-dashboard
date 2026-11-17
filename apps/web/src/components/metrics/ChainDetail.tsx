@@ -16,6 +16,7 @@ import { fmtNum } from "@/lib/format";
 import { seriesXY } from "./bits";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 import { Skel } from "@/components/gateway/Skel";
+import { track } from "@/lib/usage";
 
 /** The already-loaded roster row backing the expanded chain. */
 export interface ChainDetailRow {
@@ -112,7 +113,7 @@ export function ChainDetail({ r, onChainClick, win, tile: selKey, onTile: setSel
           {metrics.map((x) => {
             const on = x.key === m.key;
             return (
-              <button key={x.key} onClick={() => setSelKey(x.key)} style={{
+              <button key={x.key} onClick={() => { track("panel_open", { panel: "chart-tile" }); setSelKey(x.key); }} style={{
                 display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 3, minWidth: 104,
                 padding: "7px 11px", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", textAlign: "left",
                 border: "1px solid " + (on ? x.color : "var(--line)"), background: on ? x.color + "1a" : "var(--bg)",
