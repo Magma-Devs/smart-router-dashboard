@@ -31,9 +31,9 @@ import { LinkNotice } from "./LinkNotice";
 import { useState } from "react";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 
-const BLOCK_TIP = "**The head this router serves** - `smartrouter_latest_block`, the tip it has accepted, leading with the furthest-ahead api interface.\n\nIt is a CHAIN-level series, so two routers on one chain read the same one. Per-upstream lag lives on the Upstreams tab.\n\n**Click a height** to open it on the chain\u2019s block explorer. Chains with no verified block page show the number plain \u2014 the chain icon still opens their explorer.";
+const BLOCK_TIP = "**The head this router serves** - `smartrouter_latest_block`, the tip it has accepted, leading with the furthest-ahead api interface.\n\nIt is a CHAIN-level series, so two routers on one chain read the same one. Per-provider lag lives on the Providers tab.\n\n**Click a height** to open it on the chain\u2019s block explorer. Chains with no verified block page show the number plain \u2014 the chain icon still opens their explorer.";
 
-const ROUTER_SR_TIP = "**Chain-level availability** - successful requests ÷ total, **rolled up across every upstream** on the chain (what clients received).\n\nSame definition as per-upstream Availability in the Upstreams tab.";
+const ROUTER_SR_TIP = "**Chain-level availability** - successful requests ÷ total, **rolled up across every provider** on the chain (what clients received).\n\nSame definition as per-provider Availability in the Providers tab.";
 
 type RoStatus = "up" | "down" | "unknown";
 
@@ -178,7 +178,7 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow, drill, l
     <div className="gw-card" style={{ padding: 0, overflow: "hidden", marginBottom: 14 }}>
       <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-2)", flex: 1, display: "inline-flex", alignItems: "center" }}>
-          Routers · how each router performs<Tip text="**One row per router in the mounted values file** - not per chain. A chain can be served by several routers, and the config is the only place they are distinguishable: no metric series carries a router.\n\nA **shared** row means the collector reports no per-router target label, so the chain-level figures cover every router on that chain. Two such rows carry the same numbers; adding them up would count that traffic twice. Upstream counts are always the router's own.\n\n**Click a row** to expand its chain-health graphs over the selected window." />
+          Routers · how each router performs<Tip text="**One row per router in the mounted values file** - not per chain. A chain can be served by several routers, and the config is the only place they are distinguishable: no metric series carries a router.\n\nA **shared** row means the collector reports no per-router target label, so the chain-level figures cover every router on that chain. Two such rows carry the same numbers; adding them up would count that traffic twice. Provider counts are always the router's own.\n\n**Click a row** to expand its chain-health graphs over the selected window." />
         </div>
         {/* `keepPreviousData` means a window change re-fetches with the OLD
             rows still on screen: `isLoading` is true for the new window while
@@ -201,7 +201,7 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow, drill, l
         <thead>
           <tr>
             <ThCol sortKey="router" sort={sort} onSort={onSort}>Router</ThCol>
-            <ThCol align="right" sortKey="upstreams" sort={sort} onSort={onSort}>Upstreams</ThCol>
+            <ThCol align="right" sortKey="upstreams" sort={sort} onSort={onSort}>Providers</ThCol>
             <ThCol align="right" tip={BLOCK_TIP} sortKey="block" sort={sort} onSort={onSort}>Latest block</ThCol>
             <ThCol align="right" sortKey="requests" sort={sort} onSort={onSort}>Requests · {timeWindow}</ThCol>
             <ThCol align="right" tip={ROUTER_SR_TIP} sortKey="avail" sort={sort} onSort={onSort}>Availability</ThCol>

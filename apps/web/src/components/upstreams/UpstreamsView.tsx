@@ -164,7 +164,7 @@ function EndpointRow({
       {showRouter && (
         <span
           className="gw-mono"
-          title={`Declared by router ${row.routerId} - more than one router on this chain declares this upstream`}
+          title={`Declared by router ${row.routerId} - more than one router on this chain declares this provider`}
           style={{ fontSize: 10, padding: "1px 5px", borderRadius: 4, whiteSpace: "nowrap", color: "var(--text-3)", border: "1px solid var(--line)", flexShrink: 0 }}
         >
           {row.routerId}
@@ -313,7 +313,7 @@ export function UpstreamsView() {
 
   return (
     <div className="gw-page fade-in">
-      <h1 style={{ marginBottom: 20 }}>Upstreams</h1>
+      <h1 style={{ marginBottom: 20 }}>Setup</h1>
 
       <StatStrip />
 
@@ -330,7 +330,7 @@ export function UpstreamsView() {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><polyline points="20 6 9 17 4 12"/></svg>
             <ChainBadge spec={chainId} size={20} />
             <span style={{ fontSize: 13, flex: 1 }}>
-              <strong>{upstreamName}</strong> is your first upstream for <strong>{chain.name}</strong>.
+              <strong>{upstreamName}</strong> is your first provider for <strong>{chain.name}</strong>.
             </span>
             <button className="gw-btn gw-btn--primary" style={{ fontSize: 12, padding: "5px 12px", flexShrink: 0 }}
               onClick={() => { setGroupBy("router"); setNewChainCtas((fc) => fc.filter((c) => c.chainId !== chainId)); }}>
@@ -352,7 +352,7 @@ export function UpstreamsView() {
             <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
           </svg>
           <input className="gw-input" type="search"
-            placeholder={groupBy === "router" ? "Search chains, interfaces…" : groupBy === "chain" ? "Search chains, upstreams…" : "Search upstreams…"} value={search}
+            placeholder={groupBy === "router" ? "Search chains, interfaces…" : groupBy === "chain" ? "Search chains, providers…" : "Search providers…"} value={search}
             onChange={(e) => setSearch(e.target.value)} style={{ paddingLeft: 32 }} />
         </div>
         {/* Chain filter — the Metrics page's picker, same shared selection. */}
@@ -386,7 +386,7 @@ export function UpstreamsView() {
             by the router that publishes it, or by the upstream behind it. The
             default leads. */}
         <div className="gw-segctl">
-          {([["chain", "By chain"], ["router", "By router"], ["upstream", "By upstream"]] as const).map(([val, lbl]) => (
+          {([["chain", "By chain"], ["router", "By router"], ["upstream", "By provider"]] as const).map(([val, lbl]) => (
             <button key={val} className={groupBy === val ? "on" : ""} onClick={() => setGroupBy(val)}>{lbl}</button>
           ))}
         </div>
@@ -412,8 +412,8 @@ export function UpstreamsView() {
             </>
           ) : (
             <>
-              <h2>No upstreams yet</h2>
-              <p>The mounted values file has no upstream nodes. Add your first upstream - Alchemy, Infura, QuickNode, or your own node - by editing the values file.</p>
+              <h2>No providers yet</h2>
+              <p>The mounted values file has no provider nodes. Add your first provider - Alchemy, Infura, QuickNode, or your own node - by editing the values file.</p>
             </>
           )}
         </div>
@@ -513,7 +513,7 @@ export function UpstreamsView() {
             );
           })}
           {displayed.length === 0 && (
-            <p className="lede" style={{ padding: "12px 2px" }}>No upstreams match this filter.</p>
+            <p className="lede" style={{ padding: "12px 2px" }}>No providers match this filter.</p>
           )}
         </div>
       )}

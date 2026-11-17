@@ -170,7 +170,7 @@ export function EndpointDetailSheet({ open, ep, onClose, upstreams }: {
                         onClick={() => setLocalUpstreamIds([])}>Deselect all</button>
                     </div>
                     {compatible.length === 0 ? (
-                      <div style={{ fontSize: 12, color: "var(--text-3)", padding: "8px 0" }}>No compatible upstreams for this chain and interface.</div>
+                      <div style={{ fontSize: 12, color: "var(--text-3)", padding: "8px 0" }}>No compatible providers for this chain and interface.</div>
                     ) : compatible.map((pv) => {
                       const on = localUpstreamIds.includes(pv.id);
                       return (
@@ -216,7 +216,7 @@ export function EndpointDetailSheet({ open, ep, onClose, upstreams }: {
                   <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 11px", borderRadius: 7,
                     background: "rgba(239,68,68,0.05)", border: "1px solid rgba(239,68,68,0.18)" }}>
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--err)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                    <span style={{ fontSize: 12, color: "var(--err)" }}>No upstreams - endpoint will return errors.</span>
+                    <span style={{ fontSize: 12, color: "var(--err)" }}>No providers - endpoint will return errors.</span>
                   </div>
                 ) : (
                   nodeGroups.map((n) => (

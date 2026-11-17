@@ -182,7 +182,7 @@ export function ChainDrawer() {
                           className={`gw-chain-subrow${routerId === rt.id ? " active" : ""}`}
                           aria-current={routerId === rt.id ? "page" : undefined}>
                           <span className="id gw-mono">{rt.id}</span>
-                          <span className="n">{rt.upstreams} upstream{rt.upstreams === 1 ? "" : "s"}</span>
+                          <span className="n">{rt.upstreams} provider{rt.upstreams === 1 ? "" : "s"}</span>
                         </a>
                       ))}
                     </div>

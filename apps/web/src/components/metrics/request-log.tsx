@@ -557,7 +557,7 @@ export function chainWords(row: { spec: string | null; specs?: string[] }): stri
 /** The hover text of a row whose chain the logs don't name: every chain its upstreams serve. */
 export function chainsTitle(row: { spec: string | null; specs?: string[] }): string | undefined {
   if (row.spec || !row.specs?.length) return undefined;
-  return `The logs don't name this request's chain. Its upstreams serve ${row.specs.length === 1 ? "one" : `these ${row.specs.length}`}: ${row.specs.map((s) => buildChainMetaByIndex(s).name).join(", ")}`;
+  return `The logs don't name this request's chain. Its providers serve ${row.specs.length === 1 ? "one" : `these ${row.specs.length}`}: ${row.specs.map((s) => buildChainMetaByIndex(s).name).join(", ")}`;
 }
 
 /** Enter and Space open a row, as a click does. */

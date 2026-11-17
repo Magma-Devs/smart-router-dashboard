@@ -5,6 +5,18 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.69.9]
+
+### Changed
+
+- **The menu says what each page is for.** The Metrics page is **Chains**:
+  pick a chain and see everything about it. Its Upstreams tab is
+  **Providers**, and the Upstreams page, where the routers and their
+  providers are set up, is **Setup**. Every other "upstream" on screen says
+  "provider", the word the rest of the dashboard and its clients use. URLs
+  stay as they were (`/metrics`, `/upstreams`, `tab=upstreams`), so shared
+  links keep working.
+
 ## [0.69.7]
 
 ### Changed

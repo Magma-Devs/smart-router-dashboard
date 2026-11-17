@@ -28,8 +28,8 @@ export const NAV_SECTIONS: NavSection[] = [
       // Metrics is where the dashboard opens (HOME_PATH). Endpoints is gone:
       // the Upstreams page's "By router" grouping is that surface, on the
       // same config the other two groupings read.
-      { href: "/metrics", label: "Metrics", icon: IconChart },
-      { href: "/upstreams", label: "Upstreams", icon: IconServer },
+      { href: "/metrics", label: "Chains", icon: IconChart },
+      { href: "/upstreams", label: "Setup", icon: IconServer },
     ],
   },
   {

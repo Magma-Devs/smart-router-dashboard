@@ -149,7 +149,7 @@ export function MetricsView() {
             {chainObj.name}
           </h1>
         ) : (
-          <h1 style={{ margin: 0 }}>Metrics</h1>
+          <h1 style={{ margin: 0 }}>Chains</h1>
         )}
         <PageActions timeWindow={timeWindow} setTimeWindow={setTimeWindow} chainFilter={activeChain ?? "all"} />
       </div>
@@ -163,7 +163,7 @@ export function MetricsView() {
       {/* The tabs outgrow a narrow screen: they scroll sideways rather than
           wrap each label onto two lines. */}
       <div style={{ display: "flex", borderBottom: "1px solid var(--line)", marginBottom: 24, overflowX: "auto", overflowY: "hidden" }}>
-        {([["metrics", "Overview"], ["upstreams", "Upstreams"], ["errors", "Errors"], ["transactions", "Transactions"], ["request", "Find a request"]] as [Tab, string][]).map(([k, l]) => (
+        {([["metrics", "Overview"], ["upstreams", "Providers"], ["errors", "Errors"], ["transactions", "Transactions"], ["request", "Find a request"]] as [Tab, string][]).map(([k, l]) => (
           // A request in the URL is the tab's it was opened on (`?request=`): another tab drops it.
           <button key={k} onClick={() => pickTab(k)} style={{
             whiteSpace: "nowrap", flexShrink: 0,
@@ -199,7 +199,7 @@ export function MetricsView() {
           <span style={{ fontSize: 13, color: "var(--text-2)" }}>
             Router <strong className="gw-mono" style={{ color: "var(--text)" }}>{activeRouter.id}</strong>
             {scopeUnavailable
-              ? ` - its upstreams and failed attempts are filtered to what it declares, and the rest of the page to ${activeRouter.chainName}, its chain. Panels that aggregate by chain can't go further: no metric says which router served a request, so a second router on ${activeRouter.chainName} would be counted in with it.`
+              ? ` - its providers and failed attempts are filtered to what it declares, and the rest of the page to ${activeRouter.chainName}, its chain. Panels that aggregate by chain can't go further: no metric says which router served a request, so a second router on ${activeRouter.chainName} would be counted in with it.`
               : " - every panel is scoped to it."}
           </span>
           <span style={{ flex: 1 }} />

@@ -143,7 +143,7 @@ export function ChainDetail({ r, onChainClick, win, tile: selKey, onTile: setSel
           )}
         </div>
         <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-end" }}>
-          <button onClick={(e) => { e.stopPropagation(); onChainClick(r.spec); }} style={{ border: "none", background: "none", color: "var(--brand)", cursor: "pointer", fontSize: 12, fontWeight: 600, fontFamily: "inherit", padding: 0 }}>View upstreams →</button>
+          <button onClick={(e) => { e.stopPropagation(); onChainClick(r.spec); }} style={{ border: "none", background: "none", color: "var(--brand)", cursor: "pointer", fontSize: 12, fontWeight: 600, fontFamily: "inherit", padding: 0 }}>View providers →</button>
         </div>
       </div>
     </td>

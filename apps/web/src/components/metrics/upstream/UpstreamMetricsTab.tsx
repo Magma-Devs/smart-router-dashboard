@@ -130,7 +130,7 @@ export function UpstreamMetricsTab({ timeWindow, chainFilter, selected = null, l
               })()}
             </PMStat>
 
-            <PMStat label="Request success rate" tip={"**Requests this upstream answered** as a share of all requests routed to it - i.e. **success rate**, not wall-clock uptime or an SLA figure.\n\nIt is measured from real traffic, so it is empty until the router routes something here. The router's own block polls are reported separately below.\n\nThe large figure follows the window above; 1h / 24h / 7d are shown for context."}>
+            <PMStat label="Request success rate" tip={"**Requests this provider answered** as a share of all requests routed to it - i.e. **success rate**, not wall-clock uptime or an SLA figure.\n\nIt is measured from real traffic, so it is empty until the router routes something here. The router's own block polls are reported separately below.\n\nThe large figure follows the window above; 1h / 24h / 7d are shown for context."}>
               {hasData && availPct != null ? (
                 <>
                   <div className="gw-mono gw-tnum" style={{ fontSize: 26, fontWeight: 700, lineHeight: 1, color: availCol(availPct) }}>{availPct.toFixed(2)}%</div>
@@ -168,7 +168,7 @@ export function UpstreamMetricsTab({ timeWindow, chainFilter, selected = null, l
               ) : <PMNoVal />}
             </PMStat>
 
-            <PMStat label="Latency" tip={"Typical response time for this upstream.\n\nThe large figure is the **median** (≈ the average request); **p95 / p99** are the tail percentiles."}>
+            <PMStat label="Latency" tip={"Typical response time for this provider.\n\nThe large figure is the **median** (≈ the average request); **p95 / p99** are the tail percentiles."}>
               {hasData ? (
                 <>
                   <div className="gw-mono gw-tnum" style={{ fontSize: 26, fontWeight: 700, lineHeight: 1 }}>{detail?.p50Ms != null ? Math.round(detail.p50Ms) : "—"}<span style={{ fontSize: 13, color: "var(--text-3)", fontWeight: 500 }}> ms</span></div>
@@ -181,7 +181,7 @@ export function UpstreamMetricsTab({ timeWindow, chainFilter, selected = null, l
               ) : <PMNoVal />}
             </PMStat>
 
-            <PMStat label="Error rate" tip="Share of requests to this upstream that **failed before** Smart Router retried or failed over.">
+            <PMStat label="Error rate" tip="Share of requests to this provider that **failed before** Smart Router retried or failed over.">
               {hasData ? (
                 <>
                   <div className="gw-mono gw-tnum" style={{ fontSize: 26, fontWeight: 700, lineHeight: 1, color: upstreamMetricColor(pm.health, errPct == null ? "var(--text-4)" : errPct < 0.5 ? "var(--ok)" : errPct < 1.5 ? "var(--warn)" : "var(--err)") }}>{errPct != null ? errPct.toFixed(2) + "%" : "—"}</div>
