@@ -278,6 +278,15 @@ jobs:
             echo "::error::pulled a $ARCH image on an arm64 runner"
             exit 1
           fi
+          # Scan the exact pulled digest before publishing any branch/release
+          # tag. Tool and checksum are pinned; DB/download failures fail closed.
+          curl --fail --silent --show-error --location --retry 2 \
+            https://github.com/aquasecurity/trivy/releases/download/v0.76.2/trivy_0.76.2_Linux-ARM64.tar.gz \
+            --output "$RUNNER_TEMP/trivy.tar.gz"
+          printf '%s  %s\n' ab9d51f86e6a5fb936f605faff6b593ac51bc378fff4d3e8b9d58358b9c367c3 "$RUNNER_TEMP/trivy.tar.gz" | sha256sum --check --strict -
+          tar -xzf "$RUNNER_TEMP/trivy.tar.gz" -C "$RUNNER_TEMP" trivy
+          "$RUNNER_TEMP/trivy" image --image-src docker --scanners vuln \
+            --no-progress --severity HIGH,CRITICAL --exit-code 1 --timeout 5m "$IMAGE"
           # Exercise the built runtime, including its default UID, before the
           # app health check. Bundled npm is unnecessary production code and
           # previously carried advisories outside the workspace lockfile.
