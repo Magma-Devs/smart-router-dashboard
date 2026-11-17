@@ -1,6 +1,87 @@
 import { test, expect, signInThroughUi, enrolledMember } from "../support/fixtures.js";
-import { apiCall, inviteMember } from "../support/api.js";
+import { apiCall, inviteMember, nextClientIp } from "../support/api.js";
 import { API_URL } from "../support/env.js";
+
+test.beforeEach(async ({ context }) => {
+  // Context options can be reused with the worker. Give each flow its own
+  // ingress client address without changing the production rate limits.
+  await context.setExtraHTTPHeaders({ "x-forwarded-for": nextClientIp() });
+});
+
+test("router-scoped questions preserve both filter axes through panel, full view and reload", async ({
+  page,
+  operator,
+}) => {
+  await page.route("**/api/config/routers", (route) =>
+    route.fulfill({
+      json: {
+        routers: ["eth-primary", "eth-secondary"].map((id) => ({
+          id,
+          spec: "ETH1",
+          network: "mainnet",
+          pathBased: false,
+          customUrlPrefix: null,
+          localPort: null,
+          localPorts: {},
+          publicUrls: {},
+          interfaces: ["jsonrpc"],
+          nodes: [],
+        })),
+      },
+    }),
+  );
+  await page.route("**/api/metrics/routers", (route) =>
+    route.fulfill({
+      json: {
+        label: "service",
+        routers: ["eth-primary-router", "eth-secondary-router"],
+      },
+    }),
+  );
+  const member = await enrolledMember(
+    await inviteMember(operator.token, {
+      email: "ask.router@example.test",
+      name: "Router Reader",
+      password: "router-chose-this-7821",
+      role: "read_only",
+    }),
+  );
+  await signInThroughUi(page, member);
+  await page.goto("/upstreams");
+  await page.getByRole("button", { name: "Filter by router" }).click();
+  await page.getByRole("button", { name: /eth-primary/ }).click();
+  await page.getByRole("button", { name: "Ask your data" }).click();
+  const panel = page.getByRole("complementary", { name: "Ask your data" });
+  await panel.getByLabel("Ask a question").fill("ROUTER_CONTEXT_FIXTURE selected router");
+  const submission = page.waitForRequest(
+    (request) =>
+      request.method() === "POST" && /\/api\/ask\/chats\/[^/]+\/runs$/.test(request.url()),
+  );
+  await panel.getByRole("button", { name: "Send", exact: true }).click();
+  const first = await submission;
+  expect(first.postDataJSON().context).toMatchObject({
+    page: "upstreams",
+    chain: "ETH1",
+    router: "eth-primary-router",
+    routerId: "eth-primary",
+  });
+  expect((await first.response())?.status()).toBe(200);
+  await expect(panel.getByText("Three authorized fixture targets were returned.")).toBeVisible();
+  await panel.getByRole("button", { name: "Open full chat" }).click();
+  await page.waitForURL(/\/ask\?chat=/);
+  await page.reload();
+  await expect(page.getByText("Three authorized fixture targets were returned.")).toBeVisible();
+  await page.getByLabel("Ask a question").fill("ROUTER_CONTEXT_FIXTURE follow up");
+  const followUp = page.waitForRequest(
+    (request) =>
+      request.method() === "POST" && /\/api\/ask\/chats\/[^/]+\/runs$/.test(request.url()),
+  );
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  const second = await followUp;
+  expect(second.postDataJSON().context).toEqual(first.postDataJSON().context);
+  expect((await second.response())?.status()).toBe(200);
+  await expect(page.getByRole("article", { name: "Answer" })).toHaveCount(2);
+});
 
 test("panel/full chat preserves history, drafts, evidence, search, copy and mobile focus", async ({
   page,
@@ -96,6 +177,7 @@ test("panel/full chat preserves history, drafts, evidence, search, copy and mobi
   const stored = await context.storageState();
   const freshContext = await browser.newContext({
     storageState: { cookies: stored.cookies, origins: [] },
+    extraHTTPHeaders: { "x-forwarded-for": nextClientIp() },
   });
   try {
     const fresh = await freshContext.newPage();
