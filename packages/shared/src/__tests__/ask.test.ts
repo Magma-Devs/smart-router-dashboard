@@ -22,6 +22,23 @@ const from = "2026-11-16T09:00:00Z";
 const to = "2026-11-16T10:00:00Z";
 
 describe("Ask wire contract", () => {
+  it("accepts both router axes while rejecting a router used as a credential override", () => {
+    const context = {
+      page: "metrics",
+      chain: "ETH1",
+      router: "eth-primary-router",
+      routerId: "eth-primary",
+      from,
+      to,
+    };
+    expect(askPageContextSchema.parse(context)).toEqual(context);
+    expect(
+      askPageContextSchema.safeParse({ ...context, router: "https://other.test/token" }).success,
+    ).toBe(false);
+    expect(
+      askPageContextSchema.safeParse({ ...context, routerId: { tenantId: "other" } }).success,
+    ).toBe(false);
+  });
   it("accepts bounded plain-text answer content and optional stats/points", () => {
     expect(askAnswerContentSchema.parse(answer)).toEqual(answer);
     expect(

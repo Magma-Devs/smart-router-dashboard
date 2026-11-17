@@ -95,6 +95,8 @@ export const askPageContextSchema = z
   .object({
     page: z.enum(["overview", "dashboard", "metrics", "upstreams", "ask"]),
     chain: token.optional(),
+    /** Collector label scope and config identity are distinct router axes. */
+    router: token.optional(),
     routerId: token.optional(),
     from: instant,
     to: instant,
