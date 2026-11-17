@@ -1,7 +1,7 @@
 # MAG-4934 runtime preparation evidence
 
 The [17 November requirements and security review](REQUIREMENTS-SECURITY-REVIEW.md)
-maps all current ticket requirements to PRs and checks, records three reproduced
+maps all current ticket requirements to PRs and checks, records four reproduced
 fixes and the remaining deployed acceptance gates.
 
 The [native provider and internal runtime follow-up](LIVE.md) supersedes the

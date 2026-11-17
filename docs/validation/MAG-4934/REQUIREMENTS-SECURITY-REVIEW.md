@@ -74,6 +74,19 @@ MAG-3702 is historical provisioning and cannot prove current access.
    `execute_operation`. Quotes and comments are treated as data. The model is told
    this supported dialect. This is intentionally not a general query parser or a
    cardinality/CPU bound; the source must enforce sample/memory/time quotas.
+4. **Production images contain advisories outside the workspace lockfile.**
+   Trivy 0.76.2 with the 17 November vulnerability database reports 20 findings
+   in each published arm64 image: six high, 13 medium and one low. Nineteen are
+   in the base image's unused npm tree; the other is the Alpine zlib package.
+   This is package detection, not proof of an exploitable application path.
+   A minimal pinned runtime copies the target Node binary/entrypoint without
+   npm, and installs pinned target-architecture libraries with zlib 1.4-r0.
+   Host apk prepares the target root with scripts disabled, preserving the
+   existing no-QEMU/final-stage-no-RUN build contract. Both amd64 and arm64
+   runtime roots build and scan with **zero** findings. Native non-root Node,
+   gzip and unauthenticated TLS to the Bedrock host pass. The full built images
+   must pass the new exact-digest CI vulnerability scan before tag publication;
+   the final PR checkpoint records their results separately from base-root scans.
 
 ## Security verification scope
 
@@ -109,9 +122,13 @@ Final local verification on the combined candidate:
 - GitHub CodeQL alert inventory contains no open managed Ask finding. One open
   historical Python logging alert belongs to `backend/app/api/routes/auth.py`,
   outside this TypeScript feature. New commit checks must pass before merge.
+- Exact-image CI now pins Trivy 0.76.2 and its Linux arm64 release checksum,
+  scans vulnerabilities before publishing tags and blocks high/critical findings
+  or scanner/database failures. The runtime smoke also checks the image's actual
+  default non-root UID and absence of bundled npm. Manual scans record every
+  severity; a successful high/critical gate alone does not imply zero findings.
 - No third-party hosted security scan, penetration test of a deployed customer,
-  container/OS vulnerability scan, cloud-wide IAM audit or restored-backup test
-  is represented by these checks.
+  cloud-wide IAM audit or restored-backup test is represented by these checks.
 
 ## Operational failure modes that remain acceptance gates
 
