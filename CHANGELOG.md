@@ -21,9 +21,9 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   the logs are read once. The request is in the URL (`?tab=request&request=`),
   so a link opens it; on the Metrics page the search keeps your place in
   history, so Back returns to the view before it. A request ID from a router
-  on smart-router v1.6.1 or later is found in about a second whatever the
-  window; a hash or a caller's ID is read over the page's window, with
-  "Search the last 30 days" offered when it isn't there.
+  on smart-router v1.6.1 or later is found in about a second; a hash or a
+  caller's ID is read over the last 30 days. The search doesn't follow the
+  page's time range, so it never says it looked only in "the last 12 hours".
 
 ### Changed
 
