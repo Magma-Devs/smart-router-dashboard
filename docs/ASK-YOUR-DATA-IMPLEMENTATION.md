@@ -63,13 +63,18 @@ budget and execution. MAG-4751 self-hosted distribution remains a separate produ
 - Answers have bounded summary/sections and server-authored source/time evidence.
   Tool errors, no data, partial coverage and truncation remain distinguishable.
   Render plain text; no model-authored HTML, URLs or executable content.
+- PromQL/LogQL accept bounded literal range selectors; advanced subqueries,
+  duration arithmetic, offset and @ modifiers are denied before MCP dispatch.
+  Source-side cardinality, memory, sample and execution limits remain necessary.
 - Personal history is private to its person/customer. Internal prompt access uses
   explicit trusted Magma staff identity, never the customer's admin role or email
   domain alone. No public/internal endpoint accepts a customer override.
 - Chats and prompt content expire after 90 days or a shorter customer policy.
   Retention is a leased, observable scheduled job. Minimal accounting without
   prompt/answer content can survive for reconciliation; deletion must not reset
-  monthly spend. Runtime secrets and credential-shaped text are never logged.
+  monthly spend. Runtime secrets and supported credential formats are redacted
+  before storage/model use; collector-side redaction remains necessary for other
+  secret formats and customer-specific sensitive data.
 
 ## API contract
 
@@ -94,6 +99,10 @@ becomes an assistant message claiming success. List cursors are validated and
 bounded; direct IDs always require ownership checks.
 
 ## Acceptance ledger
+
+The [17 November requirement-by-requirement and security review](validation/MAG-4934/REQUIREMENTS-SECURITY-REVIEW.md)
+maps all ticket clauses to code, tests and PRs, records reproduced fixes, and
+separates implemented behavior from the remaining deployed acceptance gates.
 
 An item is checked only with corresponding observed evidence. Each slice records
 dated commands/results and remaining limits; opening or merging its PR does not

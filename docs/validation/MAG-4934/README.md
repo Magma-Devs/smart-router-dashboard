@@ -1,5 +1,9 @@
 # MAG-4934 runtime preparation evidence
 
+The [17 November requirements and security review](REQUIREMENTS-SECURITY-REVIEW.md)
+maps all current ticket requirements to PRs and checks, records three reproduced
+fixes and the remaining deployed acceptance gates.
+
 The [native provider and internal runtime follow-up](LIVE.md) supersedes the
 expired-SSO/provider-access status below. The original slice's local checks
 remain recorded here; live follow-up evidence does not imply a deployed pilot.
