@@ -1,0 +1,11 @@
+-- MAG-2788 — an audit token can carry an expiry.
+--
+-- The token that reads the audit log also reads the router's cross-validation
+-- records, and that ticket asks for "an expired or revoked token is
+-- rejected". Optional, so every token minted before this keeps working until
+-- it is revoked, as it did.
+--
+-- The journal entry's `when` sits after every entry before it, because drizzle
+-- silently skips an entry whose `when` is not strictly later than the one
+-- before it.
+ALTER TABLE "audit_tokens" ADD COLUMN "expires_at" timestamp with time zone;

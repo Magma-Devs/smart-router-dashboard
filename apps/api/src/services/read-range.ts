@@ -106,6 +106,31 @@ export async function readStart(
   return startMs;
 }
 
+/**
+ * `readStart` read the other way: where a read that starts at `startMs` and
+ * reads forward stops - `endMs` when the stretch between fits the budget, else
+ * the oldest part that does. A forward reader's next read starts where this
+ * one stopped.
+ */
+export async function readStop(
+  loki: LokiClient,
+  selector: string,
+  startMs: number,
+  endMs: number,
+  budget = LOG_READ_BUDGET_BYTES,
+): Promise<number> {
+  let stopMs = endMs;
+  for (let round = 0; round < SIZING_ROUNDS; round++) {
+    const spanMs = stopMs - startMs;
+    if (spanMs <= MIN_READ_SPAN_MS) return stopMs;
+    const bytes = await loki.volume(selector, startMs, stopMs);
+    if (bytes === null) return Math.min(stopMs, startMs + UNSIZED_READ_SPAN_MS);
+    if (bytes <= budget) return stopMs;
+    stopMs = Math.min(stopMs, startMs + Math.max(MIN_READ_SPAN_MS, (spanMs * budget) / bytes));
+  }
+  return stopMs;
+}
+
 /** Past a line's time, still before the next line: `tsMs` carries ~0.25 µs of float error. */
 const SEAM_MS = 0.001;
 

@@ -268,15 +268,21 @@ credential that can also edit routing fails their vendor review.
   shown again — if it is lost, revoke it and mint another.
 - **Recognisable on sight**: every token starts with `srdash_audit_`, so secret
   scanners and push protection catch one that lands in a config repo.
-- **Reads the audit log and nothing else, by construction**: the auth gate
-  allows a token exactly `GET`/`HEAD` under `/api/audit/`, excluding the
+- **Reads under `/api/audit/` and nothing else, by construction**: the auth
+  gate allows a token exactly `GET`/`HEAD` under `/api/audit/`, excluding the
   token-management routes themselves — a token that could mint another token
-  would be an escalation dressed as a read. Everything else answers 403.
+  would be an escalation dressed as a read. Everything else answers 403. Under
+  that prefix are the audit log and the router's
+  [cross-validation records](./CROSS-VALIDATION-RECORDS.md) (MAG-2788).
 - **Listed with last-used** (`GET /api/audit/tokens`, admin): name, suffix,
-  creator, last use time and address, revocation. Never the hash.
+  creator, last use time and address, revocation, expiry. Never the hash.
 - **Revocable** (`DELETE /api/audit/tokens/:id`, admin) and dead from that
   moment. Removing the admin who created it, or changing them to any other
   role, revokes it too.
+- **Optionally expiring**: `expiresAt` (RFC 3339, in the future) on creation,
+  and the token answers 401 from then on, like a revoked one. Without it, it
+  works until revoked. Rotate by minting the new token before revoking the
+  old one.
 - Its **lifecycle is logged** — `apikey.created` / `apikey.deleted` rows name
   the admin and the token — while its heartbeat lives on the row itself. A
   five-minute puller does not get to bury the log in rows that only say it is
@@ -291,4 +297,4 @@ credential that can also edit routing fails their vendor review.
 | Routes           | `apps/api/src/routes/audit.ts`, `routes/audit-tokens.ts` |
 | Token principal  | `apps/api/src/plugins/auth.ts` (`auditTokenMayReach`)    |
 | Viewer           | `apps/web/src/components/audit/`                         |
-| Migrations       | `0004_audit.sql`, `0008_audit_xact.sql`, `0009_audit_tokens.sql` |
+| Migrations       | `0004_audit.sql`, `0008_audit_xact.sql`, `0009_audit_tokens.sql`, `0010_audit_token_expiry.sql` |

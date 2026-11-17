@@ -24,6 +24,7 @@ import { sendApiError } from "../plugins/error-handler.js";
 
 interface CreateBody {
   name?: string;
+  expiresAt?: string;
 }
 
 /** Strict 8-4-4-4-12, not `format: "uuid"` — Ajv's format admits `urn:uuid:`
@@ -55,6 +56,7 @@ function publicToken(row: Awaited<ReturnType<typeof listAuditTokens>>[number]) {
     lastUsedIp: row.lastUsedIp,
     revokedAt: row.revokedAt?.toISOString() ?? null,
     revokedBy: row.revokedByName,
+    expiresAt: row.expiresAt?.toISOString() ?? null,
   };
 }
 
@@ -101,6 +103,11 @@ export async function auditTokenRoutes(app: FastifyInstance) {
               maxLength: NAME_MAX,
               description: 'What this token is for, e.g. "SIEM pull"',
             },
+            expiresAt: {
+              type: "string" as const,
+              description:
+                "When the token stops working, RFC 3339, in the future (optional - without it the token works until revoked)",
+            },
           },
         },
       },
@@ -114,6 +121,20 @@ export async function auditTokenRoutes(app: FastifyInstance) {
       const name = request.body?.name?.trim();
       if (!name) return sendApiError(reply, 400, "`name` is required");
 
+      // A token born expired would be shown once and never work - refused
+      // rather than minted, so the mistake is seen when it is made.
+      let expiresAt: Date | null = null;
+      const rawExpiry = request.body?.expiresAt;
+      if (rawExpiry !== undefined && rawExpiry !== "") {
+        expiresAt = new Date(rawExpiry);
+        if (Number.isNaN(expiresAt.getTime())) {
+          return sendApiError(reply, 400, "`expiresAt` is not an RFC 3339 timestamp");
+        }
+        if (expiresAt.getTime() <= Date.now()) {
+          return sendApiError(reply, 400, "`expiresAt` must be in the future");
+        }
+      }
+
       // One transaction: a token whose creation the log missed is exactly the
       // credential an audit of the audit system cannot explain. Inside a tx the
       // writer propagates failure, so no row means no token.
@@ -122,6 +143,7 @@ export async function auditTokenRoutes(app: FastifyInstance) {
           name,
           createdBy: admin.id,
           createdByName: admin.user.name ?? admin.email,
+          expiresAt,
         });
         await createAuditWriter(db, {
           onViolation: (v) => request.log.error({ audit: v }, "audit event violated the catalog"),

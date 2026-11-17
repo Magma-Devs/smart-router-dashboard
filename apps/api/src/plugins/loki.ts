@@ -4,6 +4,7 @@ import { LokiClient } from "../services/loki-client.js";
 import { TransactionsService } from "../services/transactions.js";
 import { ErrorRequestsService } from "../services/error-requests.js";
 import { TransactionsOverTimeService } from "../services/transactions-over-time.js";
+import { CrossValidationRecordsService } from "../services/cross-validation-records.js";
 import { config, lokiUrl } from "../config.js";
 
 declare module "fastify" {
@@ -11,13 +12,15 @@ declare module "fastify" {
     transactions: TransactionsService;
     transactionsOverTime: TransactionsOverTimeService;
     errorRequests: ErrorRequestsService;
+    crossValidationRecords: CrossValidationRecordsService;
   }
 }
 
 /**
  * Decorate the app with the services that read the router's logs from Loki
  * when LOKI_URL is set: the Transactions tab and its chart, the Errors tab's
- * request list and the Failed requests card's count.
+ * request list, the Failed requests card's count and the cross-validation
+ * records.
  * Registered after the Prometheus plugin: they share its values-file service
  * to map upstreams to chains, and the chart reads the store's recorded counts
  * first.
@@ -37,4 +40,5 @@ export const lokiPlugin = fp(async (app: FastifyInstance) => {
   // The Failed requests card reads the counts the fleet Loki's ruler records
   // into the metrics store when they are there (RECORDED_OUTCOMES).
   app.decorate("errorRequests", new ErrorRequestsService(loki, selector, app.routerConfig, undefined, app.prom));
+  app.decorate("crossValidationRecords", new CrossValidationRecordsService(loki, selector));
 });

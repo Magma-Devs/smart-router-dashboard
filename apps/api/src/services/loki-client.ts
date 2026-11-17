@@ -19,6 +19,8 @@ export interface LokiLine {
    * millisecond, at different levels - and each level is its own stream.
    */
   tsMs: number;
+  /** The timestamp exactly as Loki reported it, in nanoseconds: `tsMs` can't be resumed from without float error. */
+  ns?: string;
   line: string;
   /** Its stream's labels, as the log agent set them: a router's carry its `chain`. */
   labels?: Record<string, string>;
@@ -93,12 +95,23 @@ export class LokiClient {
     limit: number,
     direction: "forward" | "backward",
   ): Promise<LokiLine[] | null> {
+    return this.queryRangeNs(query, msToNs(startMs), msToNs(endMs), limit, direction);
+  }
+
+  /** `queryRange` between two unix-ns times, as Loki takes them: from `startNs`, before `endNs`. */
+  async queryRangeNs(
+    query: string,
+    startNs: string,
+    endNs: string,
+    limit: number,
+    direction: "forward" | "backward",
+  ): Promise<LokiLine[] | null> {
     const base = new URL(this.baseUrl);
     if (!base.pathname.endsWith("/")) base.pathname += "/";
     const url = new URL("loki/api/v1/query_range", base);
     url.searchParams.set("query", query);
-    url.searchParams.set("start", msToNs(startMs));
-    url.searchParams.set("end", msToNs(endMs));
+    url.searchParams.set("start", startNs);
+    url.searchParams.set("end", endNs);
     url.searchParams.set("limit", String(limit));
     url.searchParams.set("direction", direction);
 
@@ -118,7 +131,7 @@ export class LokiClient {
         return null;
       }
       return parsed.data.result.flatMap((s) =>
-        s.values.map(([ns, line]) => ({ tsMs: Number(ns) / 1e6, line, ...(s.stream ? { labels: s.stream } : {}) })),
+        s.values.map(([ns, line]) => ({ tsMs: Number(ns) / 1e6, ns, line, ...(s.stream ? { labels: s.stream } : {}) })),
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

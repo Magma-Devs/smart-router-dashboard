@@ -80,6 +80,10 @@ declare module "@fastify/jwt" {
  *
  * The token-management routes are deliberately excluded: a token that could
  * mint another token would be an escalation dressed as a read.
+ *
+ * The router's cross-validation records (MAG-2788) are served under the same
+ * prefix, so the one token a security team holds reads both - the ticket asks
+ * for the audit token, not a second permission system.
  */
 export function auditTokenMayReach(method: string, url: string): boolean {
   if (method !== "GET" && method !== "HEAD") return false;
@@ -332,7 +336,7 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
           reply,
           403,
           AUTH_ERROR_CODES.forbidden,
-          "An audit token may only read the audit log",
+          "An audit token may only read under /api/audit: the audit log and the cross-validation records",
         );
       }
       const db = app.db;

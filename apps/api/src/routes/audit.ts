@@ -64,11 +64,13 @@ interface AuditEventsQuery {
  * host would halve each other. Keying on the token identity fixes both, and
  * falls back to the address for a person clicking around.
  */
+export const auditReadRateLimitKey = (request: FastifyRequest): string =>
+  request.auditToken ? `audit-token:${request.auditToken.id}` : `ip:${request.ip}`;
+
 const AUDIT_READ_RATE_LIMIT = {
   max: 120,
   timeWindow: "1 minute",
-  keyGenerator: (request: FastifyRequest): string =>
-    request.auditToken ? `audit-token:${request.auditToken.id}` : `ip:${request.ip}`,
+  keyGenerator: auditReadRateLimitKey,
 };
 
 /** The filters both read surfaces accept. Named so the export cannot drift
