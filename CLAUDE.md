@@ -327,7 +327,12 @@ apps/web/                 @sr/web — Next.js 16 App Router (:3000)
   src/
     app/(app)/          metrics · upstreams · team · audit · account
                         (Shell layout; the dashboard opens on /metrics,
-                        HOME_PATH in lib/home-path.ts)
+                        HOME_PATH in lib/home-path.ts). The screen names
+                        them by their job, not their paths: /metrics is
+                        **Chains**, its `tab=upstreams` is **Providers**,
+                        /upstreams is **Setup**, and every visible
+                        "upstream" says "provider"; the paths and query
+                        keys stay, so links keep working
     app/standalone/     chrome-less Metrics page (sharing/embedding)
     app/api/config/     runtime-config route (DASHBOARD_API_URL → browser)
     components/

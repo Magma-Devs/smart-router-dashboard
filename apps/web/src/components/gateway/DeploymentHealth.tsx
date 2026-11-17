@@ -104,7 +104,7 @@ export function DeploymentHealthBadge({
               </Link>
             );
           })}
-          {more > 0 && <div style={{ padding: "6px 10px 8px 24px", fontSize: 11.5, color: "var(--text-4)" }}>{more} more on the Upstreams tab</div>}
+          {more > 0 && <div style={{ padding: "6px 10px 8px 24px", fontSize: 11.5, color: "var(--text-4)" }}>{more} more on the Providers tab</div>}
         </div>
       )}
     </div>

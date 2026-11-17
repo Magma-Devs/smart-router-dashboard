@@ -70,7 +70,7 @@ export function resolveDirectPath(args: {
   if (method === "" || method === endpoint) return { ok: true, prefix: "" };
   return {
     ok: false,
-    error: `This upstream is pinned to ${endpoint} in the values file, and this method is served under ${method}. Pick an upstream on ${method}, or send it through the router.`,
+    error: `This provider is pinned to ${endpoint} in the values file, and this method is served under ${method}. Pick a provider on ${method}, or send it through the router.`,
   };
 }
 
@@ -93,7 +93,7 @@ export function relayPayloadFor(args: {
 
   if (resolved.transport === "ws") {
     if (target.wsIndex === null) {
-      return { ok: false, error: "This upstream has no WebSocket url in the values file." };
+      return { ok: false, error: "This provider has no WebSocket url in the values file." };
     }
     const wsPath = resolveDirectPath({
       methodPath: methodInternalPath,
@@ -117,10 +117,10 @@ export function relayPayloadFor(args: {
   }
 
   if (resolved.transport !== "http") {
-    return { ok: false, error: "The relay can't dial gRPC upstreams." };
+    return { ok: false, error: "The relay can't dial gRPC providers." };
   }
   if (target.httpIndex === null) {
-    return { ok: false, error: "This upstream has no HTTP url in the values file." };
+    return { ok: false, error: "This provider has no HTTP url in the values file." };
   }
   const resolvedPath = resolveDirectPath({
     methodPath: methodInternalPath,

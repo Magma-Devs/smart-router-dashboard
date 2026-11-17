@@ -53,7 +53,7 @@ export function RouterFilterSelect() {
       <button onClick={() => setOpen((o) => !o)}
         aria-label="Filter by router"
         title={scopeUnavailable
-          ? "Filters the upstream roster, which is keyed per upstream. Chain-level panels stay deployment-wide: the router labels its series with the chain, and this collector attaches no per-router label to split them."
+          ? "Filters the provider roster, which is keyed per provider. Chain-level panels stay deployment-wide: the router labels its series with the chain, and this collector attaches no per-router label to split them."
           : undefined}
         style={{ height: 32, padding: "0 9px", borderRadius: 8, border: "1px solid var(--line-2)", background: "var(--surface)", color: "var(--text)", fontSize: 12, fontFamily: "inherit", cursor: "pointer", display: "flex", alignItems: "center", gap: 7 }}>
         <IconRouter />
@@ -98,7 +98,7 @@ function hintFor(r: { id: string; spec: string; chainName: string; upstreams: nu
   const namesItsChain = fold(r.id) === fold(r.spec) || fold(r.id) === fold(r.chainName);
   const parts = [];
   if (!namesItsChain) parts.push(r.chainName);
-  parts.push(`${r.upstreams} upstream${r.upstreams === 1 ? "" : "s"}`);
+  parts.push(`${r.upstreams} provider${r.upstreams === 1 ? "" : "s"}`);
   return parts.join(" · ");
 }
 

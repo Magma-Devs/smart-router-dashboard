@@ -33,7 +33,7 @@ export function UpstreamLogo({ id, size = 28 }: { id?: string | null; size?: num
     <img
       src={`https://logo.clearbit.com/${domain}`}
       width={size} height={size}
-      alt={id ?? "upstream"}
+      alt={id ?? "provider"}
       onError={() => setFailed(true)}
       style={{ borderRadius: r, flexShrink: 0, display: "block", objectFit: "cover",
         background: "var(--surface-2)" }}

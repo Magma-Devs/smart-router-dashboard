@@ -93,7 +93,7 @@ describe("relayPayloadFor", () => {
     const noWs = { ...TARGET, wsIndex: null, wsHost: null };
     expect(relayPayloadFor({ resolved: WS, paramsText: "", iface: "jsonrpc-ws", target: noWs })).toEqual({
       ok: false,
-      error: "This upstream has no WebSocket url in the values file.",
+      error: "This provider has no WebSocket url in the values file.",
     });
     const noHttp = { ...TARGET, httpIndex: null, httpHost: null };
     expect(relayPayloadFor({ resolved: POST, paramsText: "", iface: "jsonrpc", target: noHttp })).toMatchObject({

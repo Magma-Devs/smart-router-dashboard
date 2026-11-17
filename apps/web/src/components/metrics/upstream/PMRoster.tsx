@@ -20,7 +20,7 @@ import { Refreshing, Skel, SkelRows } from "@/components/gateway/Skel";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 import { useRouterFilter } from "@/hooks/use-router-options";
 
-const BLOCK_TIP = "**The head this upstream reports** - `rpc_endpoint_latest_block`, its own tip rather than the router's.\n\n**Under it**, how far that is from the chain\u2019s latest block, the highest any of its providers reports: \"latest\", or how many blocks behind and how long that is.\n\n**Click a height** to open it on the chain\u2019s block explorer and check it against the public chain. Chains with no verified block page show the number plain - the chain name still opens their explorer.";
+const BLOCK_TIP = "**The head this provider reports** - `rpc_endpoint_latest_block`, its own tip rather than the router's.\n\n**Under it**, how far that is from the chain\u2019s latest block, the highest any of its providers reports: \"latest\", or how many blocks behind and how long that is.\n\n**Click a height** to open it on the chain\u2019s block explorer and check it against the public chain. Chains with no verified block page show the number plain - the chain name still opens their explorer.";
 
 /**
  * A roster row's identity — one per (endpoint × chain). A vendor reuses its
@@ -119,12 +119,12 @@ export function PMRoster({ rows, activeKey, onSelect, timeWindow, showChain = tr
   return (
     <div className="gw-card" style={{ padding: 0, overflow: "hidden", marginBottom: 18 }}>
       <div style={{ padding: "11px 14px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 6 }}>
-        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-2)" }}>All upstreams</span>
-        <Tip text="Every upstream × chain you've configured. Status reports current upstream health. Request metrics reflect the selected time window. Click a row to drill into its full metrics below." />
+        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-2)" }}>All providers</span>
+        <Tip text="Every provider × chain you've configured. Status reports current provider health. Request metrics reflect the selected time window. Click a row to drill into its full metrics below." />
         <div style={{ flex: 1 }} />
         <span style={{ fontSize: 11, color: "var(--text-3)", display: "inline-flex", alignItems: "center", gap: 7 }}>
-          {loading ? <Skel w={168} h={9} /> : <>{rows.length} upstream{rows.length === 1 ? "" : "s"} · request metrics over {timeWindow}</>}
-          <Refreshing show={!loading && refreshing} label="Refreshing upstreams" />
+          {loading ? <Skel w={168} h={9} /> : <>{rows.length} provider{rows.length === 1 ? "" : "s"} · request metrics over {timeWindow}</>}
+          <Refreshing show={!loading && refreshing} label="Refreshing providers" />
         </span>
       </div>
       {/* Scrolls sideways when the page is narrower than its columns, so the
@@ -133,7 +133,7 @@ export function PMRoster({ rows, activeKey, onSelect, timeWindow, showChain = tr
       <table className="gw-table">
         <thead>
           <tr>
-            <ThCol sortKey="upstream" sort={sort} onSort={onSort}>Upstream</ThCol>
+            <ThCol sortKey="upstream" sort={sort} onSort={onSort}>Provider</ThCol>
             <ThCol sortKey="router" sort={sort} onSort={onSort}>Router</ThCol>
             {showChain && <ThCol sortKey="chain" sort={sort} onSort={onSort}>Chain</ThCol>}
             <ThCol align="right" tip={BLOCK_TIP} sortKey="block" sort={sort} onSort={onSort}>Last reported block</ThCol>
@@ -170,7 +170,7 @@ export function PMRoster({ rows, activeKey, onSelect, timeWindow, showChain = tr
                     <span
                       className="gw-mono"
                       style={{ fontSize: 11, color: "var(--text-2)" }}
-                      title={r.routerIds.length > 1 ? `Declared by ${r.routerIds.join(", ")} - one upstream name, so one series: these numbers are those routers' traffic together` : undefined}
+                      title={r.routerIds.length > 1 ? `Declared by ${r.routerIds.join(", ")} - one provider name, so one series: these numbers are those routers' traffic together` : undefined}
                     >
                       {leadRouter(r.routerIds)}
                     </span>
@@ -233,7 +233,7 @@ export function PMRoster({ rows, activeKey, onSelect, timeWindow, showChain = tr
             { w: 64, align: "right" as const }, { w: 56, align: "right" as const }, { w: 58, align: "right" as const },
           ]} />}
           {!loading && rows.length === 0 && (
-            <tr><td colSpan={showChain ? 8 : 7} style={{ padding: "24px 16px", textAlign: "center", color: "var(--text-4)", fontSize: 13 }}>No upstreams configured yet.</td></tr>
+            <tr><td colSpan={showChain ? 8 : 7} style={{ padding: "24px 16px", textAlign: "center", color: "var(--text-4)", fontSize: 13 }}>No providers configured yet.</td></tr>
           )}
         </tbody>
       </table>

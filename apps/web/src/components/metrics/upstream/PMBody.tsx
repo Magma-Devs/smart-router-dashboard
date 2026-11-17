@@ -278,18 +278,18 @@ export function PMBody({ pm, detail, name, timeWindow, onOpenErrors }: {
       </PMPanel>
 
       <PMPanel full title="Request volume"
-        tip={`Requests per second each upstream served, each point averaging ${averages} before it.\n\n- A gap is a stretch with no data, not zero traffic\n- Cache hits aren't counted: they never reach an upstream`}>
+        tip={`Requests per second each provider served, each point averaging ${averages} before it.\n\n- A gap is a stretch with no data, not zero traffic\n- Cache hits aren't counted: they never reach a provider`}>
         {rpsAll.length ? (
           <ChartRow height={200}
             chart={<LineChart series={ordered.map((u, i) => lineOf(u.upstream, i, rps[i]!))} id={"pmv" + pid} padY={16}
               yDomain={[0, rpsHi > 0 ? rpsHi * 1.1 : 0.01]} niceY yFmt={fmtRps} xs={times} maxGap={maxGap}
               hover={hoverOf((v) => `${fmtRps(v)} rps`)} hoverBox={false} pointLabels {...shared} />}
             legend={<LegendLine rows={nameRows} onFocus={setFocusUp} />} />
-        ) : peersEmpty("rps", `No upstream on ${chainLabel} served a request in this window.`)}
+        ) : peersEmpty("rps", `No provider on ${chainLabel} served a request in this window.`)}
       </PMPanel>
 
       <PMPanel full title="Latency · p95"
-        tip={`The time 95% of requests finished within, each point over ${averages} before it.\n\nA gap means that upstream served no requests then.`}>
+        tip={`The time 95% of requests finished within, each point over ${averages} before it.\n\nA gap means that provider served no requests then.`}>
         {latAll.length ? (
           <>
             <ChartRow height={220}
@@ -302,18 +302,18 @@ export function PMBody({ pm, detail, name, timeWindow, onOpenErrors }: {
               </div>
             )}
           </>
-        ) : peersEmpty("latencyP95", `No upstream on ${chainLabel} served a request with a measured latency in this window.`)}
+        ) : peersEmpty("latencyP95", `No provider on ${chainLabel} served a request with a measured latency in this window.`)}
       </PMPanel>
 
       <PMPanel full title="Latest block"
-        tip={`The block each upstream reports.\n\n- **Climbing together**: in sync\n- **Flat**: stopped syncing\n- **Below the others**: behind - point at the chart to see how many blocks, against the highest tip at that moment`}>
+        tip={`The block each provider reports.\n\n- **Climbing together**: in sync\n- **Flat**: stopped syncing\n- **Below the others**: behind - point at the chart to see how many blocks, against the highest tip at that moment`}>
         {tipAll.length ? (
           <ChartRow height={220}
             chart={<LineChart series={ordered.map((u, i) => lineOf(u.upstream, i, tips[i]!, "linear"))} id={"pmb" + pid} padY={16}
               yDomain={[tipLo - tipPad, tipHi + tipPad]} niceY yFmt={(v) => fmtComma(Math.round(v))} xs={times} maxGap={maxGap}
               hover={hoverOf((v) => fmtComma(Math.round(v)), behindAt)} hoverBox={false} pointLabels {...shared} />}
             legend={<LegendLine rows={nameRows} onFocus={setFocusUp} />} />
-        ) : peersEmpty("latestBlock", `No upstream on ${chainLabel} reported a block in this window.`)}
+        ) : peersEmpty("latestBlock", `No provider on ${chainLabel} reported a block in this window.`)}
       </PMPanel>
     </div>
   );

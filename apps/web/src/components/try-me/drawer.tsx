@@ -991,7 +991,7 @@ export function TryMeDrawer({
    *  The browser can't do this itself: it holds only a masked `scheme://host`,
    *  and upstreams don't answer cross-origin browser calls anyway. */
   const fireDirect = useCallback(async (): Promise<Outcome> => {
-    if (!resolved || directTarget === null) throw new Error("No upstream endpoint to dial.");
+    if (!resolved || directTarget === null) throw new Error("No provider endpoint to dial.");
     const built = relayPayloadFor({
       resolved,
       paramsText,
@@ -1286,13 +1286,13 @@ export function TryMeDrawer({
               }}
               title={
                 onDirect
-                  ? "The upstream's full url (path, query, any API key) lives in the mounted values file and is never sent to the browser."
+                  ? "The provider's full url (path, query, any API key) lives in the mounted values file and is never sent to the browser."
                   : undefined
               }
             >
               {onDirect ? (
                 <>
-                  {directHost ?? "upstream"}
+                  {directHost ?? "provider"}
                   <span style={{ opacity: 0.5 }}>/…</span>
                 </>
               ) : (
@@ -1303,7 +1303,7 @@ export function TryMeDrawer({
               <span
                 className="gw-tag"
                 style={{ fontSize: 10, color: "var(--text-3)", whiteSpace: "nowrap" }}
-                title="There is no url to copy — the dashboard never receives the upstream's full address."
+                title="There is no url to copy — the dashboard never receives the provider's full address."
               >
                 url masked
               </span>
@@ -1367,10 +1367,10 @@ export function TryMeDrawer({
                         t === "upstream" ? !directAvailable : pinRefusal !== null;
                       const hint =
                         t === "router"
-                          ? (pinHint ?? "Send through the router, pinned to this upstream.")
+                          ? (pinHint ?? "Send through the router, pinned to this provider.")
                           : disabled
-                            ? "This upstream has no url for the selected transport in the values file."
-                            : "Send straight to this upstream — the api dials it, no router in the path.";
+                            ? "This provider has no url for the selected transport in the values file."
+                            : "Send straight to this provider — the api dials it, no router in the path.";
                       return (
                         // The tooltip hangs on the wrapper, not the button: a
                         // disabled control takes no pointer events, so a title
@@ -1380,7 +1380,7 @@ export function TryMeDrawer({
                         <button
                           type="button"
                           disabled={disabled}
-                          aria-label={`${t === "router" ? "Via router" : "Direct to upstream"} — ${hint}`}
+                          aria-label={`${t === "router" ? "Via router" : "Direct to provider"} — ${hint}`}
                           onClick={() => setTarget(t)}
                           style={{
                             padding: "3px 10px",
@@ -1398,7 +1398,7 @@ export function TryMeDrawer({
                             background: active ? "rgba(255,57,0,0.12)" : "var(--bg)",
                           }}
                         >
-                          {t === "router" ? "Via router" : "Direct to upstream"}
+                          {t === "router" ? "Via router" : "Direct to provider"}
                         </button>
                         </span>
                       );
@@ -1424,29 +1424,29 @@ export function TryMeDrawer({
                   </>
                 ) : pinRefusal ? (
                   <>
-                    <strong style={{ color: "var(--text)" }}>The router can&apos;t be told to use this upstream.</strong>{" "}
+                    <strong style={{ color: "var(--text)" }}>The router can&apos;t be told to use this provider.</strong>{" "}
                     It matches <span className="gw-mono">lava-select-provider</span> against its primary pool only. A backup is reached
                     solely when every primary is exhausted, and the router picks among the backups itself — so a pinned request comes back{" "}
-                    <span className="gw-mono">-32000 Selected provider not available</span> however healthy this upstream is. Send it{" "}
-                    {directTarget ? "direct to the upstream instead" : "through the router unpinned, or read it on the Upstreams roster"}.
+                    <span className="gw-mono">-32000 Selected provider not available</span> however healthy this provider is. Send it{" "}
+                    {directTarget ? "direct to the provider instead" : "through the router unpinned, or read it on the Providers tab"}.
                   </>
                 ) : selectUpstream && pinCarrier === null ? (
                   <>
                     <strong style={{ color: "var(--text)" }}>A pin doesn&apos;t apply on a WebSocket.</strong>{" "}
-                    The router reads no <span className="gw-mono">lava-select-provider</span> on a WebSocket connection, from any client, so it picks the upstream for this one itself. Switch to HTTP to pin it to{" "}
+                    The router reads no <span className="gw-mono">lava-select-provider</span> on a WebSocket connection, from any client, so it picks the provider for this one itself. Switch to HTTP to pin it to{" "}
                     <strong style={{ color: "var(--text)", fontFamily: "var(--font-mono)", fontWeight: 600 }}>{selectUpstream}</strong>
-                    {directAvailable ? ", or send it direct to the upstream." : "."}
+                    {directAvailable ? ", or send it direct to the provider." : "."}
                   </>
                 ) : selectUpstream && pinCarrier === "metadata" ? (
                   <>
-                    Pinned to <strong style={{ color: "var(--text)", fontFamily: "var(--font-mono)", fontWeight: 600 }}>{selectUpstream}</strong> — the snippets below send <span className="gw-mono">lava-select-provider</span> as gRPC metadata so the router routes the call to that upstream (a cache hit may still answer as &quot;Cached&quot;).
+                    Pinned to <strong style={{ color: "var(--text)", fontFamily: "var(--font-mono)", fontWeight: 600 }}>{selectUpstream}</strong> — the snippets below send <span className="gw-mono">lava-select-provider</span> as gRPC metadata so the router routes the call to that provider (a cache hit may still answer as &quot;Cached&quot;).
                   </>
                 ) : selectUpstream ? (
                   <>
-                    Pinned to <strong style={{ color: "var(--text)", fontFamily: "var(--font-mono)", fontWeight: 600 }}>{selectUpstream}</strong> — sent with the <span className="gw-mono">lava-select-provider</span> header so the router routes this request to that upstream (a cache hit may still answer as &quot;Cached&quot;).
+                    Pinned to <strong style={{ color: "var(--text)", fontFamily: "var(--font-mono)", fontWeight: 600 }}>{selectUpstream}</strong> — sent with the <span className="gw-mono">lava-select-provider</span> header so the router routes this request to that provider (a cache hit may still answer as &quot;Cached&quot;).
                   </>
                 ) : (
-                  <>Sent through the router, which picks the upstream.</>
+                  <>Sent through the router, which picks the provider.</>
                 )}
               </span>
             </div>
@@ -1546,7 +1546,7 @@ export function TryMeDrawer({
                 {selected.command.internalPath && (
                   <span
                     className="gw-tag"
-                    title={`Served by this chain's ${selected.command.internalPath} collection. You still send the name as it stands — the router dials the upstream pinned to that path.`}
+                    title={`Served by this chain's ${selected.command.internalPath} collection. You still send the name as it stands — the router dials the provider pinned to that path.`}
                     style={{ fontSize: 10 }}
                   >
                     {selected.command.internalPath}
@@ -1560,7 +1560,7 @@ export function TryMeDrawer({
                 {onWs && wsUpstream === false && !onDirect && SUBSCRIPTION_METHOD.test(selected.command.method) && (
                   <span
                     className="gw-tag"
-                    title="No upstream behind this endpoint declares a ws:// or wss:// url, so the router has nothing to subscribe on — it refuses this call. Plain requests over this WebSocket still work."
+                    title="No provider behind this endpoint declares a ws:// or wss:// url, so the router has nothing to subscribe on — it refuses this call. Plain requests over this WebSocket still work."
                     style={{ fontSize: 10, color: "var(--warn)", background: "rgba(251,191,36,0.10)", borderColor: "rgba(251,191,36,0.25)" }}
                   >
                     no ws upstream
@@ -1680,7 +1680,7 @@ export function TryMeDrawer({
                     type="button"
                     className="gw-btn gw-btn--ghost"
                     onClick={compareBoth}
-                    title="Send the same request through the router AND straight to the upstream, then show both answers side by side."
+                    title="Send the same request through the router AND straight to the provider, then show both answers side by side."
                     disabled={!resolved || status === "loading"}
                     style={{ padding: "9px 14px", fontSize: 12, fontWeight: 500, gap: 6 }}
                   >
@@ -1704,7 +1704,7 @@ export function TryMeDrawer({
                     pin). */}
                 {!onWs && pinRefusal === null && (
                   <label
-                    title="Send with the lava-force-cache-refresh header — the router bypasses its relay cache and asks an upstream even when a cached answer exists (no more 'Cached' in Served by). Applies to sends through the router."
+                    title="Send with the lava-force-cache-refresh header — the router bypasses its relay cache and asks a provider even when a cached answer exists (no more 'Cached' in Served by). Applies to sends through the router."
                     style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-2)", cursor: "pointer", userSelect: "none" }}
                   >
                     <input
@@ -1756,8 +1756,8 @@ export function TryMeDrawer({
                     title={
                       resultVia === "upstream"
                         ? viaApi
-                          ? "Measured at the dashboard's server, around its call to the upstream."
-                          : "Measured at the dashboard api, around its call to the upstream — a different pair of hops than the router number."
+                          ? "Measured at the dashboard's server, around its call to the provider."
+                          : "Measured at the dashboard api, around its call to the provider — a different pair of hops than the router number."
                         : viaApi
                           ? "Measured at the dashboard's server, around its call to the router inside the deployment."
                           : "Measured in the browser, around the call to the router."
@@ -1773,7 +1773,7 @@ export function TryMeDrawer({
                 {resultVia === "upstream" && (
                   <span
                     className="gw-tag"
-                    title="Answered by the upstream itself. The router was not in the path, so there is no cache status, no retry count and no cross-validation to report."
+                    title="Answered by the provider itself. The router was not in the path, so there is no cache status, no retry count and no cross-validation to report."
                     style={{ fontSize: 11, color: "var(--brand)", background: "rgba(255,57,0,0.10)", borderColor: "rgba(255,57,0,0.25)", display: "inline-flex", alignItems: "center", gap: 4 }}
                   >
                     <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
@@ -1783,7 +1783,7 @@ export function TryMeDrawer({
                 {truncated && (
                   <span
                     className="gw-tag"
-                    title={`The ${resultVia === "router" ? "router's" : "upstream's"} response was larger than the relay's size cap and was cut off.`}
+                    title={`The ${resultVia === "router" ? "router's" : "provider's"} response was larger than the relay's size cap and was cut off.`}
                     style={{ fontSize: 11, color: "var(--warn)", background: "rgba(251,191,36,0.10)", borderColor: "rgba(251,191,36,0.25)" }}
                   >
                     truncated
@@ -1814,7 +1814,7 @@ export function TryMeDrawer({
                   return (
                     <span
                       className="gw-tag"
-                      title="Upstream that served this relay (Lava-Provider-Address)"
+                      title="Provider that served this relay (Lava-Provider-Address)"
                       style={{ fontSize: 11, color: "var(--text-3)", display: "inline-flex", alignItems: "center", gap: 4, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
                     >
                       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>
@@ -1876,12 +1876,12 @@ export function TryMeDrawer({
             const rows: { label: string; hint: string; out: Outcome }[] = [
               {
                 label: "Via router",
-                hint: selectUpstream ? `pinned to ${selectUpstream}` : "router picks the upstream",
+                hint: selectUpstream ? `pinned to ${selectUpstream}` : "router picks the provider",
                 out: comparison.router,
               },
               {
-                label: "Direct to upstream",
-                hint: directHost ?? "upstream",
+                label: "Direct to provider",
+                hint: directHost ?? "provider",
                 out: comparison.upstream,
               },
             ];
@@ -1919,7 +1919,7 @@ export function TryMeDrawer({
                       {same ? "Identical response bodies." : "Response bodies differ."}
                     </strong>{" "}
                     {same
-                      ? "The router relayed the upstream's answer unchanged."
+                      ? "The router relayed the provider's answer unchanged."
                       : "Expected for anything that tracks the head (block number, latest block, gas price) — the two calls are moments apart. For a fixed-height read, a difference is worth looking at."}{" "}
                     The router leg ran first and took{" "}
                     <strong style={{ color: "var(--text)" }}>
@@ -1927,7 +1927,7 @@ export function TryMeDrawer({
                     </strong>
                     {viaApi
                       ? ", both measured from the dashboard's server, so the gap is mostly the router's own hop — still a hint from two single calls, not a benchmark."
-                      : ", but the two are measured from different places — the browser for the router, the api for the upstream — so read the gap as a hint, not a benchmark."}
+                      : ", but the two are measured from different places — the browser for the router, the api for the provider — so read the gap as a hint, not a benchmark."}
                   </div>
                 </div>
                 {/* The two bodies, side by side. "Do these agree?" is the

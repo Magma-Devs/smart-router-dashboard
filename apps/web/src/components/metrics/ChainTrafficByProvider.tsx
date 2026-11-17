@@ -73,7 +73,7 @@ export function ChainTrafficByProvider({ spec, timeWindow }: { spec: string; tim
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
         <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-2)", flex: 1, display: "inline-flex", alignItems: "center" }}>
           Traffic by provider · {chain}
-          <Tip text={`**Which upstream took ${chain}'s traffic**, over the window. These are the requests the router sent to each upstream: a retried request counts at every upstream it reached.\n\n**Cache** is requests the relay cache answered without any upstream.\n\n**Share** shows each upstream's part of every moment; **Requests / sec** shows how much that was.`} />
+          <Tip text={`**Which provider took ${chain}'s traffic**, over the window. These are the requests the router sent to each provider: a retried request counts at every provider it reached.\n\n**Cache** is requests the relay cache answered without any provider.\n\n**Share** shows each provider's part of every moment; **Requests / sec** shows how much that was.`} />
         </div>
         <div className="gw-segctl">
           {([["share", "Share"], ["rate", "Requests / sec"]] as const).map(([m, label]) => (

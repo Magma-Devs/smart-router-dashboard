@@ -232,8 +232,8 @@ export function RouterGroups({
                         </span>
                         {/* Upstream count chip */}
                         {cnt === 0
-                          ? <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 4, background: "rgba(239,68,68,0.1)", color: "var(--err)", border: "1px solid rgba(239,68,68,0.22)", flexShrink: 0 }}>No upstreams</span>
-                          : <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 4, background: "var(--hover-2)", color: "var(--text-3)", border: "1px solid var(--line)", flexShrink: 0 }}>{cnt} upstream{cnt !== 1 ? "s" : ""}</span>}
+                          ? <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 4, background: "rgba(239,68,68,0.1)", color: "var(--err)", border: "1px solid rgba(239,68,68,0.22)", flexShrink: 0 }}>No providers</span>
+                          : <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 4, background: "var(--hover-2)", color: "var(--text-3)", border: "1px solid var(--line)", flexShrink: 0 }}>{cnt} provider{cnt !== 1 ? "s" : ""}</span>}
                         {/* JWT suffix — Magma Cloud feature, masked honest */}
                         <span className="gw-mono" style={{ fontSize: 11, color: "var(--text-3)", flexShrink: 0 }}>—</span>
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-4)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><polyline points="9 18 15 12 9 6"/></svg>

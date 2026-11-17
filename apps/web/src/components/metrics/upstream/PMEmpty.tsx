@@ -79,7 +79,7 @@ export function PMEmpty({
         )}
 
         {pm.latestBlock != null && (
-          <Fact label="Last reported block" title={`The head this upstream reports on ${chainName}.`}>
+          <Fact label="Last reported block" title={`The head this provider reports on ${chainName}.`}>
             <span className="gw-mono gw-tnum">{pm.latestBlock.toLocaleString("en-US")}</span>
             {pm.behindSec != null && pm.behindSec >= 1 && (
               <span style={{ color: "var(--text-3)" }}> · {Math.round(pm.behindSec)}s behind</span>

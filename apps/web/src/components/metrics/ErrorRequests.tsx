@@ -140,7 +140,7 @@ const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 function routerReason(r: Pick<ErrorRequestRow, "error" | "exhausted">): string {
   const e = r.error ?? "";
   if (/insufficient results/i.test(e)) return "Insufficient results";
-  if (r.exhausted || /exhausted/i.test(e)) return "Upstreams exhausted";
+  if (r.exhausted || /exhausted/i.test(e)) return "Providers exhausted";
   if (/deadline exceeded|timed? ?out/i.test(e)) return "Timed out";
   const head = e.replace(/\s*ErrMsg:.*$/s, "").trim();
   return head ? sentence(head.length > 40 ? head.slice(0, 39) + "…" : head) : "Router error";
