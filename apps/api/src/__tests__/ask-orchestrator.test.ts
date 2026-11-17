@@ -245,6 +245,27 @@ describe("bounded customer tool orchestration", () => {
     expect((await f.answer()).evidence[0]?.coverage).toBe("empty");
   });
 
+  it("does not forward common nested or textual credentials from untrusted tools to Bedrock", async () => {
+    const f = fixture({
+      data: {
+        client_secret: "synthetic-client-private",
+        headers: {
+          "Proxy-Authorization": "Basic synthetic-proxy-private",
+          Cookie: "session=synthetic-cookie-private",
+        },
+        line: "Authorization: Basic synthetic-header-private\nprivate_key='synthetic-key-private'\nwss://fixture.test/synthetic-url-private",
+        "customer-secret-test": "safe-value",
+        result: [{ value: [1, "3"] }],
+      },
+    });
+    await f.answer();
+    expect(f.bodies).toHaveLength(2);
+    expect(f.bodies[1]).not.toMatch(
+      /synthetic-(?:client|proxy|cookie|header|key|url)-private|customer-secret-test/,
+    );
+    expect(f.bodies[1]).toContain("[redacted]");
+  });
+
   it("bounds and redacts tool output and marks partial evidence", async () => {
     const raw = {
       data: {
