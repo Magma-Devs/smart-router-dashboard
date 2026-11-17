@@ -45,6 +45,18 @@ export type ProviderOutcome = (typeof PROVIDER_OUTCOMES)[number];
 export const RECORD_STATUSES = ["success", "failed"] as const;
 export type RecordStatus = (typeof RECORD_STATUSES)[number];
 
+/**
+ * A method as the record carries it. The router writes a REST path without
+ * its leading slash, because the fleet's log agent masks a value that starts
+ * with one (smart-router #736). So `/cosmos/bank/v1beta1/balances/{address}`
+ * and `cosmos/bank/v1beta1/balances/{address}` name the same api. The root
+ * path stays `/`, as the router writes it.
+ */
+export function recordMethod(method: string): string {
+  const trimmed = method.replace(/^\/+/, "");
+  return trimmed === "" && method !== "" ? "/" : trimmed;
+}
+
 export interface CvRecordFilter {
   /** Records that asked this provider (an `endpoints[].providerAddress`). */
   provider?: string;
@@ -52,6 +64,7 @@ export interface CvRecordFilter {
   providerOutcome?: ProviderOutcome;
   /** The record's `chainId`, e.g. ETH1. */
   chain?: string;
+  /** The record's `method`, as `recordMethod` gives it: e.g. eth_call, or a REST path without its leading slash. */
   method?: string;
   status?: RecordStatus;
   /** The record's `failureReason`, e.g. no-agreement. */

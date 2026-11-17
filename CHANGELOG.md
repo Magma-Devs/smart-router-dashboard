@@ -18,8 +18,9 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   chain, method, status, failure reason and request ID. Pages run oldest
   first and resume exactly from a cursor. A failed read is a 503, never an
   empty page. An audit token reads it, and so does every signed-in role. A
-  REST `method` is refused with a 400, because the fleet's log agent masks
-  paths before storing them. See
+  REST `method` matches with or without its leading slash: a router with
+  smart-router #736 writes it without one, so the fleet's log agent no longer
+  masks it. See
   [`docs/CROSS-VALIDATION-RECORDS.md`](./docs/CROSS-VALIDATION-RECORDS.md).
 - **An audit token can expire.** `POST /api/audit/tokens` takes an optional
   `expiresAt`. From that moment the token answers 401, the same as a revoked

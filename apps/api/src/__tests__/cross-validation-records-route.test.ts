@@ -59,12 +59,13 @@ const RECORD = {
   endpoints: [{ providerAddress: "alchemy", outcome: "agreed" }],
 };
 
-/** A Loki holding one record, a minute and a half ago; `down` answers nothing. */
-function lokiWithOneRecord(down = false): LokiClient {
+/** A Loki holding one record, a minute and a half ago; `down` answers nothing. Every LogQL it is sent lands in `queries`. */
+function lokiWithOneRecord(down = false, record: object = RECORD, queries: string[] = []): LokiClient {
   const ns = (BigInt(Date.now() - 90_000) * 1_000_000n).toString();
-  const line = JSON.stringify({ level: "info", crossValidationRecord: RECORD, message: "cross-validation record" });
+  const line = JSON.stringify({ level: "info", crossValidationRecord: record, message: "cross-validation record" });
   return {
-    async queryRangeNs(_q: string, start: string, end: string): Promise<LokiLine[] | null> {
+    async queryRangeNs(q: string, start: string, end: string): Promise<LokiLine[] | null> {
+      queries.push(q);
       if (down) return null;
       return BigInt(ns) >= BigInt(start) && BigInt(ns) < BigInt(end)
         ? [{ tsMs: Number(ns) / 1e6, ns, line, labels: { service_name: "kraken-eth", pod: "router-0" } }]
@@ -192,15 +193,19 @@ describe("never an empty page that means something else", () => {
     expect(res.statusCode).toBe(503);
   });
 
-  it("400 for a REST path as the method: the log pipeline masks paths before they are stored", async () => {
-    app = await buildAuthedApp();
+  it("a REST method finds its record with or without the leading slash: the router writes it without one", async () => {
+    const queries: string[] = [];
+    const rest = { ...RECORD, requestId: "req-rest", apiInterface: "rest", method: "cosmos/bank/v1beta1/balances/{address}" };
+    app = await buildAuthedApp({ loki: lokiWithOneRecord(false, rest, queries) });
     const { secret } = await mint();
-    const res = await app.inject({
-      method: "GET",
-      url: `${URL_}?method=${encodeURIComponent("/cosmos/bank/v1beta1/balances/{address}")}`,
-      headers: auth(secret),
-    });
-    expect(res.statusCode).toBe(400);
+    for (const method of ["/cosmos/bank/v1beta1/balances/{address}", "cosmos/bank/v1beta1/balances/{address}"]) {
+      const res = await app.inject({ method: "GET", url: `${URL_}?method=${encodeURIComponent(method)}`, headers: auth(secret) });
+      expect(res.statusCode, method).toBe(200);
+      expect(res.json().items.map((i: { record: { requestId: string } }) => i.record.requestId), method).toEqual(["req-rest"]);
+    }
+    // Loki is asked for the method as the line holds it, so the read is narrowed to it.
+    expect(queries.length).toBeGreaterThan(0);
+    for (const q of queries) expect(q).toContain('"method":"cosmos/bank/v1beta1/balances/{address}"');
   });
 
   it("400 for times that can't be read, or that run backwards", async () => {

@@ -39,7 +39,7 @@ not exist. Without `LOKI_URL` it answers **503**.
 | `provider`         | Records that asked this provider, by the name the router's config gives it |
 | `provider_outcome` | How that provider took part: `agreed`, `disagreed`, `node-error`, `protocol-error` or `not-received`. With `provider=X`, `disagreed` is every check X dissented on, a late dissent included. Without `provider`, any provider |
 | `chain`            | The record's `chainId`, e.g. `ETH1` |
-| `method`           | The record's `method`, e.g. `eth_getBlockByNumber`. **Not a REST path** (below) |
+| `method`           | The record's `method`, e.g. `eth_getBlockByNumber`. A REST path matches with or without its leading slash (below) |
 | `status`           | `success` or `failed` |
 | `reason`           | The record's `failureReason`, e.g. `no-agreement`, `insufficient-capacity` |
 | `request_id`       | One request: the `Lava-Guid` the caller got back |
@@ -103,16 +103,22 @@ jq -r '.cursor' <<<"$page" > "$CURSOR_FILE"
 
 ## Known limits
 
-- **REST methods can't be filtered on.** The fleet's log agent masks every
-  absolute path before it is stored (credential redaction), so a REST
-  record's `method` reaches Loki as `/REDACTED`. A `method` starting with `/`
-  is refused with a 400 rather than answered with an empty page. Filter REST
-  chains by `chain`.
-- **The fleet's Loki keeps 45 days.** The 90-day default only reaches as far
-  back as the store keeps. Keeping records longer, and reading them without
-  scanning every router line, needs the log agent to put them in their own
-  stream (as it already does for writes, `stateful="1"`) and a retention rule
-  for that stream. That is infrastructure work.
+- **A REST method is written without its leading slash.** The fleet's log
+  agent masks every value that starts with `/` before it is stored
+  (credential redaction). So since smart-router #736 the router writes a REST
+  record's `method` as the spec names it, minus the slash:
+  `cosmos/bank/v1beta1/balances/{address}`. `method=/cosmos/…` and
+  `method=cosmos/…` find the same records. An unlisted REST path is the
+  caller's own and may carry a credential, so the router writes it as
+  `Default-REDACTED`. A record from a router before #736 carries
+  `/REDACTED…` and matches no REST method.
+- **Records are kept 90 days.** The fleet's log agent labels each record line
+  `record="cross-validation"` (smart-router-infrastructure #1518), and the
+  fleet Loki keeps that stream 90 days (devops-magmadevs #176) where other
+  router lines go at 45. Records shipped before the label existed go at 45
+  days. Reads still select every router stream: a labelled stream is part of
+  that selection, so nothing is missed, but a long read still scans every
+  router line.
 - **Records from routers before smart-router #712** do not exist. Those
   routers wrote none.
 

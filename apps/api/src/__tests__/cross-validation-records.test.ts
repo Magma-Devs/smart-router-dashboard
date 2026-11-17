@@ -7,6 +7,7 @@ import {
   MAX_READ_SPAN_MS,
   nsToRfc3339,
   READS_PER_PAGE,
+  recordMethod,
   recordOf,
   recordsQuery,
   type CvRecordFilter,
@@ -192,6 +193,13 @@ describe("the filters the ticket requires", () => {
 
   it("any provider's dissent, without naming one", async () => {
     expect(await only({ providerOutcome: "disagreed" })).toEqual(["r-agreed", "r-failed", "r-sol", "r-late-dissent"]);
+  });
+
+  it("a REST method is matched as the router writes it, without its leading slash", () => {
+    expect(recordMethod("/cosmos/bank/v1beta1/balances/{address}")).toBe("cosmos/bank/v1beta1/balances/{address}");
+    expect(recordMethod("cosmos/bank/v1beta1/balances/{address}")).toBe("cosmos/bank/v1beta1/balances/{address}");
+    expect(recordMethod("eth_call")).toBe("eth_call");
+    expect(recordMethod("/")).toBe("/");
   });
 
   it("chain and method", async () => {

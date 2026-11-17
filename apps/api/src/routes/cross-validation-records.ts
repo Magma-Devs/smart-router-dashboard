@@ -9,6 +9,7 @@ import {
   type Order,
   type ProviderOutcome,
   type RecordStatus,
+  recordMethod,
 } from "../services/cross-validation-records.js";
 import { sendApiError } from "../plugins/error-handler.js";
 import { auditReadRateLimitKey } from "./audit.js";
@@ -92,7 +93,7 @@ export async function crossValidationRecordRoutes(app: FastifyInstance) {
               description: "How that provider took part (any provider's, without `provider`). `disagreed` = the checks it dissented on",
             },
             chain: { ...VALUE, description: "The record's chainId, e.g. ETH1" },
-            method: { ...VALUE, description: "The record's method, e.g. eth_getBlockByNumber. Not a REST path: see the docs" },
+            method: { ...VALUE, description: "The record's method, e.g. eth_getBlockByNumber, or a REST path with or without its leading slash" },
             status: { type: "string" as const, enum: [...RECORD_STATUSES], description: "success or failed" },
             reason: { ...VALUE, description: "The record's failureReason, e.g. no-agreement" },
             request_id: { ...VALUE, description: "One request: the Lava-Guid the caller got back" },
@@ -132,22 +133,11 @@ export async function crossValidationRecordRoutes(app: FastifyInstance) {
       const toMs = to ?? now;
       if (fromMs > toMs) return sendApiError(reply, 400, "`from` must not be after `to`");
 
-      // The fleet's log agent masks every absolute path in a line before it is
-      // stored, so a REST method reaches Loki as `/REDACTED`. A filter on one
-      // would answer an empty page that reads like "never happened".
-      if (q.method?.startsWith("/")) {
-        return sendApiError(
-          reply,
-          400,
-          "`method` cannot be a REST path: the log pipeline masks paths before they are stored. Filter by `chain` instead",
-        );
-      }
-
       const filter: CvRecordFilter = {
         ...(q.provider !== undefined ? { provider: q.provider } : {}),
         ...(q.provider_outcome !== undefined ? { providerOutcome: q.provider_outcome } : {}),
         ...(q.chain !== undefined ? { chain: q.chain } : {}),
-        ...(q.method !== undefined ? { method: q.method } : {}),
+        ...(q.method !== undefined ? { method: recordMethod(q.method) } : {}),
         ...(q.status !== undefined ? { status: q.status } : {}),
         ...(q.reason !== undefined ? { reason: q.reason } : {}),
         ...(q.request_id !== undefined ? { requestId: q.request_id } : {}),
