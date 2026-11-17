@@ -13,27 +13,44 @@ from what they do (MAG-5373).
 | **Low effort** | events per answer; `rage_click`; `help_open` (the words weren't enough) |
 | **Only what is used** | `panel_open`, `filter_use`, `link_out` per value per tenant: what is never used is a candidate to remove |
 
-Leave our own team out of every report with `staff != true` (set where
-accounts are on). Each event goes from the browser to the api
+Leave our own team out of every report with `staff != true`: every event
+says whether the signed-in user's address is at `magmadevs.com`. Each event
+goes from the browser to the api
 (`POST /api/usage`) and from the api to Mixpanel's EU project, tagged with the
 tenant. Mixpanel splits every report per tenant on the `tenant` property.
 
 ## On or off
 
-| Deployment | Default | Switch |
-|---|---|---|
-| We host it (`DEPLOYMENT_MODE=managed`) | on | `USAGE_ANALYTICS=off` |
-| The client hosts it (`onprem`) | off | `USAGE_ANALYTICS=on` |
+Three things have to be true, and the first two are the deployment's:
 
-Nothing is sent without `MIXPANEL_TOKEN` (deliver it from a Secret). Where it
-is on, the Account page says so in one line. `GET /api/usage/config` answers
-`{ enabled }`, and the web sends nothing while it is false.
+1. **Accounts are on** (`AUTH_MODE=enabled`). Usage data is sent only for a
+   signed-in user. With accounts off nothing is sent, whatever else is set.
+2. **The deployment has it on**, and holds `MIXPANEL_TOKEN` (deliver it from a
+   Secret):
+
+   | Deployment | Default | Switch |
+   |---|---|---|
+   | We host it (`DEPLOYMENT_MODE=managed`) | on | `USAGE_ANALYTICS=off` |
+   | The client hosts it (`onprem`) | off | `USAGE_ANALYTICS=on` |
+
+3. **The person at the browser accepted it.** Where the first two hold, the
+   dashboard shows a consent bar: cookies keep the sign-in, and with an
+   **Accept** the dashboard also sends usage data to Magma through Mixpanel, a
+   third party. **Reject non-essential** sends nothing. The X puts the
+   question off until the next page load, with nothing sent. The answer is
+   kept in that browser (`localStorage`, `sr:usage-consent`), and the Account
+   page shows it with a button that changes it.
+
+Before an acceptance the browser records nothing, sends nothing and keeps
+nothing; an acceptance starts a visit from that moment. A rejection after an
+acceptance drops what waited to be sent and removes the visit kept in the
+browser. `GET /api/usage/config` answers `{ enabled }` for the first two.
 
 On Kubernetes the chart sets these (smart-router-helm-chart, `dashboard.usage`):
-`enabled` renders `USAGE_ANALYTICS=on`, `existingSecret` hands `MIXPANEL_TOKEN`
-to the backend from a Secret, and `deploymentMode` renders `DEPLOYMENT_MODE`
-where accounts are off. One project token serves every deployment: each event
-carries the tenant. A deployment without the Secret starts and sends nothing.
+`enabled` renders `USAGE_ANALYTICS=on` and `existingSecret` hands
+`MIXPANEL_TOKEN` to the backend from a Secret. One project token serves every
+deployment: each event carries the tenant. A deployment without the Secret
+starts and sends nothing.
 
 | Variable | Default | |
 |---|---|---|
@@ -41,7 +58,7 @@ carries the tenant. A deployment without the Secret starts and sends nothing.
 | `MIXPANEL_TOKEN` | unset | the project's token; server side only |
 | `MIXPANEL_API_HOST` | `https://api-eu.mixpanel.com` | https only (http for a loopback mock) |
 | `USAGE_TENANT` | `TENANT_ID` | the tenant on every event |
-| `USAGE_STAFF_DOMAINS` | `magmadevs.com` | a signed-in user on one of these is `staff: true` |
+| `USAGE_STAFF_DOMAINS` | `magmadevs.com` | a user whose address is at one of these (anyone `@magmadevs.com`) is `staff: true` |
 
 ## What is never sent
 
@@ -57,8 +74,8 @@ was typed into a look-up); anything else is dropped before it is forwarded.
 
 Every event carries `distinct_id` (a random id per browser tab, new after 30
 minutes with no event), `tenant`, `deployment_mode`, `dashboard_version` and
-its time. With accounts on, also `staff` (yes/no: the email's domain is ours)
-and `role` - never the address.
+its time, and `staff` (yes/no: the signed-in user's address is at
+`magmadevs.com`) and `role` - never the address.
 
 | Event | Fields | Sent when |
 |---|---|---|

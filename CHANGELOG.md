@@ -18,10 +18,15 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   forwards it to Mixpanel's EU project, every event tagged with the tenant so
   each client's use reads apart. Never a name, email, IP, request ID, hash,
   filter value or anything typed: the api keeps only the fields a closed
-  catalog lists. On by default where we host the dashboard, off on a
-  self-hosted install (`USAGE_ANALYTICS`), and nothing is sent without
-  `MIXPANEL_TOKEN`. Where it is on, the Account page says so. The events and
-  how to read them: `docs/USAGE-DATA.md`.
+  catalog lists. Only with accounts on, and only after the person at the
+  browser accepts it: a consent bar says that cookies keep the sign-in and
+  asks before any usage data goes to Mixpanel, a third party, with **Reject
+  non-essential** beside **Accept**; the Account page shows the answer and
+  changes it. Every event says whether the user is our own staff (an address
+  at `magmadevs.com`), never who. On by default where we host the dashboard,
+  off on a self-hosted install (`USAGE_ANALYTICS`), and nothing is sent
+  without `MIXPANEL_TOKEN`. The events and how to read them:
+  `docs/USAGE-DATA.md`.
 
 ## [0.69.7]
 

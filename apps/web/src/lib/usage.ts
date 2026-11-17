@@ -2,23 +2,26 @@
 /**
  * The dashboard's usage events (MAG-5373), sent in batches to the api
  * (`POST /api/usage`), which keeps what the catalog allows and forwards it to
- * the analytics store with the tenant. Nothing is sent unless the api says
- * usage data is on (`GET /api/usage/config`): off by default on a self-hosted
- * install.
+ * the analytics store with the tenant. Nothing is sent, and nothing is kept in
+ * the browser, unless the api says usage data is on (`GET /api/usage/config`:
+ * accounts on, off by default on a self-hosted install) AND the person at this
+ * browser accepted it in the consent bar (`UsageConsentBar`). The choice is
+ * kept in `localStorage`, and the Account page changes it.
  *
  * A visit is one browser tab, new after 30 minutes with no event. Events wait
  * here and go every 10 s, at 20, and when the tab is hidden or closed (the
  * last with `keepalive`, with `visit_end`). Every call is safe to make before
  * the switch is known, on the server, or while it is off: it does nothing.
  *
- * The pure parts (`visitFrom`, `arrivedFrom`, `pageOf`, `searchKind`) are
- * tested; the rest is wiring.
+ * The pure parts (`visitFrom`, `arrivedFrom`, `pageOf`, `searchKind`,
+ * `consentFrom`, `usageAllowed`) are tested; the rest is wiring.
  */
 import { cleanUsageProps, guidMintedSecond, USAGE_BATCH_MAX, type UsageEventName, type UsageProps } from "@sr/shared";
 import { ApiError, apiGet, apiPost, apiPostKeepalive } from "./api-client";
 import { getIdlePhase, subscribeIdle } from "./idle-store";
 
 const VISIT_KEY = "sr:visit";
+const CONSENT_KEY = "sr:usage-consent";
 const SEARCH_FROM_KEY = "sr:search-from";
 /** A visit ends after this long with no event. */
 export const VISIT_AWAY_MS = 30 * 60_000;
@@ -77,10 +80,56 @@ export function searchKind(value: string, nowSec = Date.now() / 1000): "request-
   return "other";
 }
 
+/** What the person at this browser answered the consent bar. */
+export type UsageConsent = "accepted" | "rejected";
+
+/** The stored answer, or null when none was given: anything else in the key is no answer. */
+export function consentFrom(raw: string | null): UsageConsent | null {
+  return raw === "accepted" || raw === "rejected" ? raw : null;
+}
+
+/** Events are recorded and sent only where the deployment has usage data on and this browser accepted it. */
+export function usageAllowed(available: boolean | null, consent: UsageConsent | null): boolean {
+  return available === true && consent === "accepted";
+}
+
+/** What the consent bar and the Account page show: whether the deployment sends usage data, and this browser's answer. */
+export interface UsageState {
+  /** Null until the api has answered. */
+  available: boolean | null;
+  consent: UsageConsent | null;
+}
+
+const UNKNOWN: UsageState = { available: null, consent: null };
+let state: UsageState = UNKNOWN;
+const watchers = new Set<() => void>();
+
+export function subscribeUsage(fn: () => void): () => void {
+  watchers.add(fn);
+  return () => watchers.delete(fn);
+}
+export const getUsageState = (): UsageState => state;
+export const getServerUsageState = (): UsageState => UNKNOWN;
+
+function setState(next: UsageState) {
+  state = next;
+  for (const fn of watchers) fn();
+}
+
+function readConsent(): UsageConsent | null {
+  try {
+    return consentFrom(localStorage.getItem(CONSENT_KEY));
+  } catch {
+    return null;
+  }
+}
+
 interface Queued { name: UsageEventName; at: number; seq: number; props: Record<string, string | number | boolean> }
 
+/** Null until the api and the stored answer are read; then whether events are recorded. */
 let enabled: boolean | null = null;
 let started = false;
+let listening = false;
 let queue: Queued[] = [];
 let visit: StoredVisit | null = null;
 let lastActive = 0;
@@ -104,8 +153,8 @@ function readStored(): StoredVisit | null {
 }
 
 function saveVisit() {
-  // Nothing is kept in the browser until the api says usage data is on: on a
-  // deployment where it is off, no tracking state is ever written.
+  // Nothing is kept in the browser until the api says usage data is on and
+  // this browser accepted it: before that, no tracking state is ever written.
   if (enabled !== true) return;
   try {
     if (visit) sessionStorage.setItem(VISIT_KEY, JSON.stringify(visit));
@@ -212,6 +261,7 @@ export const isLeaving = () => leaving;
 
 /** Where the next look-up was typed: the top bar or the Find a request box. A look-up with none came from a link. */
 export function noteSearchFrom(from: "top-bar" | "request-tab"): void {
+  if (enabled !== true) return;
   try {
     sessionStorage.setItem(SEARCH_FROM_KEY, from);
   } catch {
@@ -229,61 +279,108 @@ export function takeSearchFrom(): "top-bar" | "request-tab" | "link" {
   }
 }
 
+/** Stops recording: what waited to be sent is dropped and the visit kept in the browser is removed. */
+function stop() {
+  enabled = false;
+  queue = [];
+  visit = null;
+  try {
+    sessionStorage.removeItem(VISIT_KEY);
+    sessionStorage.removeItem(SEARCH_FROM_KEY);
+  } catch {
+    /* nothing was kept */
+  }
+}
+
+/** Starts recording and sending. The page's listeners are set up once, and do nothing while recording is stopped. */
+function begin() {
+  enabled = true;
+  saveVisit();
+  if (!listening) {
+    listening = true;
+    const markActive = () => {
+      const now = Date.now();
+      if (lastActive && now - lastActive < 60_000 && visit) visit.activeMs = (visit.activeMs ?? 0) + (now - lastActive);
+      lastActive = now;
+    };
+    for (const ev of ["pointerdown", "keydown", "wheel", "touchstart"]) window.addEventListener(ev, markActive, { passive: true });
+    setInterval(() => void flush(), FLUSH_MS);
+    watchFrustrationAndIdle();
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") void flush(true);
+    });
+    // The browser cuts a leaving page's reads off just before pagehide, so
+    // leaving starts at beforeunload - and ends again if the page stayed (a
+    // cancelled navigation, a download) or came back from the
+    // back-forward cache.
+    window.addEventListener("beforeunload", () => {
+      leaving = true;
+      setTimeout(() => { leaving = false; }, 3_000);
+    });
+    window.addEventListener("pageshow", () => { leaving = false; });
+    window.addEventListener("pagehide", () => {
+      leaving = true;
+      if (!enabled || !visit) return;
+      // Sent each time the tab is left; the visit's last one holds its totals.
+      push("visit_end", {
+        seconds: (Date.now() - visit.start) / 1000,
+        active_seconds: (visit.activeMs ?? 0) / 1000,
+        pages: (visit.pages ?? []).length,
+        tabs: (visit.tabs ?? []).length,
+        events: visit.events ?? 0,
+      });
+      void flush(true);
+    });
+  }
+  void flush();
+}
+
 /**
- * Asks the api once whether usage data is on and, if it is, starts sending.
- * Called by the shell on its first render; later calls do nothing.
+ * Asks the api once whether usage data is on and, if it is and this browser
+ * accepted it, starts sending. Called by the shell on its first render; later
+ * calls do nothing.
  */
 export function startUsage(): void {
   if (started || typeof window === "undefined") return;
   started = true;
   apiGet<{ enabled: boolean }>("/api/usage/config")
     .then((c) => {
-      enabled = c.enabled === true;
-      if (!enabled) {
-        queue = [];
-        visit = null;
-        return;
-      }
-      saveVisit();
-      const markActive = () => {
-        const now = Date.now();
-        if (lastActive && now - lastActive < 60_000 && visit) visit.activeMs = (visit.activeMs ?? 0) + (now - lastActive);
-        lastActive = now;
-      };
-      for (const ev of ["pointerdown", "keydown", "wheel", "touchstart"]) window.addEventListener(ev, markActive, { passive: true });
-      setInterval(() => void flush(), FLUSH_MS);
-      watchFrustrationAndIdle();
-      document.addEventListener("visibilitychange", () => {
-        if (document.visibilityState === "hidden") void flush(true);
-      });
-      // The browser cuts a leaving page's reads off just before pagehide, so
-      // leaving starts at beforeunload - and ends again if the page stayed (a
-      // cancelled navigation, a download) or came back from the
-      // back-forward cache.
-      window.addEventListener("beforeunload", () => {
-        leaving = true;
-        setTimeout(() => { leaving = false; }, 3_000);
-      });
-      window.addEventListener("pageshow", () => { leaving = false; });
-      window.addEventListener("pagehide", () => {
-        leaving = true;
-        if (!visit) return;
-        // Sent each time the tab is left; the visit's last one holds its totals.
-        push("visit_end", {
-          seconds: (Date.now() - visit.start) / 1000,
-          active_seconds: (visit.activeMs ?? 0) / 1000,
-          pages: (visit.pages ?? []).length,
-          tabs: (visit.tabs ?? []).length,
-          events: visit.events ?? 0,
-        });
-        void flush(true);
-      });
-      void flush();
+      const available = c.enabled === true;
+      const consent = available ? readConsent() : null;
+      setState({ available, consent });
+      if (usageAllowed(available, consent)) begin();
+      else stop();
     })
     .catch(() => {
-      enabled = false;
-      queue = [];
+      setState({ available: false, consent: null });
+      stop();
     });
+}
+
+/**
+ * The answer to the consent bar, or its change on the Account page. Kept in
+ * `localStorage`, the only thing written before an acceptance. Accepting
+ * starts a visit from this moment: nothing from before it is sent. Rejecting
+ * drops what waited and removes the visit kept in the browser.
+ */
+export function setUsageConsent(choice: UsageConsent): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(CONSENT_KEY, choice);
+  } catch {
+    /* private window: the answer holds until the page is closed */
+  }
+  setState({ available: state.available, consent: choice });
+  if (!usageAllowed(state.available, choice)) {
+    stop();
+    return;
+  }
+  queue = [];
+  // The view is timed from the acceptance, not from when the page loaded.
+  firstView = false;
+  begin();
+  const loc = window.location;
+  track("page_view", { page: pageOf(loc.pathname), tab: tabOf(loc.pathname, loc.search) });
 }
 
 /** Reads that failed or answered slowly, once per view a visit. */

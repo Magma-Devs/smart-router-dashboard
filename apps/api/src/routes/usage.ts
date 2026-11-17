@@ -6,8 +6,9 @@
  *    most 50 a batch. 202 with how many were kept; 204 and nothing sent while
  *    usage data is off. The answer doesn't wait for Mixpanel.
  *
- * Both auth modes: with accounts on, the global gate has already required a
- * session; with them off anyone who reaches the api may send, so the body is
+ * Accounts only: usage data is on only with `AUTH_MODE=enabled`, where the
+ * global gate has already required a session, and a batch is forwarded only
+ * for a signed-in user, so every event says `staff` or not. The body is
  * checked against a closed catalog (`cleanUsageProps`) and the route has its
  * own per-caller limit. See `services/usage.ts` and docs/USAGE-DATA.md.
  */
@@ -28,10 +29,10 @@ export interface UsageRoutesOptions {
 const WARN_INTERVAL_MS = 60_000;
 
 /**
- * Batches forwarded per api process per minute, every caller together: with
- * accounts off anyone who reaches the api may post, and each batch spends the
- * Mixpanel project's event quota. A visit sends about six a minute, so this
- * holds dozens of people at once and caps a flood at 300 x 50 events.
+ * Batches forwarded per api process per minute, every caller together: each
+ * batch spends the Mixpanel project's event quota. A visit sends about six a
+ * minute, so this holds dozens of people at once and caps a flood at
+ * 300 x 50 events.
  */
 export const USAGE_POD_BATCHES_PER_MIN = 300;
 
@@ -81,6 +82,10 @@ export async function usageRoutes(app: FastifyInstance, opts: UsageRoutesOptions
     },
     async (request, reply) => {
       if (!settings.enabled) return reply.code(204).send();
+      // No signed-in user (an audit token, a gate that let the call through):
+      // nothing is forwarded, so no event is ever without its `staff` mark.
+      const viewer = viewerOf(request.authUser, settings);
+      if (!viewer) return reply.code(204).send();
       if (!budget.take()) {
         if (Date.now() - cappedAt >= WARN_INTERVAL_MS) {
           cappedAt = Date.now();
@@ -88,7 +93,7 @@ export async function usageRoutes(app: FastifyInstance, opts: UsageRoutesOptions
         }
         return reply.code(202).send({ accepted: 0 });
       }
-      const events = toMixpanel(request.body.visit, request.body.events, settings, Date.now(), viewerOf(request.authUser, settings));
+      const events = toMixpanel(request.body.visit, request.body.events, settings, Date.now(), viewer);
       void sendToMixpanel(events, settings, opts.fetchImpl).then((r) => {
         if (r.ok || Date.now() - warnedAt < WARN_INTERVAL_MS) return;
         warnedAt = Date.now();

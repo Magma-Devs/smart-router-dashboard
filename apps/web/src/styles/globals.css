@@ -287,6 +287,18 @@ a.gw-side__brand:hover { opacity: 0.82; }
 .gw-banner { background: rgba(239,68,68,0.07); border-bottom: 1px solid rgba(239,68,68,0.2); padding: 10px 28px; display: flex; align-items: center; gap: 14px; font-size: 13px; color: var(--text); }
 .gw-banner__msg strong { color: var(--err); font-weight: 600; }
 
+/* The consent bar: over the page's foot, under dialogs and sheets. */
+.gw-consent { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 35; width: min(1120px, calc(100vw - 32px)); display: flex; align-items: center; gap: 20px; padding: 14px 16px 14px 22px; background: var(--surface); border: 1px solid var(--line-2); border-radius: 14px; box-shadow: 0 18px 50px rgba(0,0,0,0.35); }
+.gw-consent__msg { margin: 0; flex: 1; font-size: 13px; line-height: 1.5; color: var(--text); }
+.gw-consent__msg a { color: var(--brand); text-decoration: underline; }
+.gw-consent__actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.gw-consent__later { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 0; border-radius: 8px; background: transparent; color: var(--text-3); cursor: pointer; }
+.gw-consent__later:hover { color: var(--text); background: var(--hover); }
+@media (max-width: 760px) {
+  .gw-consent { flex-direction: column; align-items: stretch; gap: 12px; padding: 14px 16px; }
+  .gw-consent__actions { justify-content: flex-end; flex-wrap: wrap; }
+}
+
 /* ── Modals ──
    Backdrops (.gw-modal-bg, .gw-sheet-bg) are rendered by DialogLayer, portaled
    to <body>, where `inset: 0` is the viewport. The panel takes focus when

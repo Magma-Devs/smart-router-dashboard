@@ -534,15 +534,19 @@ export function readIncidentSettings(source: NodeJS.ProcessEnv = process.env): I
  * the layout can be decided from what clients do. From the live env, so tests
  * can flip it per app instance.
  *
+ *  - Accounts (`AUTH_MODE=enabled`) — required. Usage data is sent only for a
+ *    signed-in user, who is asked first in the browser and is marked `staff`
+ *    or not. With accounts off nothing is sent, whatever else is set.
  *  - `USAGE_ANALYTICS` — `on` / `off`. Unset: on where we host the deployment
  *    (`DEPLOYMENT_MODE=managed`), off where the client does (`onprem`).
  *  - `MIXPANEL_TOKEN` — the project's token. Without it nothing is sent,
  *    whatever the switch says. Server side only: the browser never sees it.
  *  - `MIXPANEL_API_HOST` — default `https://api-eu.mixpanel.com` (the project
  *    keeps its data in the EU). https only; http for a loopback mock.
- *  - `USAGE_STAFF_DOMAINS` — default `magmadevs.com`: a signed-in user whose
- *    email is on one of these is marked `staff`, so our own use can be left
- *    out. Only the yes/no and the role are sent, never the address.
+ *  - `USAGE_STAFF_DOMAINS` — default `magmadevs.com`: a user whose email is
+ *    at one of these (anyone `@magmadevs.com`) is marked `staff`, so our own
+ *    use can be left out. Only the yes/no and the role are sent, never the
+ *    address.
  *  - `USAGE_TENANT` — the tenant every event carries, so the store splits
  *    everything per client. Default `TENANT_ID`, which the chart sets on every
  *    deployment; read here only as that label, never to pick an org.
@@ -563,7 +567,9 @@ export interface UsageSettings {
 export function readUsageSettings(source: NodeJS.ProcessEnv = process.env): UsageSettings {
   const mode = source.DEPLOYMENT_MODE?.trim() === "managed" ? "managed" : "onprem";
   const raw = source.USAGE_ANALYTICS?.trim().toLowerCase();
-  const wanted = raw === "on" || raw === "true" ? true : raw === "off" || raw === "false" ? false : mode === "managed";
+  const accounts = source.AUTH_MODE?.trim() === "enabled";
+  const asked = raw === "on" || raw === "true";
+  const wanted = asked || (raw !== "off" && raw !== "false" && mode === "managed" && accounts);
   const token = source.MIXPANEL_TOKEN?.trim() || null;
   let host = "https://api-eu.mixpanel.com";
   let problem: string | null = null;
@@ -578,10 +584,11 @@ export function readUsageSettings(source: NodeJS.ProcessEnv = process.env): Usag
       problem = "MIXPANEL_API_HOST is not a URL";
     }
   }
+  if (wanted && !accounts) problem = problem ?? "accounts are off (AUTH_MODE): usage data is sent only for signed-in users";
   if (wanted && !token) problem = problem ?? "MIXPANEL_TOKEN is not set";
   const tenant = (source.USAGE_TENANT?.trim() || source.TENANT_ID?.trim() || "unnamed").slice(0, 64);
   return {
-    enabled: wanted && !!token && problem === null,
+    enabled: wanted && accounts && !!token && problem === null,
     token,
     host,
     tenant,

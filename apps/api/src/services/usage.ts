@@ -34,7 +34,7 @@ const CLOCK_SLACK_MS = 10 * 60_000;
  * from the visit and its place in it, so a batch sent twice counts once.
  * Events the catalog doesn't name are left out.
  */
-/** Who sent a batch, as far as usage data may say: never the person, only these. Absent with accounts off. */
+/** Who sent a batch, as far as usage data may say: never the person, only these. Null without a signed-in user. */
 export interface UsageViewer {
   staff: boolean;
   role: string;

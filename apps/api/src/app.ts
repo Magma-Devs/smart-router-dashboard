@@ -148,7 +148,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     authMode: authMode === "enabled" ? "enabled" : "disabled",
     settings: readIncidentSettings(),
   });
-  // Usage data (MAG-5373), both modes, behind its own switch and token.
+  // Usage data (MAG-5373): registered in both modes, on only with accounts on.
   await app.register(usageRoutes, { settings: readUsageSettings() });
 
   return app;

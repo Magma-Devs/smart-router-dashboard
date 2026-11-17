@@ -18,6 +18,7 @@ import { TwoFactorCountdown, TwoFactorGate } from "@/components/auth/two-factor-
 import { ReportIncidentButton } from "@/components/incidents/ReportIncident";
 import { openRequestSearch } from "@/lib/request-search";
 import { noteSearchFrom, pageOf, startUsage, tabOf, track } from "@/lib/usage";
+import { UsageConsentBar } from "./UsageConsent";
 import { roleBadgeLabel } from "./role-badge";
 import { roleChipStyle } from "@/components/team/bits";
 
@@ -327,7 +328,8 @@ export function Shell({ children, grafanaDashboardUrl, grafanaCustomerUsageDashb
 }) {
   const pathname = usePathname();
   const { chain } = useFilters();
-  // Usage data (MAG-5373): asked once whether it is on, then a page view per page.
+  // Usage data (MAG-5373): asked once whether it is on, then a page view per
+  // page - recorded only once this browser accepted it in the consent bar.
   useEffect(() => {
     startUsage();
     track("page_view", { page: pageOf(pathname), tab: tabOf(pathname, window.location.search) });
@@ -357,6 +359,7 @@ export function Shell({ children, grafanaDashboardUrl, grafanaCustomerUsageDashb
             </div>
           </div>
         </div>
+        <UsageConsentBar />
       </ChainDrawerProvider>
     </TwoFactorGate>
   );
