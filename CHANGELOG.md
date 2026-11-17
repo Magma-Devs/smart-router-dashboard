@@ -12,7 +12,9 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 - **Usage data, to learn how clients use the dashboard (MAG-5373).** The
   dashboard records what a visit opens, searches and clicks - pages, tabs,
   chain and time range picks, look-ups and what they found, rows and panels
-  opened, filters, links out, reads that failed or were slow - and the api
+  opened, filters, links out, reads that failed or were slow, how long each
+  page takes to have all its data, help notes held open and repeated clicks -
+  and the api
   forwards it to Mixpanel's EU project, every event tagged with the tenant so
   each client's use reads apart. Never a name, email, IP, request ID, hash,
   filter value or anything typed: the api keeps only the fields a closed

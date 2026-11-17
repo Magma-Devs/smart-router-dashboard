@@ -21,6 +21,14 @@ describe("cleanUsageProps", () => {
     expect(cleanUsageProps("visit_end", { seconds: 1e9, events: 3.6 })).toEqual({ seconds: 86_400, events: 4 });
   });
 
+  it("keeps the time-to-information and effort events in their form", () => {
+    expect(cleanUsageProps("view_ready", { page: "metrics", tab: "errors", seconds: 3.24, reads: 7, failed: 1 }))
+      .toEqual({ page: "metrics", tab: "errors", seconds: 3.2, reads: 7, failed: 1 });
+    expect(cleanUsageProps("visit_start", { screen: "laptop", theme: "light", arrived: "typed" }))
+      .toEqual({ screen: "laptop", theme: "light", arrived: "typed" });
+    expect(cleanUsageProps("help_open", { page: "metrics", tab: "metrics", text: "Requests answered" })).toEqual({ page: "metrics", tab: "metrics" });
+  });
+
   it("refuses an event the catalog doesn't name", () => {
     expect(cleanUsageProps("password_typed", { kind: "hash" })).toBeNull();
     expect(isUsageEventName("toString")).toBe(false);

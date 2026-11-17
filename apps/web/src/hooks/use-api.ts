@@ -6,7 +6,8 @@ import { apiGet } from "@/lib/api-client";
 import { getIdleResumes, idlePhaseNow, isPollingPaused, subscribeIdle, watchPoll } from "@/lib/idle-store";
 import { gatedPollMs, pollMsForKey } from "@/lib/poll";
 import { errorRetryDelayMs } from "@/lib/retry";
-import { trackViewProblem } from "@/lib/usage";
+import { readEnded, readStarted, trackViewProblem } from "@/lib/usage";
+import { ApiError } from "@/lib/api-client";
 
 const noResumes = () => 0;
 
@@ -35,13 +36,19 @@ const SLOW_VIEW_MS = 10_000;
 /** `apiGet`, noting a read that failed or took over 10 s in the usage data. */
 async function timedGet<T>(path: string): Promise<T> {
   const t0 = Date.now();
+  readStarted();
   try {
     const out = await apiGet<T>(path);
     const ms = Date.now() - t0;
     if (ms > SLOW_VIEW_MS) trackViewProblem(path, "slow", ms / 1000);
+    readEnded(true);
     return out;
   } catch (err) {
-    trackViewProblem(path, "did-not-load", (Date.now() - t0) / 1000);
+    // A refusal of what was asked (400, 404) is the request's, not the screen's:
+    // only a server error or a read that never got an answer is a problem.
+    const serverSide = !(err instanceof ApiError) || err.statusCode >= 500;
+    if (serverSide) trackViewProblem(path, "did-not-load", (Date.now() - t0) / 1000);
+    readEnded(!serverSide);
     throw err;
   }
 }

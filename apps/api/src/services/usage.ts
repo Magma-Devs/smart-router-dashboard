@@ -34,7 +34,19 @@ const CLOCK_SLACK_MS = 10 * 60_000;
  * from the visit and its place in it, so a batch sent twice counts once.
  * Events the catalog doesn't name are left out.
  */
-export function toMixpanel(visit: string, events: IncomingUsageEvent[], s: UsageSettings, now = Date.now()): MixpanelEvent[] {
+/** Who sent a batch, as far as usage data may say: never the person, only these. Absent with accounts off. */
+export interface UsageViewer {
+  staff: boolean;
+  role: string;
+}
+
+export function viewerOf(user: { email: string; role: string } | null | undefined, s: UsageSettings): UsageViewer | null {
+  if (!user) return null;
+  const domain = user.email.split("@").pop()?.toLowerCase() ?? "";
+  return { staff: s.staffDomains.includes(domain), role: user.role };
+}
+
+export function toMixpanel(visit: string, events: IncomingUsageEvent[], s: UsageSettings, now = Date.now(), viewer: UsageViewer | null = null): MixpanelEvent[] {
   const out: MixpanelEvent[] = [];
   for (const e of events) {
     const props = cleanUsageProps(e.name, e.props);
@@ -51,6 +63,7 @@ export function toMixpanel(visit: string, events: IncomingUsageEvent[], s: Usage
         tenant: s.tenant,
         deployment_mode: s.deploymentMode,
         dashboard_version: s.version,
+        ...(viewer ? { staff: viewer.staff, role: viewer.role } : {}),
       },
     });
   }

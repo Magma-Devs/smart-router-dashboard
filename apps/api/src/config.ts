@@ -540,6 +540,9 @@ export function readIncidentSettings(source: NodeJS.ProcessEnv = process.env): I
  *    whatever the switch says. Server side only: the browser never sees it.
  *  - `MIXPANEL_API_HOST` — default `https://api-eu.mixpanel.com` (the project
  *    keeps its data in the EU). https only; http for a loopback mock.
+ *  - `USAGE_STAFF_DOMAINS` — default `magmadevs.com`: a signed-in user whose
+ *    email is on one of these is marked `staff`, so our own use can be left
+ *    out. Only the yes/no and the role are sent, never the address.
  *  - `USAGE_TENANT` — the tenant every event carries, so the store splits
  *    everything per client. Default `TENANT_ID`, which the chart sets on every
  *    deployment; read here only as that label, never to pick an org.
@@ -553,6 +556,8 @@ export interface UsageSettings {
   version: string;
   /** Why it is off although the switch says on; null otherwise. */
   problem: string | null;
+  /** Email domains of our own staff, so their use can be filtered out (`staff` on each event). */
+  staffDomains: string[];
 }
 
 export function readUsageSettings(source: NodeJS.ProcessEnv = process.env): UsageSettings {
@@ -583,5 +588,7 @@ export function readUsageSettings(source: NodeJS.ProcessEnv = process.env): Usag
     deploymentMode: mode,
     version: source.APP_VERSION?.trim() || "0.0.0",
     problem: wanted ? problem : null,
+    staffDomains: (source.USAGE_STAFF_DOMAINS ?? "magmadevs.com")
+      .split(",").map((d) => d.trim().toLowerCase()).filter(Boolean),
   };
 }

@@ -14,7 +14,7 @@
 import type { FastifyInstance } from "fastify";
 import { USAGE_BATCH_MAX } from "@sr/shared";
 import type { UsageSettings } from "../config.js";
-import { sendToMixpanel, toMixpanel, type IncomingUsageEvent } from "../services/usage.js";
+import { sendToMixpanel, toMixpanel, viewerOf, type IncomingUsageEvent } from "../services/usage.js";
 
 export interface UsageRoutesOptions {
   settings: UsageSettings;
@@ -68,7 +68,7 @@ export async function usageRoutes(app: FastifyInstance, opts: UsageRoutesOptions
     },
     async (request, reply) => {
       if (!settings.enabled) return reply.code(204).send();
-      const events = toMixpanel(request.body.visit, request.body.events, settings);
+      const events = toMixpanel(request.body.visit, request.body.events, settings, Date.now(), viewerOf(request.authUser, settings));
       void sendToMixpanel(events, settings, opts.fetchImpl).then((r) => {
         if (r.ok || Date.now() - warnedAt < WARN_INTERVAL_MS) return;
         warnedAt = Date.now();

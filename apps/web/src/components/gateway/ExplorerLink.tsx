@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { explorerBlockUrl, explorerHome, primaryExplorer } from "@sr/shared";
+import { track } from "@/lib/usage";
 
 /**
  * Links from a number the dashboard renders to the public chain that can
@@ -26,7 +27,7 @@ import { explorerBlockUrl, explorerHome, primaryExplorer } from "@sr/shared";
 
 /** Rows in both tables are clickable. A link inside one must not also toggle
  *  the row, so every click stops there. */
-const stop = (e: React.MouseEvent) => e.stopPropagation();
+const stop = (e: React.MouseEvent) => { e.stopPropagation(); track("link_out", { target: "explorer" }); };
 
 /** Registry-supplied names are lowercase ("etherscan", "mintscan") because
  *  that is how the registries spell them. Capitalise for display only — the

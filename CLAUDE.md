@@ -1146,6 +1146,7 @@ API (`apps/api/src/config.ts` is the source of truth):
 | `MIXPANEL_TOKEN` | unset | the Mixpanel project's token, from a Secret; server side only, the browser never sees it |
 | `MIXPANEL_API_HOST` | `https://api-eu.mixpanel.com` | where usage events go (the project keeps its data in the EU); https only, http for a loopback mock |
 | `USAGE_TENANT` | `TENANT_ID` | the tenant every usage event carries, so Mixpanel splits reports per client |
+| `USAGE_STAFF_DOMAINS` | `magmadevs.com` | with accounts on, a user whose email is on one of these is marked `staff: true` (with their `role`), so our own use can be left out; the address is never sent |
 | `LOG_LEVEL` | `info` | |
 | `TENANT_ID` | — | set by the chart, **not read** for tenancy (read only as the usage data's tenant label, `USAGE_TENANT`). The multi-tenant store pins `X-Scope-OrgID` from the credential that authenticated, so the api never names its own org — a config field that did would move the tenancy boundary into a values file |
 | `GIT_COMMIT` / `APP_VERSION` | `unknown` / `0.0.0` | surfaced by `/version`; `build-and-push.yml` sets both on every published image (the commit is `github.sha`) |

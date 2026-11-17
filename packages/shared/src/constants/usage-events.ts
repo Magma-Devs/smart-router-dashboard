@@ -13,7 +13,7 @@
  */
 import { WINDOWS } from "./windows.js";
 
-export const USAGE_PAGES = ["metrics", "upstreams", "team", "audit", "account", "other"] as const;
+export const USAGE_PAGES = ["metrics", "upstreams", "team", "audit", "account", "standalone", "other"] as const;
 export const USAGE_TABS = ["metrics", "upstreams", "errors", "transactions", "request", "none"] as const;
 const LISTS = ["errors", "transactions"] as const;
 
@@ -29,7 +29,10 @@ export type UsageField =
 
 export const USAGE_EVENTS = {
   /** A visit begins: how it arrived, and where. */
-  visit_start: { arrived: ["link-request", "link", "typed"], page: USAGE_PAGES, tab: USAGE_TABS, window: "window", chain_picked: "bool" },
+  visit_start: {
+    arrived: ["link-request", "link", "typed"], page: USAGE_PAGES, tab: USAGE_TABS, window: "window", chain_picked: "bool",
+    screen: ["phone", "tablet", "laptop", "wide"], theme: ["dark", "light"],
+  },
   page_view: { page: USAGE_PAGES, tab: USAGE_TABS },
   tab_change: { from: USAGE_TABS, to: USAGE_TABS },
   chain_pick: { chain: "chain", from: ["list", "router-row", "cleared"] },
@@ -51,7 +54,19 @@ export const USAGE_EVENTS = {
   filter_use: { list: LISTS, filter: ["view", "result", "retryable", "error-type", "customer", "method", "provider", "time"] },
   load_older: { list: LISTS },
   link_out: { target: ["grafana", "explorer", "try-it", "report-incident", "copy"] },
-  /** A read that failed, or answered after 10 seconds. */
+  /**
+   * Time to information: a page or tab has all its data on screen. Seconds
+   * from opening it until its reads settled the first time, how many reads it
+   * took and how many failed. Zero reads: everything came from the cache.
+   */
+  view_ready: { page: USAGE_PAGES, tab: USAGE_TABS, seconds: "seconds", reads: "count", failed: "count" },
+  /** A "More about this" note held open: where the words on screen weren't enough. */
+  help_open: { page: USAGE_PAGES, tab: USAGE_TABS },
+  /** Three or more quick clicks in one spot: something didn't respond as expected. */
+  rage_click: { page: USAGE_PAGES, tab: USAGE_TABS },
+  /** Polling paused after an hour with nobody at the page: left open, likely on a screen. */
+  idle_paused: { page: USAGE_PAGES, tab: USAGE_TABS },
+  /** A read that failed (network or server error), or answered after 10 seconds. */
   view_problem: { view: "view", problem: ["did-not-load", "slow"], seconds: "seconds" },
   visit_end: { seconds: "seconds", active_seconds: "seconds", pages: "count", tabs: "count", events: "count" },
 } as const satisfies Record<string, Record<string, UsageField>>;

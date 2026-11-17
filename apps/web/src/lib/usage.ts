@@ -16,6 +16,7 @@
  */
 import { cleanUsageProps, guidMintedSecond, USAGE_BATCH_MAX, type UsageEventName, type UsageProps } from "@sr/shared";
 import { apiGet, apiPost, apiPostKeepalive } from "./api-client";
+import { getIdlePhase, subscribeIdle } from "./idle-store";
 
 const VISIT_KEY = "sr:visit";
 const SEARCH_FROM_KEY = "sr:search-from";
@@ -52,9 +53,14 @@ export function arrivedFrom(search: string): "link-request" | "link" | "typed" {
   return "typed";
 }
 
-export function pageOf(pathname: string): "metrics" | "upstreams" | "team" | "audit" | "account" | "other" {
+export function pageOf(pathname: string): "metrics" | "upstreams" | "team" | "audit" | "account" | "standalone" | "other" {
   const first = pathname.split("/")[1] ?? "";
-  return first === "metrics" || first === "upstreams" || first === "team" || first === "audit" || first === "account" ? first : "other";
+  return first === "metrics" || first === "upstreams" || first === "team" || first === "audit" || first === "account" || first === "standalone" ? first : "other";
+}
+
+/** The width class of the reader's screen, for layout decisions. */
+export function screenOf(width: number): "phone" | "tablet" | "laptop" | "wide" {
+  return width < 768 ? "phone" : width < 1100 ? "tablet" : width < 1600 ? "laptop" : "wide";
 }
 
 export function tabOf(pathname: string, search: string): string {
@@ -115,6 +121,8 @@ function currentVisit(now: number): StoredVisit {
       tab: tabOf(loc.pathname, loc.search),
       window: new URLSearchParams(loc.search).get("window") ?? undefined,
       chain_picked: !!new URLSearchParams(loc.search).get("chain"),
+      screen: screenOf(window.innerWidth),
+      theme: document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark",
     });
   }
   return v;
@@ -150,6 +158,10 @@ export function track(name: UsageEventName, props: UsageProps = {}): void {
   }
   if (name === "tab_change") add("tabs", props.to);
   push(name, props);
+  if (name === "page_view" || name === "tab_change") {
+    const loc = window.location;
+    startView(pageOf(loc.pathname), name === "tab_change" ? String(props.to) : String(props.tab ?? tabOf(loc.pathname, loc.search)));
+  }
   if (queue.length >= FLUSH_AT) void flush();
 }
 
@@ -209,6 +221,7 @@ export function startUsage(): void {
       };
       for (const ev of ["pointerdown", "keydown", "wheel", "touchstart"]) window.addEventListener(ev, markActive, { passive: true });
       setInterval(() => void flush(), FLUSH_MS);
+      watchFrustrationAndIdle();
       document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "hidden") void flush(true);
       });
@@ -242,4 +255,73 @@ export function trackViewProblem(path: string, problem: "did-not-load" | "slow",
   if (problemsSeen.has(key)) return;
   problemsSeen.add(key);
   track("view_problem", { view: path, problem, seconds });
+}
+
+/* Time to information (`view_ready`): from a page or tab opening until every
+   read it started has settled, the first time. Reads count through `useApi`
+   (`readStarted` / `readEnded`); a view that started none within 1.5 s came
+   from the cache and is ready at once. */
+let inflight = 0;
+let view: { page: string; tab: string; start: number; reads: number; failed: number; done: boolean } | null = null;
+let cacheTimer: ReturnType<typeof setTimeout> | null = null;
+
+let firstView = true;
+
+function startView(page: string, tab: string) {
+  // The first view of a page load is timed from when the browser started
+  // loading it - the wait the reader sees, script included. Reads already in
+  // flight belong to the view: they started as its components mounted, a
+  // moment before this runs.
+  const start = firstView && typeof performance !== "undefined" ? Math.round(performance.timeOrigin) : Date.now();
+  firstView = false;
+  view = { page, tab, start, reads: inflight, failed: 0, done: false };
+  if (cacheTimer) clearTimeout(cacheTimer);
+  const mine = view;
+  cacheTimer = setTimeout(() => {
+    if (view === mine && !mine.done && mine.reads === 0 && inflight === 0) finishView(mine);
+  }, 1_500);
+}
+
+function finishView(v: NonNullable<typeof view>) {
+  v.done = true;
+  track("view_ready", { page: v.page, tab: v.tab, seconds: (Date.now() - v.start) / 1000, reads: v.reads, failed: v.failed });
+}
+
+export function readStarted(): void {
+  inflight++;
+  if (view && !view.done) view.reads++;
+}
+
+export function readEnded(ok: boolean): void {
+  inflight = Math.max(0, inflight - 1);
+  if (!view || view.done || leaving) return;
+  if (!ok) view.failed++;
+  if (inflight === 0 && view.reads > 0) finishView(view);
+}
+
+/* Frustration (`rage_click`): three clicks within 800 ms within 30 px of each
+   other, once per 2 s. And a dashboard left open (`idle_paused`). Both set up
+   with the rest once usage data is known to be on. */
+function watchFrustrationAndIdle() {
+  let clicks: { t: number; x: number; y: number }[] = [];
+  let cooldown = 0;
+  window.addEventListener("pointerdown", (e) => {
+    const t = Date.now();
+    clicks = [...clicks.filter((c) => t - c.t < 800 && Math.abs(c.x - e.clientX) < 30 && Math.abs(c.y - e.clientY) < 30), { t, x: e.clientX, y: e.clientY }];
+    if (clicks.length >= 3 && t > cooldown) {
+      cooldown = t + 2_000;
+      clicks = [];
+      const loc = window.location;
+      track("rage_click", { page: pageOf(loc.pathname), tab: tabOf(loc.pathname, loc.search) });
+    }
+  }, { passive: true });
+  let wasPaused = false;
+  subscribeIdle(() => {
+    const paused = getIdlePhase() === "paused";
+    if (paused && !wasPaused) {
+      const loc = window.location;
+      track("idle_paused", { page: pageOf(loc.pathname), tab: tabOf(loc.pathname, loc.search) });
+    }
+    wasPaused = paused;
+  });
 }

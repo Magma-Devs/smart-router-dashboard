@@ -1,7 +1,20 @@
 # Usage data
 
 What clients open, search and click on the dashboard, so the layout is decided
-from what they do (MAG-5373). Each event goes from the browser to the api
+from what they do (MAG-5373).
+
+## What we optimise for
+
+| Goal | Read it from |
+|---|---|
+| **Time to answer** - how fast someone gets what they came for | `view_ready.seconds`; `search.seconds` and `result`; time from `visit_start` to the first `row_open`, `search: found` or `panel_open` |
+| **Self-serve** - the answer without messaging Magma | visits that end after a found search or an opened row, against visits that end after `not-found`, a `link_out: grafana` or `report-incident` |
+| **A screen you can trust** | `view_problem` by `view`; `view_ready.failed` |
+| **Low effort** | events per answer; `rage_click`; `help_open` (the words weren't enough) |
+| **Only what is used** | `panel_open`, `filter_use`, `link_out` per value per tenant: what is never used is a candidate to remove |
+
+Leave our own team out of every report with `staff != true` (set where
+accounts are on). Each event goes from the browser to the api
 (`POST /api/usage`) and from the api to Mixpanel's EU project, tagged with the
 tenant. Mixpanel splits every report per tenant on the `tenant` property.
 
@@ -22,6 +35,7 @@ is on, the Account page says so in one line. `GET /api/usage/config` answers
 | `MIXPANEL_TOKEN` | unset | the project's token; server side only |
 | `MIXPANEL_API_HOST` | `https://api-eu.mixpanel.com` | https only (http for a loopback mock) |
 | `USAGE_TENANT` | `TENANT_ID` | the tenant on every event |
+| `USAGE_STAFF_DOMAINS` | `magmadevs.com` | a signed-in user on one of these is `staff: true` |
 
 ## What is never sent
 
@@ -36,13 +50,18 @@ ids replaced by `:id`; anything else is dropped before it is forwarded.
 
 Every event carries `distinct_id` (a random id per browser tab, new after 30
 minutes with no event), `tenant`, `deployment_mode`, `dashboard_version` and
-its time.
+its time. With accounts on, also `staff` (yes/no: the email's domain is ours)
+and `role` - never the address.
 
 | Event | Fields | Sent when |
 |---|---|---|
-| `visit_start` | `arrived` (link-request / link / typed), `page`, `tab`, `window`, `chain_picked` | the first event of a visit |
+| `visit_start` | `arrived` (link-request / link / typed), `page`, `tab`, `window`, `chain_picked`, `screen` (phone / tablet / laptop / wide), `theme` | the first event of a visit |
+| `view_ready` | `page`, `tab`, `seconds`, `reads`, `failed` | a page or tab has all its data: from opening it (the first page of a load: from when the browser started loading) until its reads settled, once per view; 0 reads = from the cache |
+| `help_open` | `page`, `tab` | a "More about this" note held open past a glance (0.8 s) |
+| `rage_click` | `page`, `tab` | three clicks within 0.8 s in one spot, once per 2 s |
+| `idle_paused` | `page`, `tab` | polling paused after an hour with nobody at the page |
 | `page_view` | `page`, `tab` | a page opens |
-| `tab_change` | `from`, `to` | a Metrics tab is picked |
+| `tab_change` | `from`, `to` | the Metrics tab changes, whatever changed it (the tab bar, a bar or line, the top bar's search, Back) |
 | `chain_pick` | `chain`, `from` (list / router-row / cleared) | a chain is picked in the chains list or a router row |
 | `router_pick` | `from` | a router is picked under its chain |
 | `time_range_change` | `from`, `to` | the time range is changed |
@@ -52,7 +71,7 @@ its time.
 | `filter_use` | `list`, `filter` (view / result / retryable / error-type / customer / method / provider / time) | a list filter is changed |
 | `load_older` | `list` | "Load older" is clicked |
 | `link_out` | `target` (grafana / explorer / try-it / report-incident / copy) | a link out of the dashboard or a copy |
-| `view_problem` | `view`, `problem` (did-not-load / slow), `seconds` | a read fails or takes over 10 s, once per view a visit; reads cut short by leaving the page are not counted |
+| `view_problem` | `view`, `problem` (did-not-load / slow), `seconds` | a read fails (network or server error - a 4xx is the request's, not the screen's) or takes over 10 s, once per view a visit; reads cut short by leaving the page are not counted |
 | `visit_end` | `seconds`, `active_seconds`, `pages`, `tabs`, `events` | the tab is left; sent each time, the visit's last one holds its totals |
 
 ## Reading it

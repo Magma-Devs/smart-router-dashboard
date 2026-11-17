@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { arrivedFrom, pageOf, searchKind, tabOf, visitFrom, VISIT_AWAY_MS } from "../usage";
+import { arrivedFrom, pageOf, screenOf, searchKind, tabOf, visitFrom, VISIT_AWAY_MS } from "../usage";
 
 describe("usage visits", () => {
   const id = () => "new-visit-id";
@@ -33,5 +33,12 @@ describe("usage visits", () => {
     expect(searchKind("15972212763463815960", now)).toBe("old-request-id");
     expect(searchKind("0x" + "ab".repeat(32), now)).toBe("hash");
     expect(searchKind("my-order-42", now)).toBe("other");
+  });
+});
+
+describe("usage screen classes", () => {
+  it("files a width as phone, tablet, laptop or wide", () => {
+    expect([375, 800, 1440, 1920].map(screenOf)).toEqual(["phone", "tablet", "laptop", "wide"]);
+    expect(pageOf("/standalone")).toBe("standalone");
   });
 });

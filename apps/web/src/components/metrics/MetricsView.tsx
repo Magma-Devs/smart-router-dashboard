@@ -17,7 +17,7 @@
  * router, tab, window and the tab's focus - so a copied link opens it
  * (`useScopeInUrl`, `lib/view-in-url.ts`). */
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { buildChainMetaByIndex, WINDOWS, type MetricWindow } from "@sr/shared";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 import { useChainFilter, useChainOptions, withMutedRows } from "@/hooks/use-chain-options";
@@ -57,6 +57,13 @@ export function MetricsView() {
   // With the chains drawer open, the drawer is the chain and router control.
   const { visible: drawerOpen } = useChainDrawer();
   const [tab, setTab] = useState<Tab>("metrics");
+  // Usage data: every tab change, whatever made it - the tab bar, a bar or
+  // line that opens the Errors tab, the top bar's search, Back.
+  const shownTab = useRef<Tab | null>(null);
+  useEffect(() => {
+    if (shownTab.current !== null && shownTab.current !== tab) track("tab_change", { from: shownTab.current, to: tab });
+    shownTab.current = tab;
+  }, [tab]);
   const activeChain = chain;
   const setChainFilter = (v: string) => selectChain(v === "all" ? null : v);
 
@@ -78,7 +85,7 @@ export function MetricsView() {
      the whole window, as it always was - and a request in the URL is the
      tab's it was opened on (`?request=`): another tab drops it. */
   const pickTab = (t: Tab) => {
-    if (t !== tab) { linkRequest(null); track("tab_change", { from: tab, to: t }); }
+    if (t !== tab) linkRequest(null);
     setTab(t);
     byHand(() => NO_FOCUS);
     openErrorsOn(null);
@@ -91,7 +98,6 @@ export function MetricsView() {
     const range = { from: jump.from, to: jump.to };
     byHand(() => ({ ...NO_FOCUS, upstream: { name: jump.upstream, spec: jump.spec }, range }));
     openErrorsOn({ upstream: jump.upstream, range });
-    if (tab !== "errors") track("tab_change", { from: tab, to: "errors" });
     setTab("errors");
   };
 

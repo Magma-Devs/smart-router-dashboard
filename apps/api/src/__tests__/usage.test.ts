@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "../app.js";
 import { readUsageSettings } from "../config.js";
+import { toMixpanel, viewerOf } from "../services/usage.js";
 
 /* Usage data (MAG-5373): the web's events go to POST /api/usage, and only what
    the catalog allows reaches Mixpanel, server side, tagged with the tenant. */
@@ -118,5 +119,22 @@ describe("readUsageSettings", () => {
       .toMatchObject({ enabled: false, problem: "MIXPANEL_API_HOST must be https" });
     expect(readUsageSettings({ USAGE_ANALYTICS: "on", MIXPANEL_TOKEN: TOKEN, MIXPANEL_API_HOST: "http://127.0.0.1:9999" }))
       .toMatchObject({ enabled: true, host: "http://127.0.0.1:9999" });
+  });
+});
+
+describe("staff and role on each event", () => {
+  const s = readUsageSettings({ DEPLOYMENT_MODE: "managed", MIXPANEL_TOKEN: TOKEN, TENANT_ID: "t" });
+  it("marks a signed-in user on our domain as staff, with the role, never the address", () => {
+    const viewer = viewerOf({ email: "someone@magmadevs.com", role: "admin" }, s);
+    expect(viewer).toEqual({ staff: true, role: "admin" });
+    const [e] = toMixpanel(VISIT, [{ name: "page_view", at: Date.now(), seq: 0, props: { page: "metrics" } }], s, Date.now(), viewer);
+    expect(e!.properties).toMatchObject({ staff: true, role: "admin" });
+    expect(JSON.stringify(e)).not.toContain("magmadevs.com");
+    expect(viewerOf({ email: "ops@client.example", role: "read_only" }, s)).toEqual({ staff: false, role: "read_only" });
+  });
+  it("says nothing about the viewer with accounts off", () => {
+    expect(viewerOf(null, s)).toBeNull();
+    const [e] = toMixpanel(VISIT, [{ name: "page_view", at: Date.now(), seq: 0, props: {} }], s);
+    expect(e!.properties).not.toHaveProperty("staff");
   });
 });
