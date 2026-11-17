@@ -292,11 +292,20 @@ export function AskProvider({
           : "ask",
         ...(filters.chain ? { chain: filters.chain } : {}),
         ...(filters.router ? { router: filters.router } : {}),
+        ...(filters.routerId ? { routerId: filters.routerId } : {}),
         from: new Date(now - WINDOWS[filters.timeWindow].rangeSeconds * 1000).toISOString(),
         to: new Date(now).toISOString(),
       };
     },
-    [full, local.pageContext, pathname, filters.chain, filters.router, filters.timeWindow],
+    [
+      full,
+      local.pageContext,
+      pathname,
+      filters.chain,
+      filters.router,
+      filters.routerId,
+      filters.timeWindow,
+    ],
   );
   const expand = useCallback(() => {
     save({ view: "full", chatId: chatId, returnTo: origin() });
