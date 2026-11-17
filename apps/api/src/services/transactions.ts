@@ -58,6 +58,7 @@ import {
   LABEL_TOKEN,
   lastWhere,
   linesOfLookup,
+  LookupReads,
   LOOKUP_ID,
   methodOf,
   namesOf,
@@ -371,6 +372,7 @@ export class TransactionsService {
   ) {}
 
   private readonly reads = new ListReads<TxLogRow, TransactionsReport>();
+  private readonly lookups = new LookupReads();
 
   private routers(): RouterTopology[] {
     return this.configSvc?.getRouters() ?? [];
@@ -402,8 +404,9 @@ export class TransactionsService {
     const loki = this.loki;
     if (!loki) return { available: false, reason: "unconfigured", found: false, row: null };
     if (!LOOKUP_ID.test(id)) return { available: true, found: false, row: null };
-    const lines = await linesOfLookup(loki, this.selector, id, range);
-    if (lines === null) return { available: false, reason: "unreachable", found: false, row: null };
+    const read = await this.lookups.get(id, range, () => linesOfLookup(loki, this.selector, id, range));
+    if (read === null) return { available: false, reason: "unreachable", found: false, row: null };
+    const { lines } = read;
     const rows = buildTxRows(lines, new UpstreamIndex(this.routers()));
     return { available: true, found: lines.length > 0, row: rows[0] ?? null, ...(rows.length > 1 ? { matches: rows.length } : {}) };
   }

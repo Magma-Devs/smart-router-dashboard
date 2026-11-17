@@ -3,7 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { buildApp } from "../app.js";
 import { ErrorRequestsService } from "../services/error-requests.js";
 import { TransactionsService } from "../services/transactions.js";
-import { MINTED_BEFORE_MS, MINTED_SPAN_MS } from "../services/router-log.js";
+import { LookupReads, MINTED_BEFORE_MS, MINTED_SPAN_MS, SEARCH_BUDGET_BYTES, SEARCH_PIECE_BYTES, searchLines } from "../services/router-log.js";
 import { msToNs, type LokiClient, type LokiLine } from "../services/loki-client.js";
 
 /* A look-up by request ID. smart-router v1.6.1 mints a GUID as the unix
@@ -73,10 +73,19 @@ const LONG_LINES = [
 
 const LINES = [RECOVERED, TX_ACCEPTED, ...LUCKY_LINES, ...RANDOM_LINES, ...LONG_LINES];
 
-/** Loki as a look-up sees it: one request's lines, between two times. */
-function lokiOf(lines: LokiLine[], answers = true) {
+const HOUR = 3_600_000;
+
+/**
+ * Loki as a look-up sees it: one request's lines, between two times, and
+ * what a stretch of logs weighs (`bytesPerHour`; the default is a quiet
+ * deployment, a month of which is one read).
+ */
+function lokiOf(lines: LokiLine[], answers = true, bytesPerHour = 1e6) {
   const reads: [number, number][] = [];
   const loki = {
+    async volume(_selector: string, startMs: number, endMs: number) {
+      return answers ? ((endMs - startMs) / HOUR) * bytesPerHour : null;
+    },
     async queryRange(query: string, startMs: number, endMs: number, limit: number) {
       reads.push([startMs, endMs]);
       if (!answers) return null;
@@ -229,9 +238,108 @@ describe("GET /api/requests/:guid and /api/transactions/:guid with window=30d", 
     expect(reads).toEqual([ns(minutesOf(LUCKY_SEC)), ns(minutesOf(TX_SEC))]);
   });
 
-  it("any other GUID reads the 30 days it was asked for", async () => {
+  it("any other GUID searches newest first; a Loki that can't weigh its logs gets half an hour a piece", async () => {
     const res = await app.inject({ method: "GET", url: `/api/requests/${RANDOM}?window=30d` });
-    expect(res.json()).toEqual({ available: true, row: null, transaction: null });
-    expect(reads).toEqual([ns([NOW - 30 * DAY, NOW])]);
+    // Four unweighed pieces are the whole budget: it says how far back it got.
+    expect(res.json()).toEqual({ available: true, row: null, transaction: null, searchedFrom: NOW - 2 * HOUR });
+    expect(reads).toEqual([0, 1, 2, 3].map((i) => ns([NOW - (i + 1) * 1_800_000, NOW - i * 1_800_000])));
+    // The same search again shares the answer: no read.
+    await app.inject({ method: "GET", url: `/api/requests/${RANDOM}?window=30d` });
+    expect(reads).toHaveLength(4);
+  });
+});
+
+describe("searching a busy deployment's logs for a value with no time in it", () => {
+  // The largest tenant writes about 6.7 GB of router lines an hour.
+  const BUSY = 6.7e9;
+  const PIECE_MS = (SEARCH_PIECE_BYTES / BUSY) * HOUR;
+  const HASH = "0x" + "ab".repeat(32);
+  const sent = (atMs: number) => ev(atMs, {
+    GUID: RANDOM, stateful: true, method: "eth_sendRawTransaction", chain: "ETH1", selection: "stateful", outcome: "ok", stop_reason: "Success", served_by: "node-b",
+    status: 200, has_reply: true, latency_ms: 300, tx_hash: HASH,
+    attempts: [{ upstream: "node-b", outcome: "ok", error_code: "", message: "", batch: 0, sent_ms: 1, latency_ms: 290, returned_to_client: true }],
+  });
+  /** Loki finding the hash on a relay_end, as linesOfRequest asks for it. */
+  const byHash = (lines: LokiLine[], answers = true) => {
+    const reads: [number, number][] = [];
+    const loki = {
+      async volume(_s: string, a: number, b: number) { return ((b - a) / HOUR) * BUSY; },
+      async queryRange(query: string, a: number, b: number) {
+        reads.push([a, b]);
+        if (!answers) return null;
+        const id = /\|= `([^`]+)`/.exec(query)?.[1] ?? "";
+        return lines.filter((l) => l.line.includes(id) && l.tsMs >= a && l.tsMs < b);
+      },
+    } as unknown as LokiClient;
+    return { loki, reads };
+  };
+
+  it("stops at the first piece that holds it, newest first", async () => {
+    const { loki, reads } = byHash([sent(NOW - 20 * 60_000)]);
+    const r = await new ErrorRequestsService(loki, '{service="router"}').lookup(HASH, LAST_30D);
+    expect(r).toMatchObject({ available: true, row: { guid: RANDOM }, transaction: { txHash: HASH } });
+    expect(r.searchedFrom).toBeUndefined();
+    // 20 minutes back is the third piece of about nine minutes each.
+    expect(reads).toHaveLength(3);
+    expect(reads[0]![1]).toBe(NOW);
+    for (const [a, b] of reads) expect(b - a).toBeLessThanOrEqual(PIECE_MS + 1);
+  });
+
+  it("a miss stops at the budget and says how far back it searched", async () => {
+    const { loki, reads } = byHash([sent(NOW - 2 * DAY)]);
+    const r = await new ErrorRequestsService(loki, '{service="router"}').lookup(HASH, LAST_30D);
+    expect(reads).toHaveLength(SEARCH_BUDGET_BYTES / SEARCH_PIECE_BYTES);
+    expect(r).toEqual({ available: true, row: null, transaction: null, searchedFrom: reads.at(-1)![0] });
+    expect(NOW - r.searchedFrom!).toBeCloseTo((SEARCH_BUDGET_BYTES / BUSY) * HOUR, -3);
+  });
+
+  it("starts no piece past the deadline", async () => {
+    let t = NOW;
+    const { loki, reads } = byHash([]);
+    const slow = { ...loki, volume: loki.volume, queryRange: async (...a: Parameters<LokiClient["queryRange"]>) => { t += 20_000; return loki.queryRange(...a); } } as unknown as LokiClient;
+    const r = await searchLines(slow, "{}", HASH, LAST_30D, () => t);
+    // Two 20-second pieces pass the 30-second deadline.
+    expect(reads).toHaveLength(2);
+    expect(r).toEqual({ lines: [], searchedFromMs: reads.at(-1)![0] });
+  });
+
+  it("Loki not answering is unreachable, and nothing is kept", async () => {
+    const { loki, reads } = byHash([], false);
+    const svc = new ErrorRequestsService(loki, '{service="router"}');
+    expect(await svc.lookup(HASH, LAST_30D)).toEqual({ available: false, reason: "unreachable", row: null, transaction: null });
+    await svc.lookup(HASH, LAST_30D);
+    expect(reads).toHaveLength(2);
+  });
+
+  it("an older router's request found near a piece's start is read further back for its other lines", async () => {
+    const lines = [
+      at(NOW - PIECE_MS - 30_000, { GUID: RANDOM, path: "/", body: '{"jsonrpc":"2.0","id":1,"method":"eth_chainId"}', message: "Consumer received a new JSON-RPC request" }),
+      at(NOW - PIECE_MS + 10_000, { GUID: RANDOM, served_by: "node-a", stop_reason: "Success", status: "200", has_reply: "true", error: "", message: "relay finished" }),
+    ];
+    const { loki, reads } = byHash(lines);
+    const r = await new ErrorRequestsService(loki, '{service="router"}').lookup(RANDOM, LAST_30D);
+    expect(r.row).toMatchObject({ guid: RANDOM, method: "eth_chainId", result: "ok" });
+    expect(reads).toHaveLength(2);
+    expect(reads[1]![1]).toBe(reads[0]![0]);
+  });
+});
+
+describe("LookupReads", () => {
+  it("shares a look-up in flight and keeps a find 5 minutes, a miss 30 s", async () => {
+    let t = NOW;
+    const kept = new LookupReads(() => t);
+    let runs = 0;
+    const found = async () => { runs++; return { lines: [{ guid: "g" } as never] }; };
+    const missed = async () => { runs++; return { lines: [] }; };
+    await Promise.all([kept.get("a", LAST_30D, found), kept.get("a", LAST_30D, found)]);
+    expect(runs).toBe(1);
+    await kept.get("b", LAST_30D, missed);
+    t += 60_000;
+    await kept.get("a", { startMs: t - 30 * DAY, endMs: t }, found); // a reload a minute later: kept
+    await kept.get("b", { startMs: t - 30 * DAY, endMs: t }, missed); // a miss is read again
+    expect(runs).toBe(3);
+    t += 5 * 60_000;
+    await kept.get("a", { startMs: t - 30 * DAY, endMs: t }, found);
+    expect(runs).toBe(4);
   });
 });

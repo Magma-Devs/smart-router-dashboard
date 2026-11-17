@@ -9,7 +9,7 @@
  */
 import { guidMintedSecond, WINDOWS, type RelayAttempt, type RouterTopology } from "@sr/shared";
 import type { LokiClient, LokiLine } from "./loki-client.js";
-import type { ReadRange } from "./read-range.js";
+import { LOG_READ_BUDGET_BYTES, readStart, type ReadRange } from "./read-range.js";
 
 export interface RouterLine {
   tsMs: number;
@@ -167,15 +167,81 @@ const WIDEST_MS = WINDOWS["30d"].rangeSeconds * 1000;
 /** The event a v1.6.1 router ends every request with (relay-end.ts's isRelayEnd, which imports this file). */
 const isEnd = (l: RouterLine) => l.f.event === "relay_end";
 
+/** What a look-up read: the lines it found, and how far back it searched. */
+export interface LookupLines {
+  lines: RouterLine[];
+  /**
+   * Unix ms the search reached back to, when it stopped before the range's
+   * start (its size limit or its deadline): older logs were not searched.
+   * Absent when the whole range was searched, or when the ID said where to
+   * look.
+   */
+  searchedFromMs?: number;
+}
+
+/** The most log one piece of a search scans, as Loki's index weighs it. */
+export const SEARCH_PIECE_BYTES = 1e9;
+
+/** The most log one search scans in all: the cost of one list read (read-range.ts). */
+export const SEARCH_BUDGET_BYTES = LOG_READ_BUDGET_BYTES;
+
+/**
+ * No new piece is started this long after the search began. A piece can take
+ * up to LOKI_TIMEOUT_MS (60 s), so the whole search stays under the edge's
+ * 100 s cut.
+ */
+export const SEARCH_DEADLINE_MS = 30_000;
+
+/**
+ * The range searched for a value, newest first, a piece at a time, stopping
+ * at the first piece that holds it. Loki can't stop early itself: a request
+ * writes a handful of lines, so a read never fills its limit and Loki runs
+ * every hour of the range - a month of a busy deployment is terabytes. Each
+ * piece is weighed first from Loki's index (`readStart`), at most
+ * SEARCH_PIECE_BYTES, and the search stops after SEARCH_BUDGET_BYTES or
+ * SEARCH_DEADLINE_MS, saying how far back it got. A piece Loki can't weigh
+ * is counted as a full one. An older router's request writes several lines
+ * over its processing budget, so a find within MINTED_SPAN_MS of a piece's
+ * start reads that much further back for the rest of them.
+ */
+export async function searchLines(
+  loki: LokiClient,
+  selector: string,
+  id: string,
+  range: ReadRange,
+  clock: () => number = Date.now,
+): Promise<LookupLines | null> {
+  const began = clock();
+  let endMs = range.endMs;
+  let spent = 0;
+  while (endMs > range.startMs) {
+    if (spent >= SEARCH_BUDGET_BYTES || clock() - began >= SEARCH_DEADLINE_MS) return { lines: [], searchedFromMs: endMs };
+    const startMs = await readStart(loki, selector, range, endMs, SEARCH_PIECE_BYTES);
+    const found = await linesOfRequest(loki, selector, id, startMs, endMs);
+    if (found === null) return null;
+    spent += SEARCH_PIECE_BYTES;
+    if (found.length > 0) {
+      const oldest = Math.min(...found.map((l) => l.tsMs));
+      if (startMs > range.startMs && oldest - startMs < MINTED_SPAN_MS) {
+        const before = await linesOfRequest(loki, selector, id, Math.max(range.startMs, oldest - MINTED_SPAN_MS), startMs);
+        if (before !== null) return { lines: [...before, ...found] };
+      }
+      return { lines: found };
+    }
+    endMs = startMs;
+  }
+  return { lines: [] };
+}
+
 /**
  * Every line of the requests a look-up names (`linesOfRequest`). A request
  * ID that carries its second (guidMintedSecond) is read there first,
  * whatever the range, and that read answers once it holds the request's
- * relay_end. Otherwise the range is read as before, except a 30-day one:
- * the second already says where the request is. A random GUID decodes to a
- * plausible second about 0.06% of the time, so a miss still reads the range.
- * A transaction hash or a caller's request id never decodes and reads the
- * range. Null when Loki didn't answer.
+ * relay_end. Otherwise the range is searched (`searchLines`), except a
+ * 30-day one: the second already says where the request is. A random GUID
+ * decodes to a plausible second about 0.06% of the time, so a miss still
+ * searches a shorter range. A transaction hash or a caller's request id
+ * never decodes and searches the range. Null when Loki didn't answer.
  */
 export async function linesOfLookup(
   loki: LokiClient,
@@ -183,15 +249,55 @@ export async function linesOfLookup(
   id: string,
   range: ReadRange,
   nowMs: number = Date.now(),
-): Promise<RouterLine[] | null> {
+): Promise<LookupLines | null> {
   const sec = guidMintedSecond(id, nowMs / 1000);
-  if (sec === null) return linesOfRequest(loki, selector, id, range.startMs, range.endMs);
+  if (sec === null) return searchLines(loki, selector, id, range);
   const minted = await linesOfRequest(loki, selector, id, sec * 1000 - MINTED_BEFORE_MS, sec * 1000 + MINTED_SPAN_MS);
-  if (minted === null || minted.some(isEnd) || range.endMs - range.startMs >= WIDEST_MS) return minted;
-  const ranged = await linesOfRequest(loki, selector, id, range.startMs, range.endMs);
+  if (minted === null) return null;
+  if (minted.some(isEnd) || range.endMs - range.startMs >= WIDEST_MS) return { lines: minted };
+  const searched = await searchLines(loki, selector, id, range);
   // Still running, or longer than the span: the range's lines, else what its minutes hold.
-  if (ranged === null || ranged.length > 0) return ranged;
-  return minted;
+  if (searched === null || searched.lines.length > 0) return searched;
+  return minted.length > 0 ? { lines: minted } : searched;
+}
+
+/** A look-up's answer, kept per value and range length: found for 5 minutes, not found for 30 s. */
+const FOUND_KEEP_MS = 5 * 60_000;
+const MISSED_KEEP_MS = 30_000;
+const LOOKUPS_KEPT = 200;
+
+/**
+ * One look-up per value at a time on this process, its answer kept: a
+ * `?request=` link re-runs its look-up on every page load, and a search can
+ * scan gigabytes. A range that ends now is keyed by its length, so a reload a
+ * second later shares the answer; an exact range by its times. Loki not
+ * answering is never kept.
+ */
+export class LookupReads {
+  private readonly kept = new Map<string, { at: number; answer: LookupLines }>();
+  private readonly inFlight = new Map<string, Promise<LookupLines | null>>();
+
+  constructor(private readonly clock: () => number = Date.now) {}
+
+  get(id: string, range: ReadRange, read: () => Promise<LookupLines | null>): Promise<LookupLines | null> {
+    const now = this.clock();
+    const live = Math.abs(now - range.endMs) < 60_000;
+    const key = `${id}|${range.endMs - range.startMs}|${live ? "now" : `${range.startMs}-${range.endMs}`}`;
+    const hit = this.kept.get(key);
+    if (hit && now - hit.at < (hit.answer.lines.length > 0 ? FOUND_KEEP_MS : MISSED_KEEP_MS)) return Promise.resolve(hit.answer);
+    const running = this.inFlight.get(key);
+    if (running) return running;
+    const p = read().then((answer) => {
+      if (answer !== null) {
+        this.kept.delete(key);
+        this.kept.set(key, { at: this.clock(), answer });
+        while (this.kept.size > LOOKUPS_KEPT) this.kept.delete(this.kept.keys().next().value!);
+      }
+      return answer;
+    }).finally(() => this.inFlight.delete(key));
+    this.inFlight.set(key, p);
+    return p;
+  }
 }
 
 /** Array#findLast, which this repo's compile target doesn't have yet. */

@@ -78,6 +78,7 @@ import {
   lastWhere,
   listenerPattern,
   linesOfLookup,
+  LookupReads,
   LOOKUP_ID,
   methodOf,
   namesOf,
@@ -382,6 +383,7 @@ export class ErrorRequestsService {
   }
 
   private readonly reads = new ListReads<ErrorRequestRow, ErrorRequestsReport>();
+  private readonly lookups = new LookupReads();
   private readonly counted = new Map<string, { at: number; result: FailedRequests }>();
   private readonly counting = new Map<string, Promise<FailedRequests>>();
 
@@ -508,14 +510,19 @@ export class ErrorRequestsService {
     const loki = this.loki;
     if (!loki) return { ...unavailable("unconfigured"), row: null, transaction: null };
     if (!LOOKUP_ID.test(id)) return { available: true, row: null, transaction: null };
-    const lines = await linesOfLookup(loki, this.selector, id, range);
-    if (lines === null) return { ...unavailable("unreachable"), row: null, transaction: null };
+    const read = await this.lookups.get(id, range, () => linesOfLookup(loki, this.selector, id, range));
+    if (read === null) return { ...unavailable("unreachable"), row: null, transaction: null };
+    const { lines, searchedFromMs } = read;
     const index = new UpstreamIndex(this.routers());
     const rows = buildErrorRows(lines, index, true);
     const row = rows[0] ?? null;
     // A transaction's own row too, from the same lines: its send outcome and hash.
     const transaction = row ? buildTxRows(lines, index).find((t) => t.guid === row.guid) ?? null : null;
-    return { available: true, row, transaction, ...(rows.length > 1 ? { matches: rows.length } : {}) };
+    return {
+      available: true, row, transaction,
+      ...(rows.length > 1 ? { matches: rows.length } : {}),
+      ...(searchedFromMs !== undefined ? { searchedFrom: searchedFromMs } : {}),
+    };
   }
 
   /**

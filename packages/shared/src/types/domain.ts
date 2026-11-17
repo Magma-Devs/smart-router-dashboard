@@ -758,6 +758,13 @@ export interface RequestLookup {
    */
   transaction: TxLogRow | null;
   matches?: number;
+  /**
+   * Unix ms the search reached back to, when it stopped before the range's
+   * start (its size limit or its time limit): older logs were not searched,
+   * so `row: null` means "not in the logs since then". Absent when the whole
+   * range was searched.
+   */
+  searchedFrom?: number;
 }
 
 /**
