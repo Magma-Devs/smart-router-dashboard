@@ -17,18 +17,18 @@ bump `VERSION`. Branch image builds are integration artifacts.
 
 The repository permits squash merges only. After each slice lands in integration,
 rebase the next slice and its descendants onto that integration tip, dropping the
-merged parent's old commits, and rerun their checks. Once all slices pass review
-and integration testing, one final integration-to-main release PR reconciles
-current main, bumps `VERSION` once to the agreed next release, and runs the final
-checks. The release number is chosen at that point; none is reserved here.
+merged parent's old commits, and rerun their checks. One final release PR
+collects the complete feature against current main, proposes the single
+`VERSION` increase and changelog entry, and runs the combined checks. Before
+merging it, complete review and integration testing, reconcile the accepted
+integration state and current main, and apply review fixes.
 
-`release/MAG-4750-managed-ask` is the draft aggregate candidate for that final
-release. It collects the combined stack against current main while the slice
-PRs remain available for review, keeps main's `VERSION`, and holds a
-[pending release-note fragment](ASK-YOUR-DATA-RELEASE-NOTES.md). Before it becomes ready, synchronize it with the accepted
-integration state and current main, apply review fixes, and make the one final
-version bump and one changelog version entry. The draft does not replace the
-slice reviews or authorize rollout.
+`release/MAG-4750-managed-ask` is that aggregate release candidate. It proposes
+`0.70.0`, the next feature minor after main's `0.69.7`, with one
+[changelog version entry](../CHANGELOG.md). The slice PRs remain available for
+focused review. An open PR reserves no release number: verify the then-current
+main and tags before merging and adjust this one release proposal if needed.
+Readiness for review does not establish deployed acceptance or authorize rollout.
 
 | Slice | Implementation | Acceptance evidence |
 | --- | --- | --- |

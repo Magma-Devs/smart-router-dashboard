@@ -69,8 +69,9 @@ paths/ports via Makefile/compose vars (`ROUTER_DIR`, `SR_CONFIG_HOST`,
 
 Ask your data implementation: [`docs/ASK-YOUR-DATA.md`](docs/ASK-YOUR-DATA.md)
 and the [delivery/acceptance ledger](docs/ASK-YOUR-DATA-IMPLEMENTATION.md).
-The foundation has shared validated contracts and server-only adapters; no
-customer spending route exists until durable runs and budget admission land.
+Managed Ask uses server-only MCP/Bedrock adapters, PostgreSQL personal history
+and durable runs, and shared customer budget admission. The customer feature
+flag, managed accounts and current session gate both the UI and paid routes.
 
 ```
 ┌──────────────┐  REST  ┌─────────────────────┐  PromQL  ┌────────────┐

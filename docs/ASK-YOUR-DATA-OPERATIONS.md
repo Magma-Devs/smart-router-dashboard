@@ -12,18 +12,20 @@ stacked bases for review. The repository permits squash merges only: after a
 slice lands, rebase the next slice and its descendants onto the updated
 integration branch and rerun checks. Individual slices leave `VERSION` alone.
 
-After the complete feature passes review and integration testing, one final
-integration-to-main PR reconciles current main and bumps `VERSION` once to the
-agreed next release. Choose the number then. Branch image builds are validation
+One final release PR collects the complete feature against current main and
+proposes one `VERSION` increase and changelog version entry. Review and
+integration testing must pass before merging; reconcile accepted integration
+changes and current main on that final head. Branch image builds are validation
 artifacts; the stable dashboard release is shared by the complete feature.
 Chart and fleet delivery use their own repositories and versioning. GK8 rollout
 uses the resulting released dashboard image and the fresh checkpoint below.
 
-The draft aggregate candidate is `release/MAG-4750-managed-ask`. It keeps main's
-version while the slices are reviewed. Before making it ready, reconcile the
-accepted integration state and current main, apply review fixes and perform the
-single version bump and fold the [pending notes](ASK-YOUR-DATA-RELEASE-NOTES.md)
-into that version's changelog entry. Its branch images remain validation artifacts.
+The aggregate candidate is `release/MAG-4750-managed-ask`. It proposes `0.70.0`
+with the full feature and one [changelog entry](../CHANGELOG.md), while slices
+remain available for focused review. An open PR reserves no number: compare
+current main and tags before merging and adjust that one proposal if needed.
+Its branch images remain validation artifacts; review readiness does not turn
+on GK8 or replace the deployed checks below.
 
 ## Runtime delivery
 
