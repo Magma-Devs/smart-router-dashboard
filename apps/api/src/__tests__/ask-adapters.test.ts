@@ -489,6 +489,22 @@ describe("MCP SDK transport and customer policy", () => {
     expect(fixture.calls.some((c) => c.name === "execute_operation")).toBe(false);
   });
 
+  it.each([
+    "rate(up[365d])",
+    "up offset 365d",
+    "up @ 1",
+    "rate(up[1h])[24h:1s]",
+    "rate(up[1h * 1000])",
+  ])("rejects query-text range escalation before sending an MCP operation: %s", async (query) => {
+    const fixture = mcpFixture();
+    await expect(
+      new McpAdapter(settings(), fixture.fetchImpl).withConnection((c) =>
+        c.read("gk8-metrics", "metrics.query", { query }),
+      ),
+    ).rejects.toMatchObject({ code: "ASK_TOOL_DENIED" });
+    expect(fixture.calls.some((c) => c.name === "execute_operation")).toBe(false);
+  });
+
   it.each([{ readOnly: false }, { method: "POST" }])(
     "remote annotations cannot authorize an unsafe operation",
     async (overrides) => {

@@ -7,9 +7,10 @@ import { z } from "zod";
 import type { AskSettings } from "../../config.js";
 import { AskFailure, abortFailure } from "./errors.js";
 import { boundedFetch } from "./http.js";
+import { hasBoundedAskQuery } from "./query-bounds.js";
 
 const identifier = z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/);
-const query = z.string().min(1).max(16_000);
+const query = z.string().min(1).max(16_000).refine(hasBoundedAskQuery);
 const timestamp = z.number().finite().nonnegative();
 const windowShape = { start: timestamp, end: timestamp };
 const rangeValid = (p: { start: number; end: number }) =>
