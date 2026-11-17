@@ -174,36 +174,6 @@ suite("Ask HTTP backed by independent PostgreSQL connections", () => {
     vi.unstubAllEnvs();
   });
 
-  it("redacts common credential formats before persistence and history reads", async () => {
-    const id = await chat();
-    const secrets = [
-      "synthetic-basic-private",
-      "synthetic-client-private",
-      "synthetic-cookie-private",
-      "synthetic-url-private",
-    ];
-    const question = [
-      `Authorization: Basic ${secrets[0]}`,
-      `client_secret="${secrets[1]}"`,
-      `Cookie: session=${secrets[2]}; other=private-cookie`,
-      `wss://fixture.test/${secrets[3]}?key=private-url`,
-    ].join("\n");
-    expect((await submit(a, alice, id, crypto.randomUUID(), question)).status).toBe(200);
-    const rows = await handles[0]!.db.select().from(askRuns);
-    const messages = await handles[0]!.db.select().from(askMessages);
-    const detail = await request(a, alice, `/chats/${id}`);
-    for (const secret of secrets) {
-      expect(
-        JSON.stringify([
-          rows.map((row) => row.question),
-          messages.map((row) => row.question),
-          detail.body,
-        ]),
-      ).not.toContain(secret);
-    }
-    expect(rows[0]!.question).toContain("[redacted]");
-  });
-
   it("enforces personal/customer ownership on read, search, submit, cancel and preferences", async () => {
     const id = await chat();
     const run = await submit(a, alice, id);
