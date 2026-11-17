@@ -42,6 +42,7 @@ import { ErrorsBreakdown, type ErrorsFocus, type ErrorsJump } from "./ErrorsBrea
 import { TransactionLog } from "./TransactionLog";
 import { FindRequest } from "./FindRequest";
 import { UpstreamMetricsTab } from "./upstream/UpstreamMetricsTab";
+import { track } from "@/lib/usage";
 
 /** The first is the default, and the only one the URL leaves out. */
 const TABS = ["metrics", "upstreams", "errors", "transactions", "request"] as const;
@@ -77,7 +78,7 @@ export function MetricsView() {
      the whole window, as it always was - and a request in the URL is the
      tab's it was opened on (`?request=`): another tab drops it. */
   const pickTab = (t: Tab) => {
-    if (t !== tab) linkRequest(null);
+    if (t !== tab) { linkRequest(null); track("tab_change", { from: tab, to: t }); }
     setTab(t);
     byHand(() => NO_FOCUS);
     openErrorsOn(null);
@@ -90,6 +91,7 @@ export function MetricsView() {
     const range = { from: jump.from, to: jump.to };
     byHand(() => ({ ...NO_FOCUS, upstream: { name: jump.upstream, spec: jump.spec }, range }));
     openErrorsOn({ upstream: jump.upstream, range });
+    if (tab !== "errors") track("tab_change", { from: tab, to: "errors" });
     setTab("errors");
   };
 
@@ -221,7 +223,7 @@ export function MetricsView() {
           {/* The Routers table compares routers: with one chain picked, its cards above say it, and the
               chains list on the left picks between a chain's routers. */}
           {!activeChain && (
-            <RouterOverview chainFilter={activeChain} timeWindow={timeWindow} onChainClick={(ch) => { setChainFilter(ch); pickTab("upstreams"); }}
+            <RouterOverview chainFilter={activeChain} timeWindow={timeWindow} onChainClick={(ch) => { setChainFilter(ch); track("chain_pick", { chain: ch, from: "router-row" }); pickTab("upstreams"); }}
               drill={{ row: focus.expand, tile: focus.tile }} linked={linked}
               onDrill={(d) => byHand((f) => ({ ...f, expand: d.row, tile: d.tile }))} />
           )}
@@ -229,7 +231,7 @@ export function MetricsView() {
       )}
       {tab === "upstreams" && (
         <UpstreamMetricsTab timeWindow={timeWindow} chainFilter={activeChain} onOpenErrors={openErrors}
-          selected={focus.upstream} linked={linked} onSelect={(p: UpstreamPick) => byHand((f) => ({ ...f, upstream: p }))} />
+          selected={focus.upstream} linked={linked} onSelect={(p: UpstreamPick) => { track("panel_open", { panel: "provider" }); return byHand((f) => ({ ...f, upstream: p })); }} />
       )}
       {tab === "errors" && (
         <ErrorsBreakdown key={errorsOpen.seq} chainFilter={activeChain} win={timeWindow} focus={errorsOpen.focus}

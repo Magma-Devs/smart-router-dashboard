@@ -30,6 +30,7 @@ import { ChainDetail, type ChainDetailRow } from "./ChainDetail";
 import { LinkNotice } from "./LinkNotice";
 import { useState } from "react";
 import { useFilters } from "@/components/gateway/FiltersProvider";
+import { track } from "@/lib/usage";
 
 const BLOCK_TIP = "**The head this router serves** - `smartrouter_latest_block`, the tip it has accepted, leading with the furthest-ahead api interface.\n\nIt is a CHAIN-level series, so two routers on one chain read the same one. Per-upstream lag lives on the Upstreams tab.\n\n**Click a height** to open it on the chain\u2019s block explorer. Chains with no verified block page show the number plain \u2014 the chain icon still opens their explorer.";
 
@@ -225,7 +226,7 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow, drill, l
             const isOpen = open === rowKey;
             return (
               <Fragment key={rowKey}>
-              <tr style={{ cursor: "pointer", background: isOpen ? "var(--hover)" : undefined }} onClick={() => setOpen(isOpen ? null : rowKey)}
+              <tr style={{ cursor: "pointer", background: isOpen ? "var(--hover)" : undefined }} onClick={() => { if (!isOpen) track("panel_open", { panel: "router-row" }); setOpen(isOpen ? null : rowKey); }}
                 title={`${r.routerId} on ${r.name} - click for chain health`}>
                 <td>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>

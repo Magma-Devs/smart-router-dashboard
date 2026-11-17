@@ -17,6 +17,7 @@ import { useMe } from "@/hooks/use-me";
 import { TwoFactorCountdown, TwoFactorGate } from "@/components/auth/two-factor-gate";
 import { ReportIncidentButton } from "@/components/incidents/ReportIncident";
 import { openRequestSearch } from "@/lib/request-search";
+import { noteSearchFrom, pageOf, startUsage, tabOf, track } from "@/lib/usage";
 import { roleBadgeLabel } from "./role-badge";
 import { roleChipStyle } from "@/components/team/bits";
 
@@ -254,6 +255,7 @@ function RequestSearch() {
     <form className="gw-top__search" role="search" onSubmit={(e) => {
       e.preventDefault();
       if (!id) return;
+      noteSearchFrom("top-bar");
       openRequestSearch(id, { chain, router: routerId }, pathname, (url) => router.push(url));
       setDraft("");
     }} title="Find a request by its ID, its transaction hash or your own request ID - any request, answered or not">
@@ -325,6 +327,11 @@ export function Shell({ children, grafanaDashboardUrl, grafanaCustomerUsageDashb
 }) {
   const pathname = usePathname();
   const { chain } = useFilters();
+  // Usage data (MAG-5373): asked once whether it is on, then a page view per page.
+  useEffect(() => {
+    startUsage();
+    track("page_view", { page: pageOf(pathname), tab: tabOf(pathname, window.location.search) });
+  }, [pathname]);
 
   const here =
     NAV_SECTIONS.flatMap((s) => s.items).find(

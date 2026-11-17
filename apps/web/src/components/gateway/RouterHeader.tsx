@@ -7,6 +7,7 @@ import { ChainSelect, type ChainOption } from "./ChainSelect";
 import { RefreshButton } from "./RefreshButton";
 import { RouterFilterSelect } from "./RouterFilterSelect";
 import { WindowSelect } from "./WindowSelect";
+import { track } from "@/lib/usage";
 
 /** Build the "Smart Router Dashboard Logs" board URL, scoped to the router
     service and the header's current time window. Mirrors the board's variables:
@@ -56,7 +57,7 @@ export function PageActions({ timeWindow, setTimeWindow, chainFilter }: {
       {/* View full logs — links to the Grafana logs board (base URL from
           /api/config → DASHBOARD_GRAFANA_URL), scoped to the current window.
           Hidden when no Grafana is configured. */}
-      {logsHref && <a className="gw-btn gw-btn--primary" href={logsHref} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, padding: "5px 12px", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}>
+      {logsHref && <a className="gw-btn gw-btn--primary" href={logsHref} target="_blank" rel="noopener noreferrer" onClick={() => track("link_out", { target: "grafana" })} style={{ fontSize: 12, padding: "5px 12px", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}>
         View full logs ↗
       </a>}
     </div>

@@ -65,6 +65,7 @@ import {
 } from "./request-log";
 import { TransactionsChart, TX_RESULT } from "./TransactionsChart";
 import { RequestBreakdown, type BreakdownProps, type FinalAnswer } from "./request-breakdown";
+import { track } from "@/lib/usage";
 
 const PER_PAGE = 25;
 const ALL = "all";
@@ -246,7 +247,7 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
     <div style={{ marginBottom: 16, display: "flex", justifyContent: "flex-end" }}>
       <TimeRangeControl
         range={range}
-        onChange={(r) => { setRange(r); setLive(rangeIsLive(r)); setPage(0); }}
+        onChange={(r) => { track("filter_use", { list: "transactions", filter: "time" }); setRange(r); setLive(rangeIsLive(r)); setPage(0); }}
         windowLabel={WINDOWS[win].label}
         windowMs={WINDOWS[win].rangeSeconds * 1000}
       />
@@ -323,24 +324,24 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
           </span>
           {/* Narrowing it down, and finding one transaction. */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <FilterSelect aria-label="Result" value={outcome} onChange={(e) => reset(setOutcome)(e.target.value as TxLogRow["outcome"] | typeof ALL)} style={narrowSelect} disabled={!allRows.length && outcome === ALL}>
+            <FilterSelect usage={{ list: "transactions", filter: "result" }} aria-label="Result" value={outcome} onChange={(e) => reset(setOutcome)(e.target.value as TxLogRow["outcome"] | typeof ALL)} style={narrowSelect} disabled={!allRows.length && outcome === ALL}>
               <option value={ALL}>All results</option>
               {/* No counts before the first read lands: a 0 there would be a claim. */}
               {OUTCOME_ORDER.map((o) => <option key={o} value={o}>{OUTCOME[o].label}{data ? ` (${fmtComma(byOthers.filter((r) => r.outcome === o).length)})` : ""}</option>)}
             </FilterSelect>
-            <FilterSelect aria-label="Customer" value={customer} onChange={(e) => reset(setCustomer)(e.target.value)} style={narrowSelect} disabled={!customers.length && customer === ALL}>
+            <FilterSelect usage={{ list: "transactions", filter: "customer" }} aria-label="Customer" value={customer} onChange={(e) => reset(setCustomer)(e.target.value)} style={narrowSelect} disabled={!customers.length && customer === ALL}>
               <option value={ALL}>All customers</option>
               {customers.map((c) => <option key={c.key} value={c.key}>{c.label} ({fmtComma(c.count)})</option>)}
             </FilterSelect>
-            <FilterSelect aria-label="Method" value={method} onChange={(e) => reset(setMethod)(e.target.value)} style={narrowSelect} disabled={!methods.length}>
+            <FilterSelect usage={{ list: "transactions", filter: "method" }} aria-label="Method" value={method} onChange={(e) => reset(setMethod)(e.target.value)} style={narrowSelect} disabled={!methods.length}>
               <option value={ALL}>All methods</option>
               {methods.map((m) => <option key={m} value={m}>{m === "unknown" ? "method not in the logs" : m}</option>)}
             </FilterSelect>
-            <FilterSelect aria-label="Error type" value={errType} onChange={(e) => reset(setErrType)(e.target.value)} style={narrowSelect} disabled={!errTypes.length}>
+            <FilterSelect usage={{ list: "transactions", filter: "error-type" }} aria-label="Error type" value={errType} onChange={(e) => reset(setErrType)(e.target.value)} style={narrowSelect} disabled={!errTypes.length}>
               <option value={ALL}>All error types</option>
               {errTypes.map((t) => <option key={t.key} value={t.key}>{t.label} ({fmtComma(t.count)})</option>)}
             </FilterSelect>
-            <FilterSelect aria-label="Provider" value={upstream} onChange={(e) => reset(setUpstream)(e.target.value)} style={narrowSelect} disabled={!upstreams.length && upstream === ALL}>
+            <FilterSelect usage={{ list: "transactions", filter: "provider" }} aria-label="Provider" value={upstream} onChange={(e) => reset(setUpstream)(e.target.value)} style={narrowSelect} disabled={!upstreams.length && upstream === ALL}>
               <option value={ALL}>All providers</option>
               {upstream !== ALL && !upstreams.some((u) => u.name === upstream) && <option value={upstream}>{upstream}</option>}
               {upstreams.map((u) => <option key={u.name} value={u.name}>{u.name} ({fmtComma(u.count)})</option>)}
@@ -385,7 +386,7 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
               {pageRows.map((r) => {
                 const o = resultOf(r);
                 const isOpen = open === r.guid;
-                const toggle = () => toggleRow(r.guid);
+                const toggle = () => { if (open !== r.guid) track("row_open", { list: "transactions", result: r.outcome }); toggleRow(r.guid); };
                 return (
                   <Fragment key={r.guid}>
                     <tr tabIndex={0} aria-expanded={isOpen} className={`gw-logrow${isOpen ? " is-open" : ""}`} onClick={toggle} onKeyDown={onRowKey(toggle)}>
@@ -443,7 +444,7 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
           perPage={PER_PAGE}
           noun="transactions"
           onPage={setPage}
-          more={log.more ? { loading: log.loadingOlder, failed: log.olderFailed, onLoad: log.loadOlder } : null}
+          more={log.more ? { loading: log.loadingOlder, failed: log.olderFailed, onLoad: () => { track("load_older", { list: "transactions" }); void log.loadOlder(); } } : null}
         />
       </div>
     </div>

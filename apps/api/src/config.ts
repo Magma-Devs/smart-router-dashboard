@@ -527,3 +527,61 @@ export function readIncidentSettings(source: NodeJS.ProcessEnv = process.env): I
     podMax: positiveInt(source.INCIDENT_POD_MAX, 10),
   };
 }
+
+/**
+ * Usage data (`POST /api/usage`, MAG-5373): which pages, tabs, searches and
+ * clicks a visit uses, forwarded to the product-analytics store (Mixpanel) so
+ * the layout can be decided from what clients do. From the live env, so tests
+ * can flip it per app instance.
+ *
+ *  - `USAGE_ANALYTICS` — `on` / `off`. Unset: on where we host the deployment
+ *    (`DEPLOYMENT_MODE=managed`), off where the client does (`onprem`).
+ *  - `MIXPANEL_TOKEN` — the project's token. Without it nothing is sent,
+ *    whatever the switch says. Server side only: the browser never sees it.
+ *  - `MIXPANEL_API_HOST` — default `https://api-eu.mixpanel.com` (the project
+ *    keeps its data in the EU). https only; http for a loopback mock.
+ *  - `USAGE_TENANT` — the tenant every event carries, so the store splits
+ *    everything per client. Default `TENANT_ID`, which the chart sets on every
+ *    deployment; read here only as that label, never to pick an org.
+ */
+export interface UsageSettings {
+  enabled: boolean;
+  token: string | null;
+  host: string;
+  tenant: string;
+  deploymentMode: "managed" | "onprem";
+  version: string;
+  /** Why it is off although the switch says on; null otherwise. */
+  problem: string | null;
+}
+
+export function readUsageSettings(source: NodeJS.ProcessEnv = process.env): UsageSettings {
+  const mode = source.DEPLOYMENT_MODE?.trim() === "managed" ? "managed" : "onprem";
+  const raw = source.USAGE_ANALYTICS?.trim().toLowerCase();
+  const wanted = raw === "on" || raw === "true" ? true : raw === "off" || raw === "false" ? false : mode === "managed";
+  const token = source.MIXPANEL_TOKEN?.trim() || null;
+  let host = "https://api-eu.mixpanel.com";
+  let problem: string | null = null;
+  const rawHost = source.MIXPANEL_API_HOST?.trim();
+  if (rawHost) {
+    try {
+      const u = new URL(rawHost);
+      const secure = u.protocol === "https:" || (u.protocol === "http:" && LOOPBACK_HOSTS.has(u.hostname));
+      if (secure) host = u.origin;
+      else problem = "MIXPANEL_API_HOST must be https";
+    } catch {
+      problem = "MIXPANEL_API_HOST is not a URL";
+    }
+  }
+  if (wanted && !token) problem = problem ?? "MIXPANEL_TOKEN is not set";
+  const tenant = (source.USAGE_TENANT?.trim() || source.TENANT_ID?.trim() || "unnamed").slice(0, 64);
+  return {
+    enabled: wanted && !!token && problem === null,
+    token,
+    host,
+    tenant,
+    deploymentMode: mode,
+    version: source.APP_VERSION?.trim() || "0.0.0",
+    problem: wanted ? problem : null,
+  };
+}

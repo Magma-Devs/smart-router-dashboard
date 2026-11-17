@@ -5,6 +5,22 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.70.0]
+
+### Added
+
+- **Usage data, to learn how clients use the dashboard (MAG-5373).** The
+  dashboard records what a visit opens, searches and clicks - pages, tabs,
+  chain and time range picks, look-ups and what they found, rows and panels
+  opened, filters, links out, reads that failed or were slow - and the api
+  forwards it to Mixpanel's EU project, every event tagged with the tenant so
+  each client's use reads apart. Never a name, email, IP, request ID, hash,
+  filter value or anything typed: the api keeps only the fields a closed
+  catalog lists. On by default where we host the dashboard, off on a
+  self-hosted install (`USAGE_ANALYTICS`), and nothing is sent without
+  `MIXPANEL_TOKEN`. Where it is on, the Account page says so. The events and
+  how to read them: `docs/USAGE-DATA.md`.
+
 ## [0.69.7]
 
 ### Changed

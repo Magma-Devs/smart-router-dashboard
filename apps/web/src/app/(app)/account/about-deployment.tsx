@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { LocalTime } from "@/components/gateway/LocalTime";
 import { Skel } from "@/components/gateway/Skel";
+import { useApi } from "@/hooks/use-api";
 
 /** The api's `/version`. */
 export interface VersionInfo {
@@ -87,6 +88,22 @@ export function AboutDeployment({
           <Skel w={140} />
         </div>
       )}
+      <UsageNote />
     </section>
+  );
+}
+
+/**
+ * Said only where this deployment sends usage data (MAG-5373): what goes,
+ * what never does. Nothing at all where it is off.
+ */
+function UsageNote() {
+  const { data } = useApi<{ enabled: boolean }>("/api/usage/config", 0);
+  if (!data?.enabled) return null;
+  return (
+    <p style={{ margin: "14px 0 0", fontSize: 12, color: "var(--text-3)", lineHeight: 1.5 }}>
+      This dashboard sends anonymous usage data to Magma: pages opened, searches and clicks. Never names, emails,
+      request IDs, hashes or anything typed.
+    </p>
   );
 }
