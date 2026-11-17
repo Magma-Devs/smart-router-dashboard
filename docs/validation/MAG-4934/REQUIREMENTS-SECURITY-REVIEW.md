@@ -12,6 +12,11 @@ All dashboard slices feed the single [release PR #405](https://github.com/Magma-
 The following rows map every product/build/Done-when clause, including clauses
 shared by several tickets, to the owning review slice and executable evidence.
 
+Dashboard #405 is the only active dashboard review. Slice numbers in this table
+are closed historical references; their implementation is included in #405.
+Chart #189 and infrastructure #1494 remain separate active reviews. Supporting
+infrastructure #1504 is merged and requires no further review.
+
 | Requirement | Owning PR / implementation | Verification and limit |
 | --- | --- | --- |
 | Managed customer opt-in; all signed-in roles; API and UI gate; on-prem/disabled/anonymous cannot spend | #389, #396; `config.ts`, `routes/ask.ts`, `AskProvider.tsx` | `ask-adapters`, `ask-routes`, disabled browser spec; `read_only` HTTP/browser flow. Deployed gate rehearsal remains open. |

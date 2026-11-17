@@ -6,27 +6,22 @@ The earlier Bedrock PR #200 and visual prototype PR #300 are reference material.
 
 ## Delivery
 
-Each slice receives a separate pull request with its tests and evidence. Dependent
-branches may be stacked; their descriptions name their base and prerequisite PRs.
-No slice enables customer spending before durable admission and cost enforcement.
+The complete dashboard feature is reviewed in **PR #405 only**, from
+`release/MAG-4750-managed-ask` to `main`. Put review comments, fixes and approval
+on that PR. The seven implementation-slice PRs are closed as superseded; their
+links below preserve the implementation history and evidence. They require no
+separate approval, merge or integration-branch sequence.
 
-The complete feature ships in **one stable dashboard release**. The foundation
-targets `integration/MAG-4750-managed-ask`; later slices retain their stacked
-bases for review. Individual slices do not merge directly into `main` and do not
-bump `VERSION`. Branch image builds are integration artifacts.
-
-The repository permits squash merges only. After each slice lands in integration,
-rebase the next slice and its descendants onto that integration tip, dropping the
-merged parent's old commits, and rerun their checks. One final release PR
-collects the complete feature against current main, proposes the single
-`VERSION` increase and changelog entry, and runs the combined checks. Before
-merging it, complete review and integration testing, reconcile the accepted
-integration state and current main, and apply review fixes.
+The repository permits squash merges only. The dashboard ships in **one stable
+release**, with one `VERSION` increase and changelog entry. Before merge, apply
+review fixes to #405, reconcile current main and rerun affected checks. The
+customer's requested test-server validation precedes any merge or production
+deployment. Review readiness does not authorize deployment.
 
 `release/MAG-4750-managed-ask` is that aggregate release candidate. It proposes
 `0.70.0`, the next feature minor after main's `0.69.7`, with one
-[changelog version entry](../CHANGELOG.md). The slice PRs remain available for
-focused review. An open PR reserves no release number: verify the then-current
+[changelog version entry](../CHANGELOG.md). Closed slice PRs remain available as
+historical references. An open PR reserves no release number: verify the then-current
 main and tags before merging and adjust this one release proposal if needed.
 Readiness for review does not establish deployed acceptance or authorize rollout.
 
@@ -138,8 +133,9 @@ No acceptance item is complete without the corresponding observed evidence.
 
 ## Pull request progress
 
-The dashboard review order below feeds the integration branch, followed by one
-final dashboard release PR to main:
+Review and approve [dashboard PR #405](https://github.com/Magma-Devs/smart-router-dashboard/pull/405).
+The closed slice PRs below are historical implementation references, not an
+additional review or merge queue:
 
 1. [PR #389](https://github.com/Magma-Devs/smart-router-dashboard/pull/389): shared
    contracts, managed/live-session gates and customer-scoped server adapters.

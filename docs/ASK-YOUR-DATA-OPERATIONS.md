@@ -7,22 +7,21 @@ fixture suite or a published image does not establish a live pilot.
 
 ## Single dashboard release
 
-The implementation slices land in `integration/MAG-4750-managed-ask`, with
-stacked bases for review. The repository permits squash merges only: after a
-slice lands, rebase the next slice and its descendants onto the updated
-integration branch and rerun checks. Individual slices leave `VERSION` alone.
+Dashboard PR #405 is the only dashboard review and release path. Its source
+branch is `release/MAG-4750-managed-ask`, targeting `main`. The implementation
+slice PRs are closed as superseded and require no separate approval or merge.
+All review fixes belong on #405. The repository permits squash merges only.
 
-One final release PR collects the complete feature against current main and
-proposes one `VERSION` increase and changelog version entry. Review and
-integration testing must pass before merging; reconcile accepted integration
-changes and current main on that final head. Branch image builds are validation
+This PR collects the complete feature against current main and proposes one
+`VERSION` increase and changelog entry. Review, current-main reconciliation and
+the user's test-server validation precede merge. Branch images are validation
 artifacts; the stable dashboard release is shared by the complete feature.
 Chart and fleet delivery use their own repositories and versioning. GK8 rollout
 uses the resulting released dashboard image and the fresh checkpoint below.
 
 The aggregate candidate is `release/MAG-4750-managed-ask`. It proposes `0.70.0`
-with the full feature and one [changelog entry](../CHANGELOG.md), while slices
-remain available for focused review. An open PR reserves no number: compare
+with the full feature and one [changelog entry](../CHANGELOG.md). Closed slices
+remain historical references. An open PR reserves no number: compare
 current main and tags before merging and adjust that one proposal if needed.
 Its branch images remain validation artifacts; review readiness does not turn
 on GK8 or replace the deployed checks below.
