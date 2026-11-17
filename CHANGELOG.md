@@ -5,6 +5,35 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.71.0]
+
+### Added
+
+- **The router's cross-validation records, readable over the api**
+  (MAG-2788). A router with smart-router #712 writes one record for every
+  cross-validated request, agreed or failed. `GET
+  /api/audit/cross-validation/records` reads them back from the router's logs,
+  exactly as written. You can filter by time range, provider, how a provider
+  took part (`provider_outcome=disagreed` is every check it dissented on),
+  chain, method, status, failure reason and request ID. Pages run oldest
+  first and resume exactly from a cursor. A failed read is a 503, never an
+  empty page. An audit token reads it, and so does every signed-in role. A
+  REST `method` is refused with a 400, because the fleet's log agent masks
+  paths before storing them. See
+  [`docs/CROSS-VALIDATION-RECORDS.md`](./docs/CROSS-VALIDATION-RECORDS.md).
+- **An audit token can expire.** `POST /api/audit/tokens` takes an optional
+  `expiresAt`. From that moment the token answers 401, the same as a revoked
+  one. The listing shows the expiry. Tokens minted before this have none and
+  keep working until they are revoked. Migration `0010_audit_token_expiry`
+  adds the column.
+
+### Changed
+
+- **An audit token now reads the cross-validation records as well as the
+  audit log.** The token can still reach only `GET` under `/api/audit/`, and
+  the records route sits under that prefix. A token already handed to a
+  security team can read the records from this release on.
+
 ## [0.70.0]
 
 ### Added

@@ -157,6 +157,25 @@ describe("minting and resolving", () => {
     expect(await resolveAuditToken(t.db, minted.secret)).toBeNull();
   });
 
+  /** MAG-2788: "An expired or revoked token is rejected." */
+  it("resolves a token until its expiry and refuses it after", async () => {
+    const live = await mintAuditToken(t.db, {
+      name: "quarterly",
+      createdBy: null,
+      createdByName: "Dana",
+      expiresAt: new Date(Date.now() + 3600_000),
+    });
+    expect(await resolveAuditToken(t.db, live.secret)).not.toBeNull();
+
+    const expired = await mintAuditToken(t.db, {
+      name: "last quarter",
+      createdBy: null,
+      createdByName: "Dana",
+      expiresAt: new Date(Date.now() - 1000),
+    });
+    expect(await resolveAuditToken(t.db, expired.secret)).toBeNull();
+  });
+
   it("refuses anything that is not one of ours", async () => {
     for (const bad of ["", "nonsense", "Bearer x", `${AUDIT_TOKEN_PREFIX}wrong`]) {
       expect(await resolveAuditToken(t.db, bad), bad).toBeNull();
@@ -380,6 +399,38 @@ describe("token management is admin-only", () => {
     expect(list.body).not.toContain("tokenHash");
     expect(list.body).not.toContain("token_hash");
     expect(list.json().tokens[0].suffix).toHaveLength(4);
+    expect(list.json().tokens[0].expiresAt).toBeNull();
+  });
+
+  it("mints a token with an expiry, and lists it", async () => {
+    app = await buildAuthedApp();
+    const { token } = await signedIn("admin");
+    const expiresAt = new Date(Date.now() + 90 * 24 * 3600_000).toISOString();
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/audit/tokens",
+      headers: auth(token),
+      payload: { name: "compliance pull", expiresAt },
+    });
+    expect(created.statusCode).toBe(201);
+    expect(created.json().token.expiresAt).toBe(expiresAt);
+    const list = await app.inject({ method: "GET", url: "/api/audit/tokens", headers: auth(token) });
+    expect(list.json().tokens[0].expiresAt).toBe(expiresAt);
+  });
+
+  /** A token born expired would be shown once and never work. */
+  it("refuses an expiry that is not a time, or not in the future", async () => {
+    app = await buildAuthedApp();
+    const { token } = await signedIn("admin");
+    for (const expiresAt of ["next week", new Date(Date.now() - 60_000).toISOString()]) {
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/audit/tokens",
+        headers: auth(token),
+        payload: { name: "x", expiresAt },
+      });
+      expect(res.statusCode, expiresAt).toBe(400);
+    }
   });
 
   it("logs the token's creation and revocation, not every pull", async () => {

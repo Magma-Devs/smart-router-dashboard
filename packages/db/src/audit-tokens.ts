@@ -1,5 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, or, sql } from "drizzle-orm";
 import type { Database } from "./client.js";
 import { auditTokens, type AuditTokenRow } from "./schema-audit.js";
 
@@ -51,6 +51,8 @@ export interface MintAuditTokenInput {
   name: string;
   createdBy: string | null;
   createdByName: string;
+  /** Refused from then on. Omitted or null: until revoked. */
+  expiresAt?: Date | null;
 }
 
 export async function mintAuditToken(
@@ -66,6 +68,7 @@ export async function mintAuditToken(
       suffix: secret.slice(-4),
       createdBy: input.createdBy,
       createdByName: input.createdByName,
+      expiresAt: input.expiresAt ?? null,
     })
     .returning();
   return { row: row!, secret };
@@ -74,8 +77,9 @@ export async function mintAuditToken(
 /**
  * Resolve a presented token, or `null`.
  *
- * `null` covers unknown, malformed and revoked alike — a caller learning
- * *which* of those it was learns whether a value it holds was ever real.
+ * `null` covers unknown, malformed, revoked and expired alike — a caller
+ * learning *which* of those it was learns whether a value it holds was ever
+ * real. Expiry is compared to the database's clock, as revocation is set by it.
  *
  * The hash comparison is constant-time even though the lookup is by hash: the
  * index makes the query itself a timing oracle only for existence, and paying
@@ -92,7 +96,13 @@ export async function resolveAuditToken(
   const [row] = await db
     .select()
     .from(auditTokens)
-    .where(and(eq(auditTokens.tokenHash, hash), isNull(auditTokens.revokedAt)))
+    .where(
+      and(
+        eq(auditTokens.tokenHash, hash),
+        isNull(auditTokens.revokedAt),
+        or(isNull(auditTokens.expiresAt), gt(auditTokens.expiresAt, sql`now()`)),
+      ),
+    )
     .limit(1);
   if (!row) return null;
 
@@ -146,6 +156,7 @@ export async function listAuditTokens(db: Database): Promise<ListedAuditToken[]>
       revokedAt: auditTokens.revokedAt,
       revokedBy: auditTokens.revokedBy,
       revokedByName: auditTokens.revokedByName,
+      expiresAt: auditTokens.expiresAt,
     })
     .from(auditTokens)
     .orderBy(desc(auditTokens.createdAt));

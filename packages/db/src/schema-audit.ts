@@ -237,6 +237,9 @@ export const auditTokens = pgTable(
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     revokedBy: uuid("revoked_by"),
     revokedByName: text("revoked_by_name"),
+
+    /** Refused from this moment on, as if revoked. Null: until revoked. MAG-2788. */
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
   },
   (table) => [index("audit_tokens_created_at_idx").on(table.createdAt.desc())],
 );
