@@ -29,6 +29,12 @@ Nothing is sent without `MIXPANEL_TOKEN` (deliver it from a Secret). Where it
 is on, the Account page says so in one line. `GET /api/usage/config` answers
 `{ enabled }`, and the web sends nothing while it is false.
 
+On Kubernetes the chart sets these (smart-router-helm-chart, `dashboard.usage`):
+`enabled` renders `USAGE_ANALYTICS=on`, `existingSecret` hands `MIXPANEL_TOKEN`
+to the backend from a Secret, and `deploymentMode` renders `DEPLOYMENT_MODE`
+where accounts are off. One project token serves every deployment: each event
+carries the tenant. A deployment without the Secret starts and sends nothing.
+
 | Variable | Default | |
 |---|---|---|
 | `USAGE_ANALYTICS` | managed: on, onprem: off | `on` / `off` |
