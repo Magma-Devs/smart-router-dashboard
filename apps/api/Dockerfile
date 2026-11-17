@@ -42,11 +42,16 @@ RUN pnpm --filter @sr/shared build && \
 # No devDependencies, so NODE_ENV=development (pino-pretty transport) can't boot.
 RUN pnpm --filter @sr/api deploy --prod /app/deploy
 
-# Runtime stage, built once per target architecture. Keep it free of RUN:
-# the CI builder has no QEMU, so a RUN here fails on arm64 with "exec format
-# error". COPY, ENV, USER and CMD need no emulation.
+# Runtime stage, built once per target architecture. A RUN here runs on
+# arm64 under the emulator BuildKit's image carries, several times slower
+# than native, so build work belongs in the build stage. COPY, ENV, USER and
+# CMD need no emulation.
 FROM node:26.13.1-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5
 WORKDIR /app
+# zlib 1.4-r0 fixes CVE-2026-4738. The base image still ships 1.3.2-r1 and
+# Alpine 3.24 carries the fix; the version bound fails the build rather than
+# ship the old one. Drop this line once the base image carries 1.4.
+RUN apk add --no-cache --upgrade 'zlib>=1.4-r0'
 
 ARG GIT_COMMIT=unknown
 ARG APP_VERSION=0.0.0

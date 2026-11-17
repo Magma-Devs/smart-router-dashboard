@@ -5,6 +5,15 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.69.8]
+
+### Security
+
+- **Both images carry zlib 1.4-r0** (CVE-2026-4738, MAG-5366). The Node base
+  image ships Alpine 3.24's zlib 1.3.2-r1; each runtime stage now upgrades it
+  to 1.4-r0, and the build fails if that version is not available. The line
+  goes once the base image carries the fix.
+
 ## [0.69.7]
 
 ### Changed
