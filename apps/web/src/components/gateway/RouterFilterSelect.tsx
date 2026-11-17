@@ -98,7 +98,7 @@ function hintFor(r: { id: string; spec: string; chainName: string; upstreams: nu
   const namesItsChain = fold(r.id) === fold(r.spec) || fold(r.id) === fold(r.chainName);
   const parts = [];
   if (!namesItsChain) parts.push(r.chainName);
-  parts.push(`${r.upstreams} upstream${r.upstreams === 1 ? "" : "s"}`);
+  parts.push(`${r.upstreams} provider${r.upstreams === 1 ? "" : "s"}`);
   return parts.join(" · ");
 }
 

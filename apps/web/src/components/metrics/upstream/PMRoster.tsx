@@ -133,7 +133,7 @@ export function PMRoster({ rows, activeKey, onSelect, timeWindow, showChain = tr
       <table className="gw-table">
         <thead>
           <tr>
-            <ThCol sortKey="upstream" sort={sort} onSort={onSort}>Upstream</ThCol>
+            <ThCol sortKey="upstream" sort={sort} onSort={onSort}>Provider</ThCol>
             <ThCol sortKey="router" sort={sort} onSort={onSort}>Router</ThCol>
             {showChain && <ThCol sortKey="chain" sort={sort} onSort={onSort}>Chain</ThCol>}
             <ThCol align="right" tip={BLOCK_TIP} sortKey="block" sort={sort} onSort={onSort}>Last reported block</ThCol>

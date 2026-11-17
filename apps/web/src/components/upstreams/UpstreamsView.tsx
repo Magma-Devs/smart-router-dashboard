@@ -440,7 +440,7 @@ export function UpstreamsView() {
                   )}
                   <span style={{ flex: 1 }} />
                   <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 4, background: "var(--hover-2)", color: "var(--text-3)", border: "1px solid var(--line)", flexShrink: 0 }}>
-                    {group.upstreams} upstream{group.upstreams !== 1 ? "s" : ""}
+                    {group.upstreams} provider{group.upstreams !== 1 ? "s" : ""}
                   </span>
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
