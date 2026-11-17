@@ -5,6 +5,17 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.69.8]
+
+### Fixed
+
+- **Find a request searches the last 30 days, whatever the page's time
+  range.** It looked only in the page's window and then said it found
+  nothing "in the last 12 hours". A request ID from smart-router v1.6.1 or
+  later is still read where it was minted, in about a second; a hash or a
+  caller's ID is read over the last 30 days, the furthest a log read goes.
+  Not found now says only that the request isn't in the router's logs.
+
 ## [0.69.7]
 
 ### Changed

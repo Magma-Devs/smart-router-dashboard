@@ -236,7 +236,7 @@ export function MetricsView() {
           onFocus={(e) => byHand((f) => ({ ...f, upstream: e.upstream ? { name: e.upstream, spec: activeChain } : null, range: e.range }))} />
       )}
       {tab === "transactions" && <TransactionLog chainFilter={activeChain} win={timeWindow} />}
-      {tab === "request" && <FindRequest win={timeWindow} />}
+      {tab === "request" && <FindRequest />}
     </div>
   );
 }
