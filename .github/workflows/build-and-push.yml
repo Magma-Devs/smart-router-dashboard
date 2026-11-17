@@ -2,7 +2,6 @@ name: Build and Push Images
 
 on:
   push:
-    branches:
   workflow_dispatch:
 
 env:
@@ -59,7 +58,7 @@ jobs:
             exit 1
           fi
           VERSION=$(tr -d ' \n\r' < VERSION)
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Read version: $VERSION"
 
       - name: Validate version was bumped
@@ -73,8 +72,8 @@ jobs:
 
           if [ -z "$LATEST_TAG" ]; then
             echo "No previous tags found. This appears to be the first release."
-            echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
-            echo "is_first_release=true" >> $GITHUB_OUTPUT
+            echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+            echo "is_first_release=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -97,8 +96,8 @@ jobs:
           fi
 
           echo "✓ Version validated: $NEW_VERSION > $LATEST_VERSION"
-          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
-          echo "is_first_release=false" >> $GITHUB_OUTPUT
+          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "is_first_release=false" >> "$GITHUB_OUTPUT"
 
       - name: Normalize version tag
         id: version
@@ -127,8 +126,8 @@ jobs:
             MAJOR_MINOR="${MAJOR_MINOR}-${BRANCH_NAME}"
           fi
 
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "major_minor=$MAJOR_MINOR" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "major_minor=$MAJOR_MINOR" >> "$GITHUB_OUTPUT"
 
       # No QEMU: both Dockerfiles build on $BUILDPLATFORM and keep their runtime
       # stages free of RUN. A RUN added to a runtime stage fails here on arm64
@@ -279,6 +278,16 @@ jobs:
             echo "::error::pulled a $ARCH image on an arm64 runner"
             exit 1
           fi
+          # Exercise the built runtime, including its default UID, before the
+          # app health check. Bundled npm is unnecessary production code and
+          # previously carried advisories outside the workspace lockfile.
+          docker run --rm --entrypoint node "$IMAGE" -e '
+            const assert = require("node:assert/strict");
+            const fs = require("node:fs");
+            assert.equal(process.getuid(), 1000);
+            assert.equal(fs.existsSync("/usr/local/lib/node_modules/npm"), false);
+            console.log("Non-root runtime excludes bundled npm");
+          '
           docker run -d --name smoke -p ${{ matrix.port }}:${{ matrix.port }} \
             -e PROMETHEUS_URL=http://127.0.0.1:9090 "$IMAGE"
           for i in $(seq 1 30); do

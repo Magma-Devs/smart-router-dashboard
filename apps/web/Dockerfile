@@ -47,7 +47,27 @@ RUN cd apps/web/.next/standalone/node_modules/.pnpm && \
 # Runtime stage, built once per target architecture. Keep it free of RUN:
 # the CI builder has no QEMU, so a RUN here fails on arm64 with "exec format
 # error". COPY, ENV, USER and CMD need no emulation.
-FROM node:26.13.1-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5
+# Runtime package preparation runs on the builder, while apk writes the
+# target architecture's root without executing its scripts. Final stages stay
+# free of RUN and need no QEMU. Only the Node binary/entrypoint cross from the
+# Node image: its unused npm dependency tree never enters production.
+FROM node:26.13.1-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5 AS runtime-node
+FROM alpine:3.24.4@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS runtime-alpine
+FROM --platform=$BUILDPLATFORM alpine:3.24.4@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS runtime-files
+ARG TARGETARCH
+COPY --from=runtime-alpine / /runtime/
+RUN case "$TARGETARCH" in amd64) apk_arch=x86_64 ;; arm64) apk_arch=aarch64 ;; *) exit 1 ;; esac && \
+    apk --root /runtime --arch "$apk_arch" --no-scripts add --no-cache \
+      libgcc=15.2.0-r5 libstdc++=15.2.0-r5 libatomic=15.2.0-r5 zlib=1.4-r0 && \
+    mkdir -p /runtime/home/node && chown 1000:1000 /runtime/home/node
+
+FROM scratch AS runtime-base
+COPY --from=runtime-files /runtime/ /
+COPY --from=runtime-node /usr/local/bin/node /usr/local/bin/node
+COPY --from=runtime-node /usr/local/bin/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+COPY --from=runtime-node /etc/passwd /etc/group /etc/
+ENTRYPOINT ["docker-entrypoint.sh"]
+FROM runtime-base
 WORKDIR /app
 
 COPY --from=builder /app/apps/web/.next/standalone ./
