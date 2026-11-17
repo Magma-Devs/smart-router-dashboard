@@ -49,8 +49,9 @@ No name, email, account id or IP (`ip=0`, and the browser never talks to
 Mixpanel). No request ID, transaction hash, customer or caller id, filter
 value, typed text or node url. The api keeps only the fields the catalog lists
 (`packages/shared/src/constants/usage-events.ts`), each a closed list, a
-yes/no, a bounded number, a chain's spec, a window key, or an api path with its
-ids replaced by `:id`; anything else is dropped before it is forwarded.
+yes/no, a bounded number, a chain's spec, a window key, or one of the api's
+listed reads (`USAGE_VIEWS`, with `:id` where the path carries an id or what
+was typed into a look-up); anything else is dropped before it is forwarded.
 
 ## Events
 

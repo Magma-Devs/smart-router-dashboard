@@ -6,7 +6,7 @@
  * tenant.
  *
  * Every field is a closed list, a yes/no, a bounded number, a chain's spec, a
- * window key or an api path with its ids taken out. Nothing free-form is ever
+ * window key or one of the api's listed reads. Nothing free-form is ever
  * kept: no user, no request ID or hash, no typed text, no filter value, no
  * node url. A field not listed here, or a value not in its form, is dropped
  * (`cleanUsageProps`), so a mistake in the web can't send one.
@@ -92,16 +92,68 @@ export const isUsageEventName = (s: string): s is UsageEventName =>
   Object.prototype.hasOwnProperty.call(USAGE_EVENTS, s);
 
 /**
- * An api path as a view name: the query dropped and every segment that isn't
- * a plain word (an id, a hash, a number) replaced by `:id`. Null when it isn't
- * an api path.
+ * The api's reads, as a view is named: every GET path under `/api/`, with
+ * `:id` where the path carries an id, a hash or something typed. A look-up's
+ * path ends in what was typed (`/api/requests/<typed>`), which may be any
+ * text, so a view is one of these and never a segment of the path itself.
+ * The api's tests hold the list to the routes it registers.
+ */
+export const USAGE_VIEWS = [
+  "/api/account/me",
+  "/api/account/sessions",
+  "/api/audit/catalog",
+  "/api/audit/events",
+  "/api/audit/tokens",
+  "/api/config/routers",
+  "/api/error-requests",
+  "/api/error-requests/count",
+  "/api/metrics/block-heights",
+  "/api/metrics/chain-series",
+  "/api/metrics/chains",
+  "/api/metrics/cross-validation",
+  "/api/metrics/dashboard",
+  "/api/metrics/dashboard-summary",
+  "/api/metrics/downtime-avoided",
+  "/api/metrics/error-incidents",
+  "/api/metrics/errors",
+  "/api/metrics/methods",
+  "/api/metrics/pulse",
+  "/api/metrics/query",
+  "/api/metrics/reads",
+  "/api/metrics/retries",
+  "/api/metrics/routers",
+  "/api/metrics/routers-rollup",
+  "/api/metrics/rps",
+  "/api/metrics/specs",
+  "/api/metrics/traffic",
+  "/api/metrics/unavailable",
+  "/api/metrics/upstream-detail",
+  "/api/metrics/upstream-mix",
+  "/api/metrics/upstream-peers",
+  "/api/metrics/upstream-timeline",
+  "/api/metrics/upstreams",
+  "/api/metrics/websocket",
+  "/api/requests/:id",
+  "/api/team/invites",
+  "/api/team/members",
+  "/api/transactions",
+  "/api/transactions/:id",
+  "/api/transactions/over-time",
+  "/api/usage/config",
+] as const;
+
+const VIEW_SET: ReadonlySet<string> = new Set(USAGE_VIEWS);
+
+/**
+ * An api path as a view name: the query dropped, then the listed view it is,
+ * or the listed view it becomes with its last segment as `:id`. Null for a
+ * path that is neither, so nothing off the list is ever a view.
  */
 export function usageViewOf(path: string): string | null {
   const bare = path.split(/[?#]/)[0] ?? "";
-  if (!bare.startsWith("/api/")) return null;
-  const parts = bare.split("/").slice(1).map((p) => (/^[a-z][a-z-]{0,39}$/.test(p) ? p : ":id"));
-  const view = `/${parts.join("/")}`;
-  return view.length <= 100 ? view : null;
+  if (VIEW_SET.has(bare)) return bare;
+  const withId = `${bare.slice(0, bare.lastIndexOf("/") + 1)}:id`;
+  return VIEW_SET.has(withId) ? withId : null;
 }
 
 function cleanValue(field: UsageField, v: unknown): string | number | boolean | undefined {

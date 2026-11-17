@@ -5,6 +5,7 @@ import { readUsageSettings } from "../config.js";
 import { toMixpanel, viewerOf } from "../services/usage.js";
 import Fastify from "fastify";
 import { usageRoutes } from "../routes/usage.js";
+import { USAGE_VIEWS } from "@sr/shared";
 
 /* Usage data (MAG-5373): the web's events go to POST /api/usage, and only what
    the catalog allows reaches Mixpanel, server side, tagged with the tenant. */
@@ -154,5 +155,18 @@ describe("the process-wide cap on forwarded batches", () => {
     expect(answers).toEqual([{ accepted: 1 }, { accepted: 1 }, { accepted: 0 }]);
     expect(forwarded).toHaveLength(2);
     await local.close();
+  });
+});
+
+describe("the views a usage event may name", () => {
+  it("list every read the api registers, so a new one is added there and never passed through as written", async () => {
+    await boot({});
+    await app.ready();
+    const paths = (app.swagger().paths ?? {}) as Record<string, Record<string, unknown>>;
+    const reads = Object.entries(paths)
+      .filter(([path, methods]) => path.startsWith("/api/") && "get" in methods)
+      .map(([path]) => path.replace(/\{[^}]+\}/g, ":id"));
+    expect(reads.length).toBeGreaterThan(20);
+    expect(reads.filter((path) => !(USAGE_VIEWS as readonly string[]).includes(path))).toEqual([]);
   });
 });

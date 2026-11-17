@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanUsageProps, isUsageEventName, USAGE_EVENT_NAMES, USAGE_VISIT_ID, usageViewOf } from "../constants/usage-events.js";
+import { cleanUsageProps, isUsageEventName, USAGE_EVENT_NAMES, USAGE_VIEWS, USAGE_VISIT_ID, usageViewOf } from "../constants/usage-events.js";
 
 describe("cleanUsageProps", () => {
   it("keeps the fields the catalog allows, in their form", () => {
@@ -39,9 +39,28 @@ describe("cleanUsageProps", () => {
     expect(usageViewOf("/api/metrics/upstreams?window=1d&spec=ETH1")).toBe("/api/metrics/upstreams");
     expect(usageViewOf("/api/requests/0xabcdef0123")).toBe("/api/requests/:id");
     expect(usageViewOf("/api/transactions/7708800000000000042?window=30d")).toBe("/api/transactions/:id");
+    expect(usageViewOf("/api/transactions/over-time?window=1d")).toBe("/api/transactions/over-time");
     expect(usageViewOf("https://example.com/api/x")).toBeNull();
     expect(cleanUsageProps("view_problem", { view: "/api/requests/abc123", problem: "slow", seconds: 12 }))
       .toEqual({ view: "/api/requests/:id", problem: "slow", seconds: 12 });
+  });
+
+  it("never keeps what was typed into a look-up, whatever it is made of", () => {
+    // A client's own request ID is any text: words and hyphens read like a path.
+    for (const typed of ["john-smith", "acmebank-withdrawal", "order", "errors", "My Order", "a/b", "%2Fapi%2Fmetrics%2Fchains"]) {
+      expect(usageViewOf(`/api/requests/${encodeURIComponent(typed)}?window=30d`)).toBe("/api/requests/:id");
+      expect(usageViewOf(`/api/transactions/${encodeURIComponent(typed)}`)).toBe("/api/transactions/:id");
+    }
+    expect(usageViewOf("/api/requests/a/b")).toBeNull();
+  });
+
+  it("a view is one of the listed reads, or nothing", () => {
+    for (const view of USAGE_VIEWS) expect(usageViewOf(`${view}?window=1d`)).toBe(view);
+    expect(usageViewOf("/api/metrics/not-a-read")).toBeNull();
+    expect(usageViewOf("/api/metrics")).toBeNull();
+    expect(usageViewOf("/api/")).toBeNull();
+    expect(cleanUsageProps("view_problem", { view: "/api/metrics/not-a-read", problem: "slow", seconds: 12 }))
+      .toEqual({ problem: "slow", seconds: 12 });
   });
 
   it("a visit id is random lower-case characters, nothing else", () => {
