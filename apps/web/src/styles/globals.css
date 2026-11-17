@@ -287,17 +287,29 @@ a.gw-side__brand:hover { opacity: 0.82; }
 .gw-banner { background: rgba(239,68,68,0.07); border-bottom: 1px solid rgba(239,68,68,0.2); padding: 10px 28px; display: flex; align-items: center; gap: 14px; font-size: 13px; color: var(--text); }
 .gw-banner__msg strong { color: var(--err); font-weight: 600; }
 
-/* The consent bar: over the page's foot, under dialogs and sheets. */
-.gw-consent { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 35; width: min(1120px, calc(100vw - 32px)); display: flex; align-items: center; gap: 20px; padding: 14px 16px 14px 22px; background: var(--surface); border: 1px solid var(--line-2); border-radius: 14px; box-shadow: 0 18px 50px rgba(0,0,0,0.35); }
-.gw-consent__msg { margin: 0; flex: 1; font-size: 13px; line-height: 1.5; color: var(--text); }
-.gw-consent__msg a { color: var(--brand); text-decoration: underline; }
-.gw-consent__actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-.gw-consent__later { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 0; border-radius: 8px; background: transparent; color: var(--text-3); cursor: pointer; }
-.gw-consent__later:hover { color: var(--text); background: var(--hover); }
-@media (max-width: 760px) {
-  .gw-consent { flex-direction: column; align-items: stretch; gap: 12px; padding: 14px 16px; }
-  .gw-consent__actions { justify-content: flex-end; flex-wrap: wrap; }
-}
+/* The consent banner: a small card docked bottom-right, over the page and
+   under dialogs and sheets. It rises in once; a reader who asked for less
+   motion gets it in place. */
+.gw-consent { position: fixed; right: 20px; bottom: 20px; z-index: 35; width: min(380px, calc(100vw - 24px)); padding: 16px 16px 14px 18px; border-radius: 16px; border: 1px solid var(--line-2); overflow: hidden; background: radial-gradient(220px 130px at 0% 0%, color-mix(in srgb, var(--brand) 15%, transparent), transparent 72%), color-mix(in srgb, var(--surface) 93%, transparent); backdrop-filter: blur(16px) saturate(140%); -webkit-backdrop-filter: blur(16px) saturate(140%); box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 20px 56px rgba(0,0,0,0.45); animation: consentIn 280ms cubic-bezier(0.16,1,0.3,1) both; }
+[data-theme="light"] .gw-consent { box-shadow: 0 16px 44px rgba(0,0,0,0.14); }
+.gw-consent::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 1px; background: linear-gradient(90deg, var(--brand), transparent 70%); }
+.gw-consent__head { display: flex; align-items: center; gap: 10px; margin-bottom: 9px; }
+.gw-consent__icon { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; flex-shrink: 0; border-radius: 9px; color: var(--brand); background: color-mix(in srgb, var(--brand) 13%, transparent); border: 1px solid color-mix(in srgb, var(--brand) 30%, transparent); }
+.gw-consent__title { margin: 0; flex: 1; font-size: 13.5px; font-weight: 600; letter-spacing: -0.01em; color: var(--text); }
+.gw-consent__close { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; flex-shrink: 0; border: 0; border-radius: 7px; background: transparent; color: var(--text-3); cursor: pointer; }
+.gw-consent__close:hover { color: var(--text); background: var(--hover-2); }
+.gw-consent__body { margin: 0 0 14px; font-size: 12.5px; line-height: 1.55; color: var(--text-2); }
+.gw-consent__foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.gw-consent__links { font-size: 11.5px; color: var(--text-3); white-space: nowrap; }
+.gw-consent__links a { color: var(--text-2); text-decoration: none; }
+.gw-consent__links a:hover { color: var(--text); text-decoration: underline; text-underline-offset: 2px; }
+.gw-consent__actions { display: flex; align-items: center; gap: 8px; }
+.gw-consent__btn { padding: 7px 14px; font-size: 12px; white-space: nowrap; }
+.gw-usage-note a { color: var(--text-2); text-decoration: underline; text-underline-offset: 2px; }
+.gw-usage-note a:hover { color: var(--text); }
+@keyframes consentIn { from { opacity: 0; transform: translateY(12px) scale(0.98); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .gw-consent { animation: none; } }
+@media (max-width: 760px) { .gw-consent { right: 12px; bottom: 12px; } }
 
 /* ── Modals ──
    Backdrops (.gw-modal-bg, .gw-sheet-bg) are rendered by DialogLayer, portaled

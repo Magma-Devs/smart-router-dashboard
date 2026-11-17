@@ -329,7 +329,7 @@ export function Shell({ children, grafanaDashboardUrl, grafanaCustomerUsageDashb
   const pathname = usePathname();
   const { chain } = useFilters();
   // Usage data (MAG-5373): asked once whether it is on, then a page view per
-  // page - recorded only once this browser accepted it in the consent bar.
+  // page - recorded only once this browser accepted it in the consent banner.
   useEffect(() => {
     startUsage();
     track("page_view", { page: pageOf(pathname), tab: tabOf(pathname, window.location.search) });

@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import { LocalTime } from "@/components/gateway/LocalTime";
 import { Skel } from "@/components/gateway/Skel";
-import { PRIVACY_POLICY_URL, useUsageState } from "@/components/gateway/UsageConsent";
+import { PolicyLinks, useUsageState } from "@/components/gateway/UsageConsent";
 import { setUsageConsent } from "@/lib/usage";
 
 /** The api's `/version`. */
@@ -96,7 +96,7 @@ export function AboutDeployment({
 
 /**
  * Usage data (MAG-5373), only where this deployment sends it: what this
- * browser answered the consent bar, what goes and what never does, and the
+ * browser answered the consent banner, what goes and what never does, and the
  * button that changes the answer. Nothing at all where it is off.
  */
 function UsageNote() {
@@ -105,16 +105,14 @@ function UsageNote() {
   const on = consent === "accepted";
   return (
     <div style={{ margin: "14px 0 0", display: "flex", alignItems: "flex-start", gap: 14 }}>
-      <p style={{ margin: 0, flex: 1, fontSize: 12, color: "var(--text-3)", lineHeight: 1.5 }}>
+      <p className="gw-usage-note" style={{ margin: 0, flex: 1, fontSize: 12, color: "var(--text-3)", lineHeight: 1.5 }}>
         {on
-          ? "This browser sends anonymous usage data to Magma through Mixpanel, a third-party analytics service: pages opened, searches and clicks. Never names, emails, request IDs, hashes or anything typed."
-          : "This browser sends no usage data. Sent, it is anonymous: pages opened, searches and clicks, to Magma through Mixpanel, a third-party analytics service."}{" "}
-        <a href={PRIVACY_POLICY_URL} target="_blank" rel="noreferrer" style={{ color: "var(--text-2)", textDecoration: "underline" }}>
-          Privacy Policy
-        </a>
+          ? "Analytics are on in this browser: Mixpanel shows us which features get used, never what you type."
+          : "Analytics are off in this browser. On, Mixpanel shows us which features get used, never what you type."}{" "}
+        See our <PolicyLinks />.
       </p>
-      <button type="button" className="gw-btn" style={{ flexShrink: 0 }} onClick={() => setUsageConsent(on ? "rejected" : "accepted")}>
-        {on ? "Stop sending" : "Send usage data"}
+      <button type="button" className="gw-btn" style={{ flexShrink: 0, padding: "7px 12px", fontSize: 12 }} onClick={() => setUsageConsent(on ? "rejected" : "accepted")}>
+        {on ? "Turn off" : "Turn on"}
       </button>
     </div>
   );

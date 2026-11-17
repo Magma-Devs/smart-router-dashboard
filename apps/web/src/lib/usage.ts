@@ -5,8 +5,9 @@
  * the analytics store with the tenant. Nothing is sent, and nothing is kept in
  * the browser, unless the api says usage data is on (`GET /api/usage/config`:
  * accounts on, off by default on a self-hosted install) AND the person at this
- * browser accepted it in the consent bar (`UsageConsentBar`). The choice is
- * kept in `localStorage`, and the Account page changes it.
+ * browser accepted it in the consent banner (`UsageConsentBar`). The choice is
+ * kept in `localStorage`, reaches the browser's other tabs of the dashboard,
+ * and the Account page changes it.
  *
  * A visit is one browser tab, new after 30 minutes with no event. Events wait
  * here and go every 10 s, at 20, and when the tab is hidden or closed (the
@@ -80,12 +81,15 @@ export function searchKind(value: string, nowSec = Date.now() / 1000): "request-
   return "other";
 }
 
-/** What the person at this browser answered the consent bar. */
-export type UsageConsent = "accepted" | "rejected";
+/**
+ * What the person at this browser answered the consent banner. "dismissed" is
+ * its X: a "no", kept like "rejected", so the banner does not come back.
+ */
+export type UsageConsent = "accepted" | "rejected" | "dismissed";
 
 /** The stored answer, or null when none was given: anything else in the key is no answer. */
 export function consentFrom(raw: string | null): UsageConsent | null {
-  return raw === "accepted" || raw === "rejected" ? raw : null;
+  return raw === "accepted" || raw === "rejected" || raw === "dismissed" ? raw : null;
 }
 
 /** Events are recorded and sent only where the deployment has usage data on and this browser accepted it. */
@@ -93,7 +97,7 @@ export function usageAllowed(available: boolean | null, consent: UsageConsent | 
   return available === true && consent === "accepted";
 }
 
-/** What the consent bar and the Account page show: whether the deployment sends usage data, and this browser's answer. */
+/** What the consent banner and the Account page show: whether the deployment sends usage data, and this browser's answer. */
 export interface UsageState {
   /** Null until the api has answered. */
   available: boolean | null;
@@ -350,6 +354,13 @@ export function startUsage(): void {
       setState({ available, consent });
       if (usageAllowed(available, consent)) begin();
       else stop();
+      // An answer given in another tab holds here too: the banner goes, and
+      // sending starts or stops with it.
+      if (available) {
+        window.addEventListener("storage", (e) => {
+          if (e.key === CONSENT_KEY) applyConsent(consentFrom(e.newValue));
+        });
+      }
     })
     .catch(() => {
       setState({ available: false, consent: null });
@@ -358,7 +369,7 @@ export function startUsage(): void {
 }
 
 /**
- * The answer to the consent bar, or its change on the Account page. Kept in
+ * The answer to the consent banner, or its change on the Account page. Kept in
  * `localStorage`, the only thing written before an acceptance. Accepting
  * starts a visit from this moment: nothing from before it is sent. Rejecting
  * drops what waited and removes the visit kept in the browser.
@@ -370,11 +381,18 @@ export function setUsageConsent(choice: UsageConsent): void {
   } catch {
     /* private window: the answer holds until the page is closed */
   }
+  applyConsent(choice);
+}
+
+/** An answer, from this page or another tab: the banner follows it, and sending starts or stops. */
+function applyConsent(choice: UsageConsent | null) {
+  const was = state.consent;
   setState({ available: state.available, consent: choice });
   if (!usageAllowed(state.available, choice)) {
     stop();
     return;
   }
+  if (was === "accepted" && enabled) return;
   queue = [];
   // The view is timed from the acceptance, not from when the page loaded.
   firstView = false;

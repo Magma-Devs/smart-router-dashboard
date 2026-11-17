@@ -34,12 +34,15 @@ Three things have to be true, and the first two are the deployment's:
    | The client hosts it (`onprem`) | off | `USAGE_ANALYTICS=on` |
 
 3. **The person at the browser accepted it.** Where the first two hold, the
-   dashboard shows a consent bar: cookies keep the sign-in, and with an
-   **Accept** the dashboard also sends usage data to Magma through Mixpanel, a
-   third party. **Reject non-essential** sends nothing. The X puts the
-   question off until the next page load, with nothing sent. The answer is
-   kept in that browser (`localStorage`, `sr:usage-consent`), and the Account
-   page shows it with a button that changes it.
+   dashboard shows a consent banner, docked bottom-right: essential cookies
+   keep the sign-in, and with **Accept** the dashboard also sends usage data
+   to Magma through Mixpanel, a third party. **Decline** sends nothing, and so
+   does the X, which is kept as a "no".
+   The banner links Magma's Privacy Policy (`magmadevs.com/privacy`) and Terms
+   & Conditions (`magmadevs.com/terms`). The answer is kept in that browser
+   (`localStorage`, `sr:usage-consent`: `accepted`, `rejected` or
+   `dismissed`), holds in its other tabs of the dashboard at once, and the
+   Account page shows it with a button that changes it.
 
 Before an acceptance the browser records nothing, sends nothing and keeps
 nothing; an acceptance starts a visit from that moment. A rejection after an
