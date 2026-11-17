@@ -130,9 +130,10 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "major_minor=$MAJOR_MINOR" >> $GITHUB_OUTPUT
 
-      # No QEMU: both Dockerfiles build on $BUILDPLATFORM and keep their runtime
-      # stages free of RUN. A RUN added to a runtime stage fails here on arm64
-      # with "exec format error".
+      # No QEMU step: both Dockerfiles do their build work on $BUILDPLATFORM.
+      # A RUN in a runtime stage runs once per architecture, the arm64 one
+      # under the emulator this BuildKit image carries (buildkit-qemu-aarch64),
+      # several times slower than native.
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         # Pinned to what the runner image shipped (buildx) and what the
