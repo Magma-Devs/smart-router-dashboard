@@ -17,7 +17,7 @@ import { useMe } from "@/hooks/use-me";
 import { TwoFactorCountdown, TwoFactorGate } from "@/components/auth/two-factor-gate";
 import { ReportIncidentButton } from "@/components/incidents/ReportIncident";
 import { openRequestSearch } from "@/lib/request-search";
-import { noteSearchFrom, pageOf, startUsage, tabOf, track } from "@/lib/usage";
+import { noteSearchFrom, pageOf, startUsage, tabOf, viewOpened } from "@/lib/usage";
 import { UsageConsentBar } from "./UsageConsent";
 import { roleBadgeLabel } from "./role-badge";
 import { roleChipStyle } from "@/components/team/bits";
@@ -328,11 +328,11 @@ export function Shell({ children, grafanaDashboardUrl, grafanaCustomerUsageDashb
 }) {
   const pathname = usePathname();
   const { chain } = useFilters();
-  // Usage data (MAG-5373): asked once whether it is on, then a page view per
-  // page - recorded only once this browser accepted it in the consent banner.
+  // Usage data (MAG-5373): asked once whether it is on, then each page timed
+  // until its data is on screen - sent only once this browser accepted it.
   useEffect(() => {
     startUsage();
-    track("page_view", { page: pageOf(pathname), tab: tabOf(pathname, window.location.search) });
+    viewOpened(pageOf(pathname), tabOf(pathname, window.location.search));
   }, [pathname]);
 
   const here =

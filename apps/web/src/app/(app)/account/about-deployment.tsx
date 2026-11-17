@@ -95,9 +95,9 @@ export function AboutDeployment({
 }
 
 /**
- * Usage data (MAG-5373), only where this deployment sends it: what this
- * browser answered the consent banner, what goes and what never does, and the
- * button that changes the answer. Nothing at all where it is off.
+ * Usage data (MAG-5373), only where this deployment records it: what this
+ * browser answered the consent banner, what Mixpanel records, and the button
+ * that changes the answer. Nothing at all where it is off.
  */
 function UsageNote() {
   const { available, consent } = useUsageState();
@@ -107,8 +107,8 @@ function UsageNote() {
     <div style={{ margin: "14px 0 0", display: "flex", alignItems: "flex-start", gap: 14 }}>
       <p className="gw-usage-note" style={{ margin: 0, flex: 1, fontSize: 12, color: "var(--text-3)", lineHeight: 1.5 }}>
         {on
-          ? "Analytics are on in this browser: Mixpanel shows us which features get used, never what you type."
-          : "Analytics are off in this browser. On, Mixpanel shows us which features get used, never what you type."}{" "}
+          ? "Analytics are on in this browser: Mixpanel records clicks, pages and session replays, with text hidden."
+          : "Analytics are off in this browser. On, Mixpanel records clicks, pages and session replays, with text hidden."}{" "}
         See our <PolicyLinks />.
       </p>
       <button type="button" className="gw-btn" style={{ flexShrink: 0, padding: "7px 12px", fontSize: 12 }} onClick={() => setUsageConsent(on ? "rejected" : "accepted")}>

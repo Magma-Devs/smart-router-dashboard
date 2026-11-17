@@ -21,7 +21,6 @@ import { LocalTime } from "@/components/gateway/LocalTime";
 import { useMe } from "@/hooks/use-me";
 import { apiPost } from "@/lib/api-client";
 import { labelStyle } from "@/lib/styles";
-import { track } from "@/lib/usage";
 
 /**
  * The top-bar button. Renders nothing while incident reporting is off.
@@ -37,7 +36,7 @@ export function ReportIncidentButton({ enabled }: { enabled: boolean }) {
     <>
       {/* The label folds away in a narrow top bar (`.gw-top__label`); the
           button keeps its name for a screen reader. */}
-      <button className="gw-btn" onClick={() => { track("link_out", { target: "report-incident" }); setOpen(true); }} title="Report an incident to Magma's engineers" aria-label="Report incident">
+      <button className="gw-btn" onClick={() => setOpen(true)} title="Report an incident to Magma's engineers" aria-label="Report incident">
         <IconAlert size={14} />
         <span className="gw-top__label">Report incident</span>
       </button>

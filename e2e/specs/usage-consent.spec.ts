@@ -1,43 +1,146 @@
+import { gunzipSync } from "node:zlib";
 import type { Page, Request } from "@playwright/test";
 import { expect, signInThroughUi, test } from "../support/fixtures.js";
 
 /**
- * The consent banner for usage data (MAG-5373).
+ * Usage data through Mixpanel's browser SDK, and the consent banner in front
+ * of it (MAG-5373).
  *
- * The unit tests hold the rule: nothing is recorded or sent before an
- * acceptance. What only a browser shows is the banner itself: that a signed-in
- * person is asked where the deployment sends usage data, that the page behind
- * it sends nothing while the banner is up, that each button does what it says,
- * that the Account page changes the answer afterwards, and that it fits a
- * phone and reads in the light theme.
+ * The unit tests hold the rules one call at a time. What only a browser shows
+ * is the whole of it: that nothing from Mixpanel is loaded, stored or sent
+ * while the banner is up; that an acceptance loads the SDK, which records page
+ * views (client-side navigation too), clicks and a session replay, every event
+ * tagged with the tenant and with its URLs redacted; that the replay masks
+ * what was typed and is scrubbed of addresses, hashes and ids before it is
+ * uploaded; that Mixpanel's EU host is the only one contacted; that each
+ * "no" stops it and removes what it kept; and that the banner fits a phone and
+ * reads in the light theme.
  *
- * The suite's stack has usage data off, so the api's two usage routes are
- * answered here: the switch says on, and every batch the page posts is kept.
+ * The suite's stack has usage data off, so the api's config route is answered
+ * here as a deployment with it on, and Mixpanel's host is answered here too:
+ * every request the SDK makes is kept, decoded, and never leaves the machine.
  */
 
-async function withUsageOn(page: Page): Promise<Request[]> {
-  const batches: Request[] = [];
-  await page.route("**/api/usage/config", (route) => route.fulfill({ json: { enabled: true } }));
-  await page.route("**/api/usage", (route) => {
-    batches.push(route.request());
-    return route.fulfill({ status: 202, json: { accepted: 1 } });
-  });
-  return batches;
+const CONFIG = {
+  enabled: true,
+  token: "e2e-project-token",
+  apiHost: "https://api-eu.mixpanel.com",
+  tenant: "e2e-tenant",
+  deploymentMode: "managed",
+  version: "0.71.0",
+  viewer: { id: "0123456789abcdef0123456789abcdef", staff: false, role: "admin" },
+};
+const MIXPANEL = CONFIG.apiHost;
+/** Typed into the top bar's look-up: it must never reach Mixpanel's events. */
+const TYPED = "john-smith-order-42";
+
+interface Sent {
+  /** `track`, `engage` or `record`. */
+  kind: string;
+  url: string;
+  body: string;
 }
 
-const names = (batches: Request[]) =>
-  batches.flatMap((b) => (b.postDataJSON() as { events: { name: string }[] }).events.map((e) => e.name));
+/** A request to Mixpanel as its payload reads: events and profile updates are form-encoded base64 JSON, a replay is gzipped JSON. */
+function decode(req: Request): Sent {
+  const url = new URL(req.url());
+  const buf = req.postDataBuffer();
+  let body = "";
+  if (buf && url.searchParams.get("format") === "gzip") body = gunzipSync(buf).toString("utf8");
+  else if (buf) {
+    const data = new URLSearchParams(buf.toString("utf8")).get("data");
+    body = data === null ? buf.toString("utf8") : data.trimStart().startsWith("[") || data.trimStart().startsWith("{") ? data : Buffer.from(data, "base64").toString("utf8");
+  }
+  return { kind: url.pathname.split("/")[1] ?? "", url: url.toString(), body };
+}
 
-/** Longer than the page's send interval (10 s): a batch due would have gone. */
+async function withUsageOn(page: Page): Promise<{ sent: Sent[]; offsite: Set<string> }> {
+  const sent: Sent[] = [];
+  const offsite = new Set<string>();
+  page.on("request", (r) => {
+    const u = new URL(r.url());
+    if (u.hostname !== "localhost" && u.hostname !== "127.0.0.1") offsite.add(u.origin);
+  });
+  await page.route("**/api/usage/config", (route) => route.fulfill({ json: CONFIG }));
+  await page.route(`${MIXPANEL}/**`, (route) => {
+    sent.push(decode(route.request()));
+    const origin = route.request().headers()["origin"] ?? "*";
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ status: 1, error: null }),
+      headers: { "access-control-allow-origin": origin, "access-control-allow-credentials": "true", "access-control-allow-headers": "*" },
+    });
+  });
+  return { sent, offsite };
+}
+
+interface MpEvent {
+  event: string;
+  properties: Record<string, unknown>;
+}
+const events = (sent: Sent[]): MpEvent[] => sent.filter((s) => s.kind === "track").flatMap((s) => JSON.parse(s.body) as MpEvent[]);
+const named = (sent: Sent[], name: string) => events(sent).filter((e) => e.event === name);
+
+/** What Mixpanel's SDK has in this browser: its keys, cookies, databases, and whether its code was loaded. */
+async function sdkTraces(page: Page) {
+  return page.evaluate(async () => ({
+    storage: [...Object.keys(localStorage), ...Object.keys(sessionStorage)].filter((k) => /^(mp_|__mp)/.test(k)),
+    cookies: document.cookie,
+    databases: (await indexedDB.databases()).map((d) => d.name ?? "").filter((n) => /mixpanel|__mprec/i.test(n)),
+    chunks: performance.getEntriesByType("resource").map((e) => e.name).filter((n) => n.startsWith(location.origin) && /mixpanel/i.test(n)),
+  }));
+}
+
+/** Rows left in the SDK's replay database, 0 when there is none. */
+async function replayRows(page: Page): Promise<number> {
+  return page.evaluate(async () => {
+    if (!(await indexedDB.databases()).some((d) => d.name === "mixpanelBrowserDb")) return 0;
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const open = indexedDB.open("mixpanelBrowserDb");
+      open.onsuccess = () => resolve(open.result);
+      open.onerror = () => reject(open.error);
+    });
+    let rows = 0;
+    for (const name of Array.from(db.objectStoreNames)) {
+      rows += await new Promise<number>((resolve) => {
+        const count = db.transaction(name).objectStore(name).count();
+        count.onsuccess = () => resolve(count.result);
+        count.onerror = () => resolve(0);
+      });
+    }
+    db.close();
+    return rows;
+  });
+}
+
+/** Every text and input value a replay recorded. */
+function replayText(sent: Sent[]): string[] {
+  const out: string[] = [];
+  const walk = (v: unknown) => {
+    if (Array.isArray(v)) v.forEach(walk);
+    else if (v && typeof v === "object") {
+      for (const [k, x] of Object.entries(v)) {
+        if ((k === "textContent" || k === "value" || k === "text") && typeof x === "string") out.push(x);
+        else walk(x);
+      }
+    }
+  };
+  for (const s of sent.filter((r) => r.kind === "record")) walk(JSON.parse(s.body));
+  return out;
+}
+
+/** Longer than the replay's upload interval (10 s) and the events' (5 s): anything due would have gone. */
 const SEND_WINDOW_MS = 12_000;
 
-test("a signed-in person is asked, and nothing is sent until they accept", async ({ page, operator }) => {
-  const batches = await withUsageOn(page);
+test("nothing reaches Mixpanel until Accept; then it records, redacted and replayed, until it is turned off", async ({ page, operator }) => {
+  test.setTimeout(180_000);
+  const { sent, offsite } = await withUsageOn(page);
   await signInThroughUi(page, operator);
 
   const bar = page.getByRole("region", { name: "Cookies & analytics" });
   await expect(bar).toBeVisible();
-  await expect(bar).toContainText("Mixpanel");
+  await expect(bar).toContainText("Mixpanel also records clicks, pages and session replays, with text hidden.");
   await expect(bar.getByRole("link", { name: "Privacy Policy" })).toHaveAttribute("href", "https://magmadevs.com/privacy");
   await expect(bar.getByRole("link", { name: "Terms & Conditions" })).toHaveAttribute("href", "https://magmadevs.com/terms");
   // Docked bottom-right, inside the window, and clear of nothing it needs.
@@ -47,51 +150,154 @@ test("a signed-in person is asked, and nothing is sent until they accept", async
   expect(box.y + box.height).toBeLessThanOrEqual(view.height);
   if (process.env.E2E_SHOTS) await page.screenshot({ path: `${process.env.E2E_SHOTS}/consent-bar.png` });
 
-  // The page behind the banner is in use, and sends nothing.
+  // The page behind the banner is in use, and nothing of Mixpanel's is loaded, kept or sent.
   await page.getByRole("link", { name: "Account" }).first().click();
-  await page.waitForTimeout(SEND_WINDOW_MS);
-  expect(batches, "usage data was sent before an acceptance").toHaveLength(0);
-  expect(await page.evaluate(() => [localStorage.getItem("sr:usage-consent"), sessionStorage.getItem("sr:visit")])).toEqual([null, null]);
+  await page.waitForURL(/\/account$/);
+  await page.waitForTimeout(3_000);
+  expect(sent, "a request reached Mixpanel before an acceptance").toHaveLength(0);
+  expect([...offsite]).toEqual([]);
+  expect(await sdkTraces(page)).toEqual({ storage: [], cookies: "", databases: [], chunks: [] });
+  expect(await page.evaluate(() => localStorage.getItem("sr:usage-consent"))).toBeNull();
 
   await bar.getByRole("button", { name: "Accept", exact: true }).click();
   await expect(bar).toBeHidden();
-  await expect.poll(() => names(batches), { timeout: SEND_WINDOW_MS + 5_000 }).toContain("page_view");
-  expect(names(batches)[0]).toBe("visit_start");
   expect(await page.evaluate(() => localStorage.getItem("sr:usage-consent"))).toBe("accepted");
 
-  // The answer holds over a reload: no bar, and the page sends.
-  const before = batches.length;
-  await page.reload();
-  await expect(page.getByRole("button", { name: "Turn off" })).toBeVisible();
-  await expect(bar).toBeHidden();
-  await expect.poll(() => batches.length, { timeout: SEND_WINDOW_MS + 5_000 }).toBeGreaterThan(before);
-  await expect(page.getByRole("link", { name: "Terms & Conditions" })).toHaveAttribute("href", "https://magmadevs.com/terms");
+  // The page at the acceptance is viewed, by the viewer's opaque id, tagged with the tenant.
+  await expect.poll(() => named(sent, "$mp_web_page_view").length, { timeout: 15_000 }).toBeGreaterThan(0);
+  const first = named(sent, "$mp_web_page_view")[0]!.properties;
+  expect(first).toMatchObject({
+    distinct_id: CONFIG.viewer.id,
+    tenant: "e2e-tenant",
+    deployment_mode: "managed",
+    dashboard_version: "0.71.0",
+    staff: false,
+    role: "admin",
+    current_url_path: "/account",
+  });
+  expect(first.$current_url).toMatch(/^http:\/\/localhost:3000\/account$/);
+  expect((await sdkTraces(page)).chunks.length, "the SDK is its own chunk, loaded now").toBeGreaterThan(0);
+
+  // A look-up typed in the top bar: its URL carries what was typed, the events carry :id.
+  await page.getByLabel("Find a request").fill(TYPED);
+  await page.getByLabel("Find a request").press("Enter");
+  await page.waitForURL(new RegExp(`request=${TYPED}`));
+  await expect.poll(() => named(sent, "search").length, { timeout: 15_000 }).toBeGreaterThan(0);
+  const search = named(sent, "search")[0]!.properties;
+  expect(search).toMatchObject({ kind: "other", from: "top-bar", tenant: "e2e-tenant" });
+  expect(search.$current_url).toMatch(/[?&]request=:id(&|$)/);
+  expect(search.$current_url).toMatch(/[?&]tab=request(&|$)/);
+
+  // A client-side navigation is a page view of its own, without a page load.
+  await page.evaluate(() => { (window as unknown as { __samePage: boolean }).__samePage = true; });
+  await page.getByRole("link", { name: "Upstreams" }).first().click();
+  await page.waitForURL(/\/upstreams$/);
+  await expect.poll(() => named(sent, "$mp_web_page_view").map((e) => e.properties.current_url_path), { timeout: 15_000 }).toContain("/upstreams");
+  expect(await page.evaluate(() => (window as unknown as { __samePage?: boolean }).__samePage)).toBe(true);
+  expect(named(sent, "$mp_click").length, "clicks are captured").toBeGreaterThan(0);
+
+  // A session replay is uploaded, and what was typed is masked in it.
+  await expect.poll(() => sent.filter((s) => s.kind === "record").length, { timeout: 30_000 }).toBeGreaterThan(0);
+  const texts = replayText(sent);
+  expect(texts.length).toBeGreaterThan(0);
+  expect(texts.filter((t) => t.includes(TYPED))).toEqual([]);
+
+  // No event, profile update or replay carries what was typed or the address, and only Mixpanel's EU host was contacted.
+  for (const s of sent) {
+    expect(s.body, `${s.kind} carried the look-up`).not.toContain(TYPED);
+    expect(s.url).not.toContain(TYPED);
+    expect(s.body.toLowerCase()).not.toContain(operator.email.toLowerCase());
+  }
+  for (const e of events(sent)) expect(e.properties.tenant, e.event).toBe("e2e-tenant");
+  expect([...offsite]).toEqual([MIXPANEL]);
+  expect((await sdkTraces(page)).cookies, "the SDK keeps nothing in cookies").toBe("");
+
+  // The Account page says so, and takes it back.
+  await page.getByRole("link", { name: "Account" }).first().click();
+  const off = page.getByRole("button", { name: "Turn off" });
+  await expect(off).toBeVisible();
+  await expect(page.locator(".gw-usage-note")).toContainText("Mixpanel records clicks, pages and session replays, with text hidden.");
   if (process.env.E2E_SHOTS) {
-    await page.getByRole("button", { name: "Turn off" }).scrollIntoViewIfNeeded();
+    await off.scrollIntoViewIfNeeded();
     await page.screenshot({ path: `${process.env.E2E_SHOTS}/account-usage.png` });
   }
-
-  // The Account page takes it back.
-  await page.getByRole("button", { name: "Turn off" }).click();
+  await off.click();
   await expect(page.getByRole("button", { name: "Turn on" })).toBeVisible();
-  expect(await page.evaluate(() => [localStorage.getItem("sr:usage-consent"), sessionStorage.getItem("sr:visit")])).toEqual(["rejected", null]);
-  const after = batches.length;
+  expect(await page.evaluate(() => localStorage.getItem("sr:usage-consent"))).toBe("rejected");
+  await expect.poll(async () => (await sdkTraces(page)).storage).toEqual([]);
+  expect((await sdkTraces(page)).cookies).toBe("");
+  await expect.poll(() => replayRows(page)).toBe(0);
+  const atOff = sent.length;
   await page.waitForTimeout(SEND_WINDOW_MS);
-  expect(batches, "usage data was sent after it was switched off").toHaveLength(after);
+  expect(sent.length, "Mixpanel was sent to after it was turned off").toBe(atOff);
+
+  // Turned on again on the same page, it records again.
+  await page.getByRole("button", { name: "Turn on" }).click();
+  await expect.poll(() => sent.length, { timeout: 15_000 }).toBeGreaterThan(atOff);
+  await page.getByRole("button", { name: "Turn off" }).click();
+  await expect.poll(async () => (await sdkTraces(page)).storage).toEqual([]);
+
+  // The next page load loads nothing of Mixpanel's and deletes its database.
+  await page.waitForTimeout(SEND_WINDOW_MS);
+  const atReload = sent.length;
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Turn on" })).toBeVisible();
+  await expect.poll(async () => (await sdkTraces(page)).databases).toEqual([]);
+  await page.waitForTimeout(3_000);
+  expect(await sdkTraces(page)).toEqual({ storage: [], cookies: "", databases: [], chunks: [] });
+  expect(sent.length).toBe(atReload);
+});
+
+test("a replay upload is scrubbed before it leaves the browser: no typed value, hash, id, title or address", async ({ page, operator }) => {
+  test.setTimeout(120_000);
+  const HASH = "0x" + "cd".repeat(32);
+  const GUID = "7708800000000000042";
+  const TITLE = "on the chain's explorer";
+  const { sent } = await withUsageOn(page);
+  await signInThroughUi(page, operator);
+  // A shared look-up link, and an explorer link of the kind the request tables render.
+  await page.goto(`/metrics?tab=request&request=${TYPED}`);
+  await expect(page.getByRole("region", { name: "Cookies & analytics" })).toBeVisible();
+  await page.evaluate(({ hash, guid, title }) => {
+    const a = document.createElement("a");
+    Object.assign(a, { id: guid, href: `https://etherscan.io/tx/${hash}`, title: `${hash} - ${title}`, textContent: hash.slice(0, 10) });
+    a.setAttribute("aria-label", `Copy ${hash}`);
+    a.setAttribute("data-guid", guid);
+    document.querySelector(".gw-app")!.appendChild(a);
+  }, { hash: HASH, guid: GUID, title: TITLE });
+  await page.getByRole("region", { name: "Cookies & analytics" }).getByRole("button", { name: "Accept", exact: true }).click();
+
+  await expect.poll(() => sent.filter((s) => s.kind === "record").length, { timeout: 30_000 }).toBeGreaterThan(0);
+  const uploads = sent.filter((s) => s.kind === "record");
+  for (const u of uploads) {
+    for (const secret of [TYPED, HASH, GUID, TITLE, operator.email]) {
+      expect(u.body, `the replay carried ${secret}`).not.toContain(secret);
+      expect(decodeURIComponent(u.url), `the replay's URL carried ${secret}`).not.toContain(secret);
+    }
+  }
+  // Scrubbed, not missing: the page's route, and the link by its site alone.
+  const first = uploads[0]!;
+  expect(new URL(first.url).searchParams.get("$current_url")).toMatch(/\/metrics\?(.*&)?request=:id/);
+  expect(first.body).toContain("request=:id");
+  expect(first.body).toContain('"href":"https://etherscan.io"');
 });
 
 for (const [answer, button] of [["Decline", "Decline"], ["the X", "Dismiss cookie banner"]] as const) {
-  test(`${answer} sends nothing and is not asked again`, async ({ page, operator }) => {
-    const batches = await withUsageOn(page);
+  test(`${answer} loads nothing of Mixpanel's and is not asked again`, async ({ page, operator }) => {
+    const { sent, offsite } = await withUsageOn(page);
     await signInThroughUi(page, operator);
     const bar = page.getByRole("region", { name: "Cookies & analytics" });
     await bar.getByRole("button", { name: button }).click();
     await expect(bar).toBeHidden();
+    await page.waitForTimeout(3_000);
+    expect(await sdkTraces(page)).toEqual({ storage: [], cookies: "", databases: [], chunks: [] });
     await page.reload();
     await expect(page.locator(".gw-app")).toBeVisible();
     await expect(bar).toBeHidden();
-    await page.waitForTimeout(SEND_WINDOW_MS);
-    expect(batches).toHaveLength(0);
+    await page.waitForTimeout(3_000);
+    expect(sent).toHaveLength(0);
+    expect([...offsite]).toEqual([]);
+    expect(await sdkTraces(page)).toEqual({ storage: [], cookies: "", databases: [], chunks: [] });
   });
 }
 
@@ -123,8 +329,10 @@ test("in the light theme the banner reads", async ({ page, operator }) => {
   if (process.env.E2E_SHOTS) await page.screenshot({ path: `${process.env.E2E_SHOTS}/consent-light.png` });
 });
 
-test("where the deployment sends no usage data there is no banner", async ({ page, operator }) => {
+test("where the deployment records no usage data there is no banner and no SDK", async ({ page, operator }) => {
   await signInThroughUi(page, operator);
   await expect(page.locator(".gw-app")).toBeVisible();
   await expect(page.getByRole("region", { name: "Cookies & analytics" })).toBeHidden();
+  await page.waitForTimeout(2_000);
+  expect(await sdkTraces(page)).toEqual({ storage: [], cookies: "", databases: [], chunks: [] });
 });

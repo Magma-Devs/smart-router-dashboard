@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanUsageProps, isUsageEventName, USAGE_EVENT_NAMES, USAGE_VIEWS, USAGE_VISIT_ID, usageViewOf } from "../constants/usage-events.js";
+import { cleanUsageProps, isUsageEventName, USAGE_EVENT_NAMES, USAGE_VIEWS, usageViewOf } from "../constants/usage-events.js";
 
 describe("cleanUsageProps", () => {
   it("keeps the fields the catalog allows, in their form", () => {
@@ -18,21 +18,30 @@ describe("cleanUsageProps", () => {
     expect(cleanUsageProps("search", { kind: "0xabc", seconds: -1, older: "yes" })).toEqual({});
     expect(cleanUsageProps("chain_pick", { chain: "eth1; drop", from: "somewhere" })).toEqual({});
     expect(cleanUsageProps("time_range_change", { from: "2h", to: "1d" })).toEqual({ to: "1d" });
-    expect(cleanUsageProps("visit_end", { seconds: 1e9, events: 3.6 })).toEqual({ seconds: 86_400, events: 4 });
+    expect(cleanUsageProps("view_ready", { seconds: 1e9, reads: 3.6 })).toEqual({ seconds: 86_400, reads: 4 });
   });
 
   it("keeps the time-to-information and effort events in their form", () => {
     expect(cleanUsageProps("view_ready", { page: "metrics", tab: "errors", seconds: 3.24, reads: 7, failed: 1 }))
       .toEqual({ page: "metrics", tab: "errors", seconds: 3.2, reads: 7, failed: 1 });
-    expect(cleanUsageProps("visit_start", { screen: "laptop", theme: "light", arrived: "typed" }))
-      .toEqual({ screen: "laptop", theme: "light", arrived: "typed" });
     expect(cleanUsageProps("help_open", { page: "metrics", tab: "metrics", text: "Requests answered" })).toEqual({ page: "metrics", tab: "metrics" });
   });
 
   it("refuses an event the catalog doesn't name", () => {
     expect(cleanUsageProps("password_typed", { kind: "hash" })).toBeNull();
     expect(isUsageEventName("toString")).toBe(false);
-    expect(USAGE_EVENT_NAMES).toContain("visit_start");
+    expect(USAGE_EVENT_NAMES).toContain("view_ready");
+  });
+
+  it("names only what Mixpanel's own capture cannot see: no page views, links out, repeated clicks or visits", () => {
+    for (const name of ["page_view", "link_out", "rage_click", "visit_start", "visit_end"]) {
+      expect(isUsageEventName(name), name).toBe(false);
+      expect(cleanUsageProps(name, {})).toBeNull();
+    }
+    expect([...USAGE_EVENT_NAMES].sort()).toEqual([
+      "chain_pick", "filter_use", "help_open", "idle_paused", "load_older", "panel_open", "router_pick",
+      "row_open", "search", "tab_change", "time_range_change", "view_problem", "view_ready",
+    ]);
   });
 
   it("takes ids out of an api path, so a view never carries one", () => {
@@ -61,10 +70,5 @@ describe("cleanUsageProps", () => {
     expect(usageViewOf("/api/")).toBeNull();
     expect(cleanUsageProps("view_problem", { view: "/api/metrics/not-a-read", problem: "slow", seconds: 12 }))
       .toEqual({ problem: "slow", seconds: 12 });
-  });
-
-  it("a visit id is random lower-case characters, nothing else", () => {
-    expect(USAGE_VISIT_ID.test("3f2c9a1e-7b4d-4c3e-9a1f-0d2e5b6c7a8f")).toBe(true);
-    expect(USAGE_VISIT_ID.test("omer@example.com")).toBe(false);
   });
 });

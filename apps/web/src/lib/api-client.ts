@@ -195,24 +195,6 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
 }
 
 /**
- * A POST that may outlive the page (`keepalive`), for the usage events sent as
- * the tab closes. Fire and forget: never throws, and its answer is not read.
- */
-export async function apiPostKeepalive(path: string, body: unknown): Promise<void> {
-  try {
-    const { base, headers } = await requestContext();
-    await fetch(`${base}${path}`, {
-      method: "POST",
-      headers: { "content-type": "application/json", ...headers },
-      body: JSON.stringify(body),
-      keepalive: true,
-    });
-  } catch {
-    /* usage data is best effort */
-  }
-}
-
-/**
  * PATCH / DELETE, sharing the error handling above. Split from `apiPost`
  * rather than generalising it, because the two callers that need a method
  * shouldn't force every existing call site to pass one.

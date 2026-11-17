@@ -32,11 +32,11 @@ export function PolicyLinks({ className, short }: { className?: string; short?: 
 
 /**
  * The consent banner (MAG-5373): a card docked bottom-right where the
- * deployment sends usage data (accounts on, the api says so), until the
- * person at this browser answers. Nothing is recorded, sent or kept in the
- * browser before "Accept". The X is a "no": it is kept like "Decline", and
- * the Account page turns usage data on later. A region, not a dialog: the
- * page behind it stays in use.
+ * deployment records usage data (accounts on, the api says so), until the
+ * person at this browser answers. Mixpanel is not loaded, and nothing is
+ * recorded, sent or kept in the browser, before "Accept". The X is a "no": it
+ * is kept like "Decline", and the Account page turns usage data on later. A
+ * region, not a dialog: the page behind it stays in use.
  */
 export function UsageConsentBar() {
   const { available, consent } = useUsageState();
@@ -58,8 +58,8 @@ export function UsageConsentBar() {
         </button>
       </div>
       <p className="gw-consent__body">
-        Essential cookies keep you signed in. With your OK, Mixpanel also shows us which features get used, never what
-        you type.
+        Essential cookies keep you signed in. With your OK, Mixpanel also records clicks, pages and session replays, with
+        text hidden.
       </p>
       <div className="gw-consent__foot">
         <PolicyLinks short className="gw-consent__links" />
