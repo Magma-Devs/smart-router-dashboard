@@ -62,8 +62,13 @@ export function FindRequest() {
 
 /** The request looked up, as its opened row - a transaction's send row when it is one. The row leads with its own status, so nothing above it repeats it. */
 function Found({ id, onClose }: { id: string; onClose: () => void }) {
-  // Whatever the page's window: a search looks as far back as the logs are read.
-  const { data, error, isLoading } = useApi<RequestLookup>(`/api/requests/${encodeURIComponent(id)}?window=30d`, 0);
+  // Whatever the page's window: a search looks as far back as the logs are read
+  // (30 days). A search that stopped early is carried on from where it stopped,
+  // on purpose: each part is one more size-limited read of the logs.
+  const [oldest] = useState(() => Date.now() - 30 * 86_400_000);
+  const [before, setBefore] = useState<number | null>(null);
+  const q = before == null ? "window=30d" : `from=${oldest}&to=${Math.floor(before)}`;
+  const { data, error, isLoading } = useApi<RequestLookup>(`/api/requests/${encodeURIComponent(id)}?${q}`, 0);
   const row = data?.row ?? null;
   const tx = data?.transaction ?? null;
   return (
@@ -86,7 +91,12 @@ function Found({ id, onClose }: { id: string; onClose: () => void }) {
         ) : !row ? (
           <div style={{ color: "var(--text-4)" }}>
             {data?.searchedFrom != null ? (
-              <>Not in the router&apos;s logs back to <LocalTime t={data.searchedFrom} format="dateTime" />. Older logs were not searched.</>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <span>Not in the router&apos;s logs back to <LocalTime t={data.searchedFrom} format="dateTime" />.</span>
+                <button onClick={() => setBefore(data.searchedFrom!)} style={{ border: "none", background: "none", color: "var(--brand)", cursor: "pointer", padding: 0, fontSize: 12, fontWeight: 600, fontFamily: "inherit" }}>
+                  Search older logs
+                </button>
+              </span>
             ) : (
               <>No request with this ID or hash in the router&apos;s logs.</>
             )}
