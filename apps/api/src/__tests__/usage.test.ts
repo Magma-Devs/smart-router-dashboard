@@ -3,6 +3,8 @@ import type { FastifyInstance } from "fastify";
 import { buildApp } from "../app.js";
 import { readUsageSettings } from "../config.js";
 import { toMixpanel, viewerOf } from "../services/usage.js";
+import Fastify from "fastify";
+import { usageRoutes } from "../routes/usage.js";
 
 /* Usage data (MAG-5373): the web's events go to POST /api/usage, and only what
    the catalog allows reaches Mixpanel, server side, tagged with the tenant. */
@@ -136,5 +138,21 @@ describe("staff and role on each event", () => {
     expect(viewerOf(null, s)).toBeNull();
     const [e] = toMixpanel(VISIT, [{ name: "page_view", at: Date.now(), seq: 0, props: {} }], s);
     expect(e!.properties).not.toHaveProperty("staff");
+  });
+});
+
+describe("the process-wide cap on forwarded batches", () => {
+  it("drops batches past the minute's budget, every caller together", async () => {
+    const forwarded: unknown[] = [];
+    const fetchImpl = (async (_u: string, init?: RequestInit) => { forwarded.push(init?.body); return new Response("1"); }) as unknown as typeof fetch;
+    const local = Fastify();
+    await local.register(usageRoutes, { settings: readUsageSettings({ DEPLOYMENT_MODE: "managed", MIXPANEL_TOKEN: TOKEN }), fetchImpl, podBatchesPerMin: 2 });
+    const body = { visit: VISIT, events: [{ name: "page_view", at: Date.now(), seq: 0, props: { page: "metrics" } }] };
+    const answers = [];
+    for (let i = 0; i < 3; i++) answers.push((await local.inject({ method: "POST", url: "/api/usage", payload: body })).json());
+    await new Promise((r) => setTimeout(r, 0));
+    expect(answers).toEqual([{ accepted: 1 }, { accepted: 1 }, { accepted: 0 }]);
+    expect(forwarded).toHaveLength(2);
+    await local.close();
   });
 });

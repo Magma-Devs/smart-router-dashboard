@@ -15,18 +15,31 @@ import type { FastifyInstance } from "fastify";
 import { USAGE_BATCH_MAX } from "@sr/shared";
 import type { UsageSettings } from "../config.js";
 import { sendToMixpanel, toMixpanel, viewerOf, type IncomingUsageEvent } from "../services/usage.js";
+import { ReportBudget } from "../services/incidents.js";
 
 export interface UsageRoutesOptions {
   settings: UsageSettings;
   /** Injected by tests; the global `fetch` otherwise. */
   fetchImpl?: typeof fetch;
+  /** Injected by tests; USAGE_POD_BATCHES_PER_MIN otherwise. */
+  podBatchesPerMin?: number;
 }
 
 const WARN_INTERVAL_MS = 60_000;
 
+/**
+ * Batches forwarded per api process per minute, every caller together: with
+ * accounts off anyone who reaches the api may post, and each batch spends the
+ * Mixpanel project's event quota. A visit sends about six a minute, so this
+ * holds dozens of people at once and caps a flood at 300 x 50 events.
+ */
+export const USAGE_POD_BATCHES_PER_MIN = 300;
+
 export async function usageRoutes(app: FastifyInstance, opts: UsageRoutesOptions) {
   const { settings } = opts;
   let warnedAt = 0;
+  let cappedAt = 0;
+  const budget = new ReportBudget(opts.podBatchesPerMin ?? USAGE_POD_BATCHES_PER_MIN, 60_000);
   if (settings.problem) app.log.warn({ problem: settings.problem }, "usage data is off");
 
   app.get("/api/usage/config", { schema: { tags: ["usage"], summary: "Whether the dashboard sends usage data" } }, async () => ({
@@ -68,6 +81,13 @@ export async function usageRoutes(app: FastifyInstance, opts: UsageRoutesOptions
     },
     async (request, reply) => {
       if (!settings.enabled) return reply.code(204).send();
+      if (!budget.take()) {
+        if (Date.now() - cappedAt >= WARN_INTERVAL_MS) {
+          cappedAt = Date.now();
+          app.log.warn({ max: USAGE_POD_BATCHES_PER_MIN }, "usage data: this process's batches per minute are spent; dropping");
+        }
+        return reply.code(202).send({ accepted: 0 });
+      }
       const events = toMixpanel(request.body.visit, request.body.events, settings, Date.now(), viewerOf(request.authUser, settings));
       void sendToMixpanel(events, settings, opts.fetchImpl).then((r) => {
         if (r.ok || Date.now() - warnedAt < WARN_INTERVAL_MS) return;

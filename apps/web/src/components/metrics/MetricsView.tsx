@@ -59,11 +59,21 @@ export function MetricsView() {
   const [tab, setTab] = useState<Tab>("metrics");
   // Usage data: every tab change, whatever made it - the tab bar, a bar or
   // line that opens the Errors tab, the top bar's search, Back.
+  // The state opens on "metrics" and a link's ?tab= lands a moment later:
+  // that is the arrival, not a change, so counting starts once it is in place.
   const shownTab = useRef<Tab | null>(null);
+  const [arrivalTab] = useState<Tab>(() => {
+    const t = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("tab");
+    return (TABS as readonly string[]).includes(t ?? "") ? (t as Tab) : "metrics";
+  });
   useEffect(() => {
-    if (shownTab.current !== null && shownTab.current !== tab) track("tab_change", { from: shownTab.current, to: tab });
+    if (shownTab.current === null) {
+      if (tab === arrivalTab) shownTab.current = tab;
+      return;
+    }
+    if (shownTab.current !== tab) track("tab_change", { from: shownTab.current, to: tab });
     shownTab.current = tab;
-  }, [tab]);
+  }, [tab, arrivalTab]);
   const activeChain = chain;
   const setChainFilter = (v: string) => selectChain(v === "all" ? null : v);
 

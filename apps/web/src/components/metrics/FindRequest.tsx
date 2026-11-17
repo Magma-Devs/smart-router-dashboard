@@ -61,8 +61,8 @@ export function FindRequest({ win }: { win: MetricWindow }) {
 /** The request looked up, as its opened row - a transaction's send row when it is one. The row leads with its own status, so nothing above it repeats it. */
 function Found({ id, win, onClose }: { id: string; win: MetricWindow; onClose: () => void }) {
   const [wide, setWide] = useState(false);
-  const { data, error, isLoading } = useApi<RequestLookup>(`/api/requests/${encodeURIComponent(id)}?window=${wide ? "30d" : win}`, 0);
-  useSearchUsage(id, wide, data, error);
+  const { data, error, isLoading, isValidating } = useApi<RequestLookup>(`/api/requests/${encodeURIComponent(id)}?window=${wide ? "30d" : win}`, 0);
+  useSearchUsage(id, wide, isValidating ? undefined : data, isValidating ? undefined : error);
   const row = data?.row ?? null;
   const tx = data?.transaction ?? null;
   return (

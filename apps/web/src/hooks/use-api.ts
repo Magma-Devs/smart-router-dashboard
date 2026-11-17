@@ -36,19 +36,19 @@ const SLOW_VIEW_MS = 10_000;
 /** `apiGet`, noting a read that failed or took over 10 s in the usage data. */
 async function timedGet<T>(path: string): Promise<T> {
   const t0 = Date.now();
-  readStarted();
+  const read = readStarted();
   try {
     const out = await apiGet<T>(path);
     const ms = Date.now() - t0;
     if (ms > SLOW_VIEW_MS) trackViewProblem(path, "slow", ms / 1000);
-    readEnded(true);
+    readEnded(read, true);
     return out;
   } catch (err) {
     // A refusal of what was asked (400, 404) is the request's, not the screen's:
     // only a server error or a read that never got an answer is a problem.
     const serverSide = !(err instanceof ApiError) || err.statusCode >= 500;
     if (serverSide) trackViewProblem(path, "did-not-load", (Date.now() - t0) / 1000);
-    readEnded(!serverSide);
+    readEnded(read, !serverSide);
     throw err;
   }
 }

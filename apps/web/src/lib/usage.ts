@@ -15,7 +15,7 @@
  * tested; the rest is wiring.
  */
 import { cleanUsageProps, guidMintedSecond, USAGE_BATCH_MAX, type UsageEventName, type UsageProps } from "@sr/shared";
-import { apiGet, apiPost, apiPostKeepalive } from "./api-client";
+import { ApiError, apiGet, apiPost, apiPostKeepalive } from "./api-client";
 import { getIdlePhase, subscribeIdle } from "./idle-store";
 
 const VISIT_KEY = "sr:visit";
@@ -87,6 +87,11 @@ let lastActive = 0;
 /** Set as the page unloads: reads cut short by leaving are not problems. */
 let leaving = false;
 let lastPageView = { key: "", at: 0 };
+/** Views already reported as failed or slow this visit. */
+const problemsSeen = new Set<string>();
+/** After a failed send, none before this (exponential backoff, up to 5 minutes). */
+let nextSendAt = 0;
+let failures = 0;
 
 function readStored(): StoredVisit | null {
   try {
@@ -99,6 +104,9 @@ function readStored(): StoredVisit | null {
 }
 
 function saveVisit() {
+  // Nothing is kept in the browser until the api says usage data is on: on a
+  // deployment where it is off, no tracking state is ever written.
+  if (enabled !== true) return;
   try {
     if (visit) sessionStorage.setItem(VISIT_KEY, JSON.stringify(visit));
   } catch {
@@ -114,6 +122,7 @@ function currentVisit(now: number): StoredVisit {
   const { visit: v, isNew } = visitFrom(visit ?? readStored(), now, randomId);
   visit = v;
   if (isNew) {
+    problemsSeen.clear();
     const loc = window.location;
     push("visit_start", {
       arrived: arrivedFrom(loc.search),
@@ -165,15 +174,35 @@ export function track(name: UsageEventName, props: UsageProps = {}): void {
   if (queue.length >= FLUSH_AT) void flush();
 }
 
+/** Events sent as the tab closes: the newest, `visit_end` among them, in chunks a `keepalive` budget (64 KB) holds. */
+const CLOSING_MAX = 3 * USAGE_BATCH_MAX;
+
 async function flush(closing = false): Promise<void> {
   if (!enabled || !visit || queue.length === 0) return;
+  if (closing) {
+    const last = queue.slice(-CLOSING_MAX);
+    queue = [];
+    for (let i = 0; i < last.length; i += USAGE_BATCH_MAX) {
+      void apiPostKeepalive("/api/usage", { visit: visit.id, events: last.slice(i, i + USAGE_BATCH_MAX) });
+    }
+    return;
+  }
+  if (Date.now() < nextSendAt) return;
   const batch = queue.slice(0, USAGE_BATCH_MAX);
   queue = queue.slice(batch.length);
-  const body = { visit: visit.id, events: batch };
-  if (closing) return apiPostKeepalive("/api/usage", body);
   try {
-    await apiPost("/api/usage", body);
-  } catch {
+    await apiPost("/api/usage", { visit: visit.id, events: batch });
+    failures = 0;
+  } catch (err) {
+    const status = err instanceof ApiError ? err.statusCode : null;
+    if (status !== null && status >= 400 && status < 500 && status !== 429) {
+      // Refused for good (signed out, the enrolment gate, the route off): stop.
+      enabled = false;
+      queue = [];
+      return;
+    }
+    failures++;
+    nextSendAt = Date.now() + Math.min(5 * 60_000, FLUSH_MS * 2 ** failures);
     queue = [...batch, ...queue].slice(-QUEUE_MAX);
   }
 }
@@ -212,8 +241,10 @@ export function startUsage(): void {
       enabled = c.enabled === true;
       if (!enabled) {
         queue = [];
+        visit = null;
         return;
       }
+      saveVisit();
       const markActive = () => {
         const now = Date.now();
         if (lastActive && now - lastActive < 60_000 && visit) visit.activeMs = (visit.activeMs ?? 0) + (now - lastActive);
@@ -225,7 +256,15 @@ export function startUsage(): void {
       document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "hidden") void flush(true);
       });
-      window.addEventListener("beforeunload", () => { leaving = true; });
+      // The browser cuts a leaving page's reads off just before pagehide, so
+      // leaving starts at beforeunload - and ends again if the page stayed (a
+      // cancelled navigation, a download) or came back from the
+      // back-forward cache.
+      window.addEventListener("beforeunload", () => {
+        leaving = true;
+        setTimeout(() => { leaving = false; }, 3_000);
+      });
+      window.addEventListener("pageshow", () => { leaving = false; });
       window.addEventListener("pagehide", () => {
         leaving = true;
         if (!visit) return;
@@ -248,7 +287,6 @@ export function startUsage(): void {
 }
 
 /** Reads that failed or answered slowly, once per view a visit. */
-const problemsSeen = new Set<string>();
 export function trackViewProblem(path: string, problem: "did-not-load" | "slow", seconds: number): void {
   if (leaving) return;
   const key = `${problem}:${path.split("?")[0]}`;
@@ -257,28 +295,33 @@ export function trackViewProblem(path: string, problem: "did-not-load" | "slow",
   track("view_problem", { view: path, problem, seconds });
 }
 
-/* Time to information (`view_ready`): from a page or tab opening until every
-   read it started has settled, the first time. Reads count through `useApi`
-   (`readStarted` / `readEnded`); a view that started none within 1.5 s came
-   from the cache and is ready at once. */
-let inflight = 0;
-let view: { page: string; tab: string; start: number; reads: number; failed: number; done: boolean } | null = null;
+/* Time to information (`view_ready`): from a page or tab opening until the
+   reads it opened with have answered. A view's reads are the ones started
+   from just before it opened (its components fetch as they mount, a moment
+   before the page view is recorded) to 2 s after; polls after that, and a
+   previous view's slow reads, are not its own. The first view of a page load
+   takes every read in flight and is timed from when the browser started
+   loading. A view that started no read came from the cache: ready at 1.5 s. */
+const VIEW_LEAD_MS = 500;
+const VIEW_OPEN_MS = 2_000;
+let readSeq = 0;
+const inflightAt = new Map<number, number>();
+let view: { page: string; tab: string; start: number; opened: number; pending: Set<number>; reads: number; failed: number; done: boolean } | null = null;
 let cacheTimer: ReturnType<typeof setTimeout> | null = null;
-
 let firstView = true;
 
 function startView(page: string, tab: string) {
-  // The first view of a page load is timed from when the browser started
-  // loading it - the wait the reader sees, script included. Reads already in
-  // flight belong to the view: they started as its components mounted, a
-  // moment before this runs.
-  const start = firstView && typeof performance !== "undefined" ? Math.round(performance.timeOrigin) : Date.now();
+  const now = Date.now();
+  const first = firstView;
   firstView = false;
-  view = { page, tab, start, reads: inflight, failed: 0, done: false };
+  const pending = new Set<number>();
+  for (const [id, t] of inflightAt) if (first || t >= now - VIEW_LEAD_MS) pending.add(id);
+  const start = first && typeof performance !== "undefined" ? Math.round(performance.timeOrigin) : now;
+  view = { page, tab, start, opened: now, pending, reads: pending.size, failed: 0, done: false };
   if (cacheTimer) clearTimeout(cacheTimer);
   const mine = view;
   cacheTimer = setTimeout(() => {
-    if (view === mine && !mine.done && mine.reads === 0 && inflight === 0) finishView(mine);
+    if (view === mine && !mine.done && mine.reads === 0) finishView(mine);
   }, 1_500);
 }
 
@@ -287,16 +330,24 @@ function finishView(v: NonNullable<typeof view>) {
   track("view_ready", { page: v.page, tab: v.tab, seconds: (Date.now() - v.start) / 1000, reads: v.reads, failed: v.failed });
 }
 
-export function readStarted(): void {
-  inflight++;
-  if (view && !view.done) view.reads++;
+/** A read began; returns its handle for `readEnded`. */
+export function readStarted(): number {
+  const id = ++readSeq;
+  const now = Date.now();
+  inflightAt.set(id, now);
+  if (view && !view.done && now - view.opened <= VIEW_OPEN_MS) {
+    view.pending.add(id);
+    view.reads++;
+  }
+  return id;
 }
 
-export function readEnded(ok: boolean): void {
-  inflight = Math.max(0, inflight - 1);
-  if (!view || view.done || leaving) return;
+export function readEnded(id: number, ok: boolean): void {
+  inflightAt.delete(id);
+  if (!view || view.done || leaving || !view.pending.has(id)) return;
+  view.pending.delete(id);
   if (!ok) view.failed++;
-  if (inflight === 0 && view.reads > 0) finishView(view);
+  if (view.pending.size === 0) finishView(view);
 }
 
 /* Frustration (`rage_click`): three clicks within 800 ms within 30 px of each
@@ -312,7 +363,11 @@ function watchFrustrationAndIdle() {
       cooldown = t + 2_000;
       clicks = [];
       const loc = window.location;
-      track("rage_click", { page: pageOf(loc.pathname), tab: tabOf(loc.pathname, loc.search) });
+      // A triple-click that selected text is someone copying an ID, not frustration.
+      setTimeout(() => {
+        if ((window.getSelection()?.toString() ?? "").trim()) return;
+        track("rage_click", { page: pageOf(loc.pathname), tab: tabOf(loc.pathname, loc.search) });
+      }, 50);
     }
   }, { passive: true });
   let wasPaused = false;
