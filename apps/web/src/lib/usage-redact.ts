@@ -18,7 +18,8 @@
  *   another site's   its origin only (`https://etherscan.io`)
  *   a clicked element its tag, classes, place among its siblings, role, type
  *                    and name, our own static ids (`gw-…`) and its link
- *                    target as above; titles, labels and text are dropped
+ *                    target as above; titles, labels and text are dropped,
+ *                    in `$elements`, in the click's `$target` and in `$el_id`
  *
  * Pure, so it is tested without a browser (`__tests__/usage-redact.test.ts`).
  */
@@ -122,17 +123,21 @@ function redactElement(el: unknown, origin: string): unknown {
 /**
  * An event's properties as usage data may send them. Named URL, path and
  * query properties are redacted whatever they hold, and so is any other
- * string that is an http(s) URL; clicked elements keep only what
- * `ELEMENT_KEEP` lists; element text and every other `$el_attr__` go.
+ * string that is an http(s) URL; clicked elements (`$elements` and the
+ * click's `$target`) keep only what `ELEMENT_KEEP` lists; `$el_id` stays only
+ * when it is one of our own static ids; element text and every other
+ * `$el_attr__` go.
  */
 export function redactUsageProps(props: Record<string, unknown>, origin: string): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(props)) {
     if (key === "$el_text" || (key.startsWith("$el_attr__") && key !== "$el_attr__href")) continue;
+    if (key === "$el_id" && !(typeof value === "string" && OWN_ID.test(value))) continue;
     if (URL_PROPS.includes(key)) out[key] = redactUrl(value, origin);
     else if (PATH_PROPS.includes(key)) out[key] = typeof value === "string" ? redactPath(value) : value;
     else if (SEARCH_PROPS.includes(key)) out[key] = typeof value === "string" ? redactSearch(value) : value;
     else if (key === "$elements" && Array.isArray(value)) out[key] = value.map((el) => redactElement(el, origin));
+    else if (key === "$target") out[key] = redactElement(value, origin);
     else if (typeof value === "string" && /^https?:\/\//i.test(value)) out[key] = redactUrl(value, origin);
     else out[key] = value;
   }

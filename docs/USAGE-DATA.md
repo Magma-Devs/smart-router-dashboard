@@ -54,7 +54,10 @@ starts the SDK with: `{ enabled: true, token, apiHost, tenant, deploymentMode,
 version, viewer: { id, staff, role } }`. `viewer.id` is the first 32 hex
 characters of sha256(`<tenant>:<user id>`): the same person on every visit to
 one deployment, and nothing that leads back to the account without its
-database. The api itself never talks to Mixpanel.
+database. The web asks for it on the first render of every signed-in page,
+before it reads the banner's answer, so every signed-in browser holds the
+project token while usage data is on; a Mixpanel project token is meant for
+browsers. The api itself never talks to Mixpanel.
 
 On Kubernetes the chart sets these (smart-router-helm-chart, `dashboard.usage`):
 `enabled` renders `USAGE_ANALYTICS=on` and `existingSecret` hands
@@ -69,6 +72,10 @@ starts with usage data off.
 | `MIXPANEL_API_HOST` | `https://api-eu.mixpanel.com` | the one host the browser sends to; https only (http for a loopback mock) |
 | `USAGE_TENANT` | `TENANT_ID` | the tenant on every event and profile |
 | `USAGE_STAFF_DOMAINS` | `magmadevs.com` | a user whose address is at one of these (anyone `@magmadevs.com`) is `staff: true` |
+
+The api reads all five when it starts; the web reads none. Docker Compose
+(`docker-compose.yml`, `docker-compose.dev.yml`) passes each one to the api
+from the shell or `.env`.
 
 ## What the browser does
 
@@ -120,7 +127,8 @@ sends it (`before_send_events`, `before_send_people`), by
 | The dashboard's own address (`$current_url`, `$referrer`, `$initial_referrer`, `current_url_path`, `current_url_search`, `$pathname`, a link's `href`) | the path, each segment kept only when it is one of the routes' fixed segments (`/metrics`, `/account/two-factor` …), every other one `:id` (`/invite/:id`); the query keys the dashboard writes, a value kept only when it comes from a fixed set (`tab`, `window`, a known `chain` or `upstreamChain`, the audit `group` and `size`), every other value `:id` (`request=:id`, `upstream=:id`, `actor=:id`); any other key, and the fragment, dropped |
 | Another site's address (an explorer, Grafana) | its origin only (`https://etherscan.io`) |
 | Any other property holding an http(s) URL | the same |
-| A clicked element and its ancestors (`$elements`) | tag, classes, place among its siblings, role, type, name, an id of ours (`gw-…`) and its link target as above; titles, labels, other ids and text dropped |
+| A clicked element and its ancestors (`$elements`), and the clicked element again (`$target`) | tag, classes, place among its siblings, role, type, name, an id of ours (`gw-…`) and its link target as above; titles, labels, other ids and text dropped |
+| The clicked element's id (`$el_id`) | kept only when it is an id of ours (`gw-…`), else dropped |
 
 Session replay uploads are scrubbed in the browser with the same rules
 before they leave it, by `apps/web/src/lib/usage-replay.ts`. The SDK uploads

@@ -31,7 +31,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   and removes what it kept in the browser. The api no longer forwards
   events: `POST /api/usage` is gone, and `GET /api/usage/config` hands a
   signed-in browser the project token and its viewer id while usage data
-  is on. The environment variables and the chart's settings are unchanged.
+  is on. The environment variables and the chart's settings are unchanged,
+  and Docker Compose passes the five usage variables to the api.
   `docs/USAGE-DATA.md` says what is recorded, redacted and never sent.
 
 ## [0.70.0]

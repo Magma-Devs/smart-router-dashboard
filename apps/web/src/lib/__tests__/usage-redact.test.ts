@@ -141,6 +141,21 @@ function clickOnHashLink(secret: string): Record<string, unknown> {
       },
       { $tag_name: "div", $classes: ["gw-app"], $id: "gw-request-search", $nth_child: 2, $nth_of_type: 1, "$attr-role": "row" },
     ],
+    // mixpanel-browser 2.86.0 (src/autocapture/utils.js) repeats the clicked
+    // element as `$target` and lifts its id to `$el_id`.
+    $target: {
+      $tag_name: "a",
+      $classes: ["gw-mono"],
+      $nth_child: 1,
+      $nth_of_type: 1,
+      $id: secret,
+      "$attr-href": `/metrics?request=${encodeURIComponent(secret)}`,
+      "$attr-title": `${secret} - on the chain's explorer`,
+      "$attr-aria-label": `Copy ${secret}`,
+    },
+    $el_id: secret,
+    $el_classes: ["gw-mono"],
+    $el_tag_name: "a",
     tenant: "tenant-a",
     staff: false,
   };
@@ -177,6 +192,15 @@ describe("an event's properties", () => {
       { $tag_name: "a", $classes: ["gw-mono"], $nth_child: 1, $nth_of_type: 1, "$attr-href": "https://etherscan.io" },
       { $tag_name: "div", $classes: ["gw-app"], $id: "gw-request-search", $nth_child: 2, $nth_of_type: 1, "$attr-role": "row" },
     ]);
+    expect(out.$target).toEqual({ $tag_name: "a", $classes: ["gw-mono"], $nth_child: 1, $nth_of_type: 1, "$attr-href": "/metrics?request=:id" });
+    expect(out).not.toHaveProperty("$el_id");
+    expect(out).toMatchObject({ $el_classes: ["gw-mono"], $el_tag_name: "a" });
+  });
+
+  it("keep a clicked element's id only when it is one of our own static ids", () => {
+    const own = redactUsageProps({ $el_id: "gw-request-search", $target: { $tag_name: "button", $id: "gw-request-search" } }, ORIGIN);
+    expect(own).toEqual({ $el_id: "gw-request-search", $target: { $tag_name: "button", $id: "gw-request-search" } });
+    expect(redactUsageProps({ $el_id: "row-7708800000000000042", $target: null }, ORIGIN)).toEqual({ $target: null });
   });
 
   it("are redacted the same way through the send hook's payload", () => {
