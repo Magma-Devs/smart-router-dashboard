@@ -4,6 +4,7 @@ import { useAsk } from "./AskProvider";
 import { AskConversation } from "./AskConversation";
 import { AskHistory } from "./AskHistory";
 import { useDialogLayer } from "@/components/gateway/DialogLayer";
+import { AskIcon } from "./AskIcon";
 
 function PreferenceNotice() {
   const ask = useAsk();
@@ -30,7 +31,7 @@ function AskBody({
     <div className={`ask-body${history ? " ask-body--history" : ""}`}>
       {full || history ? (
         <aside className="ask-history-column" aria-label="Your chat history">
-          <AskHistory onSelect={closeHistory} />
+          <AskHistory onSelect={closeHistory} showAccount={full} />
         </aside>
       ) : null}
       <div className="ask-chat-column">
@@ -73,7 +74,6 @@ export function AskFull() {
       <header className="ask-header">
         <div>
           <h1>Ask your data</h1>
-          <p>Your router, in conversation</p>
         </div>
         <div className="ask-header-actions">
           <button
@@ -81,16 +81,18 @@ export function AskFull() {
             aria-pressed={history}
             onClick={() => setHistory(!history)}
           >
+            <AskIcon name={history ? "back" : "history"} />
             {history ? "Back to chat" : "History"}
           </button>
           <button
-            className="gw-btn gw-btn--ghost"
+            className="gw-btn gw-btn--ghost ask-header-new"
             onClick={() => ask.select(null)}
             disabled={ask.submitting}
           >
             + New chat
           </button>
           <button className="gw-btn" onClick={ask.back}>
+            <AskIcon name="back" size={14} />
             Back to dashboard
           </button>
         </div>
@@ -162,8 +164,12 @@ export function AskDock() {
     >
       <header className="ask-header">
         <div>
-          <h2 id="ask-panel-title">Ask your data</h2>
-          <p>Answers from your authorized data</p>
+          <h2 id="ask-panel-title">
+            <span className="ask-avatar">
+              <AskIcon name="sparkle" size={17} />
+            </span>
+            Ask your data
+          </h2>
         </div>
         <div className="ask-header-actions">
           <button
@@ -172,7 +178,7 @@ export function AskDock() {
             aria-label="Open full chat"
             onClick={ask.expand}
           >
-            ↗
+            <AskIcon name="expand" />
           </button>
           <button
             className="gw-btn gw-btn--ghost"
@@ -180,7 +186,7 @@ export function AskDock() {
             aria-label="Minimize chat"
             onClick={ask.minimize}
           >
-            −
+            <AskIcon name="minimize" />
           </button>
           <button
             className="gw-btn gw-btn--ghost"
@@ -188,7 +194,7 @@ export function AskDock() {
             aria-label="Close chat"
             onClick={ask.close}
           >
-            ×
+            <AskIcon name="close" />
           </button>
         </div>
       </header>
@@ -198,6 +204,7 @@ export function AskDock() {
           aria-pressed={history}
           onClick={() => setHistory(!history)}
         >
+          <AskIcon name={history ? "back" : "history"} size={14} />
           {history ? "← Back to chat" : "History"}
         </button>
         <button

@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { AskAnswer as Answer } from "@sr/shared";
 import { answerText } from "./ask-display";
+import { AskIcon } from "./AskIcon";
 
 export function AskTime({ value }: { value: string }) {
   return (
@@ -23,6 +24,8 @@ function CopyAnswer({ answer }: { answer: Answer }) {
     <div className="ask-copy">
       <button
         className="gw-btn gw-btn--ghost"
+        aria-label={status === "copied" ? "Copied" : "Copy answer"}
+        title={status === "copied" ? "Copied" : "Copy answer"}
         onClick={async () => {
           try {
             await navigator.clipboard.writeText(answerText(answer));
@@ -34,7 +37,8 @@ function CopyAnswer({ answer }: { answer: Answer }) {
           timer.current = setTimeout(() => setStatus("idle"), 2500);
         }}
       >
-        {status === "copied" ? "Copied" : "Copy answer"}
+        <AskIcon name={status === "copied" ? "check" : "copy"} size={14} />
+        <span>{status === "copied" ? "Copied" : "Copy"}</span>
       </button>
       <span className="ask-sr" role="status">
         {status === "copied"
@@ -53,10 +57,11 @@ export function AskAnswer({ answer, messageId }: { answer: Answer; messageId?: s
   );
   return (
     <article className="ask-answer" aria-label="Answer" data-ask-message={messageId}>
-      <div className="ask-message-meta">
+      <div className="ask-assistant-label">
+        <span className="ask-avatar">
+          <AskIcon name="sparkle" size={17} />
+        </span>
         <span>Smart Router</span>
-        <AskTime value={answer.answeredAt} />
-        <CopyAnswer answer={answer} />
       </div>
       <p className="ask-summary" dir="auto">
         {answer.summary}
@@ -65,12 +70,6 @@ export function AskAnswer({ answer, messageId }: { answer: Answer; messageId?: s
         {answer.sections.map((section, i) => (
           <li key={i}>
             <h3 dir="auto">{section.title}</h3>
-            {section.stat ? (
-              <div className={`ask-stat ask-stat--${section.stat.tone}`}>
-                <strong dir="auto">{section.stat.value}</strong>
-                <span dir="auto">{section.stat.label}</span>
-              </div>
-            ) : null}
             <p dir="auto">{section.body}</p>
             {section.points?.length ? (
               <ul>
@@ -80,6 +79,12 @@ export function AskAnswer({ answer, messageId }: { answer: Answer; messageId?: s
                   </li>
                 ))}
               </ul>
+            ) : null}
+            {section.stat ? (
+              <div className={`ask-stat ask-stat--${section.stat.tone}`}>
+                <strong dir="auto">{section.stat.value}</strong>
+                <span dir="auto">{section.stat.label}</span>
+              </div>
             ) : null}
           </li>
         ))}
@@ -131,6 +136,10 @@ export function AskAnswer({ answer, messageId }: { answer: Answer; messageId?: s
           <p>No source evidence was recorded.</p>
         )}
       </details>
+      <div className="ask-answer-actions">
+        <CopyAnswer answer={answer} />
+        <AskTime value={answer.answeredAt} />
+      </div>
     </article>
   );
 }

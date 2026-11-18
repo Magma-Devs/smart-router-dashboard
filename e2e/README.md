@@ -69,7 +69,16 @@ search/paging, copy/evidence/plain-text HTML, mobile focus/scroll, another brows
 context with no local storage, cross-tab processing/Stop, failed answers after
 reload, read-only members and personal history denial. The accounts suite also
 checks that disabled/self-hosted chat has no entry, requests or usable direct page.
-CI runs both suites on separate PostgreSQL services/runners.
+CI runs the suites on separate PostgreSQL services/runners.
+
+`pnpm --filter @sr/e2e exec playwright test -c ask-presentation.playwright.config.ts`
+runs a separate readable-demo flow through the same real auth/API/worker/database.
+It checks question visibility after short answers, draft continuity, follow-ups,
+desktop/mobile layouts, composer resizing and horizontal overflow. Its provider
+responses are explicitly synthetic; production code never imports them. Captures
+include both themes, the empty state, the full conversation and the side panel.
+Only Next's development overlay is suppressed for the screenshots. The existing
+adversarial HTML fixture remains in the separate behavioral suite.
 
 To let the suite own separate ports while another checkout is running, set
 `E2E_OWN_SERVERS=true`, `E2E_WEB_URL=http://localhost:<web-port>` and

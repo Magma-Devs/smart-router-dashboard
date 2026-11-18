@@ -13,6 +13,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   metrics and logs, with a dashboard panel, minimized chat, full view and mobile
   dialog. Chats support history, search, follow-ups, copying answers and stopping
   a running question.
+  The conversation uses user message bubbles, readable text answers, compact
+  supporting figures and an expanding composer, with one history rail in full view.
 - Answers include authorized sources and time windows, with explicit caveats for
   missing capabilities, empty results and partial coverage. Customer source access
   and personal chat ownership are enforced by the API.

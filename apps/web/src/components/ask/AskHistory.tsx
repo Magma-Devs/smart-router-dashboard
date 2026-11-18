@@ -4,8 +4,40 @@ import useSWRInfinite from "swr/infinite";
 import type { AskChatPage } from "@sr/shared";
 import { useAsk } from "./AskProvider";
 import { groupHistory } from "./ask-display";
+import { AskIcon } from "./AskIcon";
+import Link from "next/link";
+import { signOut } from "next-auth/react";
+import { useMe } from "@/hooks/use-me";
 
-export function AskHistory({ onSelect }: { onSelect?: () => void }) {
+function ChatAccount() {
+  const { me } = useMe();
+  return (
+    <div className="ask-account">
+      <Link href="/account" aria-label="Your account">
+        <span className="ask-account-avatar" aria-hidden="true">
+          {(me?.name || me?.email || "A").slice(0, 1).toUpperCase()}
+        </span>
+        <span>{me?.name || "Your account"}</span>
+      </Link>
+      <button
+        className="gw-btn gw-btn--ghost"
+        aria-label="Sign out"
+        title="Sign out"
+        onClick={() => void signOut({ redirectTo: "/login" })}
+      >
+        <AskIcon name="logout" size={16} />
+      </button>
+    </div>
+  );
+}
+
+export function AskHistory({
+  onSelect,
+  showAccount,
+}: {
+  onSelect?: () => void;
+  showAccount?: boolean;
+}) {
   const ask = useAsk();
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
@@ -39,18 +71,21 @@ export function AskHistory({ onSelect }: { onSelect?: () => void }) {
   return (
     <div className="ask-history">
       <div className="ask-history-top">
-        <h2>History</h2>
-        <button
-          className="gw-btn gw-btn--ghost"
-          onClick={() => {
-            ask.select(null);
-            onSelect?.();
-          }}
-        >
-          + New chat
-        </button>
+        <h2>Your chats</h2>
       </div>
+      <button
+        className="gw-btn ask-new-chat"
+        aria-label="+ New chat"
+        onClick={() => {
+          ask.select(null);
+          onSelect?.();
+        }}
+      >
+        <AskIcon name="plus" />
+        <span>New chat</span>
+      </button>
       <label className="ask-search">
+        <AskIcon name="search" size={15} />
         <span className="ask-sr">Search your chats</span>
         <input
           type="search"
@@ -60,7 +95,6 @@ export function AskHistory({ onSelect }: { onSelect?: () => void }) {
           maxLength={200}
         />
       </label>
-      <p className="ask-private">Your chats aren’t shared with your team.</p>
       <div className="ask-history-list" aria-busy={feed.isLoading}>
         {feed.isLoading ? (
           <p className="ask-muted" role="status">
@@ -112,6 +146,11 @@ export function AskHistory({ onSelect }: { onSelect?: () => void }) {
           </button>
         ) : null}
       </div>
+      <p className="ask-private">
+        <AskIcon name="lock" size={13} />
+        Your chats are private to you.
+      </p>
+      {showAccount ? <ChatAccount /> : null}
     </div>
   );
 }

@@ -4,7 +4,10 @@
 if (process.env.NODE_ENV === "production" || process.env.ASK_DATA_CUSTOMER_ID !== "e2e-customer" || process.env.ASK_DATA_BEDROCK_MODEL !== "anthropic.fixture") throw new Error("Ask provider fixture is test-only");
 const actualFetch = globalThis.fetch;
 const customer = "e2e-customer";
-const sourceId = "e2e-metrics";
+// A separate visual suite uses readable demo content; adversarial fixtures
+// below remain unchanged for the behavioral/security suite.
+const presentation = process.env.ASK_TEST_PRESENTATION === "true";
+const sourceId = presentation ? "demo-metrics" : "e2e-metrics";
 const usage = { inputTokens: 300, outputTokens: 100, totalTokens: 400 };
 const pause = (ms, signal) => new Promise((resolve, reject) => {
   if (signal?.aborted) { reject(signal.reason); return; }
@@ -38,10 +41,21 @@ globalThis.fetch = async (input, init) => {
     if (url.pathname.endsWith("/count-tokens")) return Response.json({ inputTokens: 500 });
     if (!url.pathname.endsWith("/converse")) throw new Error("Unexpected synthetic model operation");
     const body = JSON.parse(String(init.body));
+    const question = body.messages[0]?.content.at(-1)?.text ?? "";
     const text = JSON.stringify(body.messages);
     const toolResult = body.messages.some((message) => message.content.some((part) => part.toolResult));
     if (toolResult) await pause(text.includes("SLOW_FIXTURE") ? 15_000 : 600, init?.signal);
     const content = toolResult ? [{ toolUse: { toolUseId: "synthetic-answer-1", name: "present_answer", type: "tool_use", input: { summary: "Three authorized fixture targets were returned.", sections: [{ title: "Observed targets", body: "This is synthetic browser-test evidence. It does not establish router health.", stat: { value: "3", label: "Authorized fixture targets", tone: "neutral" } }, { title: "Untrusted text", body: "<script>window.__askUnsafe=true</script>" }] } } }] : [{ toolUse: { toolUseId: "synthetic-read-1", name: "read_customer_data", type: "tool_use", input: { sourceId, operationId: "metrics.query", parameters: { query: "count(up)", time: Date.now()/1000 } } } }];
+    if (presentation) {
+      if (!toolResult) content[0].toolUse.input.parameters.query = "sum(up)";
+      else content[0].toolUse.input = question.includes("every RPC") ? {
+        summary: "No — a target being up doesn’t guarantee healthy RPC traffic.",
+        sections: [{ title: "What to check next", body: "Start with the chain and time range you’re investigating.", points: ["Compare request error rates for the affected chain.", "Check latency and recent router logs over the same time window."] }],
+      } : {
+        summary: "Three monitoring targets are up right now.",
+        sections: [{ title: "Current snapshot", body: "The latest snapshot reports three targets up. This tells us they are reachable; it doesn’t tell us whether every RPC request is succeeding.", stat: { value: "3", label: "targets up", tone: "good" } }],
+      };
+    }
     return Response.json({ output: { message: { role: "assistant", content } }, stopReason: toolResult && text.includes("INVALID_FIXTURE") ? "max_tokens" : "tool_use", usage: {...usage, cacheReadInputTokens: 0, cacheReadInputTokenCount: 0, cacheWriteInputTokens: 0, cacheWriteInputTokenCount: 0, serverToolUsage: {} } }, { headers: { "x-amzn-requestid": "synthetic-model-receipt" } });
   }
   return actualFetch(input, init);

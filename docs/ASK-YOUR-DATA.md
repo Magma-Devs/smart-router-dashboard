@@ -268,9 +268,14 @@ are included with retained messages, so reload does not erase the outcome.
 Conversation context is preserved for follow-ups and across the two views;
 starting a new chat adopts the current page context.
 
-Structured answers render as plain text, with a summary, numbered sections,
-optional stats, copy feedback and actual source/time/coverage evidence. A long
-answer opens at its start; reading older messages is not interrupted. Enter sends,
+The full view gives the conversation a single history rail and a centered reading
+column; returning to the dashboard restores its normal navigation. Questions use
+right-aligned bubbles. Structured answers render as plain text, with a summary,
+quiet numbered headings and optional compact inline stats. Copy feedback, answer
+timestamps and expandable source/time/coverage evidence follow each answer.
+A short answer keeps its question visible; a long answer opens at its start.
+Reading older messages is not interrupted. The composer grows with the draft and
+available width, including when switching to mobile. Enter sends,
 Shift+Enter inserts a line and IME composition does not submit. A single active
 question locks submission across every chat/tab. Stop is durable and never creates
 a success message. Connection, loading, unavailable, empty and failed states have
