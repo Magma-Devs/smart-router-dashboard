@@ -63,6 +63,12 @@ describe("a path", () => {
   });
 });
 
+describe("an Ask address", () => {
+  it("keeps the /ask route and names the chat :id", () => {
+    expect(redactSearch("?chat=6f1c2a7e-5b8d-4c3e-9a10-2b3c4d5e6f70")).toBe("?chat=:id");
+  });
+});
+
 describe("a query", () => {
   it("keeps a value only when it is from a fixed set, names the rest :id, and drops unknown keys", () => {
     expect(redactSearch("?tab=request&request=0xabc&window=1d&chain=ETH1&router=r-1&upstream=node-a&foo=bar"))

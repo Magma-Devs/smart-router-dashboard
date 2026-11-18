@@ -28,7 +28,7 @@ import { AUDIT_GROUPS, isKnownSpecIndex, isMetricWindow, USAGE_TABS } from "@sr/
 /** Every fixed segment of the dashboard's routes (`src/app`). Any other segment reads `:id`. */
 export const USAGE_PATH_SEGMENTS = [
   "metrics", "upstreams", "team", "audit", "account", "two-factor", "standalone",
-  "login", "setup", "forgot-password", "invite", "reset",
+  "login", "setup", "forgot-password", "invite", "reset", "ask",
 ] as const;
 
 const SEGMENTS: ReadonlySet<string> = new Set(USAGE_PATH_SEGMENTS);
@@ -48,7 +48,7 @@ export const USAGE_FIXED_PARAMS: Record<string, (value: string) => boolean> = {
 /** The dashboard's other query keys: kept by name, the value always `:id`. */
 export const USAGE_OPAQUE_PARAMS = [
   "request", "router", "upstream", "from", "to", "expand", "tile",
-  "actor", "target", "older", "newer", "page", "callbackUrl", "error",
+  "actor", "target", "older", "newer", "page", "callbackUrl", "error", "chat",
 ] as const;
 
 const OPAQUE: ReadonlySet<string> = new Set(USAGE_OPAQUE_PARAMS);
