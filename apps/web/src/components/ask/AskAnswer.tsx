@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import type { AskAnswer as Answer } from "@sr/shared";
-import { answerText } from "./ask-display";
+import { answerSections, answerText } from "./ask-display";
 import { AskIcon } from "./AskIcon";
 
 export function AskTime({ value }: { value: string }) {
@@ -52,6 +52,7 @@ function CopyAnswer({ answer }: { answer: Answer }) {
   );
 }
 export function AskAnswer({ answer, messageId }: { answer: Answer; messageId?: string }) {
+  const sections = answerSections(answer);
   const partial = answer.evidence.some(
     (item) => item.truncated || ["partial", "unavailable"].includes(item.coverage),
   );
@@ -66,38 +67,40 @@ export function AskAnswer({ answer, messageId }: { answer: Answer; messageId?: s
       <p className="ask-summary" dir="auto">
         {answer.summary}
       </p>
-      <ol className="ask-sections">
-        {answer.sections.map((section, i) => (
-          <li key={i}>
-            <h3 dir="auto">{section.title}</h3>
-            <p dir="auto">{section.body}</p>
-            {section.points?.length ? (
-              <ul>
-                {section.points.map((point, j) => (
-                  <li key={j} dir="auto">
-                    {point}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-            {section.stat ? (
-              <div className={`ask-stat ask-stat--${section.stat.tone}`}>
-                <strong dir="auto">{section.stat.value}</strong>
-                <span dir="auto">{section.stat.label}</span>
-              </div>
-            ) : null}
-          </li>
-        ))}
-      </ol>
+      {sections.length ? (
+        <ol className="ask-sections">
+          {sections.map((section, i) => (
+            <li key={i}>
+              <h3 dir="auto">{section.title}</h3>
+              <p dir="auto">{section.body}</p>
+              {section.points?.length ? (
+                <ul>
+                  {section.points.map((point, j) => (
+                    <li key={j} dir="auto">
+                      {point}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {section.stat ? (
+                <div className={`ask-stat ask-stat--${section.stat.tone}`}>
+                  <strong dir="auto">{section.stat.value}</strong>
+                  <span dir="auto">{section.stat.label}</span>
+                </div>
+              ) : null}
+            </li>
+          ))}
+        </ol>
+      ) : null}
       {partial ? (
         <p className="ask-coverage-warning">
           Some sources returned partial, truncated or unavailable data. Check the evidence before
           drawing conclusions.
         </p>
       ) : null}
-      <details className="ask-evidence">
-        <summary>Sources and time window · {answer.evidence.length}</summary>
-        {answer.evidence.length ? (
+      {answer.evidence.length ? (
+        <details className="ask-evidence">
+          <summary>Sources and time window · {answer.evidence.length}</summary>
           <ul>
             {answer.evidence.map((item) => (
               <li key={item.id}>
@@ -132,10 +135,8 @@ export function AskAnswer({ answer, messageId }: { answer: Answer; messageId?: s
               </li>
             ))}
           </ul>
-        ) : (
-          <p>No source evidence was recorded.</p>
-        )}
-      </details>
+        </details>
+      ) : null}
       <div className="ask-answer-actions">
         <CopyAnswer answer={answer} />
         <AskTime value={answer.answeredAt} />

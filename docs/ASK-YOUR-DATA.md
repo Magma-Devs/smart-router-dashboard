@@ -106,6 +106,14 @@ below installed, on a managed deployment with Ask enabled and a valid rate card.
 
 ## Bounded tool execution
 
+Standalone date/time questions in English or Hebrew are answered directly from
+the current server UTC clock, before MCP discovery or model calls. These replies
+still pass normal HTTP admission, session/owner and worker lease checks, and are
+saved in personal history with no inference steps, source reads or charges.
+Compound questions and unsupported timezone requests use the regular pipeline.
+Clock replies contain no customer-source evidence; the UI displays their short
+answer once and omits an empty sources disclosure.
+
 `AskOrchestrator` discovers the current customer catalog and gives Bedrock one
 `read_customer_data` tool. Its schemas come from the local audited policy, not
 remote descriptions. Metrics/log reads keep their 24-hour bounds; the optional
@@ -115,7 +123,7 @@ cursors and protocol-change horizon, matching the MCP main catalog.
 Every model step requires durable admission/dispatch/usage callbacks. The
 orchestrator checks active authorization before dispatch and before each tool
 read. Each successful data read produces server-authored provenance; a no-tool
-answer, all-source failure, malformed JSON, truncation or excessive tool loop is
+model answer, all-source failure, malformed JSON, truncation or excessive tool loop is
 an error. Successful MCP envelopes containing an upstream API error remain
 failures. Empty, partial and unavailable data stay distinguishable.
 

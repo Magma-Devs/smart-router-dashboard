@@ -1,6 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { answerText, historyGroup, validChatId } from "../ask-display";
+import { answerSections, answerText, historyGroup, validChatId } from "../ask-display";
 describe("chat display contracts", () => {
+  it("shows and copies a simple answer once, retaining sections with additional facts", () => {
+    const answer = {
+      contractVersion: 1 as const,
+      summary: "Today is November 18, 2026 (UTC).",
+      sections: [{ title: "Server clock", body: "Today is November 18, 2026 (UTC)." }],
+      answeredAt: "2026-11-18T14:12:00Z",
+      evidence: [],
+    };
+    expect(answerSections(answer)).toEqual([]);
+    expect(answerText(answer).match(/Today is/g)).toHaveLength(1);
+    expect(
+      answerSections({ ...answer, sections: [{ ...answer.sections[0]!, points: ["Detail"] }] }),
+    ).toHaveLength(1);
+    expect(
+      answerSections({ ...answer, sections: [{ title: "Other", body: "Different fact" }] }),
+    ).toHaveLength(1);
+  });
   it("groups calendar days at the seven/thirty-day boundaries, including future clock skew", () => {
     const now = new Date(2026, 10, 16, 12);
     const at = (days: number) => new Date(2026, 10, 16 - days, 23, 59).toISOString();

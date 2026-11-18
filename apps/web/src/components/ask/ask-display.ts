@@ -29,7 +29,7 @@ export function groupHistory(chats: AskChat[], now = new Date()) {
 export function answerText(answer: AskAnswer): string {
   return [
     answer.summary,
-    ...answer.sections.map((section, i) =>
+    ...answerSections(answer).map((section, i) =>
       [
         `${i + 1}. ${section.title}`,
         section.stat ? `${section.stat.value} — ${section.stat.label}` : "",
@@ -45,6 +45,13 @@ export function answerText(answer: AskAnswer): string {
         `Source: ${item.sourceId} • ${item.operationId} • ${item.from ?? item.observedAt}${item.to ? ` to ${item.to}` : ""} • ${item.coverage}${item.truncated ? " (truncated)" : ""}`,
     ),
   ].join("\n\n");
+}
+/** The summary already says this. Keep sections that add any detail. */
+export function answerSections(answer: AskAnswer): AskAnswer["sections"] {
+  return answer.sections.filter(
+    (section) =>
+      section.body.trim() !== answer.summary.trim() || section.points?.length || section.stat,
+  );
 }
 export function validChatId(id: string | null | undefined): id is string {
   return (

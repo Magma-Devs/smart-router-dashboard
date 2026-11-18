@@ -1,7 +1,7 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestDb, enrolledTwoFactor, type TestDb } from "@sr/db/testing";
-import { askMaintenance, askModelSteps, users } from "@sr/db";
+import { askBudgetMonths, askMaintenance, askModelSteps, users } from "@sr/db";
 import { SignJWT } from "jose";
 import { authPlugin, SESSION_JWT_AUDIENCE, SESSION_JWT_ISSUER } from "../plugins/auth.js";
 import { createSession } from "../services/sessions.js";
@@ -9,6 +9,7 @@ import { installAskRuntime } from "../services/ask/runtime.js";
 import { AskOrchestrator } from "../services/ask/orchestrator.js";
 import { BedrockAdapter } from "../services/ask/bedrock.js";
 import { AskWorker } from "../services/ask/worker.js";
+import { McpAdapter } from "../services/ask/mcp.js";
 import { askRoutes } from "../routes/ask.js";
 
 const secret = "runtime-ask-secret-with-at-least-32-characters";
@@ -90,6 +91,49 @@ async function boot() {
   return runtime;
 }
 describe("API runtime accounting/worker wiring", () => {
+  it("persists a clock reply through HTTP and the real worker with zero external work or spend", async () => {
+    const count = vi.spyOn(BedrockAdapter.prototype, "countTokens");
+    const connect = vi.spyOn(McpAdapter.prototype, "withConnection");
+    const runtime = await boot();
+    await vi.waitFor(() => expect(runtime.ready()).toBe(true));
+    const chatResponse = await request("/chats", {});
+    expect(chatResponse.statusCode).toBe(200);
+    const chat = chatResponse.json() as { id: string };
+    const started = Date.now();
+    const submission = await request(`/chats/${chat.id}/runs`, {
+      idempotencyKey: crypto.randomUUID(),
+      question: "what is the date today?",
+    });
+    expect(submission.statusCode).toBe(200);
+    const run = submission.json() as { id: string };
+    await vi.waitFor(
+      async () => expect((await request(`/runs/${run.id}`)).json().status).toBe("succeeded"),
+      { timeout: 3000 },
+    );
+    const detail = (await request(`/chats/${chat.id}`)).json();
+    expect(detail.messages).toHaveLength(2);
+    const answer = detail.messages[1].answer;
+    expect(answer.summary).toContain("UTC");
+    expect(Date.parse(answer.answeredAt)).toBeGreaterThanOrEqual(started);
+    expect(Date.parse(answer.answeredAt)).toBeLessThanOrEqual(Date.now());
+    expect(answer.evidence).toEqual([]);
+    expect(count).not.toHaveBeenCalled();
+    expect(connect).not.toHaveBeenCalled();
+    expect(await t.db.select().from(askModelSteps)).toEqual([]);
+    expect(await t.db.select().from(askBudgetMonths)).toEqual([
+      expect.objectContaining({ spentMicroUsd: 0n, reservedMicroUsd: 0n }),
+    ]);
+    expect((await app.inject({ url: `/api/ask/chats/${chat.id}` })).statusCode).toBe(401);
+    vi.stubEnv("ASK_DATA_ENABLED", "false");
+    expect(
+      (
+        await request(`/chats/${chat.id}/runs`, {
+          idempotencyKey: crypto.randomUUID(),
+          question: "What time is it?",
+        })
+      ).statusCode,
+    ).toBe(404);
+  });
   it("connects HTTP admission, free count, durable dispatch/usage, answer persistence and maintenance", async () => {
     vi.spyOn(BedrockAdapter.prototype, "countTokens").mockResolvedValue(100);
     vi.spyOn(AskOrchestrator.prototype, "answer").mockImplementation(
