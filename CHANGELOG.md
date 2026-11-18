@@ -11,8 +11,9 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 - **Usage data runs on Mixpanel's browser SDK: page views, clicks, session
   replays, heatmaps and a profile per signed-in person (MAG-5402).** After
-  the person at the browser accepts, the dashboard loads the SDK as its own
-  chunk and sends to Mixpanel's EU host itself: autocapture (page views,
+  the signed-in person accepts, the dashboard loads the SDK as its own
+  chunk and sends to Mixpanel's EU host itself, which derives a city and
+  country from the browser's IP address: autocapture (page views,
   client-side navigation included, clicks, dead and rage clicks, inputs
   changed but never their content, scrolls, submits), a replay of every
   session with all text and inputs masked and images, video, audio and the
@@ -21,14 +22,22 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   filters, how long a view takes to have its data). Every URL and clicked
   element is redacted in the browser first: the dashboard's own addresses
   keep their route and only values from fixed sets (`request=:id`,
-  `/invite/:id`), another site's keeps its origin, and an element keeps no
-  text, title, label or id of its own. Replay uploads are scrubbed the same
-  way, attributes included, and one that can't be is not sent. The viewer
-  is an opaque id (a hash of the tenant and the account), with `tenant`,
-  `staff` and `role`, never the address. The banner and the Account page
-  say what Mixpanel records; nothing of Mixpanel's is loaded, stored or
-  sent before **Accept**, and **Decline**, the X or **Turn off** stops it
-  and removes what it kept in the browser. The api no longer forwards
+  `/invite/:id`), another site's keeps its origin, an element keeps no
+  text, title, label or id of its own (in `$elements`, `$target` and
+  `$el_id`), and no campaign tag or ad click id is sent. Replay uploads are
+  scrubbed the same way, attributes included (any attribute holding an
+  http(s) address), and one that can't be is not sent. The 2FA enrolment is
+  never recorded: the recording stops while it is on screen, and its QR is
+  blocked. The viewer is an opaque id (a hash of the tenant and the
+  account), with `tenant`, `staff` and `role`, never the address. The
+  banner and the Account page say what Mixpanel records; nothing of
+  Mixpanel's is loaded, stored or sent before **Accept**, and **Decline**,
+  the X or **Turn off** stops it and removes what it kept in the browser.
+  The answer belongs to the account in that browser: another account on
+  the same browser is asked for its own, an answer given to 0.70.0's banner
+  is not read, and signing out resets the SDK, so two accounts never share
+  a device id. A browser that sends Do Not Track sends nothing, and the
+  Account page says so. The api no longer forwards
   events: `POST /api/usage` is gone, and `GET /api/usage/config` hands a
   signed-in browser the project token and its viewer id while usage data
   is on. The environment variables and the chart's settings are unchanged,

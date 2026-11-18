@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { LocalTime } from "@/components/gateway/LocalTime";
 import { Skel } from "@/components/gateway/Skel";
 import { PolicyLinks, useUsageState } from "@/components/gateway/UsageConsent";
-import { setUsageConsent } from "@/lib/usage";
+import { doNotTrack, setUsageConsent } from "@/lib/usage";
 
 /** The api's `/version`. */
 export interface VersionInfo {
@@ -95,9 +95,21 @@ export function AboutDeployment({
 }
 
 /**
- * Usage data (MAG-5373), only where this deployment records it: what this
- * browser answered the consent banner, what Mixpanel records, and the button
- * that changes the answer. Nothing at all where it is off.
+ * What the Account page says about usage data: the signed-in person's answer,
+ * or that this browser sends Do Not Track, in which case Mixpanel's SDK sends
+ * nothing whatever the answer.
+ */
+export function usageNoteText(on: boolean, dnt: boolean): string {
+  if (dnt) return "Analytics are off in this browser: it sends Do Not Track, so Mixpanel records nothing here, whatever your answer.";
+  return on
+    ? "Analytics are on in this browser: Mixpanel records clicks, pages and session replays, with text hidden."
+    : "Analytics are off in this browser. On, Mixpanel records clicks, pages and session replays, with text hidden.";
+}
+
+/**
+ * Usage data (MAG-5373), only where this deployment records it: what the
+ * signed-in person answered the consent banner, what Mixpanel records, and the
+ * button that changes the answer. Nothing at all where it is off.
  */
 function UsageNote() {
   const { available, consent } = useUsageState();
@@ -106,9 +118,7 @@ function UsageNote() {
   return (
     <div style={{ margin: "14px 0 0", display: "flex", alignItems: "flex-start", gap: 14 }}>
       <p className="gw-usage-note" style={{ margin: 0, flex: 1, fontSize: 12, color: "var(--text-3)", lineHeight: 1.5 }}>
-        {on
-          ? "Analytics are on in this browser: Mixpanel records clicks, pages and session replays, with text hidden."
-          : "Analytics are off in this browser. On, Mixpanel records clicks, pages and session replays, with text hidden."}{" "}
+        {usageNoteText(on, doNotTrack())}{" "}
         See our <PolicyLinks />.
       </p>
       <button type="button" className="gw-btn" style={{ flexShrink: 0, padding: "7px 12px", fontSize: 12 }} onClick={() => setUsageConsent(on ? "rejected" : "accepted")}>

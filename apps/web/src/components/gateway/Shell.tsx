@@ -17,7 +17,7 @@ import { useMe } from "@/hooks/use-me";
 import { TwoFactorCountdown, TwoFactorGate } from "@/components/auth/two-factor-gate";
 import { ReportIncidentButton } from "@/components/incidents/ReportIncident";
 import { openRequestSearch } from "@/lib/request-search";
-import { noteSearchFrom, pageOf, startUsage, tabOf, viewOpened } from "@/lib/usage";
+import { noteSearchFrom, pageOf, startUsage, tabOf, usageSignOut, viewOpened } from "@/lib/usage";
 import { UsageConsentBar } from "./UsageConsent";
 import { roleBadgeLabel } from "./role-badge";
 import { roleChipStyle } from "@/components/team/bits";
@@ -224,7 +224,10 @@ export function SidebarUser() {
             className="gw-btn gw-btn--ghost"
             style={{ padding: 6 }}
             title="Sign out"
-            onClick={() => void signOut({ redirectTo: "/login" })}
+            onClick={() => {
+              usageSignOut();
+              void signOut({ redirectTo: "/login" });
+            }}
           >
             {logoutIcon}
           </button>

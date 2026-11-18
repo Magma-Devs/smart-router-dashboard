@@ -11,12 +11,19 @@
  *   the upload's URL       every address in its query through `redactUrl`
  *   meta events            `href` through `redactUrl`
  *   node attributes        in full snapshots, added nodes and attribute
- *                          changes: link and source targets through
+ *                          changes: link and source targets, and any other
+ *                          attribute whose value is an http(s) URL, through
  *                          `redactUrl`; titles, labels, alt text,
  *                          placeholders, values, `data-*` (but `data-theme`
  *                          and `data-density`), and an `id` or `for` that
- *                          isn't one of ours (`gw-…`) dropped
+ *                          isn't one of ours (`gw-…`) dropped; every other
+ *                          attribute kept, since the player draws the page
+ *                          from them (an icon's `d`, `viewBox`)
  *   anything else          any string that is an http(s) URL, redacted
+ *
+ * What must never be in a replay is never recorded instead: the 2FA
+ * enrolment holds the recording off (`holdReplay` in `usage.ts`), and its QR
+ * carries `REPLAY_BLOCK_CLASS`, which the SDK leaves out.
  *
  * Fails closed: an upload that can't be read, scrubbed or re-encoded is not
  * sent. The SDK is answered as if it had been, so it does not retry, and
@@ -47,7 +54,8 @@ export function scrubAttributes(attrs: Record<string, unknown>, origin: string):
     if (DROP_ATTRS.has(name)) continue;
     if (name.startsWith("data-") && !(KEPT_DATA.has(name) && typeof value === "string" && FIXED_VALUE.test(value))) continue;
     if ((name === "id" || name === "for") && !(typeof value === "string" && OWN_ID.test(value))) continue;
-    out[key] = URL_ATTRS.has(name) ? redactUrl(value, origin) : value;
+    const url = URL_ATTRS.has(name) || (typeof value === "string" && /^https?:\/\//i.test(value.trim()));
+    out[key] = url ? redactUrl(value, origin) : value;
   }
   return out;
 }

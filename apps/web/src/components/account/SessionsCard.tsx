@@ -4,6 +4,7 @@ import useSWR from "swr";
 import { useState } from "react";
 import { signOut } from "next-auth/react";
 import { apiGet, apiSend } from "@/lib/api-client";
+import { usageSignOut } from "@/lib/usage";
 import { LocalTime } from "@/components/gateway/LocalTime";
 
 interface SessionsResponse {
@@ -48,6 +49,7 @@ export function SessionsCard() {
       // This tab's api session is gone too, deliberately, so end the web
       // session with it. Its cookie is still valid, and the edge gate sends a
       // signed-in cookie from /login straight back to the dashboard.
+      usageSignOut();
       await signOut({ redirectTo: "/login" });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not sign out everywhere.");

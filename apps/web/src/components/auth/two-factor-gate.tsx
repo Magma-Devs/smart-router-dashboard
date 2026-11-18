@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { signOut } from "next-auth/react";
 import { useMe } from "@/hooks/use-me";
 import { gateView, type EnrolmentVerdict } from "@/lib/enrolment-gate";
+import { usageSignOut } from "@/lib/usage";
 import { Spinner } from "@/components/gateway/BusyButton";
 import { EnrolPanel } from "./enrol-panel";
 
@@ -41,7 +42,10 @@ export function SignOutInstead() {
       Not you, or no phone to hand?{" "}
       <button
         type="button"
-        onClick={() => void signOut({ redirectTo: "/login" })}
+        onClick={() => {
+          usageSignOut();
+          void signOut({ redirectTo: "/login" });
+        }}
         style={{
           background: "none",
           border: 0,

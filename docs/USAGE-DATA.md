@@ -34,19 +34,25 @@ Three things have to be true, and the first two are the deployment's:
    | We host it (`DEPLOYMENT_MODE=managed`) | on | `USAGE_ANALYTICS=off` |
    | The client hosts it (`onprem`) | off | `USAGE_ANALYTICS=on` |
 
-3. **The person at the browser accepted it.** Where the first two hold, the
+3. **The signed-in person accepted it.** Where the first two hold, the
    dashboard shows a consent banner, docked bottom-right: essential cookies
    keep the sign-in, and with **Accept** Mixpanel also records clicks, pages
    and session replays, with text hidden. **Decline** records nothing, and so
    does the X, which is kept as a "no". The banner links Magma's Privacy
    Policy (`magmadevs.com/privacy`) and Terms & Conditions
-   (`magmadevs.com/terms`). The answer is kept in that browser
-   (`localStorage`, `sr:usage-consent`: `accepted`, `rejected` or
-   `dismissed`), holds in its other tabs of the dashboard at once, and the
-   Account page shows it with a button that changes it.
+   (`magmadevs.com/terms`). The answer belongs to one account in one browser:
+   it is kept in `localStorage` under `sr:usage-consent:2:<viewer.id>`
+   (`accepted`, `rejected` or `dismissed`), so another account signed in on
+   the same browser is asked for its own. The `2` is the banner's wording:
+   an answer given to 0.70.0's banner (`sr:usage-consent`), which asked about
+   events only, is not read, and the banner asks again. The answer holds in
+   that account's other tabs of the dashboard at once, and the Account page
+   shows it with a button that changes it.
 
 A browser with Do Not Track on sends nothing, even after an acceptance: the
-SDK honours it (`ignore_dnt` is left off).
+SDK honours it (`ignore_dnt` is left off), and the Account page says
+"Analytics are off in this browser: it sends Do Not Track, so Mixpanel
+records nothing here, whatever your answer."
 
 `GET /api/usage/config` answers `{ enabled: false }` unless the first two hold
 and a signed-in user is on the request. Then it answers what the browser
@@ -85,7 +91,17 @@ SDK as its own chunk of the dashboard's code (`await import("mixpanel-browser")`
 the npm bundle carries the replay recorder, so no script comes from Mixpanel's
 CDN), starts it, names the viewer by `viewer.id`, registers `tenant`,
 `deployment_mode`, `dashboard_version`, `staff` and `role` on every event, sets
-`tenant`, `staff` and `role` on the viewer's profile, and opts in.
+`tenant`, `staff` and `role` on the viewer's profile, and opts in (once: a
+browser already opted in is not opted in again, so `$opt_in` is sent once).
+
+The SDK's storage in a browser belongs to one account: the web notes whose it
+is (`sr:usage-sdk-viewer`), and when another account accepts there, removes
+everything the SDK kept before it starts, so the two accounts share no device
+id and Mixpanel never links them. **Signing out** (the sidebar's Sign out, the
+enrolment screen's way out, "Sign out everywhere", or a session ended
+elsewhere) stops the recording, resets the SDK (a new device id, nothing of
+the account kept) and forgets whose its storage was. The account's answer
+stays with the account.
 
 The browser contacts one host, `MIXPANEL_API_HOST`: `/track/` for events,
 `/engage/` for the profile and `/record/` for session replays. Mixpanel sees
@@ -102,14 +118,22 @@ cookies keep you signed in" stays true.
   clicks; that an input changed (`$mp_input_change`), never what it holds;
   scroll depth; form submits; leaving a page. A click names the element by
   its tag, classes, place among its siblings, role, type and name; never its
-  text (`capture_text_content: false`).
+  text (`capture_text_content: false`), and the SDK never reads its `title`,
+  `aria-label`, `aria-labelledby` or `aria-describedby` (`block_attrs`). The
+  SDK copies no campaign tags or ad click ids out of the address
+  (`track_marketing: false`, `store_google: false`,
+  `skip_first_touch_marketing: true`).
 - **Session replay:** every session (`record_sessions_percent: 100`), as the
   page's layout and changes, mouse movement, scrolls and clicks. All text is
   masked (`record_mask_all_text`), every input is masked
-  (`record_mask_all_inputs`), images, video and audio are blocked
-  (`record_block_selector: "img, video, audio"`), and the console and network
-  are not recorded (`record_console: false`; `record_network` is off). A
-  replay stops after 30 minutes with nobody at the page.
+  (`record_mask_all_inputs`), images, video, audio and the 2FA QR are blocked
+  (`record_block_selector: "img, video, audio, .gw-no-replay"`), and the
+  console and network are not recorded (`record_console: false`;
+  `record_network` is off). A replay stops after 30 minutes with nobody at
+  the page. **The 2FA enrolment is never recorded:** while its screen is up
+  (`/account/two-factor`, or the enrolment screen that takes over the
+  dashboard), the recording is stopped and none starts; a new replay starts
+  when it goes. Its QR tile is blocked as well.
 - **Heatmaps:** from the clicks and the replay (`record_heatmap_data: true`).
 - **Profiles:** one per signed-in person, by `viewer.id`: `tenant`, `staff`,
   `role`, and Mixpanel's own operating system and browser.
@@ -129,6 +153,7 @@ sends it (`before_send_events`, `before_send_people`), by
 | Any other property holding an http(s) URL | the same |
 | A clicked element and its ancestors (`$elements`), and the clicked element again (`$target`) | tag, classes, place among its siblings, role, type, name, an id of ours (`gw-…`) and its link target as above; titles, labels, other ids and text dropped |
 | The clicked element's id (`$el_id`) | kept only when it is an id of ours (`gw-…`), else dropped |
+| What the SDK reads from the address on its own: campaign tags (`utm_…`, `initial_utm_…`), ad click ids (`gclid`, `fbclid`, `msclkid` …) and a search engine's query (`mp_keyword`) | dropped |
 
 Session replay uploads are scrubbed in the browser with the same rules
 before they leave it, by `apps/web/src/lib/usage-replay.ts`. The SDK uploads
@@ -136,13 +161,18 @@ a replay with `fetch` to `<api host>/record/`; while usage data is on, `fetch`
 is wrapped for that path alone. The upload's URL has every address in its
 query redacted (`$current_url`, `replay_start_url`); its body is unzipped, and
 each meta event's `href` is redacted, and every element's attributes, in full
-snapshots, added nodes and attribute changes, keep a link or source target
-only as above and lose titles, labels, alt text, placeholders, values, `data-*`
-(but `data-theme` and `data-density`, which the styles read and which hold a
-value from a fixed set) and any `id` or `for` that isn't one of ours. The
-body is zipped again and sent with the SDK's own headers. An upload that can't
-be read, scrubbed or re-encoded is not sent: the SDK is answered as if it had
-been, so it does not retry, and the page counts it.
+snapshots, added nodes and attribute changes, keep a link or source target,
+and any other attribute whose value is an http(s) URL, only as above, and
+lose titles, labels, alt text, placeholders, values, `data-*` (but
+`data-theme` and `data-density`, which the styles read and which hold a value
+from a fixed set) and any `id` or `for` that isn't one of ours. Every other
+attribute is kept: the player draws the page from them (an icon's `d` and
+`viewBox`). What must never be in a replay is never recorded instead: the 2FA
+enrolment and its QR (above). The body is zipped again and sent with the
+SDK's own headers. An upload that can't be read, scrubbed or re-encoded is not
+sent: the SDK is answered as if it had been, so it does not retry, and the
+page counts it. The scrubber wraps `fetch` before the SDK starts, so a
+recording a stored acceptance starts at once is scrubbed too.
 
 ### What is never sent
 
@@ -181,6 +211,16 @@ same page starts it again; a browser whose answer is "no" never loads the SDK.
   message can name an address.
 - `save_referrer: false`: the first referrer is not kept in the SDK's storage
   or set on the profile; each event's `$referrer` is redacted.
+- `block_attrs` (`title`, `aria-label`, `aria-labelledby`,
+  `aria-describedby`): in this UI they carry hashes, request IDs, customer ids
+  and the signed-in person's address; the redaction drops them too.
+- `track_marketing: false`, `store_google: false`,
+  `skip_first_touch_marketing: true`: campaign tags and click ids are values
+  from the address that the query rules would not keep; the redaction drops
+  the ones the SDK adds to a page view regardless.
+- The QR's class in `record_block_selector`, and the recording stopped while
+  the enrolment is up: the QR is the account's second factor, and the
+  replay keeps the attributes an SVG is drawn from.
 
 ## Events
 

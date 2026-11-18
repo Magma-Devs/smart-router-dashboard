@@ -1,9 +1,10 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { TOTP_DIGITS } from "@sr/shared";
 import { apiPost, ApiError } from "@/lib/api-client";
 import { Spinner } from "@/components/gateway/BusyButton";
+import { holdReplay, REPLAY_BLOCK_CLASS } from "@/lib/usage";
 import { copyText } from "./copy-text";
 
 /**
@@ -91,7 +92,11 @@ export function CopyKeyButton({ state, onCopy }: { state: CopyState; onCopy: () 
   );
 }
 
-/** Where the QR goes: a spinner on the same white tile until it arrives. */
+/**
+ * Where the QR goes: a spinner on the same white tile until it arrives. The
+ * tile is never in a session replay (`REPLAY_BLOCK_CLASS`): the QR is the
+ * secret.
+ */
 export function QrSlot({ qrSvg }: { qrSvg: string | undefined }) {
   // The SVG has no colours of its own that survive both themes, so it sits on
   // a fixed white tile. A QR must be dark-on-light to scan reliably.
@@ -108,6 +113,7 @@ export function QrSlot({ qrSvg }: { qrSvg: string | undefined }) {
       <div
         role="status"
         aria-label="Loading the QR code"
+        className={REPLAY_BLOCK_CLASS}
         style={{
           ...tile,
           display: "flex",
@@ -123,6 +129,7 @@ export function QrSlot({ qrSvg }: { qrSvg: string | undefined }) {
   return (
     <div
       aria-label="Authenticator QR code"
+      className={REPLAY_BLOCK_CLASS}
       style={tile}
       dangerouslySetInnerHTML={{ __html: qrSvg }}
     />
@@ -145,6 +152,9 @@ export function EnrolPanel({
   const [copy, setCopy] = useState<CopyState>("idle");
   const copyReset = useRef<ReturnType<typeof setTimeout> | null>(null);
   const started = useRef(false);
+
+  // No session replay while the enrolment is on screen, before its first paint.
+  useLayoutEffect(() => holdReplay(), []);
 
   useEffect(
     () => () => {

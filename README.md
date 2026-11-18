@@ -142,11 +142,14 @@ hears about it: Critical calls the on-call engineer. Off by default. Full guide:
 
 Off on a self-hosted install. On only with accounts on (`AUTH_MODE=enabled`),
 `USAGE_ANALYTICS` (on by default only with `DEPLOYMENT_MODE=managed`),
-`MIXPANEL_TOKEN`, and the person's acceptance in the consent banner. After an
-acceptance the browser loads Mixpanel's bundled SDK and sends autocapture,
-masked session replays and heatmaps to `MIXPANEL_API_HOST` (default
-`https://api-eu.mixpanel.com`, the one host to allow in a CSP), with addresses
-and attributes cleaned in the browser first. Full guide:
+`MIXPANEL_TOKEN`, and the signed-in person's acceptance in the consent banner,
+asked of each account in each browser. After an acceptance the browser loads
+Mixpanel's bundled SDK and sends autocapture, masked session replays and
+heatmaps to `MIXPANEL_API_HOST` (default `https://api-eu.mixpanel.com`, the
+one host to allow in a CSP), which derives a city and country from the
+browser's IP address. Addresses and attributes are cleaned in the browser
+first, the 2FA enrolment is never recorded, and signing out resets the SDK. A
+browser that sends Do Not Track sends nothing. Full guide:
 [`docs/USAGE-DATA.md`](./docs/USAGE-DATA.md).
 
 ## Development

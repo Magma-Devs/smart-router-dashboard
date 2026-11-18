@@ -105,6 +105,14 @@ const URL_PROPS = ["$current_url", "$referrer", "$initial_referrer", "$el_attr__
 const PATH_PROPS = ["current_url_path", "$pathname"];
 const SEARCH_PROPS = ["current_url_search"];
 
+/**
+ * Properties the SDK copies out of the page's query on its own: campaign tags
+ * (`utm_…`, and `initial_utm_…` on a profile), ad click ids, and a search
+ * engine's query (`mp_keyword`). Dropped: the query rules above decide what of
+ * an address is sent.
+ */
+const MARKETING_KEY = /^(initial_)?utm_|^(dclid|fbclid|gclid|ko_click_id|li_fat_id|msclkid|sccid|ttclid|twclid|wbraid|mp_keyword)$/;
+
 /** What is kept of each element in autocapture's `$elements`. */
 const ELEMENT_KEEP = new Set(["$tag_name", "$classes", "$nth_child", "$nth_of_type", "$attr-role", "$attr-type", "$attr-name"]);
 const OWN_ID = /^gw-[a-z0-9-]+$/;
@@ -125,13 +133,15 @@ function redactElement(el: unknown, origin: string): unknown {
  * query properties are redacted whatever they hold, and so is any other
  * string that is an http(s) URL; clicked elements (`$elements` and the
  * click's `$target`) keep only what `ELEMENT_KEEP` lists; `$el_id` stays only
- * when it is one of our own static ids; element text and every other
- * `$el_attr__` go.
+ * when it is one of our own static ids; element text, every other
+ * `$el_attr__`, and the campaign tags and click ids the SDK reads from the
+ * address (`MARKETING_KEY`) go.
  */
 export function redactUsageProps(props: Record<string, unknown>, origin: string): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(props)) {
     if (key === "$el_text" || (key.startsWith("$el_attr__") && key !== "$el_attr__href")) continue;
+    if (MARKETING_KEY.test(key)) continue;
     if (key === "$el_id" && !(typeof value === "string" && OWN_ID.test(value))) continue;
     if (URL_PROPS.includes(key)) out[key] = redactUrl(value, origin);
     else if (PATH_PROPS.includes(key)) out[key] = typeof value === "string" ? redactPath(value) : value;

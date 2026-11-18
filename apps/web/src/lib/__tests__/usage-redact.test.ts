@@ -210,6 +210,20 @@ describe("an event's properties", () => {
   });
 });
 
+describe("what the SDK reads from the address on its own", () => {
+  it("is dropped: campaign tags, ad click ids and a search engine's query, on events and profiles", () => {
+    const planted = "utm-secret-campaign-55";
+    const props = {
+      utm_source: planted, utm_campaign: planted, utm_id: planted, gclid: planted, fbclid: planted, msclkid: planted,
+      mp_keyword: planted, $search_engine: "google", tenant: "tenant-a",
+    };
+    expect(redactUsageProps(props, ORIGIN)).toEqual({ $search_engine: "google", tenant: "tenant-a" });
+    const update = redactProfileUpdate({ $set_once: { initial_utm_source: planted, initial_utm_medium: null }, $set: { tenant: "tenant-a" } }, ORIGIN);
+    expect(JSON.stringify(update)).not.toContain(planted);
+    expect(update.$set_once).toEqual({});
+  });
+});
+
 describe("a profile update", () => {
   it("sets nothing a URL carried", () => {
     const update = redactProfileUpdate({

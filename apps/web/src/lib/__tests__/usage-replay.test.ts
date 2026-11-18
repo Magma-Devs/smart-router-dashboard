@@ -120,6 +120,25 @@ describe("an element's attributes", () => {
   });
 });
 
+describe("an attribute the scrubber has no rule for", () => {
+  it("is kept, so the player draws the page, unless its value is an http(s) URL, which is redacted", () => {
+    const out = scrubAttributes({
+      d: "M1 1.5h7m3 0h1",
+      viewBox: "0 0 24 24",
+      content: `${ORIGIN}/metrics?tab=request&request=${TYPED}`,
+      "data-theme": "dark",
+      itemid: ` https://etherscan.io/tx/${HASH}`,
+    }, ORIGIN);
+    expect(out).toEqual({
+      d: "M1 1.5h7m3 0h1",
+      viewBox: "0 0 24 24",
+      content: `${ORIGIN}/metrics?tab=request&request=:id`,
+      "data-theme": "dark",
+      itemid: "https://etherscan.io",
+    });
+  });
+});
+
 describe("an upload's URL", () => {
   it("has every address in its query redacted, and nothing else changed", () => {
     expect(fixture.url).toContain(TYPED);

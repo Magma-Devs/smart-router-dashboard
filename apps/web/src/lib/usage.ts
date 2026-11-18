@@ -7,26 +7,43 @@
  *
  * Nothing from Mixpanel is imported, loaded, stored or sent unless the api
  * says usage data is on (`GET /api/usage/config`: accounts on, the
- * deployment's switch, a token, a signed-in user) AND the person at this
- * browser accepted it in the consent banner (`UsageConsentBar`). The SDK is
- * then loaded as its own chunk and sends to the configured EU host only. The
- * answer is kept in `localStorage`, reaches the browser's other tabs of the
- * dashboard, and the Account page changes it; a "no" after a "yes" stops the
- * SDK and removes everything it kept.
+ * deployment's switch, a token, a signed-in user) AND the signed-in person
+ * accepted it in the consent banner (`UsageConsentBar`). The SDK is then
+ * loaded as its own chunk and sends to the configured EU host only. The
+ * answer is kept in `localStorage` per account and per consent version
+ * (`consentKey`), reaches the browser's other tabs of the dashboard, and the
+ * Account page changes it; a "no" after a "yes" stops the SDK and removes
+ * everything it kept, and signing out (`usageSignOut`) stops it and makes it
+ * forget the account.
  *
  * Every URL and clicked element an event carries is redacted first
  * (`usage-redact.ts`), and every session replay upload is scrubbed the same
- * way before it is sent (`usage-replay.ts`, loaded with the SDK). Every call
- * here is safe to make before the answer is known, on the server, or while it
- * is off: it does nothing.
+ * way before it is sent (`usage-replay.ts`, loaded with the SDK). The 2FA
+ * enrolment is never recorded (`holdReplay`, `REPLAY_BLOCK_CLASS`). Every
+ * call here is safe to make before the answer is known, on the server, or
+ * while it is off: it does nothing.
  */
-import type { Config, Mixpanel } from "mixpanel-browser";
+import type { AutocaptureConfig, Config, Mixpanel } from "mixpanel-browser";
 import { cleanUsageProps, guidMintedSecond, type Role, type UsageEventName, type UsageProps } from "@sr/shared";
 import { apiGet } from "./api-client";
 import { getIdlePhase, subscribeIdle } from "./idle-store";
 import { redactProfileUpdate, redactUsageEvent, redactUsageProps } from "./usage-redact";
 
-const CONSENT_KEY = "sr:usage-consent";
+/**
+ * The consent banner's wording this release asks under. An answer stored
+ * under another version (0.70.0's `sr:usage-consent`, which asked about
+ * events only, never session replays) is not read: the banner asks again.
+ */
+export const CONSENT_VERSION = 2;
+
+/** Where this browser keeps one signed-in person's answer: another account on the same browser is asked for its own. */
+export const consentKey = (viewerId: string): string => `sr:usage-consent:${CONSENT_VERSION}:${viewerId}`;
+
+/** Whose usage data the SDK's storage in this browser holds: another account's is removed before the SDK reads it. */
+const SDK_VIEWER_KEY = "sr:usage-sdk-viewer";
+
+/** An element with this class, and everything inside it, is left out of every session replay (the 2FA QR). */
+export const REPLAY_BLOCK_CLASS = "gw-no-replay";
 
 /** What `GET /api/usage/config` answers. */
 export type UsageConfig =
@@ -77,7 +94,12 @@ export function usageAllowed(available: boolean | null, consent: UsageConsent | 
   return available === true && consent === "accepted";
 }
 
-/** What autocapture records. Text content stays off: a click says which element, never what it read. */
+/**
+ * What autocapture records. Text content stays off: a click says which
+ * element, never what it read. The SDK never reads an element's title or
+ * labels (`block_attrs`): in this UI they carry hashes, request IDs, customer
+ * ids and the signed-in person's address.
+ */
 export const AUTOCAPTURE = {
   pageview: "url-with-path",
   click: true,
@@ -87,16 +109,19 @@ export const AUTOCAPTURE = {
   scroll: true,
   submit: true,
   capture_text_content: false,
-} as const;
+  block_attrs: ["title", "aria-label", "aria-labelledby", "aria-describedby"],
+} satisfies AutocaptureConfig;
 
 /**
  * The SDK's options for a deployment's config, `origin` being this page's.
  * `require_consent` keeps the SDK from storing or sending anything until
  * `opt_in_tracking()`, and holds a withdrawal in memory once its stored flag
  * is removed. The console stays out of replays: an api error's message can
- * name an address, and the console is not masked.
+ * name an address, and the console is not masked. The SDK copies no campaign
+ * tags or ad click ids out of the page's address (`track_marketing`,
+ * `store_google`, `skip_first_touch_marketing`).
  */
-export function sdkOptions(config: OnConfig, origin: string): Partial<Config> {
+export function sdkOptions(config: OnConfig, origin: string): Partial<Config> & { track_marketing: boolean } {
   const hooks = {
     on_track: (name: string, props: Record<string, unknown>) => [name, redactUsageProps(props, origin)],
     before_send_events: (event: { event: string; properties: Record<string, unknown> }) => redactUsageEvent(event, origin),
@@ -113,10 +138,21 @@ export function sdkOptions(config: OnConfig, origin: string): Partial<Config> {
     record_heatmap_data: true,
     record_mask_all_text: true,
     record_mask_all_inputs: true,
-    record_block_selector: "img, video, audio",
+    record_block_selector: `img, video, audio, .${REPLAY_BLOCK_CLASS}`,
     record_console: false,
+    track_marketing: false,
+    store_google: false,
+    skip_first_touch_marketing: true,
     hooks: hooks as Config["hooks"],
   };
+}
+
+/** Whether this browser sends Do Not Track, read as Mixpanel's SDK reads it: the SDK then sends nothing, whatever the answer. */
+export function doNotTrack(): boolean {
+  if (typeof window === "undefined") return false;
+  const nav = (window.navigator ?? {}) as { doNotTrack?: unknown; msDoNotTrack?: unknown };
+  const values = [nav.doNotTrack, nav.msDoNotTrack, (window as unknown as { doNotTrack?: unknown }).doNotTrack];
+  return values.some((v) => v === true || v === 1 || v === "1" || v === "yes");
 }
 
 /** Whether this deployment sends usage data, and what this browser answered. */
@@ -142,9 +178,11 @@ function setState(next: UsageState) {
   for (const fn of watchers) fn();
 }
 
+/** The signed-in person's stored answer; none before the api has said who they are. */
 function readConsent(): UsageConsent | null {
+  if (!config) return null;
   try {
-    return consentFrom(localStorage.getItem(CONSENT_KEY));
+    return consentFrom(localStorage.getItem(consentKey(config.viewer.id)));
   } catch {
     return null;
   }
@@ -160,7 +198,7 @@ let unscrub: (() => void) | null = null;
 /** Whether the SDK is opted in on this page. */
 let recording = false;
 let listening = false;
-/** Our events from before the SDK is ready, in memory only, while this browser's answer is "accepted". */
+/** Our events from before the SDK is ready, in memory only, while the answer is unknown or "accepted"; dropped on any other answer. */
 let pending: [UsageEventName, Record<string, string | number | boolean>][] = [];
 const PENDING_MAX = 50;
 /** Set as the page unloads: reads cut short by leaving are not problems. */
@@ -180,7 +218,8 @@ export function track(name: UsageEventName, props: UsageProps = {}): void {
     sdk.track(name, clean);
     return;
   }
-  if (state.available !== false && readConsent() === "accepted" && pending.length < PENDING_MAX) pending.push([name, clean]);
+  const waiting = state.available === null || (state.available && state.consent === "accepted");
+  if (waiting && pending.length < PENDING_MAX) pending.push([name, clean]);
 }
 
 /** Whether the page is unloading: a read it cut short says nothing about the read. */
@@ -197,11 +236,30 @@ export function takeSearchFrom(): "top-bar" | "request-tab" | "link" {
   return from;
 }
 
-/** The SDK and the replay scrubber, loaded once per page; the SDK started. */
+function readSdkViewer(): string | null {
+  try {
+    return localStorage.getItem(SDK_VIEWER_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The SDK and the replay scrubber, loaded once per page; the SDK started.
+ * What the SDK kept for another account is removed first, and the scrubber
+ * wraps `fetch` before `init`: a stored opt-in starts the recording inside it.
+ */
 function load(c: OnConfig): Promise<Mixpanel> {
-  loading ??= Promise.all([import("mixpanel-browser"), import("./usage-replay")]).then(([{ default: mixpanel }, scrubber]) => {
+  loading ??= Promise.all([import("mixpanel-browser"), import("./usage-replay")]).then(async ([{ default: mixpanel }, scrubber]) => {
     replay = scrubber;
-    mixpanel.init(c.token, sdkOptions(c, window.location.origin));
+    if (readSdkViewer() !== c.viewer.id) await forgetSdkStorage(false);
+    try {
+      localStorage.setItem(SDK_VIEWER_KEY, c.viewer.id);
+    } catch {
+      /* storage blocked: the SDK keeps nothing either */
+    }
+    unscrub ??= scrubber.installReplayScrubber(c.apiHost, window.location.origin);
+    mixpanel.init(c.token, { ...sdkOptions(c, window.location.origin), record_sessions_percent: replayHolds > 0 ? 0 : 100 });
     sdk = mixpanel;
     return mixpanel;
   });
@@ -222,9 +280,10 @@ async function begin(): Promise<void> {
   if (!usageAllowed(state.available, state.consent) || recording) return;
   mp.register({ tenant: c.tenant, deployment_mode: c.deploymentMode, dashboard_version: c.version, staff: c.viewer.staff, role: c.viewer.role });
   mp.identify(c.viewer.id);
-  // Before the opt-in, which starts the recording: no upload goes unscrubbed.
+  // A new acceptance after a "no" on this page: the scrubber went with the "no".
   unscrub ??= replay!.installReplayScrubber(c.apiHost, window.location.origin);
-  mp.opt_in_tracking();
+  // A stored opt-in already started the SDK in `init`; a second one would send `$opt_in` again.
+  if (!mp.has_opted_in_tracking()) mp.opt_in_tracking();
   // Autocapture set up again with tracking allowed: it sends this page's view.
   mp.set_config({ autocapture: AUTOCAPTURE });
   mp.people.set({ tenant: c.tenant, staff: c.viewer.staff, role: c.viewer.role });
@@ -319,15 +378,75 @@ async function forgetDatabases(heldOpen: boolean): Promise<void> {
   }
 }
 
-/** Removes everything the SDK kept in this browser. */
+/** Removes everything the SDK kept in this browser, and whose it was. */
 export async function forgetSdkStorage(heldOpen = false): Promise<void> {
   try {
     forgetKeys(localStorage);
     forgetKeys(sessionStorage);
+    localStorage.removeItem(SDK_VIEWER_KEY);
   } catch {
     /* storage blocked: nothing was kept */
   }
   await forgetDatabases(heldOpen);
+}
+
+let replayHolds = 0;
+
+function applyReplayHold(held: boolean) {
+  const mp = sdk;
+  if (!mp) return;
+  try {
+    mp.set_config({ record_sessions_percent: held ? 0 : 100 });
+    // Opted out or Do Not Track: the SDK starts nothing.
+    if (held) mp.stop_session_recording();
+    else mp.start_session_recording();
+  } catch {
+    /* the SDK's own failure: nothing is recorded */
+  }
+}
+
+/**
+ * Keeps the session replay off while something that must never be recorded
+ * is on screen (the 2FA enrolment and its QR): the recording stops, and no
+ * new one starts until the last hold is released, when a new replay starts.
+ * Returns the release.
+ */
+export function holdReplay(): () => void {
+  replayHolds++;
+  if (replayHolds === 1) applyReplayHold(true);
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    replayHolds--;
+    if (replayHolds === 0) applyReplayHold(false);
+  };
+}
+
+/**
+ * Signing out: the recording stops, and the SDK forgets this account (a new
+ * device id) and whose its storage was, so the next account on this browser
+ * starts from nothing. The account's answer stays with it.
+ */
+export function usageSignOut(): void {
+  pending = [];
+  searchFrom = null;
+  recording = false;
+  const mp = sdk;
+  if (mp) {
+    try {
+      mp.set_config({ record_sessions_percent: 0, autocapture: false });
+      mp.stop_session_recording();
+      mp.reset();
+    } catch {
+      /* the next page load removes what the SDK kept */
+    }
+  }
+  try {
+    localStorage.removeItem(SDK_VIEWER_KEY);
+  } catch {
+    /* storage blocked: nothing was kept */
+  }
 }
 
 /** Stops usage data: the recording stops, the SDK opts out and forgets the viewer, and what it kept is removed. */
@@ -367,11 +486,12 @@ export function startUsage(): void {
       setState({ available, consent });
       if (usageAllowed(available, consent)) void begin();
       else stop();
-      // An answer given in another tab holds here too: the banner goes, and
-      // usage data starts or stops with it.
-      if (available) {
+      // An answer this account gave in another tab holds here too: the
+      // banner goes, and usage data starts or stops with it.
+      if (config) {
+        const key = consentKey(config.viewer.id);
         window.addEventListener("storage", (e) => {
-          if (e.key === CONSENT_KEY) applyConsent(consentFrom(e.newValue));
+          if (e.key === key) applyConsent(consentFrom(e.newValue));
         });
       }
     })
@@ -382,17 +502,20 @@ export function startUsage(): void {
 }
 
 /**
- * The answer to the consent banner, or its change on the Account page. Kept in
- * `localStorage`, the only thing written before an acceptance. Accepting
+ * The signed-in person's answer to the consent banner, or its change on the
+ * Account page. Kept in `localStorage` under their account
+ * (`consentKey`), the only thing written before an acceptance. Accepting
  * starts usage data from this moment: nothing from before it is sent. A "no"
  * stops it and removes what the SDK kept.
  */
 export function setUsageConsent(choice: UsageConsent): void {
   if (typeof window === "undefined") return;
-  try {
-    localStorage.setItem(CONSENT_KEY, choice);
-  } catch {
-    /* private window: the answer holds until the page is closed */
+  if (config) {
+    try {
+      localStorage.setItem(consentKey(config.viewer.id), choice);
+    } catch {
+      /* private window: the answer holds until the page is closed */
+    }
   }
   applyConsent(choice);
 }

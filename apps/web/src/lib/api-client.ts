@@ -165,6 +165,7 @@ async function failure(
     endingSession = true; // concurrent panels all fail at once; act once
     // An admin's act gets a sentence on the sign-in page; see `sign-in-notice.ts`.
     const redirectTo = signInPathAfter(endedBy);
+    void import("./usage").then(({ usageSignOut }) => usageSignOut()).catch(() => {});
     void import("next-auth/react").then(({ signOut }) => signOut({ redirectTo }));
   }
   const retryAfterMs = res.status === 429 ? parseRetryAfter(res.headers.get("retry-after")) : null;

@@ -31,6 +31,9 @@ const CONFIG = {
   viewer: { id: "0123456789abcdef0123456789abcdef", staff: false, role: "admin" },
 };
 const MIXPANEL = CONFIG.apiHost;
+/** Where the signed-in person's answer is kept: per account, per consent version. */
+const KEY = `sr:usage-consent:2:${CONFIG.viewer.id}`;
+const answer = (page: Page, key = KEY) => page.evaluate((k) => localStorage.getItem(k), key);
 /** Typed into the top bar's look-up: it must never reach Mixpanel's events. */
 const TYPED = "john-smith-order-42";
 
@@ -157,11 +160,11 @@ test("nothing reaches Mixpanel until Accept; then it records, redacted and repla
   expect(sent, "a request reached Mixpanel before an acceptance").toHaveLength(0);
   expect([...offsite]).toEqual([]);
   expect(await sdkTraces(page)).toEqual({ storage: [], cookies: "", databases: [], chunks: [] });
-  expect(await page.evaluate(() => localStorage.getItem("sr:usage-consent"))).toBeNull();
+  expect(await answer(page)).toBeNull();
 
   await bar.getByRole("button", { name: "Accept", exact: true }).click();
   await expect(bar).toBeHidden();
-  expect(await page.evaluate(() => localStorage.getItem("sr:usage-consent"))).toBe("accepted");
+  expect(await answer(page)).toBe("accepted");
 
   // The page at the acceptance is viewed, by the viewer's opaque id, tagged with the tenant.
   await expect.poll(() => named(sent, "$mp_web_page_view").length, { timeout: 15_000 }).toBeGreaterThan(0);
@@ -196,6 +199,14 @@ test("nothing reaches Mixpanel until Accept; then it records, redacted and repla
   expect(await page.evaluate(() => (window as unknown as { __samePage?: boolean }).__samePage)).toBe(true);
   expect(named(sent, "$mp_click").length, "clicks are captured").toBeGreaterThan(0);
 
+  // A click on the element whose title is the signed-in address: the click is captured, its title and labels are not.
+  await page.locator(".gw-app .email").first().click();
+  const onEmail = () => named(sent, "$mp_click").filter((e) => JSON.stringify(e.properties.$target ?? {}).includes('"email"'));
+  await expect.poll(() => onEmail().length, { timeout: 15_000 }).toBeGreaterThan(0);
+  for (const e of named(sent, "$mp_click")) {
+    expect(JSON.stringify(e.properties), "a click carried a title or a label").not.toMatch(/"\$attr-(title|aria-label|aria-labelledby|aria-describedby)"/);
+  }
+
   // A session replay is uploaded, and what was typed is masked in it.
   await expect.poll(() => sent.filter((s) => s.kind === "record").length, { timeout: 30_000 }).toBeGreaterThan(0);
   const texts = replayText(sent);
@@ -223,7 +234,7 @@ test("nothing reaches Mixpanel until Accept; then it records, redacted and repla
   }
   await off.click();
   await expect(page.getByRole("button", { name: "Turn on" })).toBeVisible();
-  expect(await page.evaluate(() => localStorage.getItem("sr:usage-consent"))).toBe("rejected");
+  expect(await answer(page)).toBe("rejected");
   await expect.poll(async () => (await sdkTraces(page)).storage).toEqual([]);
   expect((await sdkTraces(page)).cookies).toBe("");
   await expect.poll(() => replayRows(page)).toBe(0);
@@ -280,6 +291,59 @@ test("a replay upload is scrubbed before it leaves the browser: no typed value, 
   expect(new URL(first.url).searchParams.get("$current_url")).toMatch(/\/metrics\?(.*&)?request=:id/);
   expect(first.body).toContain("request=:id");
   expect(first.body).toContain('"href":"https://etherscan.io"');
+});
+
+test("an answer belongs to one account and to this release; signing out makes the SDK forget the account", async ({ page, operator }) => {
+  test.setTimeout(120_000);
+  const { sent, offsite } = await withUsageOn(page);
+  // 0.70.0's answer, which asked about events only: not read, the banner asks again.
+  await page.addInitScript(() => {
+    try { localStorage.setItem("sr:usage-consent", "accepted"); } catch { /* ignore */ }
+  });
+  await signInThroughUi(page, operator);
+  const bar = page.getByRole("region", { name: "Cookies & analytics" });
+  await expect(bar).toBeVisible();
+  await page.waitForTimeout(2_000);
+  expect(sent, "an answer from 0.70.0 started usage data").toHaveLength(0);
+  expect(await sdkTraces(page)).toEqual({ storage: [], cookies: "", databases: [], chunks: [] });
+
+  // This account accepts.
+  await bar.getByRole("button", { name: "Accept", exact: true }).click();
+  await expect.poll(() => named(sent, "$mp_web_page_view").length, { timeout: 15_000 }).toBeGreaterThan(0);
+  const firstDevice = named(sent, "$mp_web_page_view")[0]!.properties.$device_id;
+  expect(firstDevice).toBeTruthy();
+
+  // Another account on this browser is asked for its own answer, and nothing of the first one's is kept for it.
+  const other = { ...CONFIG, viewer: { id: "fedcba9876543210fedcba9876543210", staff: true, role: "read_only" } };
+  await page.route("**/api/usage/config", (route) => route.fulfill({ json: other }));
+  await page.reload();
+  await expect(bar).toBeVisible();
+  await expect.poll(async () => (await sdkTraces(page)).storage).toEqual([]);
+  await expect.poll(async () => (await sdkTraces(page)).databases).toEqual([]);
+  expect(events(sent).filter((e) => e.properties.distinct_id === other.viewer.id), "sent for an account that has not answered").toEqual([]);
+  await bar.getByRole("button", { name: "Accept", exact: true }).click();
+  const otherViews = () => named(sent, "$mp_web_page_view").filter((e) => e.properties.distinct_id === other.viewer.id);
+  await expect.poll(() => otherViews().length, { timeout: 15_000 }).toBeGreaterThan(0);
+  expect(otherViews()[0]!.properties.$device_id, "the second account shares the first one's device").not.toBe(firstDevice);
+  for (const e of events(sent).filter((x) => x.properties.distinct_id === other.viewer.id)) {
+    expect(e.properties.$anon_distinct_id, `${e.event} links the two accounts`).not.toBe(CONFIG.viewer.id);
+  }
+  expect(await answer(page, `sr:usage-consent:2:${other.viewer.id}`)).toBe("accepted");
+  expect(await answer(page), "the first account's answer stays with it").toBe("accepted");
+
+  // Signing out: the SDK forgets the account, and whose its storage was.
+  // Dispatched on the button: the dev server's overlay badge sits over the collapsed sidebar's foot.
+  await page.getByTitle("Sign out").dispatchEvent("click");
+  await page.waitForURL(/\/login/);
+  const left = await page.evaluate(() => ({
+    owner: localStorage.getItem("sr:usage-sdk-viewer"),
+    ids: Object.entries(localStorage).filter(([k]) => k.startsWith("mp_")).map(([, v]) => {
+      try { return String((JSON.parse(v) as { distinct_id?: unknown }).distinct_id ?? ""); } catch { return ""; }
+    }),
+  }));
+  expect(left.owner).toBeNull();
+  for (const id of left.ids) expect(id, "the SDK still names the signed-out account").not.toBe(other.viewer.id);
+  expect([...offsite]).toEqual([MIXPANEL]);
 });
 
 for (const [answer, button] of [["Decline", "Decline"], ["the X", "Dismiss cookie banner"]] as const) {
