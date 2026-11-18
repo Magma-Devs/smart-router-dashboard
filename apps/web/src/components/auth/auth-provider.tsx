@@ -18,6 +18,8 @@ function ApiTokenBridge() {
       token: session?.accessToken ?? null,
       user: session?.user
         ? {
+            id: session.user.id,
+            sessionId: session.user.sessionId,
             email: session.user.email,
             name: session.user.name ?? null,
             avatarUrl: session.user.avatarUrl ?? null,

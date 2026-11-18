@@ -58,7 +58,14 @@ export const AUDIT_GROUP_FALLBACK = "unclassified";
 
 /** Which ticket emits an event. Provenance for the docs; drives no behaviour. */
 export type AuditOrigin =
-  "MAG-2729" | "MAG-2730" | "MAG-2731" | "MAG-2770" | "MAG-4403" | "MAG-2869" | "MAG-5351";
+  | "MAG-2729"
+  | "MAG-2730"
+  | "MAG-2731"
+  | "MAG-2770"
+  | "MAG-4403"
+  | "MAG-2869"
+  | "MAG-5351"
+  | "MAG-4750";
 
 export interface AuditEventSpec {
   readonly group: AuditGroup;
@@ -406,6 +413,22 @@ export const AUDIT_EVENTS = {
     carriesChanges: false,
     carriesAccessContext: false,
     origin: "MAG-2731",
+  },
+  "ask.turned_off": {
+    group: "config",
+    description:
+      "An admin turned Ask your data off for everyone on this dashboard. Questions in progress stopped, and no new question is accepted until an admin turns it back on.",
+    carriesChanges: false,
+    carriesAccessContext: false,
+    origin: "MAG-4750",
+  },
+  "ask.turned_on": {
+    group: "config",
+    description:
+      "An admin turned Ask your data back on for this dashboard. Questions are accepted again, within the deployment's monthly limit.",
+    carriesChanges: false,
+    carriesAccessContext: false,
+    origin: "MAG-4750",
   },
 
   // ── Approval ──────────────────────────────────────────────────────────────

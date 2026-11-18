@@ -601,3 +601,81 @@ export function readUsageSettings(source: NodeJS.ProcessEnv = process.env): Usag
       .split(",").map((d) => d.trim().toLowerCase()).filter(Boolean),
   };
 }
+
+/** Server-only settings. Do not spread this object into runtime browser config. */
+export interface AskSettings {
+  enabled: boolean;
+  customerId: string;
+  mcpUrl: string;
+  mcpToken: string;
+  bedrockRegion: string;
+  bedrockModel: string;
+  bedrockToken: string;
+  problem: string | null;
+  requestTimeoutMs: number;
+  runTimeoutMs: number;
+  maxResponseBytes: number;
+  maxContextBytes: number;
+  maxOutputTokens: number;
+  maxSteps: number;
+  retentionDays: number;
+  maxToolResultBytes: number;
+  maxToolCalls: number;
+  leaseMs: number;
+  heartbeatMs: number;
+  workerPollMs: number;
+  workerConcurrency: number;
+}
+
+export function readAskSettings(source: NodeJS.ProcessEnv = process.env): AskSettings {
+  const requestedRetentionDays = positiveInt(source.ASK_DATA_RETENTION_DAYS, 90);
+  const settings: AskSettings = {
+    enabled:
+      source.ASK_DATA_ENABLED === "true" &&
+      source.AUTH_MODE === "enabled" &&
+      source.DEPLOYMENT_MODE === "managed",
+    customerId: source.ASK_DATA_CUSTOMER_ID?.trim() ?? "",
+    mcpUrl: source.ASK_DATA_MCP_URL?.trim() || "https://mcp-staging.magmadevs.com/mcp",
+    mcpToken: source.ASK_DATA_MCP_TOKEN?.trim() ?? "",
+    bedrockRegion: source.ASK_DATA_BEDROCK_REGION?.trim() || "us-east-1",
+    bedrockModel: source.ASK_DATA_BEDROCK_MODEL?.trim() ?? "",
+    bedrockToken: source.AWS_BEARER_TOKEN_BEDROCK?.trim() ?? "",
+    problem: null,
+    requestTimeoutMs: 20_000,
+    runTimeoutMs: 120_000,
+    maxResponseBytes: 1024 * 1024,
+    maxContextBytes: 64_000,
+    maxOutputTokens: 2048,
+    maxSteps: 8,
+    // Invalid availability configuration must not stop mandatory cleanup.
+    retentionDays: Math.min(90, requestedRetentionDays),
+    maxToolResultBytes: 12_000,
+    maxToolCalls: 8,
+    leaseMs: 15_000,
+    heartbeatMs: 1000,
+    workerPollMs: 1000,
+    workerConcurrency: 2,
+  };
+  // Exact deployment/customer mapping is runtime control-plane configuration.
+  // A display name, browser field or tool result must never supply it.
+  if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(settings.customerId))
+    settings.problem = "ASK_DATA_CUSTOMER_ID is required";
+  else if (!settings.mcpToken || /\s/.test(settings.mcpToken))
+    settings.problem = "ASK_DATA_MCP_TOKEN is required";
+  else if (!settings.bedrockToken || /\s/.test(settings.bedrockToken))
+    settings.problem = "AWS_BEARER_TOKEN_BEDROCK is required";
+  else if (!/^[a-z]{2}-[a-z]+-\d$/.test(settings.bedrockRegion))
+    settings.problem = "ASK_DATA_BEDROCK_REGION is invalid";
+  else if (!settings.bedrockModel || settings.bedrockModel.length > 2048)
+    settings.problem = "ASK_DATA_BEDROCK_MODEL is required";
+  else if (requestedRetentionDays > 90 || (source.ASK_DATA_RETENTION_DAYS !== undefined && (!/^[1-9][0-9]*$/.test(source.ASK_DATA_RETENTION_DAYS))))
+    settings.problem = "ASK_DATA_RETENTION_DAYS must be 1 to 90";
+  try {
+    const url = new URL(settings.mcpUrl);
+    if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash)
+      settings.problem = "ASK_DATA_MCP_URL must be a credential-free HTTPS endpoint";
+  } catch {
+    settings.problem = "ASK_DATA_MCP_URL is invalid";
+  }
+  return settings;
+}

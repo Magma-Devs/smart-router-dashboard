@@ -15,6 +15,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // From this container's env, not the api's: the report button must still
   // render when the api is the thing that broke. The api has its own
   // INCIDENTS_ENABLED and refuses reports while it is off.
+  const askEnabled = authEnabled && process.env.DEPLOYMENT_MODE === "managed" && process.env.ASK_DATA_ENABLED === "true";
   const incidentsEnabled = process.env.INCIDENTS_ENABLED?.trim().toLowerCase() === "true";
   // Before anything is drawn: the Shell's two-factor gate needs to know whether
   // to show the enrolment screen instead of the dashboard on its first render,
@@ -24,7 +25,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <AuthModeProvider enabled={authEnabled}>
       <EnrolmentVerdictProvider verdict={verdict}>
         <FiltersProvider>
-          <Shell grafanaDashboardUrl={grafanaDashboardUrl} grafanaCustomerUsageDashboardUrl={grafanaCustomerUsageDashboardUrl} incidentsEnabled={incidentsEnabled}>{children}</Shell>
+          <Shell askEnabled={askEnabled} grafanaDashboardUrl={grafanaDashboardUrl} grafanaCustomerUsageDashboardUrl={grafanaCustomerUsageDashboardUrl} incidentsEnabled={incidentsEnabled}>{children}</Shell>
         </FiltersProvider>
       </EnrolmentVerdictProvider>
     </AuthModeProvider>

@@ -1,6 +1,6 @@
 name: Browser tests
 
-# e2e/: the 2FA flows in a browser against a real api and Postgres. Not a
+# e2e/: the 2FA and Ask flows in a browser against a real api and Postgres. Not a
 # required check. PRs only: main is strict, so a push to main is a tree its PR
 # already tested.
 on:
@@ -31,9 +31,13 @@ concurrency:
 
 jobs:
   e2e:
-    name: Browser tests (2FA flows)
+    name: Browser tests (${{ matrix.suite }} flows)
     runs-on: ubuntu-24.04
-    timeout-minutes: 8
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [accounts, ask, ask-presentation]
     env:
       E2E_DATABASE_URL: postgres://sr:dev@localhost:5432/sr_dashboard
     steps:
@@ -83,15 +87,26 @@ jobs:
             || { cat "$RUNNER_TEMP/pg.log"; docker logs pg; exit 1; }
 
       # Playwright boots the api and the web itself (e2e/playwright.config.ts).
-      - name: Run the suite
+      - name: Run the accounts suite
+        if: matrix.suite == 'accounts'
         run: pnpm e2e
+
+      - name: Run the Ask browser suite
+        if: matrix.suite == 'ask'
+        run: pnpm --filter @sr/e2e exec playwright test -c ask.playwright.config.ts
+
+      - name: Run the conversational layout suite
+        if: matrix.suite == 'ask-presentation'
+        run: pnpm --filter @sr/e2e exec playwright test -c ask-presentation.playwright.config.ts
 
       - name: Upload the report on failure
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.suite }}
           path: |
             e2e/playwright-report/
             e2e/.playwright/results/
+            e2e/.playwright/ask-results/
+            e2e/.playwright/ask-presentation/
           retention-days: 7

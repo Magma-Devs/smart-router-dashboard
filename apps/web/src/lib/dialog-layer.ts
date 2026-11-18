@@ -79,7 +79,7 @@ export function lockScroll(style: LockableStyle, scrollbarPx: number): () => voi
 export const TABBABLE =
   'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), ' +
   'select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]), ' +
-  '[contenteditable="true"]';
+  'summary, [contenteditable="true"]';
 
 /**
  * Where Tab should go instead of where the browser would send it, or null to

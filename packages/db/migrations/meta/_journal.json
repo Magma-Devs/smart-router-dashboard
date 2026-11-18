@@ -71,6 +71,34 @@
       "when": 1790553700000,
       "tag": "0009_audit_tokens",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794835200000,
+      "tag": "0010_ask_runs",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1794835300000,
+      "tag": "0011_ask_accounting",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1794835400000,
+      "tag": "0012_ask_view_origins",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1794835500000,
+      "tag": "0013_ask_switch",
+      "breakpoints": true
     }
   ]
 }

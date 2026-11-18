@@ -14,6 +14,9 @@
 import type { Role } from "@sr/shared";
 
 export interface AuthUserInfo {
+  /** Non-secret identity for isolating personal client caches. */
+  id?: string;
+  sessionId?: string;
   email: string;
   name: string | null;
   avatarUrl?: string | null;

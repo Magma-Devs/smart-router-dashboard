@@ -308,6 +308,20 @@ services:
       # hours. Declared rather than left to the code's default so the shape of
       # the deployment is visible in the file.
       - DEPLOYMENT_MODE=${DEPLOYMENT_MODE:-onprem}
+      # Managed Ask: all secrets/pricing stay on the API. Keep the customer
+      # ID and retention policy when disabling so cleanup continues.
+      - ASK_DATA_ENABLED=${ASK_DATA_ENABLED:-false}
+      - ASK_DATA_CUSTOMER_ID=${ASK_DATA_CUSTOMER_ID:-}
+      - ASK_DATA_MCP_URL=${ASK_DATA_MCP_URL:-https://mcp-staging.magmadevs.com/mcp}
+      - ASK_DATA_MCP_TOKEN=${ASK_DATA_MCP_TOKEN:-}
+      - ASK_DATA_BEDROCK_REGION=${ASK_DATA_BEDROCK_REGION:-us-east-1}
+      - ASK_DATA_BEDROCK_MODEL=${ASK_DATA_BEDROCK_MODEL:-}
+      - AWS_BEARER_TOKEN_BEDROCK=${AWS_BEARER_TOKEN_BEDROCK:-}
+      - ASK_DATA_PRICING_JSON=${ASK_DATA_PRICING_JSON:-}
+      - ASK_DATA_TOKEN_COUNTER=${ASK_DATA_TOKEN_COUNTER:-}
+      - ASK_DATA_TOKEN_COUNTER_MODEL=${ASK_DATA_TOKEN_COUNTER_MODEL:-}
+      - ASK_DATA_MONTHLY_LIMIT_MICRO_USD=${ASK_DATA_MONTHLY_LIMIT_MICRO_USD:-10000000}
+      - ASK_DATA_RETENTION_DAYS=${ASK_DATA_RETENTION_DAYS:-90}
     volumes:
       # Mount the live router config so /api/config/routers reflects the
       # running topology — exactly the v1 mechanism (core/values.yml).
@@ -347,6 +361,7 @@ services:
       # DEPLOYMENT_MODE must match the api's: the web serves it from
       # /api/config and forks the invitation copy on it.
       - DEPLOYMENT_MODE=${DEPLOYMENT_MODE:-onprem}
+      - ASK_DATA_ENABLED=${ASK_DATA_ENABLED:-false}
       - AUTH_MODE=${AUTH_MODE:-disabled}
       - AUTH_SECRET=${AUTH_SECRET:-}
       - AUTH_URL=${AUTH_URL:-http://localhost:3000}

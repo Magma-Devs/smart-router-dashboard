@@ -5,6 +5,27 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.72.0]
+
+### Added
+
+- **Managed Ask your data** (MAG-4750): personal chat about a customer's own
+  metrics and logs, with a dashboard panel, minimized chat, full view and mobile
+  dialog. Chats support history, search, follow-ups, copying answers and stopping
+  a running question.
+  The conversation uses user message bubbles, readable text answers, compact
+  supporting figures and an expanding composer, with one history rail in full view.
+- Answers include authorized sources and time windows, with explicit caveats for
+  missing capabilities, empty results and partial coverage. Customer source access
+  and personal chat ownership are enforced by the API.
+- A shared customer monthly budget, durable question processing, restricted
+  internal records/export and configurable content retention up to 90 days support
+  the managed pilot. Ask remains off until its scoped credentials, managed accounts
+  and controlled pilot rollout checks are complete.
+- An admin turns Ask off for everyone, and back on, from the chat. Turning it off
+  stops queued and running questions on every replica within seconds, with no
+  rollout, and the audit log records who did it.
+
 ## [0.71.0]
 
 ### Changed

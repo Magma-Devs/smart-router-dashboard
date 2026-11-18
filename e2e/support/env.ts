@@ -19,7 +19,7 @@ export const WEB_URL = process.env.E2E_WEB_URL ?? "http://localhost:3000";
 export const API_URL = process.env.E2E_API_URL ?? "http://localhost:8000";
 
 /** True when the suite owns the servers — see `playwright.config.ts`. */
-export const MANAGED_STACK = !process.env.E2E_WEB_URL && !process.env.E2E_API_URL;
+export const MANAGED_STACK = process.env.E2E_OWN_SERVERS === "true" || (!process.env.E2E_WEB_URL && !process.env.E2E_API_URL);
 
 /** Shared with the api and the web: the HS256 key the session token is signed
  *  with. Dev value; the same one `make accounts` passes. */

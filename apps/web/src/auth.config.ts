@@ -158,6 +158,7 @@ declare module "next-auth" {
   interface Session {
     user: {
       id: string;
+      sessionId?: string;
       email: string;
       name?: string | null;
       role: UserRole;
@@ -506,6 +507,7 @@ export const authConfig = {
     },
     async session({ session, token }) {
       session.user.id = (token.id as string) ?? "";
+      session.user.sessionId = (token.sid as string | undefined) ?? "";
       session.user.role = (token.role as UserRole) ?? DEFAULT_ROLE;
       session.user.email = (token.email as string) ?? session.user.email;
       session.user.name = (token.name as string | null | undefined) ?? null;
