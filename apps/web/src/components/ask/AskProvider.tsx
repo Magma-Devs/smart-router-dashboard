@@ -48,6 +48,7 @@ interface AskContextValue {
   navigating: boolean;
   active: AskRun | null;
   activityKnown: boolean;
+  connectionLost: boolean;
   notice: string | null;
   select: (id: string | null) => void;
   setDraft: (value: string) => void;
@@ -309,6 +310,7 @@ export function AskProvider({
       navigating,
       active,
       activityKnown: available && Boolean(activity.data) && !activity.error,
+      connectionLost: Boolean(activity.error || caps.error),
       notice,
       select,
       setDraft: (text) =>

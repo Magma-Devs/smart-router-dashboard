@@ -46,6 +46,7 @@ test("a new chat covers the last day, and a follow-up keeps its scope over a tim
   expect((await first.response())?.status()).toBe(200);
   await expect(page.getByText("Three authorized fixture targets were returned.")).toBeVisible();
   await page.waitForURL(/\/ask\?chat=/);
+  await expect(page.getByLabel("Ask a question")).toBeFocused();
   await page.reload();
   await expect(page.getByText("Three authorized fixture targets were returned.")).toBeVisible();
   const followUp = runs();
@@ -84,16 +85,15 @@ test("the chat page keeps history, drafts, evidence, search and copy, away and b
   await page.waitForURL(chatUrl);
   await expect(page.getByText("Three authorized fixture targets were returned.")).toBeVisible();
   await page.locator("summary").filter({ hasText: "Sources and time window" }).click();
-  await expect(page.getByText("e2e-metrics", { exact: true })).toBeVisible();
+  await expect(page.locator(".ask-evidence").getByText("Metrics", { exact: true })).toBeVisible();
+  await expect(page.locator(".ask-evidence")).not.toContainText("e2e-metrics");
   await expect(page.getByText("<script>window.__askUnsafe=true</script>")).toBeVisible();
   expect(
     await page.evaluate(() => (window as unknown as { __askUnsafe?: boolean }).__askUnsafe),
   ).toBeUndefined();
   await page.getByRole("button", { name: "Copy answer", exact: true }).click();
   await expect(page.getByRole("button", { name: "Copied", exact: true })).toBeVisible();
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toContain(
-    "Source: e2e-metrics",
-  );
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toContain("Source: Metrics");
   await page.getByLabel("Ask a question").fill("Unsent follow-up draft");
   await page.getByRole("link", { name: "Upstreams", exact: true }).click();
   await page.waitForURL(/\/upstreams/);
@@ -336,4 +336,58 @@ test("an admin turns Ask off for everyone, stopping a member's question, and bac
     await apiCall("POST", "/api/ask/switch", { token: operator.token, body: { off: false } });
     await memberContext.close();
   }
+});
+
+test("connection loss shows an unknown status, reconnects to the saved answer and never resubmits", async ({
+  page,
+  operator,
+}) => {
+  await signInThroughUi(page, operator);
+  await openAsk(page);
+  let submissions = 0;
+  page.on("request", (request) => {
+    if (request.method() === "POST" && /\/api\/ask\/chats\/[^/]+\/runs$/.test(request.url()))
+      submissions++;
+  });
+  await page.getByLabel("Ask a question").fill("SLOW_FIXTURE check connection recovery");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Processing…" })).toBeVisible();
+  await page.route("**/api/ask/runs/active", (route) => route.abort("failed"));
+  await expect(page.getByRole("status").filter({ hasText: "Reconnecting…" })).toBeVisible();
+  await expect(
+    page.getByText("Connection lost. Reconnecting to check your question’s saved status."),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Send", exact: true })).toBeDisabled();
+  await page.unroute("**/api/ask/runs/active");
+  await page.getByRole("button", { name: "Reconnect", exact: true }).click();
+  await expect(page.getByText("Three authorized fixture targets were returned.")).toBeVisible({
+    timeout: 30000,
+  });
+  await expect(page.getByRole("status").filter({ hasText: "Reconnecting…" })).toHaveCount(0);
+  expect(submissions).toBe(1);
+});
+
+test("reloading while a question runs resumes that run and saves exactly one answer", async ({
+  page,
+  operator,
+}) => {
+  await signInThroughUi(page, operator);
+  await openAsk(page);
+  let submissions = 0;
+  page.on("request", (request) => {
+    if (request.method() === "POST" && /\/api\/ask\/chats\/[^/]+\/runs$/.test(request.url()))
+      submissions++;
+  });
+  await page.getByLabel("Ask a question").fill("SLOW_FIXTURE reload while processing");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await page.waitForURL(/\/ask\?chat=/);
+  await expect(page.getByRole("status").filter({ hasText: "Processing…" })).toBeVisible();
+  const url = page.url();
+  await page.reload();
+  await expect(page).toHaveURL(url);
+  await expect(page.getByText("Three authorized fixture targets were returned.")).toBeVisible({
+    timeout: 30000,
+  });
+  await expect(page.getByRole("article", { name: "Answer" })).toHaveCount(1);
+  expect(submissions).toBe(1);
 });

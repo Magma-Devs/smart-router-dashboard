@@ -35,6 +35,7 @@ export class AskFailure extends Error {
 }
 
 export function abortFailure(signal?: AbortSignal): AskFailure {
+  if (signal?.reason instanceof AskFailure) return signal.reason;
   return new AskFailure(
     signal?.reason instanceof DOMException && signal.reason.name === "TimeoutError"
       ? "ASK_TIMEOUT"

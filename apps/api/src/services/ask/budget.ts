@@ -281,14 +281,16 @@ export class AskBudget {
   hooks(run: AskRunRow): AskExecutionHooks {
     return {
       checkActive: async () => {
-        if ((await this.store.leaseState(run.id, run.leaseToken!)) !== "running")
-          throw new AskFailure("ASK_INTERRUPTED");
+        const state = await this.store.leaseState(run.id, run.leaseToken!);
+        if (state === "cancelling") throw new AskFailure("ASK_CANCELLED", 409);
+        if (state !== "running") throw new AskFailure("ASK_INTERRUPTED");
       },
-      beforeModelStep: async ({ input, outputTokens }) => {
+      beforeModelStep: async ({ input, outputTokens, signal }) => {
         assertCurrentPricing(this.configured.pricing);
         const count = await new BedrockAdapter(this.settings, this.fetchImpl).countTokens(
           input,
           this.configured.counter,
+          signal,
         );
         // Counter overhead can differ between API representations. The paid
         // request also has a hard byte/output cap; retain a conservative margin.

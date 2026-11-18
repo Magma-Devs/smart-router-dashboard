@@ -61,8 +61,8 @@ function tool(
   return {
     toolUse: {
       toolUseId: id,
-      name: "read_customer_data",
-      input: { sourceId, operationId, parameters },
+      name: operationId.replaceAll(".", "_"),
+      input: { sourceId, ...parameters },
     },
   };
 }
@@ -74,7 +74,7 @@ const presentation = (value: unknown = content) => ({
   toolUse: {
     toolUseId: "answer-1",
     name: "present_answer",
-    input: value,
+    input: value && typeof value === "object" ? { kind: "data", ...value } : value,
   },
 });
 
@@ -145,10 +145,9 @@ function fixture(
     })),
   });
   const connection = new McpConnection(client, value);
-  vi.spyOn(McpAdapter.prototype, "withConnection").mockImplementation(async function <T>(
-    work: (connection: McpConnection) => Promise<T>,
-  ): Promise<T> {
-    return work(connection);
+  vi.spyOn(McpAdapter.prototype, "open").mockResolvedValue({
+    connection,
+    close: vi.fn(async () => undefined),
   });
   const plan = [...(options.responses ?? [provider([tool()]), final()])];
   const bodies: string[] = [];
@@ -190,30 +189,23 @@ function fixture(
 afterEach(() => vi.restoreAllMocks());
 
 describe("bounded customer tool orchestration", () => {
-  it("answers the clock without MCP, inference or model accounting, after the active-run check", async () => {
-    const f = fixture();
-    const question = { ...run(), question: "what is the date today?" };
-    const answer = () =>
-      new AskOrchestrator(f.settings, f.fetchImpl).answer(
-        question,
-        [],
-        f.hooks,
-        new AbortController().signal,
-      );
-    expect((await answer()).summary).toContain("UTC");
-    expect(f.hooks.checkActive).toHaveBeenCalledOnce();
-    expect(McpAdapter.prototype.withConnection).not.toHaveBeenCalled();
-    expect(f.fetchImpl).not.toHaveBeenCalled();
-    expect(f.hooks.beforeModelStep).not.toHaveBeenCalled();
-    expect(f.hooks.recordUsage).not.toHaveBeenCalled();
-    const cancelled = AbortSignal.abort(new AskFailure("ASK_CANCELLED"));
-    await expect(
-      new AskOrchestrator(f.settings, f.fetchImpl).answer(question, [], f.hooks, cancelled),
-    ).rejects.toMatchObject({ code: "ASK_CANCELLED" });
-    vi.mocked(f.hooks.checkActive).mockRejectedValue(new AskFailure("ASK_INTERRUPTED"));
-    await expect(answer()).rejects.toMatchObject({ code: "ASK_INTERRUPTED" });
-    question.customerId = "other-customer";
-    await expect(answer()).rejects.toMatchObject({ code: "ASK_IDENTITY_MISMATCH" });
+  it("answers a conversational turn with one accounted model call and no MCP connection", async () => {
+    const f = fixture({
+      responses: [
+        provider([
+          presentation({
+            kind: "conversation",
+            summary: "Hello! How can I help with your router?",
+            sections: [],
+          }),
+        ]),
+      ],
+    });
+    expect((await f.answer()).summary).toContain("Hello");
+    expect(McpAdapter.prototype.open).not.toHaveBeenCalled();
+    expect(f.fetchImpl).toHaveBeenCalledOnce();
+    expect(f.hooks.beforeModelStep).toHaveBeenCalledOnce();
+    expect(f.hooks.recordUsage).toHaveBeenCalledOnce();
   });
   it("presents a validated local answer after a successful read using forced tools", async () => {
     const f = fixture({ responses: [provider([tool()]), provider([presentation()])] });
@@ -221,30 +213,43 @@ describe("bounded customer tool orchestration", () => {
     const requests = f.bodies.map((body) => JSON.parse(body));
     expect(
       requests[0].toolConfig.tools.map((t: { toolSpec: { name: string } }) => t.toolSpec.name),
-    ).toEqual(["read_customer_data"]);
+    ).toEqual(expect.arrayContaining(["metrics_query", "present_answer"]));
     expect(
       requests[1].toolConfig.tools.map((t: { toolSpec: { name: string } }) => t.toolSpec.name),
-    ).toEqual(["read_customer_data", "present_answer"]);
+    ).toEqual(expect.arrayContaining(["metrics_query", "present_answer"]));
     expect(requests[1].toolConfig.toolChoice).toEqual({ any: {} });
-    const format = requests[1].toolConfig.tools[1].toolSpec;
+    const format = requests[1].toolConfig.tools.find(
+      (entry: { toolSpec: { name: string } }) => entry.toolSpec.name === "present_answer",
+    ).toolSpec;
     expect(format.strict).toBe(true);
     expect(format.inputSchema.json).toMatchObject({
       additionalProperties: false,
       properties: {
-        summary: { type: "string", description: "At least 1 characters. At most 500 characters." },
-        sections: { type: "array", minItems: 1 },
+        summary: { type: "string" },
+        sections: { type: "array" },
       },
     });
-    const schemaText = JSON.stringify(format.inputSchema.json);
-    for (const key of ["maxLength", "minLength", "maxItems"])
-      expect(schemaText).not.toContain(`"${key}"`);
     expect(f.call.mock.calls.filter(([call]) => call.name === "execute_operation")).toHaveLength(1);
     expect(f.hooks.recordUsage).toHaveBeenCalledTimes(2);
+  });
+  it("publishes a short grounded reply without an extra paid formatting call", async () => {
+    const summary = "The current read returned three targets.";
+    const f = fixture({
+      responses: [provider([tool()]), provider([presentation({ summary, sections: [] })])],
+    });
+    const answer = await f.answer();
+    expect(answer).toMatchObject({
+      contractVersion: 1,
+      summary,
+      sections: [{ title: "Reply", body: summary }],
+    });
+    expect(answer.evidence).toHaveLength(1);
+    expect(f.hooks.recordUsage).toHaveBeenCalledTimes(2);
+    expect(f.fetchImpl).toHaveBeenCalledTimes(2);
   });
   it.each([
     [presentation(), tool()],
     [presentation(), presentation()],
-    [presentation(), { text: "extra prose" }],
     [presentation({ ...content, evidence: [] })],
     [presentation({ ...content, summary: "x".repeat(501) })],
   ])(
@@ -296,23 +301,22 @@ describe("bounded customer tool orchestration", () => {
     const f = fixture();
     const result = await f.answer();
     expect(result.summary).toBe(content.summary);
-    const clockBody = JSON.parse(f.bodies[0]!) as {
-      messages: Array<{ content: Array<{ text: string }> }>;
+    const clockBody = JSON.parse(f.bodies[0]!) as { system: Array<{ text: string }> };
+    const contextLine = clockBody.system[0]!.text.split("\n").find((line) =>
+      line.startsWith("Trusted server request context: "),
+    )!;
+    const requestContext = JSON.parse(
+      contextLine.slice("Trusted server request context: ".length),
+    ) as {
+      serverTime: string;
+      serverUnixSeconds: number;
+      recentWindows: { last5Minutes: { start: number; end: number } };
     };
-    const requestContext = JSON.parse(clockBody.messages[0]!.content[0]!.text) as {
-      request: {
-        serverTime: string;
-        serverUnixSeconds: number;
-        recentWindows: { last5Minutes: { start: number; end: number } };
-      };
-    };
-    expect(Math.abs(Date.parse(requestContext.request.serverTime) - Date.now())).toBeLessThan(5000);
-    expect(Date.parse(requestContext.request.serverTime)).toBe(
-      requestContext.request.serverUnixSeconds * 1000,
-    );
-    expect(requestContext.request.recentWindows.last5Minutes).toEqual({
-      start: requestContext.request.serverUnixSeconds - 300,
-      end: requestContext.request.serverUnixSeconds,
+    expect(Math.abs(Date.parse(requestContext.serverTime) - Date.now())).toBeLessThan(5000);
+    expect(Date.parse(requestContext.serverTime)).toBe(requestContext.serverUnixSeconds * 1000);
+    expect(requestContext.recentWindows.last5Minutes).toEqual({
+      start: requestContext.serverUnixSeconds - 300,
+      end: requestContext.serverUnixSeconds,
     });
     const followUp = JSON.parse(f.bodies[1]!) as {
       messages: Array<{ content: Array<{ toolResult?: { content: Array<{ text: string }> } }> }>;
@@ -385,6 +389,50 @@ describe("bounded customer tool orchestration", () => {
   it("keeps empty results distinct from a zero measurement", async () => {
     const f = fixture({ data: { status: "success", data: { result: [] } } });
     expect((await f.answer()).evidence[0]?.coverage).toBe("empty");
+  });
+
+  it.each([false, true])(
+    "keeps missing counts distinct from recording lag (failed=%s)",
+    async (failed) => {
+      const f = fixture({
+        fail: failed,
+        data: { status: "success", data: { result: [] } },
+        responses: [
+          provider([
+            { toolUse: { toolUseId: "summary", name: "router_request_summary", input: {} } },
+          ]),
+          final(),
+        ],
+      });
+      if (failed) await expect(f.answer()).rejects.toMatchObject({ code: "ASK_MCP_UNAVAILABLE" });
+      else
+        expect((await f.answer()).evidence.map((item) => item.coverage)).toEqual([
+          "empty",
+          "empty",
+        ]);
+      expect(f.hooks.recordTool).toHaveBeenCalledTimes(2);
+      for (const [read] of vi.mocked(f.hooks.recordTool).mock.calls)
+        expect(read.evidence.coverage).toBe(failed ? "unavailable" : "empty");
+    },
+  );
+
+  it("does not describe a current status observation as exhaustive incident history", async () => {
+    const until = Math.floor(Date.now() / 1000);
+    const f = fixture({
+      status: true,
+      data: { events: [{ chain: "ETH1", status: "operational" }], truncated: false },
+      responses: [
+        provider([tool("acme-status", "status.chain_events", { since: until - 3600, until })]),
+        final(),
+      ],
+    });
+    expect((await f.answer()).evidence[0]?.coverage).toBe("unknown");
+    const body = JSON.parse(f.bodies[1]!);
+    const result = JSON.parse(body.messages.at(-1).content[0].toolResult.content[0].text);
+    expect(result.interpretation).toContain("Coverage is not exhaustive");
+    expect(result.interpretation).toContain(
+      "Current status does not establish incident-free history",
+    );
   });
 
   it("does not forward common nested or textual credentials from untrusted tools to Bedrock", async () => {
@@ -495,10 +543,10 @@ describe("bounded customer tool orchestration", () => {
   it("enforces model-step, tool-call and context bounds without extra paid dispatch", async () => {
     const steps = fixture();
     steps.settings.maxSteps = 1;
-    // A last step without a successful read cannot answer: it is never paid for.
-    await expect(steps.answer()).rejects.toMatchObject({ code: "ASK_LIMIT_REACHED" });
-    expect(steps.hooks.beforeModelStep).not.toHaveBeenCalled();
-    expect(steps.fetchImpl).not.toHaveBeenCalled();
+    // A one-step conversation may answer, but data reads are not offered without a remaining presentation step.
+    await expect(steps.answer()).rejects.toMatchObject({ code: "ASK_TOOL_DENIED" });
+    expect(steps.hooks.beforeModelStep).toHaveBeenCalledOnce();
+    expect(steps.fetchImpl).toHaveBeenCalledOnce();
     vi.restoreAllMocks();
     const calls = fixture({
       responses: [
@@ -699,5 +747,197 @@ describe("bounded credential redaction", () => {
     expect(
       redactAskData({ authorization: "anything", child: ["password=hidden"], count: 7 }),
     ).toEqual({ authorization: "[redacted]", child: ["password=[redacted]"], count: 7 });
+  });
+});
+
+describe("conversation, grounding and execution boundaries", () => {
+  it.each([
+    ["hello", "Hello!"],
+    ["how are you today?", "I'm ready to help with your router."],
+    ["שלום, מה שלומך?", "אני כאן לעזור לך."],
+    ["תודה", "בשמחה."],
+    [
+      "Explain what RPC means without checking my environment",
+      "RPC lets one system request work from another.",
+    ],
+    ["Can you make that explanation shorter?", "Yes — RPC is a request to another system."],
+  ])("delivers a brief %s turn without discovering data sources", async (question, summary) => {
+    const f = fixture({
+      responses: [provider([presentation({ kind: "conversation", summary, sections: [] })])],
+    });
+    const answer = await new AskOrchestrator(f.settings, f.fetchImpl).answer(
+      { ...run(), question },
+      [],
+      f.hooks,
+      new AbortController().signal,
+    );
+    expect(answer).toMatchObject({
+      summary,
+      sections: [{ title: "Reply", body: summary }],
+      evidence: [],
+    });
+    expect(McpAdapter.prototype.open).not.toHaveBeenCalled();
+    expect(f.hooks.beforeModelStep).toHaveBeenCalledOnce();
+    expect(f.hooks.recordUsage).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    { kind: "data", ...content },
+    { kind: "conversation", ...content, evidenceIds: [crypto.randomUUID()] },
+    {
+      kind: "conversation",
+      ...content,
+      sections: [
+        {
+          title: "Invented",
+          body: "Unbacked",
+          stat: { value: "100%", label: "Health", tone: "good" },
+        },
+      ],
+    },
+    { kind: "conversation", ...content, html: "<script>" },
+    { kind: "conversation", summary: "x".repeat(501), sections: [] },
+    { kind: "other", ...content },
+  ])("refuses ungrounded facts or malformed conversational presentation %#", async (input) => {
+    const f = fixture({ responses: [provider([presentation(input)])] });
+    await expect(f.answer()).rejects.toMatchObject({ code: "ASK_INVALID_ANSWER" });
+    expect(f.hooks.recordUsage).toHaveBeenCalledOnce();
+    expect(McpAdapter.prototype.open).not.toHaveBeenCalled();
+  });
+
+  it("does not invent evidence references after a legitimate data read", async () => {
+    const f = fixture({
+      responses: [
+        provider([tool()]),
+        provider([presentation({ kind: "data", ...content, evidenceIds: [crypto.randomUUID()] })]),
+      ],
+    });
+    await expect(f.answer()).rejects.toMatchObject({ code: "ASK_INVALID_ANSWER" });
+    expect(f.hooks.recordTool).toHaveBeenCalledOnce();
+    expect(f.hooks.recordUsage).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not let a data answer shed its grounding by calling itself conversation", async () => {
+    const f = fixture({
+      responses: [
+        provider([tool()]),
+        provider([presentation({ kind: "conversation", ...content })]),
+      ],
+    });
+    await expect(f.answer()).rejects.toMatchObject({ code: "ASK_INVALID_ANSWER" });
+  });
+
+  it("uses the unique authorized source without preloading a remote catalog", async () => {
+    const request = tool();
+    delete (request.toolUse.input as { sourceId?: string }).sourceId;
+    const f = fixture({ responses: [provider([request]), provider([presentation()])] });
+    const answer = await f.answer();
+    expect(answer.evidence[0]?.sourceId).toBe("acme-metrics");
+    expect(McpAdapter.prototype.open).toHaveBeenCalledOnce();
+    expect(vi.mocked(McpAdapter.prototype.open).mock.results[0]?.value).toBeDefined();
+  });
+
+  it("closes a lazy connection after both successful and refused replies", async () => {
+    for (const bad of [false, true]) {
+      const f = fixture({
+        responses: [
+          provider([tool()]),
+          provider([presentation(bad ? { ...content, unknown: true } : content)]),
+        ],
+      });
+      const opened = await vi.mocked(McpAdapter.prototype.open).mock.results[0]?.value;
+      // The mock is called lazily by answer, not by fixture construction.
+      expect(opened).toBeUndefined();
+      if (bad) await expect(f.answer()).rejects.toMatchObject({ code: "ASK_INVALID_ANSWER" });
+      else await f.answer();
+      const connection = await vi.mocked(McpAdapter.prototype.open).mock.results[0]!.value;
+      expect(connection.close).toHaveBeenCalledOnce();
+      vi.restoreAllMocks();
+    }
+  });
+
+  it.each([429, 500, 503])(
+    "never automatically replays a potentially billable HTTP %s",
+    async (status) => {
+      const f = fixture();
+      f.fetchImpl.mockResolvedValue(new Response("provider unavailable", { status }));
+      await expect(f.answer()).rejects.toMatchObject({ code: "ASK_BEDROCK_UNAVAILABLE" });
+      expect(f.fetchImpl).toHaveBeenCalledOnce();
+      expect(f.hooks.modelDispatched).toHaveBeenCalledOnce();
+      expect(f.hooks.recordUsage).toHaveBeenCalledOnce();
+      expect(McpAdapter.prototype.open).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not dispatch if the atomic reservation refuses the step", async () => {
+    const f = fixture();
+    vi.mocked(f.hooks.beforeModelStep).mockRejectedValue(new AskFailure("ASK_BUDGET_LIMIT", 429));
+    await expect(f.answer()).rejects.toMatchObject({ code: "ASK_BUDGET_LIMIT" });
+    expect(f.fetchImpl).not.toHaveBeenCalled();
+    expect(McpAdapter.prototype.open).not.toHaveBeenCalled();
+  });
+
+  it("passes Stop through the token counter/admission boundary", async () => {
+    const f = fixture();
+    const controller = new AbortController();
+    let observed: AbortSignal | undefined;
+    vi.mocked(f.hooks.beforeModelStep).mockImplementation(async ({ signal }) => {
+      observed = signal;
+      controller.abort(new AskFailure("ASK_CANCELLED", 409));
+      return crypto.randomUUID();
+    });
+    await expect(f.answer([], controller.signal)).rejects.toMatchObject({ code: "ASK_CANCELLED" });
+    expect(observed?.aborted).toBe(true);
+    expect(f.fetchImpl).not.toHaveBeenCalled();
+    expect(f.hooks.modelDispatched).not.toHaveBeenCalled();
+  });
+
+  it("keeps role-based bounded history while treating old measurements as historical", async () => {
+    const f = fixture({
+      responses: [
+        provider([
+          presentation({
+            kind: "conversation",
+            summary: "The earlier answer referred to that past window.",
+            sections: [],
+          }),
+        ]),
+      ],
+    });
+    const history: AskMessage[] = [
+      {
+        id: crypto.randomUUID(),
+        runId: crypto.randomUUID(),
+        role: "user",
+        createdAt: new Date().toISOString(),
+        question: "Explain the last result",
+        answer: null,
+      },
+      {
+        id: crypto.randomUUID(),
+        runId: crypto.randomUUID(),
+        role: "assistant",
+        createdAt: new Date().toISOString(),
+        question: null,
+        answer: {
+          contractVersion: 1,
+          ...content,
+          evidence: [],
+          answeredAt: "2026-11-17T12:00:00Z",
+        },
+      },
+    ];
+    await f.answer(history);
+    const body = JSON.parse(f.bodies[0]!);
+    expect(body.messages.map((message: { role: string }) => message.role)).toEqual([
+      "user",
+      "assistant",
+      "user",
+    ]);
+    expect(body.messages[1].content[0].text).toContain(
+      "Historical answer; not fresh measurements.",
+    );
+    expect(body.system[0].text).toContain("Trusted server request context");
+    expect(McpAdapter.prototype.open).not.toHaveBeenCalled();
   });
 });

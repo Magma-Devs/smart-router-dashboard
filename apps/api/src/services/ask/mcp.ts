@@ -17,6 +17,7 @@ const rangeValid = (p: { start: number; end: number }) =>
   p.end >= p.start && p.end - p.start <= 86_400;
 const range = z.object(windowShape).strict().refine(rangeValid);
 const label = z.string().regex(/^[a-zA-Z_][a-zA-Z0-9_]{0,199}$/);
+const metric = z.string().regex(/^[a-zA-Z_:][a-zA-Z0-9_:]{0,199}$/);
 const limit = z.number().int().min(1).max(1000).optional();
 
 /** Local audited policy. Remote annotations/catalog claims cannot add operations. */
@@ -49,7 +50,7 @@ const readPolicy: Record<string, { kinds: string[]; parameters: z.ZodType }> = {
   },
   "metrics.metadata": {
     kinds: ["mimir", "prometheus"],
-    parameters: z.object({ metric: label.optional(), limit }).strict(),
+    parameters: z.object({ metric: metric.optional(), limit }).strict(),
   },
   "logs.query": {
     kinds: ["loki"],
@@ -136,6 +137,25 @@ const readPolicy: Record<string, { kinds: string[]; parameters: z.ZodType }> = {
       }),
   },
 };
+
+/** Locally authored descriptions only. Remote catalog text never enters the
+ * system prompt. Discovery can narrow, but cannot extend, this policy. */
+export function askReadOperations() {
+  return Object.entries(readPolicy).map(([operationId, policy]) => {
+    if (!(policy.parameters instanceof z.ZodObject)) throw new AskFailure("ASK_UNAVAILABLE");
+    return {
+      operationId,
+      toolName: operationId.replaceAll(".", "_"),
+      inputSchema: policy.parameters.safeExtend({ sourceId: identifier.optional() }),
+    };
+  });
+}
+
+export function assertAskRead(operationId: string, parameters: Record<string, unknown>): void {
+  const policy = Object.hasOwn(readPolicy, operationId) ? readPolicy[operationId] : undefined;
+  if (!policy?.parameters.safeParse(parameters).success)
+    throw new AskFailure("ASK_TOOL_DENIED", 403);
+}
 
 const identitySchema = z
   .object({
@@ -270,11 +290,13 @@ export class McpConnection {
 
   async discover(): Promise<McpSnapshot> {
     const subject = await this.verifyIdentity();
-    const sources = z
-      .array(sourceSchema)
-      .max(40)
-      .safeParse(await this.call("list_sources"));
-    const catalog = catalogSchema.safeParse(await this.call("search_operations"));
+    const [rawSources, rawCatalog, tools] = await Promise.all([
+      this.call("list_sources"),
+      this.call("search_operations"),
+      this.client.listTools({}, { signal: this.signal, timeout: this.settings.requestTimeoutMs }),
+    ]);
+    const sources = z.array(sourceSchema).max(40).safeParse(rawSources);
+    const catalog = catalogSchema.safeParse(rawCatalog);
     if (!sources.success || !catalog.success) throw new AskFailure("ASK_MCP_UNAVAILABLE");
     if (
       sources.data.some(
@@ -289,10 +311,6 @@ export class McpConnection {
     ) {
       throw new AskFailure("ASK_IDENTITY_MISMATCH");
     }
-    const tools = await this.client.listTools(
-      {},
-      { signal: this.signal, timeout: this.settings.requestTimeoutMs },
-    );
     // Keep the catalog as data, not instructions. Only the local policy can
     // admit an operation; discovery narrows it to this credential's grant.
     const snapshot: McpSnapshot = {
@@ -386,6 +404,17 @@ export class McpAdapter {
     work: (connection: McpConnection) => Promise<T>,
     signal?: AbortSignal,
   ): Promise<T> {
+    const opened = await this.open(signal);
+    try {
+      return await work(opened.connection);
+    } finally {
+      await opened.close();
+    }
+  }
+
+  async open(
+    signal?: AbortSignal,
+  ): Promise<{ connection: McpConnection; close: () => Promise<void> }> {
     if (!this.settings.enabled) throw new AskFailure("ASK_DISABLED", 404);
     if (this.settings.problem) throw new AskFailure("ASK_UNAVAILABLE");
     const activeSignal = AbortSignal.any([
@@ -431,13 +460,15 @@ export class McpAdapter {
         signal: activeSignal,
         timeout: this.settings.requestTimeoutMs,
       });
-      return await work(new McpConnection(client, this.settings, activeSignal));
+      return {
+        connection: new McpConnection(client, this.settings, activeSignal),
+        close: () => client.close().catch(() => undefined),
+      };
     } catch (error) {
+      await client.close().catch(() => undefined);
       if (activeSignal.aborted) throw abortFailure(activeSignal);
       if (error instanceof AskFailure) throw error;
       throw new AskFailure("ASK_MCP_UNAVAILABLE");
-    } finally {
-      await client.close().catch(() => undefined);
     }
   }
 }

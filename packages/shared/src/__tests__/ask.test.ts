@@ -22,6 +22,26 @@ const from = "2026-11-16T09:00:00Z";
 const to = "2026-11-16T10:00:00Z";
 
 describe("Ask wire contract", () => {
+  it("keeps short replies compatible with the existing persisted v1 schema", () => {
+    expect(
+      askAnswerSchema.parse({
+        contractVersion: 1,
+        summary: "Hello!",
+        sections: [{ title: "Reply", body: "Hello!" }],
+        evidence: [],
+        answeredAt: to,
+      }).sections,
+    ).toHaveLength(1);
+    expect(
+      askAnswerSchema.safeParse({
+        contractVersion: 1,
+        summary: "Hello!",
+        sections: [],
+        evidence: [],
+        answeredAt: to,
+      }).success,
+    ).toBe(false);
+  });
   it("accepts both router axes while rejecting a router used as a credential override", () => {
     const context = {
       page: "metrics",

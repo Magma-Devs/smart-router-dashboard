@@ -1,6 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { answerSections, answerText, historyGroup, validChatId } from "../ask-display";
+import {
+  answerSections,
+  answerText,
+  evidenceSourceLabel,
+  historyGroup,
+  validChatId,
+} from "../ask-display";
 describe("chat display contracts", () => {
+  it.each([
+    ["metrics.query", "Metrics"],
+    ["logs.query_range", "Logs"],
+    ["status.chain_events", "Chain status"],
+    ["grafana.dashboard", "Dashboard"],
+    ["other", "Data"],
+  ])("labels %s for the customer", (operation, expected) => {
+    expect(evidenceSourceLabel(operation)).toBe(expected);
+  });
   it("shows and copies a simple answer once, retaining sections with additional facts", () => {
     const answer = {
       contractVersion: 1 as const,
@@ -59,9 +74,7 @@ describe("chat display contracts", () => {
     });
     expect(text).toContain("1. Observed\n0 — Fixture count");
     expect(text).toContain("<script>untrusted text</script>");
-    expect(text).toContain(
-      "Source: own-source • metrics.query • 2026-11-16T10:00:00Z • partial (truncated)",
-    );
+    expect(text).toContain("Source: Metrics • 2026-11-16T10:00:00Z • Cut short");
   });
   it("accepts only UUID chat links, never URLs or path fragments", () => {
     expect(validChatId("41d22646-030f-4f60-8b01-cb525280c197")).toBe(true);

@@ -559,11 +559,12 @@ export class AskStore {
   async recover(maxAgeMs: number): Promise<number> {
     if (!Number.isInteger(maxAgeMs) || maxAgeMs < 1) throw new AskFailure("ASK_UNAVAILABLE");
     const revoked = sql`not (${this.sessionActive()})`;
+    const timedOut = sql`${askRuns.createdAt} < clock_timestamp() - ${maxAgeMs} * interval '1 millisecond'`;
     const rows = await this.db
       .update(askRuns)
       .set({
-        status: sql`case when ${askRuns.status}='cancelling' then 'cancelled' else 'interrupted' end`,
-        errorCode: sql`case when ${askRuns.status}='cancelling' then 'ASK_CANCELLED' else 'ASK_INTERRUPTED' end`,
+        status: sql`case when ${askRuns.status}='cancelling' then 'cancelled' when ${timedOut} then 'failed' else 'interrupted' end`,
+        errorCode: sql`case when ${askRuns.status}='cancelling' then 'ASK_CANCELLED' when ${timedOut} then 'ASK_TIMEOUT' else 'ASK_INTERRUPTED' end`,
         completedAt: sql`now()`,
         leaseToken: null,
         leaseUntil: null,
@@ -572,11 +573,7 @@ export class AskStore {
         and(
           eq(askRuns.customerId, this.customerId),
           inArray(askRuns.status, active),
-          or(
-            lt(askRuns.leaseUntil, sql`clock_timestamp()`),
-            lt(askRuns.createdAt, sql`clock_timestamp() - ${maxAgeMs} * interval '1 millisecond'`),
-            revoked,
-          ),
+          or(lt(askRuns.leaseUntil, sql`clock_timestamp()`), timedOut, revoked),
         ),
       )
       .returning({ id: askRuns.id });

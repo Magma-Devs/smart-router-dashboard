@@ -5,6 +5,24 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.74.1]
+
+### Fixed
+
+- Managed chat handles ordinary conversation, explanations and follow-ups with
+  one accounted model call and no customer-data discovery. A bounded AI SDK
+  tool agent opens the verified read-only connection only when needed.
+- Request/transaction summaries use the dashboard's recorded metric families;
+  recent request samples, effective query windows and missing capabilities stay
+  explicit. Structured replies are validated before display, while long prose
+  is formatted without discarding words or making another paid request.
+- Replica startup pauses claims instead of interrupting admitted questions.
+  Queue and execution share a deadline; Stop also cancels free token counting.
+  Phase timing omits prompts, answers and credentials. Existing v1 history stays
+  readable on rollback.
+- Chat reconnects to saved state without resubmission, restores composer focus
+  after an answer, and labels sources for the reader instead of showing IDs.
+
 ## [0.74.0]
 
 ### Changed

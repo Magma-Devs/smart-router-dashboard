@@ -124,14 +124,32 @@ export function AskConversation() {
     ask.navigating ||
     Boolean(ask.chatId && (feed.isLoading || feed.error));
   const focusedChat = useRef<string | undefined>(undefined);
+  const focusAfterReply = useRef(false);
   useEffect(() => {
     if (feed.isLoading) return;
     const id = ask.chatId ?? "new";
-    if (focusedChat.current !== id) {
+    if (focusedChat.current !== id && !blocked) {
       focusedChat.current = id;
-      if (!blocked) composer.current?.focus({ preventScroll: true });
+      const focused = document.activeElement;
+      if (
+        nearBottom.current &&
+        window.getSelection()?.isCollapsed !== false &&
+        (focused === document.body || focused?.closest(".ask-composer"))
+      )
+        composer.current?.focus({ preventScroll: true });
     }
   }, [ask.chatId, feed.isLoading, blocked]);
+  useEffect(() => {
+    if (blocked || !focusAfterReply.current) return;
+    focusAfterReply.current = false;
+    const focused = document.activeElement;
+    if (
+      nearBottom.current &&
+      window.getSelection()?.isCollapsed !== false &&
+      (focused === document.body || focused?.closest(".ask-composer"))
+    )
+      composer.current?.focus({ preventScroll: true });
+  }, [blocked]);
   const empty = ask.available && !feed.isLoading && !feed.error && !messages.length;
   useEffect(() => {
     const field = composer.current;
@@ -264,7 +282,11 @@ export function AskConversation() {
             <div className="ask-processing" role="status">
               <span className="ask-spinner" aria-hidden="true" />
               <div>
-                {ask.active.status === "cancelling" ? "Stopping…" : "Processing…"}
+                {ask.connectionLost
+                  ? "Reconnecting…"
+                  : ask.active.status === "cancelling"
+                    ? "Stopping…"
+                    : "Processing…"}
                 {ask.active.chatId !== ask.chatId ? (
                   <button
                     className="gw-btn gw-btn--ghost"
@@ -273,7 +295,11 @@ export function AskConversation() {
                     View processing question
                   </button>
                 ) : (
-                  <small>You can leave this page. The answer will be here.</small>
+                  <small>
+                    {ask.connectionLost
+                      ? "Your question is saved. Reconnecting won’t send it again."
+                      : "You can leave this page. The answer will be here."}
+                  </small>
                 )}
               </div>
               <button
@@ -291,6 +317,8 @@ export function AskConversation() {
         className="ask-composer"
         onSubmit={(event) => {
           event.preventDefault();
+          if (blocked || !ask.draft.trim()) return;
+          focusAfterReply.current = true;
           nearBottom.current = true;
           void ask.submit(data?.context);
         }}
@@ -308,7 +336,9 @@ export function AskConversation() {
         ) : null}
         {ask.available && !ask.activityKnown ? (
           <p className="ask-notice" role="status">
-            Checking whether a question is already running…{" "}
+            {ask.connectionLost
+              ? "Connection lost. Reconnecting to check your question’s saved status."
+              : "Checking whether a question is already running…"}{" "}
             <button
               type="button"
               className="gw-btn gw-btn--ghost"
@@ -342,6 +372,7 @@ export function AskConversation() {
               if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                 event.preventDefault();
                 if (!blocked && ask.draft.trim()) {
+                  focusAfterReply.current = true;
                   nearBottom.current = true;
                   void ask.submit(data?.context);
                 }

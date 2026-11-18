@@ -8,8 +8,8 @@ import { AskStore, type AskAdmission } from "./store.js";
 import { AskSwitchState } from "./switch.js";
 import { AskWorker } from "./worker.js";
 
-/** The same readiness predicate controls capabilities, admission, and workers.
- * Retention/reconciliation still run while the feature flag is disabled. */
+/** Admission requires readiness. A replica awaiting its first switch read must
+ * pause claims, never interrupt another replica's already admitted questions. */
 export function installAskRuntime(app: FastifyInstance): {
   admit: AskAdmission;
   ready: () => boolean;
@@ -73,8 +73,15 @@ export function installAskRuntime(app: FastifyInstance): {
         worker = new AskWorker(store, settings, {
           hooks: (run) => budget!.hooks(run),
           afterTerminal: (id) => budget!.reconcile(id),
-          enabled: ready,
+          enabled: () =>
+            !stopped && settings.enabled && readAskSettings().enabled && !turnedOff?.confirmedOff,
+          canClaim: ready,
           onError: (code) => app.log.error({ code }, "Ask worker operation failed"),
+          timing: (runId, phase, durationMs) =>
+            app.log.info(
+              { runId, phase, durationMs: Math.round(durationMs) },
+              "Ask execution timing",
+            ),
         });
         worker.start();
       }

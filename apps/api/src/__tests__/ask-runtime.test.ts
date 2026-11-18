@@ -91,9 +91,34 @@ async function boot() {
   return runtime;
 }
 describe("API runtime accounting/worker wiring", () => {
-  it("persists a clock reply through HTTP and the real worker with zero external work or spend", async () => {
-    const count = vi.spyOn(BedrockAdapter.prototype, "countTokens");
-    const connect = vi.spyOn(McpAdapter.prototype, "withConnection");
+  it("persists a conversational reply through HTTP and the real worker, with model accounting and no MCP", async () => {
+    const count = vi.spyOn(BedrockAdapter.prototype, "countTokens").mockResolvedValue(100);
+    vi.spyOn(BedrockAdapter.prototype, "converse").mockImplementation(async (_input, options) => {
+      await options.onDispatch();
+      const usage = { inputTokens: 10, outputTokens: 5, totalTokens: 15 };
+      const receipt = { requestId: "conversation-receipt", providerStatus: 200 };
+      await options.onUsage(usage, receipt);
+      return {
+        message: {
+          role: "assistant",
+          content: [
+            {
+              toolUse: {
+                toolUseId: "reply",
+                name: "present_answer",
+                input: { kind: "conversation", summary: "Hello! How can I help?", sections: [] },
+              },
+            },
+          ],
+        },
+        stopReason: "tool_use",
+        usage,
+        receipt,
+        model: "anthropic.fixture",
+        region: "us-east-1",
+      };
+    });
+    const connect = vi.spyOn(McpAdapter.prototype, "open");
     const runtime = await boot();
     await vi.waitFor(() => expect(runtime.ready()).toBe(true));
     const chatResponse = await request("/chats", {});
@@ -113,15 +138,17 @@ describe("API runtime accounting/worker wiring", () => {
     const detail = (await request(`/chats/${chat.id}`)).json();
     expect(detail.messages).toHaveLength(2);
     const answer = detail.messages[1].answer;
-    expect(answer.summary).toContain("UTC");
+    expect(answer.summary).toContain("Hello");
     expect(Date.parse(answer.answeredAt)).toBeGreaterThanOrEqual(started);
     expect(Date.parse(answer.answeredAt)).toBeLessThanOrEqual(Date.now());
     expect(answer.evidence).toEqual([]);
-    expect(count).not.toHaveBeenCalled();
+    expect(count).toHaveBeenCalledOnce();
     expect(connect).not.toHaveBeenCalled();
-    expect(await t.db.select().from(askModelSteps)).toEqual([]);
+    expect(await t.db.select().from(askModelSteps)).toEqual([
+      expect.objectContaining({ state: "settled", chargedMicroUsd: 20n }),
+    ]);
     expect(await t.db.select().from(askBudgetMonths)).toEqual([
-      expect.objectContaining({ spentMicroUsd: 0n, reservedMicroUsd: 0n }),
+      expect.objectContaining({ spentMicroUsd: 20n, reservedMicroUsd: 0n }),
     ]);
     expect((await app.inject({ url: `/api/ask/chats/${chat.id}` })).statusCode).toBe(401);
     vi.stubEnv("ASK_DATA_ENABLED", "false");

@@ -72,7 +72,7 @@ and the [delivery/acceptance ledger](docs/ASK-YOUR-DATA-IMPLEMENTATION.md).
 Managed Ask uses server-only MCP/Bedrock adapters, PostgreSQL personal history
 and durable runs, and shared customer budget admission. The customer feature
 flag, managed accounts and current session gate both the UI and paid routes.
-An admin turns Ask off for everyone at once, and back on, from the chat
+An admin turns Ask off for everyone at once, and back on, from the Team page
 (`POST /api/ask/switch`, audited as `ask.turned_off` / `ask.turned_on`).
 
 ```

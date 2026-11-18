@@ -56,7 +56,7 @@ takes effect at once on every replica and needs no rollout:
   admin turns Ask off is either refused with `ASK_TURNED_OFF` or cancelled by
   that turn-off. A queue claim takes no run while the switch is off.
 - Each replica rereads the switch every second for its capability answer and its
-  worker, and counts Ask as off until its first read answers.
+  worker, and pauses admission/claims until its first read answers. This unknown state never interrupts another replica's admitted questions.
 - Chats stay readable. Members see that an admin turned Ask off; an admin is
   linked to the Team page, where **Turn on** brings it back.
 - Turning Ask back on allows only what the deployment allows: the flag,
@@ -101,31 +101,51 @@ billable work. The user's admission is released; any future financial reservatio
 stays for reconciliation. Runs record the original session ID without a foreign
 key that would prevent normal expired-session cleanup.
 
+A replica that has not finished readiness checks pauses queue claims; only a
+confirmed feature/admin disable interrupts work. Queue waiting and execution
+share one deadline measured from submission. Expiration reports `ASK_TIMEOUT`,
+while lease loss, revocation and shutdown remain interruptions. Stop reaches
+free token counting as well as MCP/model requests. Heartbeats run independently;
+execution-boundary authorization no longer opens a heartbeat transaction for
+every tool. Fixed error codes and per-phase durations provide diagnostics without
+logging questions, answers, tool results or credentials.
+
 The API starts the worker once the database is ready, with the budget hooks
 below installed, on a managed deployment with Ask enabled and a valid rate card.
 
 ## Bounded tool execution
 
-Standalone date/time questions in English or Hebrew are answered directly from
-the current server UTC clock, before MCP discovery or model calls. These replies
-still pass normal HTTP admission, session/owner and worker lease checks, and are
-saved in personal history with no inference steps, source reads or charges.
-Compound questions and unsupported timezone requests use the regular pipeline.
-Clock replies contain no customer-source evidence; the UI displays their short
-answer once and omits an empty sources disclosure.
+The API runs a bounded AI SDK `ToolLoopAgent` against the existing native
+Bedrock adapter. `present_answer` is available from the first step: ordinary
+conversation, clarifications and explanations of earlier answers need no data
+read. Every paid conversational reply still has normal atomic reservation,
+dispatch fencing and usage reconciliation. There is no question-word regex
+routing. Every turn receives the current server clock and precomputed query
+windows; the current UTC reference is explicit and never comes from an old answer or a browser identity override.
 
-`AskOrchestrator` discovers the current customer catalog and gives Bedrock one
-`read_customer_data` tool. Its schemas come from the local audited policy, not
-remote descriptions. Metrics/log reads keep their 24-hour bounds; the optional
-`status.chain_events` capability has a seven-day event window, bounded chains,
-cursors and protocol-change horizon, matching the MCP main catalog.
+Data tools have locally authored names and parameter schemas. The customer MCP
+connection opens only on the first requested read. Identity verification comes
+first; independent catalog/tool-list requests then run concurrently. Every read
+rechecks identity and the immutable local policy. A source is selected implicitly
+only if exactly one authorized source supports the operation; ambiguity returns
+choices and never sums replicas. Remote descriptions cannot grant tools.
+Metrics/log reads keep their 24-hour bounds; provider-status event reads keep
+their seven-day bounds.
 
-Every model step requires durable admission/dispatch/usage callbacks. The
-orchestrator checks active authorization before dispatch and before each tool
-read. Each successful data read produces server-authored provenance; a no-tool
-model answer, all-source failure, malformed JSON, truncation or excessive tool loop is
-an error. Successful MCP envelopes containing an upstream API error remain
-failures. Empty, partial and unavailable data stay distinguishable.
+`router_request_summary` selects the dashboard's recorded request/failure or transaction families into two verified MCP reads over the same window. Missing series stay
+unknown, without a zero fallback. The newest approximately two minutes of
+recorded counts are marked partial. Counts do not establish an acceptable error rate or a cause without actual evidence and an SLO. `router_recent_requests` reads a small, customer-scoped backwards sample of the dashboard's `relay_end` events for request details. Sampling never proves the absence of errors. Effective status/instant-query times and literal lookback windows are returned explicitly; absence of a provider-status source is reported as unavailable.
+
+Model dispatch guards live inside the model execution boundary, not SDK
+notification callbacks. Automatic model retries and tool repair are disabled.
+A provider's complete response is locally validated before persistence/display;
+text preceding a valid presentation is discarded. A blank heading receives a neutral label; a long summary flows into body text without dropping words, changing facts or paying for another formatting request. The model may return a concise summary alone; it is persisted as a v1-compatible reply section that the UI shows once, so rolling back keeps history readable. Data replies still require actual successful reads.
+Invented evidence references, unbacked stats, mixed final/read calls and unknown
+fields are rejected after usage is recorded. The native presentation schema
+constrains structure; the full local schema enforces size and grounding limits.
+Existing complete-JSON replies remain accepted only after full validation, with
+no second paid formatting call. Empty, partial and unavailable data remain
+distinguishable.
 
 The system prompt tells the model where transactions and failed requests live,
 in the Transactions tab's own terms: the `relay_end` line filter
@@ -135,10 +155,10 @@ and how an outcome reads as accepted, rejected, failed on chain, failed or
 unknown (`txResultOf`). It also sets how an answer is written: plain sentences,
 the covered time said once, no source IDs, label names or queries in the prose.
 
-At most 8 model steps and 8 tool calls run; a step can request at most 4 tools.
+At most 5 model steps and 8 data reads run; a step can request at most 4 tools.
 Individual tool context is capped at 12,000 bytes with explicit partial coverage;
 the whole request remains capped at 64,000 bytes. Prior personal messages are
-bounded untrusted context. Replicated sources must not be summed; correlation
+bounded role-based messages, explicitly historical evidence. Replicated sources must not be summed; correlation
 with provider status must not be presented as proof of causation.
 
 Known runtime credentials, bearer/key fields and credential-bearing URL paths
@@ -350,3 +370,20 @@ and write their screenshots to their results directories.
 
 See [the readiness and pilot runbook](ASK-YOUR-DATA-OPERATIONS.md) for runtime
 delivery, free preflight, staff/retention checks, controlled activation and rollback.
+
+## Engineering evaluation
+
+`e2e/support/ask-engineering-evaluation.mjs` is an explicit opt-in, 100-scenario
+real-provider evaluation. It uses engineering AWS SSO, an isolated local
+`ask_test_evaluation*` PostgreSQL database and synthetic MCP data. Every paid
+call passes the actual atomic reservation/dispatch/usage ledger, with no SDK or
+AWS retries and a five-dollar engineering ceiling. Configure the currently
+verified `ASK_EVALUATION_MODEL`, `ASK_EVALUATION_REGION` and
+`ASK_EVALUATION_PRICING_JSON`, plus the explicit AWS profile, isolated database
+and external temporary output path. `ASK_ENGINEERING_EVALUATION=true` is
+required. A failed scenario stops by default; an interrupted invocation keeps
+its uncertain reservation. The test-only byte counter is deliberately
+conservative; this harness does not establish live Mantle or tenant-MCP
+availability, PromQL correctness, customer authentication or provider billing.
+Browser tests and the independent HTTP/PostgreSQL suite cover the other
+boundaries; tenant deployment still needs its actual readiness/serving checks.
