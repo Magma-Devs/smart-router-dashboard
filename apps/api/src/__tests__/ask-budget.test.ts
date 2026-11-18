@@ -91,6 +91,32 @@ const pool = async () =>
   )[0]!;
 
 describe("durable shared customer spending", () => {
+  it("passes durable Stop to a pending free token counter before any reservation or paid dispatch", async () => {
+    const run = await running();
+    const controller = new AbortController();
+    const counter = vi
+      .spyOn(BedrockAdapter.prototype, "countTokens")
+      .mockImplementation(async (_input, _mapping, signal) => {
+        expect(signal).toBe(controller.signal);
+        return new Promise<number>((_resolve, reject) =>
+          signal!.addEventListener("abort", () => reject(signal!.reason), { once: true }),
+        );
+      });
+    const pending = budget
+      .hooks(run)
+      .beforeModelStep({
+        input: { system: "Fixture", messages: [] },
+        inputBytes: 10,
+        outputTokens: 10,
+        signal: controller.signal,
+      });
+    await vi.waitFor(() => expect(counter).toHaveBeenCalledOnce());
+    controller.abort(new Error("Stopped fixture"));
+    await expect(pending).rejects.toThrow("Stopped fixture");
+    expect(await t.db.select().from(askModelSteps)).toHaveLength(0);
+    expect((await pool()).reservedMicroUsd).toBe(0n);
+  });
+
   it("shares one atomic pool across people and Ask/Investigate entry points", async () => {
     const alice = await running();
     const bob = await running();

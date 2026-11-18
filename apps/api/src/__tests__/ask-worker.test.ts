@@ -74,7 +74,7 @@ const submit = () =>
     { idempotencyKey: crypto.randomUUID(), question: "Fixture question" },
     async () => undefined,
   );
-function worker(options: { enabled?: () => boolean } = {}) {
+function worker(options: { enabled?: () => boolean; canClaim?: () => boolean } = {}) {
   const afterTerminal = vi.fn(async () => undefined);
   const instance = new AskWorker(store, settings(), { hooks, afterTerminal, ...options });
   workers.push(instance);
@@ -97,6 +97,51 @@ function pendingAnswer() {
 }
 
 describe("durable run worker scheduling and cancellation", () => {
+  it("a starting replica awaiting readiness leaves another replica's admitted question queued", async () => {
+    const run = await submit();
+    let ready = false;
+    const { instance } = worker({ canClaim: () => ready });
+    const spy = vi.spyOn(AskOrchestrator.prototype, "answer").mockResolvedValue(answer);
+    await instance.tick();
+    expect((await store.getRun(owner, run.id)).status).toBe("queued");
+    expect(spy).not.toHaveBeenCalled();
+    ready = true;
+    await instance.tick();
+    await instance.drained();
+    expect((await store.getRun(owner, run.id)).status).toBe("succeeded");
+    expect(spy).toHaveBeenCalledOnce();
+  });
+
+  it("an unready replica cannot interrupt a healthy replica's active answer", async () => {
+    const run = await submit();
+    const waiting = pendingAnswer();
+    const healthy = worker();
+    const starting = worker({ canClaim: () => false });
+    await healthy.instance.tick();
+    await vi.waitFor(() => expect(waiting.started).toHaveBeenCalledOnce());
+    await starting.instance.tick();
+    expect((await store.getRun(owner, run.id)).status).toBe("running");
+    waiting.release();
+    await healthy.instance.drained();
+    expect((await store.getRun(owner, run.id)).status).toBe("succeeded");
+  });
+
+  it("a queue wait consumes the same deadline as execution", async () => {
+    const run = await submit();
+    await t.db
+      .update(askRuns)
+      .set({ createdAt: new Date(Date.now() - 6000) })
+      .where(eq(askRuns.id, run.id));
+    const spy = vi.spyOn(AskOrchestrator.prototype, "answer").mockResolvedValue(answer);
+    const { instance } = worker();
+    await instance.tick();
+    expect(await store.getRun(owner, run.id)).toMatchObject({
+      status: "failed",
+      error: { code: "ASK_TIMEOUT" },
+    });
+    expect(spy).not.toHaveBeenCalled();
+  });
+
   it("claims a queued run, persists one answer and reconciles terminal usage", async () => {
     const run = await submit();
     const spy = vi.spyOn(AskOrchestrator.prototype, "answer").mockResolvedValue(answer);

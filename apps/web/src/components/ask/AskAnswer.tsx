@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import type { AskAnswer as Answer } from "@sr/shared";
-import { answerSections, answerText } from "./ask-display";
+import { answerSections, answerText, evidenceSourceLabel } from "./ask-display";
 import { AskIcon } from "./AskIcon";
 import { LocalTime } from "@/components/gateway/LocalTime";
 
@@ -9,14 +9,6 @@ import { LocalTime } from "@/components/gateway/LocalTime";
 export function AskTime({ value }: { value: string }) {
   const today = new Date(value).toDateString() === new Date().toDateString();
   return <LocalTime t={value} format={today ? "time" : "dayTime"} />;
-}
-/** What a read was of, in a word: the operation ids are the data service's own. */
-function sourceKind(operationId: string): string {
-  return operationId.startsWith("logs.")
-    ? "Logs"
-    : operationId.startsWith("metrics.")
-      ? "Metrics"
-      : "Data";
 }
 function CopyAnswer({ answer }: { answer: Answer }) {
   const [status, setStatus] = useState<"idle" | "copied" | "failed">("idle");
@@ -106,12 +98,17 @@ export function AskAnswer({ answer, messageId }: { answer: Answer; messageId?: s
               <li key={item.id}>
                 <div>
                   <span>
-                    <strong>{sourceKind(item.operationId)}</strong>{" "}
-                    <code title={item.operationId}>{item.sourceId}</code>
+                    <strong>{evidenceSourceLabel(item.operationId)}</strong>
                   </span>
-                  {item.truncated || ["partial", "unavailable"].includes(item.coverage) ? (
+                  {item.truncated || item.coverage !== "complete" ? (
                     <span className={`ask-coverage ask-coverage--${item.coverage}`}>
-                      {item.truncated ? "Cut short" : item.coverage}
+                      {item.truncated
+                        ? "Cut short"
+                        : item.coverage === "unknown"
+                          ? "Limited coverage"
+                          : item.coverage === "empty"
+                            ? "No matches"
+                            : item.coverage}
                     </span>
                   ) : null}
                 </div>

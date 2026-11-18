@@ -91,6 +91,10 @@ export class AskSwitchState {
     return this.known !== false;
   }
 
+  get confirmedOff(): boolean {
+    return this.known === true;
+  }
+
   async refresh(): Promise<boolean> {
     this.known = await readAskSwitch(this.db, this.customerId);
     return this.known;

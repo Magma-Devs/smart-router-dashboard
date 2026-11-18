@@ -10,6 +10,8 @@ export interface AskWorkerOptions {
    * was fenced. It must never blindly free dispatched/uncertain reservations. */
   afterTerminal: (runId?: string) => Promise<void>;
   enabled?: () => boolean;
+  canClaim?: () => boolean;
+  timing?: (runId: string, phase: string, durationMs: number) => void;
   fetchImpl?: typeof fetch;
   onError?: (code: string) => void;
 }
@@ -55,6 +57,7 @@ export class AskWorker {
         await this.options.afterTerminal();
         return;
       }
+      if (this.options.canClaim && !this.options.canClaim()) return;
       while (!this.stopped && this.jobs.size < this.settings.workerConcurrency) {
         const run = await this.store.claim(this.settings.leaseMs);
         if (!run) break;
@@ -64,6 +67,7 @@ export class AskWorker {
           break;
         }
         const controller = new AbortController();
+        this.options.timing?.(run.id, "queue", Math.max(0, Date.now() - run.createdAt.getTime()));
         const done = this.execute(run, controller).finally(() => this.jobs.delete(run.id));
         this.jobs.set(run.id, { controller, done });
       }
@@ -89,9 +93,12 @@ export class AskWorker {
           else if (
             state === "lost" ||
             !(await this.store.heartbeat(run.id, run.leaseToken!, this.settings.leaseMs))
-          )
+          ) {
+            this.options.onError?.("ASK_LEASE_LOST");
             controller.abort(new AskFailure("ASK_INTERRUPTED"));
+          }
         } catch {
+          this.options.onError?.("ASK_LEASE_CHECK_FAILED");
           controller.abort(new AskFailure("ASK_INTERRUPTED"));
         } finally {
           checking = null;
@@ -104,8 +111,11 @@ export class AskWorker {
     }, this.settings.heartbeatMs);
     heartbeat.unref();
     const deadline = setTimeout(
-      () => controller.abort(new AskFailure("ASK_TIMEOUT")),
-      this.settings.runTimeoutMs,
+      () => {
+        this.options.onError?.("ASK_DEADLINE_EXCEEDED");
+        controller.abort(new AskFailure("ASK_TIMEOUT"));
+      },
+      Math.max(1, this.settings.runTimeoutMs - (Date.now() - run.createdAt.getTime())),
     );
     deadline.unref();
     try {
@@ -115,9 +125,11 @@ export class AskWorker {
       const supplied = this.options.hooks(run);
       const hooks: AskExecutionHooks = {
         ...supplied,
+        timing: (phase, durationMs) => this.options.timing?.(run.id, phase, durationMs),
         checkActive: async () => {
-          await check();
           if (controller.signal.aborted) throw controller.signal.reason;
+          if (!(this.options.enabled?.() ?? this.settings.enabled))
+            throw new AskFailure("ASK_INTERRUPTED");
           await supplied.checkActive();
         },
       };
@@ -129,11 +141,13 @@ export class AskWorker {
       );
       await check();
       if (controller.signal.aborted) throw controller.signal.reason;
+      const persisting = performance.now();
       if (!(await this.store.succeed(run.id, run.leaseToken!, result))) {
         const state = await this.store.leaseState(run.id, run.leaseToken!);
         if (state === "cancelling") await this.store.fail(run.id, run.leaseToken!, "ASK_CANCELLED");
         else await this.store.recover(this.settings.runTimeoutMs);
       }
+      this.options.timing?.(run.id, "persistence", performance.now() - persisting);
     } catch (error) {
       const failure =
         controller.signal.reason instanceof AskFailure

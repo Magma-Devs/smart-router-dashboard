@@ -17,6 +17,7 @@
     "ask:preflight": "tsx src/ask-preflight.ts"
   },
   "dependencies": {
+    "@ai-sdk/provider": "4.0.39",
     "@aws-sdk/client-sesv2": "3.1168.0",
     "@fastify/cors": "11.3.0",
     "@fastify/helmet": "13.2.0",
@@ -27,6 +28,7 @@
     "@modelcontextprotocol/client": "2.3.1",
     "@sr/db": "workspace:^",
     "@sr/shared": "workspace:*",
+    "ai": "7.0.176",
     "bcryptjs": "3.0.3",
     "drizzle-orm": "0.45.3",
     "fastify": "5.12.8",

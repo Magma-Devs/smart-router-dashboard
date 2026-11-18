@@ -646,7 +646,7 @@ export function readAskSettings(source: NodeJS.ProcessEnv = process.env): AskSet
     maxResponseBytes: 1024 * 1024,
     maxContextBytes: 64_000,
     maxOutputTokens: 2048,
-    maxSteps: 8,
+    maxSteps: 5,
     // Invalid availability configuration must not stop mandatory cleanup.
     retentionDays: Math.min(90, requestedRetentionDays),
     maxToolResultBytes: 12_000,

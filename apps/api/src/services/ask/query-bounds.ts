@@ -3,7 +3,7 @@
  * time relocation require a separately audited execution policy. The source
  * must still enforce cardinality, sample, memory and query-time limits.
  * https://prometheus.io/docs/prometheus/latest/querying/basics/ */
-export function hasBoundedAskQuery(value: string): boolean {
+export function askQueryLookbackSeconds(value: string): number | null {
   const code = [...value];
   let quote = "";
   let comment = false;
@@ -24,10 +24,10 @@ export function hasBoundedAskQuery(value: string): boolean {
       code[i] = " ";
     }
   }
-  if (quote) return false;
+  if (quote) return null;
   const syntax = code.join("");
   // PromQL and LogQL keywords are case-insensitive.
-  if (syntax.includes("@") || /\boffset\b/i.test(syntax)) return false;
+  if (syntax.includes("@") || /\boffset\b/i.test(syntax)) return null;
   const unitSeconds: Record<string, number> = {
     ms: 0.001,
     s: 1,
@@ -38,12 +38,13 @@ export function hasBoundedAskQuery(value: string): boolean {
     y: 31536000,
   };
   let lookback = 0;
+  let maximum = 0;
   let selectors = 0;
   // Split instead of searching only well-formed selectors: malformed/nested
   // brackets must not hide an unbounded expression from this guard.
   const parts = syntax.split(/(\[|\])/);
   for (let i = 1; i < parts.length; i += 4) {
-    if (parts[i] !== "[" || parts[i + 2] !== "]" || ++selectors > 32) return false;
+    if (parts[i] !== "[" || parts[i + 2] !== "]" || ++selectors > 32) return null;
     const literal = parts[i + 1]!.trim();
     let seconds: number;
     if (/^(?:\d+(?:ms|[smhdwy]))+$/.test(literal)) {
@@ -53,9 +54,14 @@ export function hasBoundedAskQuery(value: string): boolean {
       );
     } else if (/^(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(literal)) {
       seconds = Number(literal);
-    } else return false;
+    } else return null;
     lookback += seconds;
-    if (!Number.isFinite(lookback) || seconds <= 0 || lookback > 86400) return false;
+    maximum = Math.max(maximum, seconds);
+    if (!Number.isFinite(lookback) || seconds <= 0 || lookback > 86400) return null;
   }
-  return true;
+  return maximum;
+}
+
+export function hasBoundedAskQuery(value: string): boolean {
+  return askQueryLookbackSeconds(value) !== null;
 }

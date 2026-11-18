@@ -42,9 +42,17 @@ export function answerText(answer: AskAnswer): string {
     `Answered ${answer.answeredAt}`,
     ...answer.evidence.map(
       (item) =>
-        `Source: ${item.sourceId} • ${item.operationId} • ${item.from ?? item.observedAt}${item.to ? ` to ${item.to}` : ""} • ${item.coverage}${item.truncated ? " (truncated)" : ""}`,
+        `Source: ${evidenceSourceLabel(item.operationId)} • ${item.from ?? item.observedAt}${item.to ? ` to ${item.to}` : ""}${item.truncated ? " • Cut short" : item.coverage === "partial" ? " • Partial data" : item.coverage === "unavailable" ? " • Unavailable" : ""}`,
     ),
   ].join("\n\n");
+}
+
+export function evidenceSourceLabel(operationId: string): string {
+  if (operationId.startsWith("logs.")) return "Logs";
+  if (operationId.startsWith("metrics.")) return "Metrics";
+  if (operationId.startsWith("status.")) return "Chain status";
+  if (operationId.startsWith("grafana.")) return "Dashboard";
+  return "Data";
 }
 /** The summary already says this. Keep sections that add any detail. */
 export function answerSections(answer: AskAnswer): AskAnswer["sections"] {
