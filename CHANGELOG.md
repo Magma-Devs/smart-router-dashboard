@@ -5,6 +5,37 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.74.0]
+
+### Changed
+
+- **Ask your data is one page in the left menu (MAG-5423).** The top-bar
+  button, the ⌘/Ctrl K shortcut, the side panel and the minimized pill are
+  gone. The menu entry leads back to the chat with a question still running, or
+  to the chat last open, and shows a spinner while a question runs. History and
+  New chat sit above the conversation; the page keeps the dashboard's menu and
+  top bar. New icon: a speech bubble holding a bar chart.
+- **A cleaner chat.** The summary leads each answer and the body is quieter. The
+  empty chat says where answers come from and offers three concrete questions.
+  The composer has an orange send button and one line under it: private to you,
+  answers can be incomplete. The scope line (chain, page, time window) is gone.
+  A source reads as Logs or Metrics, with a tag only when its data was missing
+  or cut short. Times use the dashboard's own format.
+- **Turning Ask off is on the Team page**, for admins: on or off for everyone,
+  behind the same confirmation.
+- **A new chat's questions default to the last 24 hours**, and a follow-up's
+  time ends now instead of when its chat started.
+- **Answers are written for the operator:** plain sentences, the covered time
+  said once, no source IDs, label names or queries in the prose.
+- **Ask knows where transactions and failed requests are:** the router's
+  `relay_end` events and the recorded per-minute counts, read as the
+  Transactions tab reads them. It no longer searches logs for the word
+  "transaction".
+
+### Removed
+
+- The `ask_open` usage event: opening Ask is a view of its page.
+
 ## [0.73.1]
 
 ### Fixed

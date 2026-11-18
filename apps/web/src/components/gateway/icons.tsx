@@ -35,6 +35,13 @@ export const IconHome = svg(
     <polyline points="9 22 9 12 15 12 15 22" />
   </>,
 );
+/** Ask your data: a speech bubble holding a small bar chart. */
+export const IconAsk = svg(
+  <>
+    <path d="M6.5 3h11A2.5 2.5 0 0 1 20 5.5v9a2.5 2.5 0 0 1-2.5 2.5H11l-4.5 4v-4A2.5 2.5 0 0 1 4 14.5v-9A2.5 2.5 0 0 1 6.5 3Z" />
+    <path d="M9 13v-2m3 2V7m3 6V9" />
+  </>,
+);
 export const IconPulse = svg(<polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />);
 export const IconServer = svg(
   <>

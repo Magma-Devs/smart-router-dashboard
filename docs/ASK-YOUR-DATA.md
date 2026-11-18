@@ -43,7 +43,7 @@ Existing session revocation and 2FA gates apply.
 ## Turning Ask off
 
 An admin turns Ask off for everyone on the deployment with the **Turn off**
-button in the chat panel or full view, behind a confirmation, or with
+button on the Team page, behind a confirmation, or with
 `POST /api/ask/switch` and `{"off": true}`; `{"off": false}` turns it back on. It
 takes effect at once on every replica and needs no rollout:
 
@@ -57,8 +57,8 @@ takes effect at once on every replica and needs no rollout:
   that turn-off. A queue claim takes no run while the switch is off.
 - Each replica rereads the switch every second for its capability answer and its
   worker, and counts Ask as off until its first read answers.
-- Chats stay readable. Members see that an admin turned Ask off; an admin sees a
-  **Turn Ask back on** button.
+- Chats stay readable. Members see that an admin turned Ask off; an admin is
+  linked to the Team page, where **Turn on** brings it back.
 - Turning Ask back on allows only what the deployment allows: the flag,
   credentials, rate card and monthly budget still apply.
 
@@ -126,6 +126,14 @@ read. Each successful data read produces server-authored provenance; a no-tool
 model answer, all-source failure, malformed JSON, truncation or excessive tool loop is
 an error. Successful MCP envelopes containing an upstream API error remain
 failures. Empty, partial and unavailable data stay distinguishable.
+
+The system prompt tells the model where transactions and failed requests live,
+in the Transactions tab's own terms: the `relay_end` line filter
+(`TX_EVENT_FILTER`), the recorded per-minute counts
+(`smartrouter_transactions:count1m`, `smartrouter_final_{requests,failures}:count1m`)
+and how an outcome reads as accepted, rejected, failed on chain, failed or
+unknown (`txResultOf`). It also sets how an answer is written: plain sentences,
+the covered time said once, no source IDs, label names or queries in the prose.
 
 At most 8 model steps and 8 tool calls run; a step can request at most 4 tools.
 Individual tool context is capped at 12,000 bytes with explicit partial coverage;
@@ -291,45 +299,53 @@ rollout acceptance is tracked on MAG-4934.
 
 The web and API both require managed authenticated deployment and
 `ASK_DATA_ENABLED=true`. The API's current capabilities/session gate remains the
-source of authority; browser visibility never grants access. No menu entry is
-added. The top-bar button and Cmd/Ctrl+K open the last panel/full view. Customer
-roles all use the same customer-only read boundary.
+source of authority; browser visibility never grants access. Customer roles all
+use the same customer-only read boundary.
 
-The dock leaves the dashboard usable, minimizes to a continuing-work pill and
-expands to `/ask?chat=<id>`. Both views share the same personal chats, draft and
-live run. Back returns to the originating actual application page. History is
-searched by POST body, grouped by local calendar days and paginated; earlier
-messages load without losing the reading position. Completed errors/cancellations
-are included with retained messages, so reload does not erase the outcome.
-Conversation context is preserved for follow-ups and across the two views;
-starting a new chat adopts the current page context.
+Ask is one page, `/ask?chat=<id>`, reached from **Ask your data** in the left
+menu, under Upstreams. There is no top-bar button, keyboard shortcut, side panel
+or minimized pill. The menu entry leads to the chat with a question still
+running, else to the chat last open in the tab, else to a new one, and shows a
+spinner while a question runs, so the rest of the dashboard stays in use while
+waiting. A draft survives leaving the page and coming back.
 
-The full view gives the conversation a single history rail and a centered reading
-column; returning to the dashboard restores its normal navigation. Questions use
-right-aligned bubbles. Structured answers render as plain text, with a summary,
-quiet numbered headings and optional compact inline stats. Copy feedback, answer
-timestamps and expandable source/time/coverage evidence follow each answer.
-A short answer keeps its question visible; a long answer opens at its start.
-Reading older messages is not interrupted. The composer grows with the draft and
-available width, including when switching to mobile. Enter sends,
-Shift+Enter inserts a line and IME composition does not submit. A single active
-question locks submission across every chat/tab. Stop is durable and never creates
-a success message. Connection, loading, unavailable, empty and failed states have
-specific human-readable copy; no budget amount or credential/configuration advice
-is exposed to customers.
+The page is the conversation in a centered reading column, with **History** and
+**New chat** above it. History replaces the conversation with the person's
+chats: searched by POST body, grouped by local calendar days and paginated.
+Earlier messages load without losing the reading position. Completed
+errors/cancellations are included with retained messages, so reload does not
+erase the outcome.
+
+A new chat's questions default to the last 24 hours, the most one read may
+cover. A follow-up keeps the chain and router its chat started with (chats from
+before Ask became one page may carry them) over a time of the same length that
+ends now. The composer shows no scope line.
+
+Questions use right-aligned bubbles. Structured answers render as plain text,
+with a summary, quiet numbered headings and optional compact inline stats. Copy
+feedback, answer timestamps and expandable sources follow each answer; a source
+reads as Logs, Metrics or Data, and carries a tag only when its data was
+missing or cut short. A short answer keeps its question visible; a long answer
+opens at its start. Reading older messages is not interrupted. The composer
+grows with the draft and available width. Enter sends, Shift+Enter inserts a
+line and IME composition does not submit. Under it one line says the chat is
+private to the person and that answers can be incomplete. A single active
+question locks submission across every chat/tab. Stop is durable and never
+creates a success message. Connection, loading, unavailable, empty and failed
+states have specific human-readable copy; no budget amount or
+credential/configuration advice is exposed to customers.
 
 Personal UI/cache state is scoped by the server's opaque customer/person hash and
 current dashboard session, with no transcript or draft in persistent browser
 storage. Queued reads/writes are bound to the initiating session; refreshed bearers
 for that same session are accepted, but a replacement account cannot receive the
 old request. A late failed request cannot sign out a newly signed-in account.
-Direct links are checked by the API before becoming a saved last-view preference.
+The web no longer reads or writes `/api/ask/preferences`; the routes remain.
 
-On mobile, the panel uses the shared dialog layer for counted scroll locking,
-focus containment and Escape, with the background inert. Desktop remains nonmodal.
-The full view adapts history controls to small screens. Theme tokens, reduced
+On a phone the left menu folds to its icons on the Ask page and the top bar keeps
+only the theme switch, so the conversation has the width. Theme tokens, reduced
 motion and keyboard/focus labels follow the existing dashboard components.
-The browser suites (`e2e/ask-specs`, `e2e/ask-presentation`) cover these views
+The browser suites (`e2e/ask-specs`, `e2e/ask-presentation`) cover the page
 and write their screenshots to their results directories.
 
 See [the readiness and pilot runbook](ASK-YOUR-DATA-OPERATIONS.md) for runtime

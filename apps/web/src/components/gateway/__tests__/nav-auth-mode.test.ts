@@ -39,3 +39,12 @@ describe("visibleNavSections", () => {
     }
   });
 });
+
+describe("the Ask entry", () => {
+  it("is in the menu only where this person can use Ask, after the router's own pages", () => {
+    expect(hrefs(true)).not.toContain("/ask");
+    const first = visibleNavSections(true, null, null, true)[0]!;
+    expect(first.items.map((i) => i.href)).toEqual(["/metrics", "/upstreams", "/ask"]);
+    expect(NAV_SECTIONS.flatMap((s) => s.items).some((i) => i.href === "/ask")).toBe(false);
+  });
+});

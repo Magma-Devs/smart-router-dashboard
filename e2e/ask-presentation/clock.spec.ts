@@ -12,16 +12,15 @@ test("a clock question gets a short persisted reply with no external work", asyn
   await page.addInitScript(() => localStorage.setItem("sr:theme", "light"));
   await signInThroughUi(page, operator);
   await page.addStyleTag({ content: "nextjs-portal { display: none; }" });
-  await page.getByRole("button", { name: "Ask your data" }).click();
-  const panel = page.getByRole("complementary", { name: "Ask your data" });
-  await panel.getByLabel("Ask a question").fill("what is the date today?");
+  await page.getByRole("link", { name: "Ask your data" }).click();
+  await page.getByLabel("Ask a question").fill("what is the date today?");
   const started = Date.now();
   const submitted = page.waitForResponse(
     (response) =>
       response.request().method() === "POST" &&
       /\/api\/ask\/chats\/[^/]+\/runs$/.test(response.url()),
   );
-  await panel.getByRole("button", { name: "Send", exact: true }).click();
+  await page.getByRole("button", { name: "Send", exact: true }).click();
   const run = (await (await submitted).json()) as { id: string };
   const answer = page.getByRole("article", { name: "Answer" });
   await expect(answer.locator(".ask-summary")).toContainText(/^Today is .+ \(UTC\)\.$/);
@@ -48,7 +47,6 @@ test("a clock question gets a short persisted reply with no external work", asyn
   } finally {
     await handle.sql.end();
   }
-  await panel.getByRole("button", { name: "Open full chat" }).click();
   await page.waitForURL(/\/ask\?chat=/);
   await page.reload();
   await expect(page.getByRole("article", { name: "Answer" }).locator(".ask-summary")).toHaveText(

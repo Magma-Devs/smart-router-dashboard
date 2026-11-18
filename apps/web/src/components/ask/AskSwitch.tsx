@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { Modal } from "@/components/gateway/Modal";
+import Link from "next/link";
 import { useAsk } from "./AskProvider";
 
 function failure(error: unknown): string {
@@ -9,18 +10,21 @@ function failure(error: unknown): string {
     : "The switch could not be saved. Please try again.";
 }
 
-/** An admin's button that turns Ask off for everyone, behind a confirmation. */
-export function AskTurnOff() {
+/**
+ * The Team page's switch, for an admin: turns Ask off for everyone behind a
+ * confirmation, and back on. Drawn only where this person can use Ask.
+ */
+export function AskTeamSwitch() {
   const ask = useAsk();
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  if (!ask.canSwitch || ask.off) return null;
-  const turnOff = async () => {
+  if (!ask.canSwitch) return null;
+  const set = async (off: boolean) => {
     setBusy(true);
     setError(null);
     try {
-      await ask.setOff(true);
+      await ask.setOff(off);
       setConfirming(false);
     } catch (e) {
       setError(failure(e));
@@ -29,18 +33,28 @@ export function AskTurnOff() {
     }
   };
   return (
-    <>
-      <button
-        type="button"
-        className="gw-btn gw-btn--ghost"
-        title="Turn Ask off for everyone"
-        onClick={() => {
-          setError(null);
-          setConfirming(true);
-        }}
-      >
-        Turn off
-      </button>
+    <div className="ask-team-switch">
+      <div>
+        <strong>Ask your data</strong>
+        <span>{ask.off ? "Off for everyone" : "On for everyone"}</span>
+        {error && !confirming ? <span role="alert">{error}</span> : null}
+      </div>
+      {ask.off ? (
+        <button type="button" className="gw-btn" disabled={busy} onClick={() => void set(false)}>
+          {busy ? "Turning on…" : "Turn on"}
+        </button>
+      ) : (
+        <button
+          type="button"
+          className="gw-btn"
+          onClick={() => {
+            setError(null);
+            setConfirming(true);
+          }}
+        >
+          Turn off
+        </button>
+      )}
       <Modal
         open={confirming}
         onClose={() => setConfirming(false)}
@@ -53,7 +67,7 @@ export function AskTurnOff() {
             <button
               className="gw-btn gw-btn--danger"
               disabled={busy}
-              onClick={() => void turnOff()}
+              onClick={() => void set(true)}
             >
               {busy ? "Turning off…" : "Turn off Ask"}
             </button>
@@ -73,15 +87,13 @@ export function AskTurnOff() {
           ) : null}
         </div>
       </Modal>
-    </>
+    </div>
   );
 }
 
-/** What everyone sees while Ask is off; an admin can turn it back on here. */
+/** What everyone sees while Ask is off; an admin is pointed at the switch. */
 export function AskOffNotice() {
   const ask = useAsk();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   if (!ask.off) return null;
   return (
     <p className="ask-notice" role="status">
@@ -89,27 +101,8 @@ export function AskOffNotice() {
       {ask.canSwitch ? (
         <>
           {" "}
-          <button
-            type="button"
-            className="gw-btn gw-btn--ghost"
-            disabled={busy}
-            onClick={() => {
-              setBusy(true);
-              setError(null);
-              void ask
-                .setOff(false)
-                .catch((e: unknown) => setError(failure(e)))
-                .finally(() => setBusy(false));
-            }}
-          >
-            {busy ? "Turning on…" : "Turn Ask back on"}
-          </button>
+          <Link href="/team">Turn it back on in Team</Link>
         </>
-      ) : null}
-      {error ? (
-        <span role="alert" style={{ display: "block", color: "var(--err)" }}>
-          {error}
-        </span>
       ) : null}
     </p>
   );

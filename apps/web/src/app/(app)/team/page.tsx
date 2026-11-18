@@ -29,6 +29,7 @@ import { ResetTwoFactorModal } from "@/components/team/ResetTwoFactorModal";
 import { RevokeInviteModal } from "@/components/team/RevokeInviteModal";
 import { RowActions } from "@/components/team/RowActions";
 import { UsageIdLookup } from "@/components/team/UsageIdLookup";
+import { AskTeamSwitch } from "@/components/ask/AskSwitch";
 import {
   closedCount,
   inviteActions,
@@ -166,6 +167,7 @@ export default function TeamPage() {
       <Suspense fallback={null}>
         <UsageIdLookup isAdmin={isAdmin} />
       </Suspense>
+      <AskTeamSwitch />
 
       {/* A prompt, never a block: admin has to stay transferable, or a
           departing employee's account can't be removed. */}

@@ -1,4 +1,4 @@
-import { AskFull } from "@/components/ask/AskViewport";
-export default function AskPage() {
-  return <AskFull />;
+import { AskPage } from "@/components/ask/AskPage";
+export default function Page() {
+  return <AskPage />;
 }
