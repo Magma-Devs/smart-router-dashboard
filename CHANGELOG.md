@@ -5,6 +5,15 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.74.2]
+
+### Fixed
+
+- Long personal histories no longer consume the room reserved for current data
+  reads. Before counting and generation, only verified older history may be
+  reclaimed; the current question, this run's tools and authorization stay
+  protected. The existing request limit and full stored history remain intact.
+
 ## [0.74.1]
 
 ### Fixed

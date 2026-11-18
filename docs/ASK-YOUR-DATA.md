@@ -161,6 +161,15 @@ the whole request remains capped at 64,000 bytes. Prior personal messages are
 bounded role-based messages, explicitly historical evidence. Replicated sources must not be summed; correlation
 with provider status must not be presented as proof of causation.
 
+Read admission measures this run's protected context separately from reclaimable
+personal history. A long conversation therefore does not prevent a fresh read
+merely because older messages are present. Before token counting and generation,
+the native adapter can remove only the exact verified history prefix, oldest
+turns first, while preserving the current question, system, tools and results
+from this run. It leaves room for the native wire envelope. Counting and
+generation use the same bounded input; an oversized protected request is refused
+before paid dispatch. Full personal history remains stored and readable.
+
 Known runtime credentials, bearer/key fields and credential-bearing URL paths
 are redacted before model context/tool records and the final answer. This is not
 general classification of arbitrary log text. Personal search terms and ORM-bound
@@ -387,3 +396,9 @@ conservative; this harness does not establish live Mantle or tenant-MCP
 availability, PromQL correctness, customer authentication or provider billing.
 Browser tests and the independent HTTP/PostgreSQL suite cover the other
 boundaries; tenant deployment still needs its actual readiness/serving checks.
+
+`ASK_EVALUATION_LONG_HISTORY=true` seeds twelve local fixture discussions and
+extends the measured question within the product's size limit. Fixture history
+is not inference output; the measured new turn and any setup query still use
+real provider dispatch and accounting. Recorded input byte sizes make context
+admission regressions visible without logging a live customer's messages.

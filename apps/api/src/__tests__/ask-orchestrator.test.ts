@@ -79,7 +79,13 @@ const presentation = (value: unknown = content) => ({
 });
 
 function fixture(
-  options: { data?: unknown; fail?: boolean; status?: boolean; responses?: unknown[] } = {},
+  options: {
+    data?: unknown;
+    fail?: boolean;
+    status?: boolean;
+    question?: string;
+    responses?: unknown[];
+  } = {},
 ) {
   const value = settings();
   const client = new Client({ name: "orchestrator-fixture", version: "1" });
@@ -183,7 +189,12 @@ function fixture(
     fetchImpl,
     hooks,
     answer: (history: AskMessage[] = [], signal = new AbortController().signal) =>
-      new AskOrchestrator(value, fetchImpl).answer(run(), history, hooks, signal),
+      new AskOrchestrator(value, fetchImpl).answer(
+        { ...run(), ...(options.question ? { question: options.question } : {}) },
+        history,
+        hooks,
+        signal,
+      ),
   };
 }
 afterEach(() => vi.restoreAllMocks());
@@ -751,6 +762,57 @@ describe("bounded credential redaction", () => {
 });
 
 describe("conversation, grounding and execution boundaries", () => {
+  it("preserves the current request after consecutive unanswered historical questions", async () => {
+    const question = "Check current ETH1 requests";
+    const f = fixture({ question });
+    const history: AskMessage[] = ["Earlier stopped question", question].map((old) => ({
+      id: crypto.randomUUID(),
+      runId: crypto.randomUUID(),
+      role: "user",
+      question: old,
+      answer: null,
+      createdAt: new Date().toISOString(),
+    }));
+    expect((await f.answer(history)).summary).toBe(content.summary);
+    const input = vi.mocked(f.hooks.beforeModelStep).mock.calls[0]![0].input;
+    expect(input.messages.at(-1)?.content.at(-1)).toEqual({ text: question });
+    expect(f.hooks.recordTool).toHaveBeenCalledOnce();
+  });
+  it("keeps live reads available after a long conversation and a long current question", async () => {
+    const question = `Check ETH1 again. ${"Please consider this context. ".repeat(130)}`;
+    const f = fixture({ question });
+    const history: AskMessage[] = Array.from({ length: 12 }, (_, i) => [
+      {
+        id: crypto.randomUUID(),
+        runId: crypto.randomUUID(),
+        role: "user" as const,
+        question: `Explain observation ${i}`,
+        answer: null,
+        createdAt: new Date().toISOString(),
+      },
+      {
+        id: crypto.randomUUID(),
+        runId: crypto.randomUUID(),
+        role: "assistant" as const,
+        question: null,
+        answer: {
+          contractVersion: 1 as const,
+          summary: `Earlier observation ${i}`,
+          sections: [
+            { title: "Details", body: "A historical observation with useful context. ".repeat(35) },
+          ],
+          evidence: [],
+          answeredAt: new Date().toISOString(),
+        },
+        createdAt: new Date().toISOString(),
+      },
+    ]).flat();
+    expect(question.length).toBeLessThanOrEqual(4000);
+    expect((await f.answer(history)).summary).toBe(content.summary);
+    expect(f.hooks.recordTool).toHaveBeenCalledOnce();
+    const input = vi.mocked(f.hooks.beforeModelStep).mock.calls[0]![0].input;
+    expect(input.messages.at(-1)?.content).toContainEqual({ text: question });
+  });
   it.each([
     ["hello", "Hello!"],
     ["how are you today?", "I'm ready to help with your router."],

@@ -9,6 +9,11 @@ import {
 import { AskFailure, abortFailure } from "./errors.js";
 import type { AskExecutionHooks } from "./orchestrator.js";
 
+export interface AskHistoryTurn {
+  role: "user" | "assistant";
+  content: string;
+}
+
 /** AI SDK owns the tool loop; our native adapter continues to own dispatch,
  * receipts and accounting. SDK lifecycle notifications are not safety guards:
  * they swallow callback errors. All admission happens inside doGenerate. */
@@ -17,9 +22,10 @@ export function askAgentModel(options: {
   hooks: AskExecutionHooks;
   runId: string;
   signal: AbortSignal;
+  history?: readonly AskHistoryTurn[];
   fetchImpl?: typeof fetch;
   validateStep: (step: BedrockStep) => void;
-  inputSize?: (bytes: number) => void;
+  inputSize?: (bytes: number, protectedBytes: number) => void;
   timing?: (phase: "model" | "admission", durationMs: number) => void;
 }): LanguageModelV4 {
   const { settings, hooks, signal } = options;
@@ -34,9 +40,13 @@ export function askAgentModel(options: {
       if (signal.aborted) throw abortFailure(signal);
       if (++steps > settings.maxSteps) throw new AskFailure("ASK_LIMIT_REACHED", 422);
       await hooks.checkActive();
-      const input = toBedrock(call);
-      const bytes = Buffer.byteLength(JSON.stringify(input));
-      options.inputSize?.(bytes);
+      const { input, bytes, protectedBytes } = boundHistory(
+        toBedrock(call),
+        options.history ?? [],
+        // Leave room for the native request envelope and dispatch metadata.
+        Math.max(0, settings.maxContextBytes - 2048),
+      );
+      options.inputSize?.(bytes, protectedBytes);
       if (bytes > settings.maxContextBytes) throw new AskFailure("ASK_LIMIT_REACHED", 422);
       const admission = performance.now();
       const stepId = await hooks.beforeModelStep({
@@ -112,6 +122,50 @@ export function askAgentModel(options: {
       throw new AskFailure("ASK_UNAVAILABLE");
     },
   };
+}
+
+/** Only the verified personal-history prefix is reclaimable. Current user
+ * input, this run's tool calls/results, system and schemas are protected.
+ * Count and generate with exactly the same bounded native input. */
+function boundHistory(input: BedrockInput, history: readonly AskHistoryTurn[], limit: number) {
+  let bytes = Buffer.byteLength(JSON.stringify(input));
+  if (!history.length) return { input, bytes, protectedBytes: bytes };
+  const protectedInput: BedrockInput = {
+    ...input,
+    messages: input.messages.map((message) => ({ ...message, content: [...message.content] })),
+  };
+  const shift = (value: BedrockInput) => {
+    const first = value.messages[0];
+    if (!first?.content.length) throw new AskFailure("ASK_INVALID_ANSWER", 502);
+    first.content.shift();
+    if (!first.content.length) value.messages.shift();
+  };
+  for (const expected of history) {
+    const first = protectedInput.messages[0];
+    const block = first?.content[0];
+    if (
+      !first ||
+      first.role !== expected.role ||
+      !block ||
+      !("text" in block) ||
+      block.text !== expected.content
+    )
+      throw new AskFailure("ASK_INVALID_ANSWER", 502);
+    shift(protectedInput);
+  }
+  const protectedBytes = Buffer.byteLength(JSON.stringify(protectedInput));
+  let remaining = history.length;
+  while (bytes > limit && remaining > 0) {
+    shift(input);
+    remaining--;
+    // Do not leave an orphan historical assistant at the beginning.
+    while (remaining > 0 && input.messages[0]?.role === "assistant") {
+      shift(input);
+      remaining--;
+    }
+    bytes = Buffer.byteLength(JSON.stringify(input));
+  }
+  return { input, bytes, protectedBytes };
 }
 
 function toBedrock(call: LanguageModelV4CallOptions): BedrockInput {
