@@ -523,9 +523,9 @@ describe("MCP SDK transport and customer policy", () => {
       const fixture = mcpFixture(overrides);
       await new McpAdapter(settings(), fixture.fetchImpl).withConnection(async (c) => {
         expect((await c.discover()).sources[0]?.operationIds).toEqual([]);
-        await expect(c.read("acme-metrics", "metrics.query", { query: "up" })).rejects.toMatchObject(
-          { code: "ASK_TOOL_DENIED" },
-        );
+        await expect(
+          c.read("acme-metrics", "metrics.query", { query: "up" }),
+        ).rejects.toMatchObject({ code: "ASK_TOOL_DENIED" });
       });
     },
   );

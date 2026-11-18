@@ -350,7 +350,10 @@ describe("bounded customer tool orchestration", () => {
         final(),
       ],
     });
-    expect((await f.answer()).evidence.map((e) => e.sourceId)).toEqual(["acme-metrics", "acme-logs"]);
+    expect((await f.answer()).evidence.map((e) => e.sourceId)).toEqual([
+      "acme-metrics",
+      "acme-logs",
+    ]);
     expect(f.hooks.recordTool).toHaveBeenCalledTimes(2);
   });
 
@@ -594,7 +597,9 @@ describe("bounded customer tool orchestration", () => {
     const invalid = fixture({
       status: true,
       responses: [
-        provider([tool("acme-status", "status.chain_events", { since: until - 8 * 86_400, until })]),
+        provider([
+          tool("acme-status", "status.chain_events", { since: until - 8 * 86_400, until }),
+        ]),
       ],
     });
     await expect(invalid.answer()).rejects.toMatchObject({ code: "ASK_TOOL_DENIED" });

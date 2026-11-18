@@ -103,11 +103,7 @@ export async function askRoutes(app: FastifyInstance, opts: AskRoutesOptions = {
         .update(JSON.stringify([settings.customerId, me.id]))
         .digest("hex"),
       acceptingQuestions:
-        Boolean(opts.admit) &&
-        (opts.ready?.() ?? true) &&
-        !settings.problem &&
-        switchKnown &&
-        !off,
+        Boolean(opts.admit) && (opts.ready?.() ?? true) && !settings.problem && switchKnown && !off,
       off,
       canSwitch: roleAtLeast(me.role, "admin"),
     };

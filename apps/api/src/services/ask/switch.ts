@@ -40,10 +40,7 @@ export async function setAskSwitch(
 ): Promise<void> {
   await db.transaction(async (tx) => {
     // The row exists before it is locked, so two admins' first clicks queue.
-    await tx
-      .insert(askSwitch)
-      .values({ customerId, off: false })
-      .onConflictDoNothing();
+    await tx.insert(askSwitch).values({ customerId, off: false }).onConflictDoNothing();
     const [before] = await tx
       .select({ off: askSwitch.off })
       .from(askSwitch)
