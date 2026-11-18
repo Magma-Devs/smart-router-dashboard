@@ -21,6 +21,7 @@ const token = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/);
 
 export const askErrorCodeSchema = z.enum([
   "ASK_DISABLED",
+  "ASK_TURNED_OFF",
   "ASK_UNAVAILABLE",
   "ASK_NOT_FOUND",
   "ASK_INVALID_REQUEST",
@@ -165,9 +166,16 @@ export interface AskCapabilities {
   contractVersion: typeof ASK_CONTRACT_VERSION;
   enabled: boolean;
   acceptingQuestions: boolean;
+  /** An admin turned Ask off for everyone on this deployment. */
+  off: boolean;
+  /** The caller is an admin, who may turn Ask off and on. */
+  canSwitch: boolean;
   /** Opaque customer/person cache scope; never an authorization grant. */
   scopeId: string;
 }
+/** An admin's request to turn Ask off for everyone, or back on. */
+export const askSwitchSchema = z.object({ off: z.boolean() }).strict();
+export type AskSwitch = z.infer<typeof askSwitchSchema>;
 export const askPreferencesSchema = z
   .object({
     view: z.enum(["panel", "full"]),

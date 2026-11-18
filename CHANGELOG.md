@@ -21,7 +21,10 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 - A shared customer monthly budget, durable question processing, restricted
   internal records/export and configurable content retention up to 90 days support
   the managed pilot. Ask remains off until its scoped credentials, managed accounts
-  and controlled GK8 rollout checks are complete.
+  and controlled pilot rollout checks are complete.
+- An admin turns Ask off for everyone, and back on, from the chat. Turning it off
+  stops queued and running questions on every replica within seconds, with no
+  rollout, and the audit log records who did it.
 
 ## [0.71.0]
 

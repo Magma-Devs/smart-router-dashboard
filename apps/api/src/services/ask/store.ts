@@ -26,6 +26,7 @@ import {
   type AskSubmit,
 } from "@sr/shared";
 import { AskFailure } from "./errors.js";
+import { askTurnedOff } from "./switch.js";
 
 export type AskTransaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 export type AskAdmission = (tx: AskTransaction, run: AskRunRow) => Promise<void>;
@@ -431,6 +432,7 @@ export class AskStore {
             eq(askRuns.status, "queued"),
             alive(askRuns.expiresAt),
             this.sessionActive(),
+            sql`not ${askTurnedOff(this.customerId)}`,
           ),
         )
         .orderBy(askRuns.createdAt, askRuns.id)

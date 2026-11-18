@@ -318,3 +318,59 @@ test("earlier messages load without duplicates or moving the existing reading po
   const after = (await anchor.boundingBox())!.y;
   expect(Math.abs(after - before)).toBeLessThan(8);
 });
+
+test("an admin turns Ask off for everyone, stopping a member's question, and back on", async ({
+  page,
+  operator,
+  browser,
+}) => {
+  const member = await enrolledMember(
+    await inviteMember(operator.token, {
+      email: "ask.switch@example.test",
+      name: "Switch Reader",
+      password: "switch-chose-this-4417",
+      role: "read_only",
+    }),
+  );
+  const memberContext = await browser.newContext();
+  await memberContext.setExtraHTTPHeaders({ "x-forwarded-for": nextClientIp() });
+  const memberPage = await memberContext.newPage();
+  try {
+    await signInThroughUi(memberPage, member);
+    await memberPage.getByRole("button", { name: "Ask your data" }).click();
+    const memberPanel = memberPage.getByRole("complementary", { name: "Ask your data" });
+    await expect(memberPanel.getByRole("button", { name: "Turn off" })).toHaveCount(0);
+    await memberPanel.getByLabel("Ask a question").fill("SLOW_FIXTURE stopped by the switch");
+    await memberPanel.getByRole("button", { name: "Send", exact: true }).click();
+    await expect(memberPanel.getByRole("status").filter({ hasText: "Processing…" })).toBeVisible();
+
+    await signInThroughUi(page, operator);
+    await page.goto("/ask");
+    await page.getByRole("button", { name: "Turn off", exact: true }).click();
+    const confirm = page.getByRole("dialog", { name: "Turn Ask off for everyone?" });
+    if (process.env.E2E_SHOTS)
+      await page.screenshot({ path: `${process.env.E2E_SHOTS}/ask-turn-off-confirm.png` });
+    await confirm.getByRole("button", { name: "Turn off Ask" }).click();
+    await expect(confirm).toHaveCount(0);
+    await expect(page.getByText(/An admin turned Ask off for everyone/)).toBeVisible();
+    await expect(page.getByLabel("Ask a question")).toBeDisabled();
+    if (process.env.E2E_SHOTS)
+      await page.screenshot({ path: `${process.env.E2E_SHOTS}/ask-off-admin.png` });
+
+    await expect(memberPanel.getByText("The question was stopped.", { exact: true })).toBeVisible();
+    await expect(memberPanel.getByText(/An admin turned Ask off for everyone/)).toBeVisible();
+    await expect(memberPanel.getByRole("button", { name: "Turn Ask back on" })).toHaveCount(0);
+    await expect(memberPanel.getByLabel("Ask a question")).toBeDisabled();
+    if (process.env.E2E_SHOTS)
+      await memberPage.screenshot({ path: `${process.env.E2E_SHOTS}/ask-off-member.png` });
+
+    await page.getByRole("button", { name: "Turn Ask back on" }).click();
+    await expect(page.getByText(/An admin turned Ask off for everyone/)).toHaveCount(0);
+    await expect(page.getByLabel("Ask a question")).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Turn off", exact: true })).toBeVisible();
+  } finally {
+    // The suite shares one database: never leave Ask off for the flows after this one.
+    await apiCall("POST", "/api/ask/switch", { token: operator.token, body: { off: false } });
+    await memberContext.close();
+  }
+});

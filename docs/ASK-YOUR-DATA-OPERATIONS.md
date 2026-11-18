@@ -16,7 +16,7 @@ This PR collects the complete feature against current main and proposes one
 `VERSION` increase and changelog entry. Review, current-main reconciliation and
 the user's test-server validation precede merge. Branch images are validation
 artifacts; the stable dashboard release is shared by the complete feature.
-Chart and fleet delivery use their own repositories and versioning. GK8 rollout
+Chart and fleet delivery use their own repositories and versioning. Pilot rollout
 uses the resulting released dashboard image and the fresh checkpoint below.
 
 The aggregate candidate is `release/MAG-4750-managed-ask`. It proposes `0.71.0`
@@ -24,7 +24,7 @@ with the full feature and one [changelog entry](../CHANGELOG.md). Closed slices
 remain historical references. An open PR reserves no number: compare
 current main and tags before merging and adjust that one proposal if needed.
 Its branch images remain validation artifacts; review readiness does not turn
-on GK8 or replace the deployed checks below.
+on the pilot deployment or replace the deployed checks below.
 
 ## Runtime delivery
 
@@ -150,13 +150,13 @@ only. Never reset monthly accounting or release a dispatched uncertain hold to
 restore capacity. Investigate its provider request ID and settle from authoritative
 usage. A clean terminal failure alone is not proof that no tokens were billed.
 
-## GK8 enable, disable and rollback
+## Pilot enable, disable and rollback
 
 1. Rehearse the exact released artifacts and enabled/disabled gates in an isolated
    managed deployment. Confirm two customer/two-person denial, personal history,
    one active run across replicas/tabs, Stop/restart recovery and a shared $10 UTC
    month cap. Inspect all pricing/counter and retention settings on every replica.
-2. Prepare the GK8 fleet PR only after its managed accounts/database prerequisites
+2. Prepare the pilot fleet PR only after its managed accounts/database prerequisites
    and the pinned chart/image releases are available. Preserve the previous pins
    and disabled configuration. Keep the change limited to the intended customer;
    no other customer flag becomes enabled. Run that repository's render, restart,
@@ -172,7 +172,12 @@ usage. A clean terminal failure alone is not proof that no tokens were billed.
    direct/API submission is denied, queued work is not dispatched, an active run
    is stopped safely and accounting/retention continue. A rolling deployment is
    not an instantaneous global kill switch: completion is when every old replica
-   is replaced and denials are observed. An emergency credential revocation uses
+   is replaced and denials are observed. For an immediate stop, an admin turns
+   Ask off from the chat (or `POST /api/ask/switch` with `{"off": true}`): queued
+   and running questions stop on every replica within seconds, no rollout, and
+   the audit log records who did it (see "Turning Ask off" in
+   [ASK-YOUR-DATA.md](ASK-YOUR-DATA.md#turning-ask-off)). The fleet flag stays
+   the durable disable. An emergency credential revocation uses
    the provider's authorized operator process and has its own propagation time.
 5. For rollback, keep Ask disabled, restore previous compatible image/chart pins
    through the fleet's version target, and verify existing dashboard/auth paths.
@@ -185,7 +190,7 @@ usage. A clean terminal failure alone is not proof that no tokens were billed.
    upserts never raise an existing pool cap.
 
 Record a pilot start only after all required live checks and the enable/disable
-rehearsal pass. Hand MAG-4642 the dated start, baseline (49 GK8 support cases),
+rehearsal pass. Hand MAG-4642 the dated start, baseline (49 pilot-customer support cases),
 95% self-service target, 60-day measurement window and the internal evidence
 location. Sixty days of product outcome cannot be claimed on the implementation
 date. No pilot start is currently recorded.

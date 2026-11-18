@@ -20,6 +20,7 @@ import {
   type AskBillingSettings,
 } from "./pricing.js";
 import { AskStore, type AskAdmission, type AskTransaction } from "./store.js";
+import { admittedBySwitch } from "./switch.js";
 
 /** Lock order: current run (when required), monthly pool, then step. Every
  * reservation/settlement mutates that one shared customer/month pool atomically. */
@@ -77,6 +78,8 @@ export class AskBudget {
   }
   readonly admit: AskAdmission = async (tx, run) => {
     if (run.customerId !== this.settings.customerId) throw new AskFailure("ASK_IDENTITY_MISMATCH");
+    if (!(await admittedBySwitch(tx, this.settings.customerId)))
+      throw new AskFailure("ASK_TURNED_OFF");
     const clock = await this.clock(tx, run.id);
     assertCurrentPricing(this.configured.pricing, new Date(clock.instant));
     const pool = await this.pool(tx, clock.month);

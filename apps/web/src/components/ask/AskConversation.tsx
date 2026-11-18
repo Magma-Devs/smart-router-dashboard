@@ -6,6 +6,8 @@ import { ApiError } from "@/lib/api-client";
 import { useAsk } from "./AskProvider";
 import { AskAnswer, AskTime } from "./AskAnswer";
 import { AskIcon } from "./AskIcon";
+import { askPoll } from "./ask-api";
+import { AskOffNotice } from "./AskSwitch";
 
 function fitComposer(field: HTMLTextAreaElement) {
   field.style.height = "auto";
@@ -18,9 +20,8 @@ export function AskConversation() {
     ask.available && ask.chatId ? ["ask", ask.scope, "chat", ask.chatId] : null,
     () => ask.api.get(`/api/ask/chats/${ask.chatId}`),
     {
-      refreshInterval: ask.active?.chatId === ask.chatId ? 1500 : 0,
+      ...askPoll<AskChatDetail>(ask.active?.chatId === ask.chatId ? 1500 : 0),
       revalidateOnFocus: true,
-      shouldRetryOnError: false,
       keepPreviousData: false,
     },
   );
@@ -303,7 +304,8 @@ export function AskConversation() {
             {ask.notice}
           </p>
         ) : null}
-        {ask.available && !ask.accepting ? (
+        <AskOffNotice />
+        {ask.available && !ask.accepting && !ask.off ? (
           <p className="ask-notice">
             New questions are temporarily unavailable. You can still read your history.
           </p>

@@ -704,8 +704,10 @@ suite("Ask HTTP backed by independent PostgreSQL connections", () => {
     expect(new Set([aa.body.scopeId, ab.body.scopeId, ba.body.scopeId]).size).toBe(3);
     expect(Object.keys(aa.body).sort()).toEqual([
       "acceptingQuestions",
+      "canSwitch",
       "contractVersion",
       "enabled",
+      "off",
       "scopeId",
     ]);
   });

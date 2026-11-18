@@ -24,7 +24,7 @@ import {
 } from "@sr/shared";
 import { ApiError } from "@/lib/api-client";
 import { getAuthState, getAuthVersion, subscribeAuth } from "@/lib/auth-store";
-import { createAskApi } from "./ask-api";
+import { askPoll, createAskApi } from "./ask-api";
 import { validChatId } from "./ask-display";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 
@@ -55,6 +55,11 @@ interface AskContextValue {
   loading: boolean;
   available: boolean;
   accepting: boolean;
+  /** An admin turned Ask off for everyone on this deployment. */
+  off: boolean;
+  /** This person may turn Ask off and on. */
+  canSwitch: boolean;
+  setOff: (off: boolean) => Promise<void>;
   scope: string;
   mode: Mode;
   full: boolean;
@@ -114,11 +119,15 @@ export function AskProvider({
   const caps = useSWR<AskCapabilities>(
     visible ? ["ask-capabilities", principal] : null,
     () => api.get("/api/ask/capabilities"),
-    { refreshInterval: 30_000, revalidateOnFocus: true, shouldRetryOnError: false },
+    { ...askPoll<AskCapabilities>(30_000), revalidateOnFocus: true },
   );
+  // The api answers ASK_DISABLED where Ask is off for the deployment (its flag
+  // can differ from this page's): no entry point, no shortcut.
+  const disabledByApi = caps.error instanceof ApiError && caps.error.code === "ASK_DISABLED";
+  const shown = visible && !disabledByApi;
   const available =
     visible &&
-    !(caps.error instanceof ApiError && caps.error.code === "ASK_DISABLED") &&
+    !disabledByApi &&
     caps.data?.enabled === true &&
     /^[a-f0-9]{64}$/.test(caps.data.scopeId);
   const scope = available ? caps.data!.scopeId : `unavailable:${principal ?? ""}`;
@@ -156,7 +165,11 @@ export function AskProvider({
   const activity = useSWR<{ run: AskRun | null }>(
     available ? ["ask-active", scope] : null,
     () => api.get("/api/ask/runs/active"),
-    { refreshInterval: 1500, revalidateOnFocus: true, shouldRetryOnError: false },
+    {
+      // Fast while a question runs; slow otherwise, to notice one another tab started.
+      ...askPoll<{ run: AskRun | null }>((data) => (data?.run ? 1500 : 15_000)),
+      revalidateOnFocus: true,
+    },
   );
   const activeRun = available ? (activity.data?.run ?? null) : null;
   const active =
@@ -254,6 +267,8 @@ export function AskProvider({
       return;
     }
     try {
+      // A choice still being saved is the one to restore.
+      await preferenceQueue.current.catch(() => undefined);
       const stored = await api.get<AskPreferences>("/api/ask/preferences");
       const preferences = { ...stored, returnTo: safeOrigin(stored.returnTo) };
       patch({
@@ -284,7 +299,17 @@ export function AskProvider({
   const context = useCallback(
     (previous?: AskPageContext | null): AskPageContext => {
       if (previous) return previous;
-      if (full && local.pageContext) return local.pageContext;
+      if (full && local.pageContext) {
+        // The page the chat was opened from, over the same length of time
+        // ending now: a question asked later is about later.
+        const span = Date.parse(local.pageContext.to) - Date.parse(local.pageContext.from);
+        const end = Date.now();
+        return {
+          ...local.pageContext,
+          from: new Date(end - span).toISOString(),
+          to: new Date(end).toISOString(),
+        };
+      }
       const now = Date.now();
       return {
         page: ["overview", "dashboard", "metrics", "upstreams"].includes(pathname.slice(1))
@@ -402,14 +427,28 @@ export function AskProvider({
       setNotice(errorMessage(error));
     }
   }, [api, active, activity, mutate, scope]);
+  const setOff = useCallback(
+    async (off: boolean) => {
+      await api.post("/api/ask/switch", { off });
+      await Promise.all([
+        caps.mutate(),
+        activity.mutate(),
+        mutate((key) => Array.isArray(key) && key[0] === "ask" && key[1] === scope),
+      ]);
+    },
+    [api, caps, activity, mutate, scope],
+  );
   const lastRun = useRef<string | null>(null);
   useEffect(() => {
-    if (lastRun.current && lastRun.current !== active?.id)
+    if (lastRun.current && lastRun.current !== active?.id) {
       void mutate((key) => Array.isArray(key) && key[0] === "ask" && key[1] === scope);
+      // A question that ended may have been stopped by an admin's switch.
+      void caps.mutate();
+    }
     lastRun.current = active?.id ?? null;
-  }, [active?.id, mutate, scope]);
+  }, [active?.id, mutate, scope, caps]);
   useEffect(() => {
-    if (!visible) return;
+    if (!shown) return;
     const shortcut = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === "k") {
         event.preventDefault();
@@ -418,14 +457,17 @@ export function AskProvider({
     };
     window.addEventListener("keydown", shortcut);
     return () => window.removeEventListener("keydown", shortcut);
-  }, [visible, open]);
+  }, [shown, open]);
   const value: AskContextValue = useMemo(
     () => ({
       api,
-      visible,
+      visible: shown,
       loading: enabled && (!principal || caps.isLoading),
       available,
       accepting: available && !caps.error && caps.data?.acceptingQuestions === true,
+      off: available && caps.data?.off === true,
+      canSwitch: available && caps.data?.canSwitch === true,
+      setOff,
       scope,
       mode: local.mode,
       full,
@@ -456,13 +498,16 @@ export function AskProvider({
     [
       api,
       currentPreferences,
-      visible,
+      shown,
       enabled,
       principal,
       caps.isLoading,
       caps.data?.acceptingQuestions,
+      caps.data?.off,
+      caps.data?.canSwitch,
       caps.error,
       available,
+      setOff,
       scope,
       local,
       full,

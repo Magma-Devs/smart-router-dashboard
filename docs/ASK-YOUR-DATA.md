@@ -32,11 +32,39 @@ Use `secretKeyRef` for both tokens, never a public ConfigMap or frontend env. Th
 foundation does not change fleet resources or enable a customer deployment.
 
 `GET /api/ask/capabilities` requires a live session and the deployment gates. It
-returns contract version 1 and `acceptingQuestions:false` until budget admission
-is installed. Personal history/preferences routes are authenticated. Question
-submission refuses with 503 until the accounting slice installs atomic admission;
-none of these routes invokes a model or MCP. Disabled/auth-off/self-hosted
-deployments cannot use them. Existing session revocation and 2FA gates apply.
+returns contract version 1; `acceptingQuestions`, true only while this replica's
+worker runs with budget admission installed, a current rate card and the admins'
+switch on; `off`, true while an admin has Ask turned off; and `canSwitch`, true
+for an admin. Personal history/preferences routes are authenticated. Submission
+goes through budget admission and queues a run; only the worker calls MCP or
+Bedrock. Disabled/auth-off/self-hosted deployments cannot use these routes.
+Existing session revocation and 2FA gates apply.
+
+## Turning Ask off
+
+An admin turns Ask off for everyone on the deployment with the **Turn off**
+button in the chat panel or full view, behind a confirmation, or with
+`POST /api/ask/switch` and `{"off": true}`; `{"off": false}` turns it back on. It
+takes effect at once on every replica and needs no rollout:
+
+- The turn-off's transaction cancels the queued questions and marks the running
+  ones `cancelling`. The worker holding a run sees that at its next lease check,
+  every second, and aborts its provider call. A paid step's reservation and
+  dispatch require the run to be `running`, so no paid step starts after the
+  switch commits.
+- Admission reads the switch under a share lock: a question submitted while an
+  admin turns Ask off is either refused with `ASK_TURNED_OFF` or cancelled by
+  that turn-off. A queue claim takes no run while the switch is off.
+- Each replica rereads the switch every second for its capability answer and its
+  worker, and counts Ask as off until its first read answers.
+- Chats stay readable. Members see that an admin turned Ask off; an admin sees a
+  **Turn Ask back on** button.
+- Turning Ask back on allows only what the deployment allows: the flag,
+  credentials, rate card and monthly budget still apply.
+
+Each change writes `ask.turned_off` or `ask.turned_on` to the audit log, naming
+the admin. The switch is one row per customer in `ask_switch` (migration
+`0013_ask_switch`); no row means on.
 
 ## Personal history and durable runs
 
@@ -73,9 +101,8 @@ billable work. The user's admission is released; any future financial reservatio
 stays for reconciliation. Runs record the original session ID without a foreign
 key that would prevent normal expired-session cleanup.
 
-The worker class implements queue/recovery scheduling, but is deliberately not
-started by the API until MAG-4932 installs durable budget hooks. The enabled UI
-and GK8 rollout remain later slices.
+The API starts the worker once the database is ready, with the budget hooks
+below installed, on a managed deployment with Ask enabled and a valid rate card.
 
 ## Bounded tool execution
 
@@ -245,7 +272,7 @@ worker, MCP and Bedrock path, then validates the persisted answer. The earlier
 unmetered foundation probe has been removed. A session is revocable and must be
 obtained through the normal login process. Never put its value in shell history.
 The command prints IDs and evidence metadata only; no raw values/answer/credential.
-A successful smoke is not browser UX, semantic quality or GK8 pilot acceptance.
+A successful smoke is not browser UX, semantic quality or pilot acceptance.
 
 See [MAG-4932 validation](validation/MAG-4932/README.md) for actual PostgreSQL tests
 and the remaining live-provider/runtime/browser/rollout acceptance limits.

@@ -67,6 +67,8 @@ describe("Ask foundation capability route", () => {
         expect(response.json()).toEqual({
           enabled: true,
           acceptingQuestions: false,
+          off: false,
+          canSwitch: role === "admin",
           contractVersion: 1,
           scopeId: expect.stringMatching(/^[a-f0-9]{64}$/),
         });
@@ -130,7 +132,7 @@ describe("Ask foundation capability route", () => {
         AUTH_MODE: "enabled",
         DEPLOYMENT_MODE: "managed",
         ASK_DATA_ENABLED: "true",
-        ASK_DATA_CUSTOMER_ID: "gk8",
+        ASK_DATA_CUSTOMER_ID: "acme",
         ASK_DATA_MCP_TOKEN: "fixture-token",
         AWS_BEARER_TOKEN_BEDROCK: "fixture-provider",
         ASK_DATA_BEDROCK_MODEL: "fixture-model",

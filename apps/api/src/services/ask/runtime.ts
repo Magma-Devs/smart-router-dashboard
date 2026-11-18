@@ -5,6 +5,7 @@ import { AskFailure } from "./errors.js";
 import { assertCurrentPricing, readAskBillingSettings } from "./pricing.js";
 import { AskRetention } from "./retention.js";
 import { AskStore, type AskAdmission } from "./store.js";
+import { AskSwitchState } from "./switch.js";
 import { AskWorker } from "./worker.js";
 
 /** The same readiness predicate controls capabilities, admission, and workers.
@@ -12,11 +13,14 @@ import { AskWorker } from "./worker.js";
 export function installAskRuntime(app: FastifyInstance): {
   admit: AskAdmission;
   ready: () => boolean;
+  switched: (off: boolean) => void;
 } {
   let stopped = false;
   let worker: AskWorker | null = null;
   let budget: AskBudget | null = null;
   let timer: ReturnType<typeof setInterval> | null = null;
+  let switchTimer: ReturnType<typeof setInterval> | null = null;
+  let turnedOff: AskSwitchState | null = null;
   let sweeping: Promise<void> = Promise.resolve();
   let sweepBusy = false;
   const settings = readAskSettings();
@@ -27,6 +31,8 @@ export function installAskRuntime(app: FastifyInstance): {
       !worker ||
       !budget ||
       !billing ||
+      !turnedOff ||
+      turnedOff.off ||
       !settings.enabled ||
       !readAskSettings().enabled ||
       settings.problem
@@ -48,6 +54,18 @@ export function installAskRuntime(app: FastifyInstance): {
         (process.env.DEPLOYMENT_MODE ?? "onprem") !== "managed"
       )
         return;
+      // Every replica rereads the admins' switch each second; until its first
+      // read answers, this replica counts Ask as off.
+      if (settings.enabled) {
+        const switchState = new AskSwitchState(app.db, settings.customerId);
+        turnedOff = switchState;
+        const reread = () => {
+          if (!stopped) void switchState.refresh().catch(() => undefined);
+        };
+        switchTimer = setInterval(reread, 1000);
+        switchTimer.unref();
+        reread();
+      }
       const store = new AskStore(app.db, settings.customerId, settings.retentionDays);
       const retention = new AskRetention(app.db, settings.customerId, settings.retentionDays);
       budget = new AskBudget(app.db, settings, billing);
@@ -85,6 +103,7 @@ export function installAskRuntime(app: FastifyInstance): {
   app.addHook("onClose", async () => {
     stopped = true;
     if (timer) clearInterval(timer);
+    if (switchTimer) clearInterval(switchTimer);
     await worker?.stop();
     await sweeping;
     // Do not wait for the database's indefinite startup retry loop.
@@ -92,6 +111,7 @@ export function installAskRuntime(app: FastifyInstance): {
   });
   return {
     ready,
+    switched: (off) => turnedOff?.remember(off),
     admit: async (tx, run) => {
       if (!ready() || !budget) throw new AskFailure("ASK_UNAVAILABLE");
       await budget.admit(tx, run);

@@ -1,12 +1,19 @@
 import { createHash } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { ASK_CONTRACT_VERSION, askSubmitSchema, type AskCapabilities } from "@sr/shared";
+import {
+  ASK_CONTRACT_VERSION,
+  askSubmitSchema,
+  askSwitchSchema,
+  roleAtLeast,
+  type AskCapabilities,
+} from "@sr/shared";
 import { readAskSettings, type AskSettings } from "../config.js";
-import { requireAuth, type AuthUser } from "../plugins/auth.js";
+import { requireAuth, requireRole, type AuthUser } from "../plugins/auth.js";
 import { redactAskText } from "../services/ask/redact.js";
 import { AskFailure } from "../services/ask/errors.js";
 import { AskStore, type AskAdmission } from "../services/ask/store.js";
+import { readAskSwitch, setAskSwitch } from "../services/ask/switch.js";
 
 export interface AskRoutesOptions {
   /** Trusted per-instance settings for independent deployment HTTP tests. */
@@ -14,6 +21,8 @@ export interface AskRoutesOptions {
   /** Installed only by the budget slice. No default financial bypass. */
   admit?: AskAdmission;
   ready?: () => boolean;
+  /** Tells this replica's runtime the switch an admin just set. */
+  switched?: (off: boolean) => void;
 }
 interface Context {
   me: AuthUser;
@@ -80,15 +89,56 @@ export async function askRoutes(app: FastifyInstance, opts: AskRoutesOptions = {
     }
     const me = requireAuth(request, reply);
     if (!me) return reply;
+    let off = false;
+    let switchKnown = Boolean(app.db);
+    try {
+      if (app.db) off = await readAskSwitch(app.db, settings.customerId);
+    } catch {
+      switchKnown = false;
+    }
     const result: AskCapabilities = {
       contractVersion: ASK_CONTRACT_VERSION,
       enabled: true,
       scopeId: createHash("sha256")
         .update(JSON.stringify([settings.customerId, me.id]))
         .digest("hex"),
-      acceptingQuestions: Boolean(opts.admit) && (opts.ready?.() ?? true) && !settings.problem,
+      acceptingQuestions:
+        Boolean(opts.admit) &&
+        (opts.ready?.() ?? true) &&
+        !settings.problem &&
+        switchKnown &&
+        !off,
+      off,
+      canSwitch: roleAtLeast(me.role, "admin"),
     };
     return result;
+  });
+
+  // An admin turns Ask off for everyone, or back on. It changes no deployment
+  // setting: Ask also needs the deployment flag, its credentials and budget.
+  app.post("/api/ask/switch", async (request, reply) => {
+    reply.header("Cache-Control", "no-store");
+    const fail = (failure: AskFailure) =>
+      reply
+        .status(failure.statusCode)
+        .send({ code: failure.code, message: failure.message, statusCode: failure.statusCode });
+    const settings = settingsOf();
+    if (!settings.enabled) return fail(new AskFailure("ASK_DISABLED", 404));
+    const admin = requireRole(request, reply, "admin");
+    if (!admin) return reply;
+    if (!app.db) return fail(new AskFailure("ASK_UNAVAILABLE"));
+    const parsed = askSwitchSchema.safeParse(request.body);
+    if (!parsed.success) return fail(new AskFailure("ASK_INVALID_REQUEST", 400));
+    try {
+      await setAskSwitch(app.db, settings.customerId, parsed.data.off, admin.id, (violation) =>
+        request.log.error({ audit: violation }, "audit event violated the catalog"),
+      );
+    } catch {
+      request.log.error({ code: "ASK_SWITCH_FAILED" }, "Ask switch could not be saved");
+      return fail(new AskFailure("ASK_UNAVAILABLE"));
+    }
+    opts.switched?.(parsed.data.off);
+    return { off: parsed.data.off };
   });
 
   app.get(

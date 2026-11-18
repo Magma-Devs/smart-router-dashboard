@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   bigint,
   bigserial,
+  boolean,
   check,
   foreignKey,
   index,
@@ -151,6 +152,15 @@ export const askPreferences = pgTable(
     ),
   ],
 );
+
+/** The admins' off switch for Ask on this deployment, read by every replica.
+ * No row means on: the deployment flag alone decides. */
+export const askSwitch = pgTable("ask_switch", {
+  customerId: text("customer_id").primaryKey(),
+  off: boolean("off").notNull(),
+  changedBy: uuid("changed_by").references(() => users.id, { onDelete: "set null" }),
+  changedAt: time("changed_at").notNull().defaultNow(),
+});
 
 export type AskChatRow = typeof askChats.$inferSelect;
 export type AskRunRow = typeof askRuns.$inferSelect;

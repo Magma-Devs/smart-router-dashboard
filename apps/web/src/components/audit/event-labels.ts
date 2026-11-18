@@ -53,6 +53,8 @@ export const AUDIT_EVENT_LABELS: Record<AuditAction, string> = {
   "jwt.revoked": "Endpoint token revoked",
   "apikey.created": "API key created",
   "apikey.deleted": "API key deleted",
+  "ask.turned_off": "Ask turned off",
+  "ask.turned_on": "Ask turned on",
 
   "change.requested": "Change requested",
   "change.approved": "Change approved",

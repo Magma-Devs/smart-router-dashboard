@@ -72,6 +72,8 @@ and the [delivery/acceptance ledger](docs/ASK-YOUR-DATA-IMPLEMENTATION.md).
 Managed Ask uses server-only MCP/Bedrock adapters, PostgreSQL personal history
 and durable runs, and shared customer budget admission. The customer feature
 flag, managed accounts and current session gate both the UI and paid routes.
+An admin turns Ask off for everyone at once, and back on, from the chat
+(`POST /api/ask/switch`, audited as `ask.turned_off` / `ask.turned_on`).
 
 ```
 ┌──────────────┐  REST  ┌─────────────────────┐  PromQL  ┌────────────┐
@@ -1138,6 +1140,7 @@ API (`apps/api/src/config.ts` is the source of truth):
 | `ROUTER_RELAY_MAX_BODY_BYTES` | `4194304` | router answers past this come back `truncated: true` |
 | `ROUTER_RELAY_RATE_LIMIT_MAX` | `60` | per caller per minute (the signed-in user, or the address with accounts off); the relay and the ws probe each count their own |
 | `ROUTER_RELAY_MAX_IN_FLIGHT` | `8` | relays in flight across all callers; one caller holds two at most |
+| `ASK_DATA_ENABLED` | off | exactly `true`, with `AUTH_MODE=enabled` and `DEPLOYMENT_MODE=managed`, turns on Ask your data. It also needs `ASK_DATA_CUSTOMER_ID`, `ASK_DATA_MCP_TOKEN`, `AWS_BEARER_TOKEN_BEDROCK`, `ASK_DATA_BEDROCK_MODEL`, `ASK_DATA_PRICING_JSON` and `ASK_DATA_TOKEN_COUNTER`; the full list, defaults and the admins' off switch are in [`docs/ASK-YOUR-DATA.md`](docs/ASK-YOUR-DATA.md) |
 | `INCIDENTS_ENABLED` | off | exactly `true` turns on `POST /api/incidents`; anything else 404s it. With `AUTH_MODE=disabled` anyone who can reach the api may send a report, Critical included — opt-in per deployment. See [`docs/INCIDENTS.md`](docs/INCIDENTS.md) |
 | `INCIDENT_WEBHOOK_URL` | unset | the deployment's inbound webhook in our on-call system (Grafana IRM `formatted_webhook`). The URL is the credential — deliver it from a Secret, never a plain chart value. https only (http for a loopback mock). On with no usable URL logs an error at boot and every report answers 503; the boot is NOT refused |
 | `INCIDENT_WEBHOOK_TIMEOUT_MS` | `10000` | deadline on the api→IRM call |

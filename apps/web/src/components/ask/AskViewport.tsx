@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useAsk } from "./AskProvider";
 import { AskConversation } from "./AskConversation";
 import { AskHistory } from "./AskHistory";
+import { AskTurnOff } from "./AskSwitch";
 import { useDialogLayer } from "@/components/gateway/DialogLayer";
 import { AskIcon } from "./AskIcon";
 
@@ -91,6 +92,7 @@ export function AskFull() {
           >
             + New chat
           </button>
+          <AskTurnOff />
           <button className="gw-btn" onClick={ask.back}>
             <AskIcon name="back" size={14} />
             Back to dashboard
@@ -217,6 +219,7 @@ export function AskDock() {
         >
           + New chat
         </button>
+        <AskTurnOff />
         <span>Private to you</span>
       </div>
       <PreferenceNotice />
