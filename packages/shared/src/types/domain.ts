@@ -689,7 +689,7 @@ export interface CallFacts {
 
 /** One request that hit an error - a try failed, or the router gave up - rebuilt from the router's log lines. */
 export interface ErrorRequestRow extends CallFacts {
-  /** The router's request id (`Lava-Guid`). */
+  /** The router's request id (`Router-Guid`). */
   guid: string;
   /** When the router received it, unix ms. */
   time: number;
@@ -814,7 +814,7 @@ export interface ErrorRequestsReport {
 export type TxOutcome = "accepted" | "rejected" | "failed" | "failed-on-chain" | "unknown";
 
 export interface TxLogRow extends CallFacts {
-  /** The router's request id (`Lava-Guid`); every log line of the request carries it. */
+  /** The router's request id (`Router-Guid`); every log line of the request carries it. */
   guid: string;
   /** When the router received it, unix ms. */
   time: number;
@@ -1090,10 +1090,10 @@ export interface RouterRelayRequest {
   /** Path and query on the router: a REST call's arguments, a socket's `/ws`. */
   path?: string;
   body?: unknown;
-  /** Sent as `lava-select-provider`: pin the relay to this upstream. The router
+  /** Sent as `router-select-provider`: pin the relay to this upstream. The router
    *  reads directives on HTTP only, so the api drops it on a WebSocket. */
   selectProvider?: string;
-  /** Sent as `lava-force-cache-refresh`: skip the router's relay cache. HTTP
+  /** Sent as `router-force-cache-refresh`: skip the router's relay cache. HTTP
    *  only, like `selectProvider`. */
   forceCacheRefresh?: boolean;
 }
@@ -1108,11 +1108,11 @@ export interface RouterRelayResponse {
   /** Set when the router's body exceeded the relay's size cap. */
   truncated: boolean;
   transport: "http" | "ws";
-  /** `Lava-Provider-Address`: the upstream(s) that served it, or `Cached`. */
+  /** `Router-Provider-Address`: the upstream(s) that served it, or `Cached`. */
   servedBy: string | null;
-  /** `Lava-Retries`, as a count. Null when the header is absent. */
+  /** `Router-Retries`, as a count. Null when the header is absent. */
   retries: number | null;
-  /** `Lava-Cross-Validation-Status` and the two provider lists. */
+  /** `router-cross-validation-status` and the two provider lists. */
   cvStatus: string | null;
   cvAgreeing: string | null;
   cvDisagreeing: string | null;

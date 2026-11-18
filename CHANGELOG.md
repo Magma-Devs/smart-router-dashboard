@@ -5,6 +5,29 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.92.0]
+
+### Changed
+
+- **The dashboard speaks the router's `Router-*` header names (MAG-2972).**
+  The Try-me drawer and `POST /api/routers/relay` pin a relay with
+  `router-select-provider` and skip the router's cache with
+  `router-force-cache-refresh`, and read who served it, the retries and the
+  cross-validation outcome from `Router-Provider-Address`, `Router-Retries`
+  and `router-cross-validation-status` / `-agreeing-providers` /
+  `-disagreeing-providers`. The copied curl, grpcurl, Python, Go and
+  JavaScript snippets send `router-select-provider`, and the Docker Compose
+  router exposes `Router-Provider-Address`, `Router-Retries` and the two
+  cross-validation lists to the browser. The api's request and response
+  shapes are unchanged. **Upgrading:** this release needs router v1.7.0 or
+  later and, where the chart's gateway fronts the router, the chart release
+  that carries Magma-Devs/smart-router-helm-chart#182, whose CORS list allows
+  the `router-*` names. Move the router image, the chart and the dashboard in
+  one change. A router before v1.7.0 ignores the pin and the cache skip and
+  answers without Served by, retries or cross-validation, and a gateway that
+  does not allow the `router-*` names fails the preflight of a pinned or
+  cache-skipping send from the browser (`ROUTER_RELAY_ENABLED=false`).
+
 ## [0.91.5]
 
 ### Fixed
