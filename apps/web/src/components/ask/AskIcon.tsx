@@ -1,26 +1,8 @@
 import type { ReactNode } from "react";
 
-type IconName =
-  | "send"
-  | "copy"
-  | "check"
-  | "search"
-  | "plus"
-  | "history"
-  | "back"
-  | "expand"
-  | "minimize"
-  | "close"
-  | "sparkle"
-  | "lock"
-  | "logout";
+type IconName = "send" | "copy" | "check" | "search" | "plus" | "history" | "back" | "lock";
 
 const paths: Record<IconName, ReactNode> = {
-  logout: (
-    <>
-      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M9 12h12m-5-5 5 5-5 5" />
-    </>
-  ),
   send: <path d="M12 19V5m-6 6 6-6 6 6" />,
   copy: (
     <>
@@ -43,14 +25,6 @@ const paths: Record<IconName, ReactNode> = {
     </>
   ),
   back: <path d="m10 5-7 7 7 7M3 12h18" />,
-  expand: (
-    <>
-      <path d="M14 3h7v7m0-7-7 7M10 21H3v-7m0 7 7-7" />
-    </>
-  ),
-  minimize: <path d="M5 12h14" />,
-  close: <path d="m6 6 12 12M6 18 18 6" />,
-  sparkle: <path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5Z" />,
   lock: (
     <>
       <rect x="5" y="10" width="14" height="11" rx="3" />

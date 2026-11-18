@@ -132,7 +132,6 @@ export function AskConversation() {
       if (!blocked) composer.current?.focus({ preventScroll: true });
     }
   }, [ask.chatId, feed.isLoading, blocked]);
-  const pageContext = ask.context(data?.context);
   const empty = ask.available && !feed.isLoading && !feed.error && !messages.length;
   useEffect(() => {
     const field = composer.current;
@@ -210,16 +209,13 @@ export function AskConversation() {
           ) : null}
           {empty ? (
             <div className="ask-empty">
-              <div className="ask-symbol" aria-hidden="true">
-                <AskIcon name="sparkle" size={30} />
-              </div>
               <h2>What’s happening with your router?</h2>
-              <p>Ask a question. Explore your metrics and logs, together.</p>
+              <p>Answers use your chains, your providers and your Grafana metrics and logs.</p>
               <div className="ask-suggestions">
                 {[
-                  "Which chains need attention?",
-                  "How has the error rate changed?",
-                  "What do the recent logs tell us?",
+                  "Which chains had failed requests?",
+                  "Which provider had the most errors?",
+                  "Is any provider behind on blocks?",
                 ].map((question) => (
                   <button
                     className="gw-btn gw-btn--ghost"
@@ -277,7 +273,7 @@ export function AskConversation() {
                     View processing question
                   </button>
                 ) : (
-                  <small>You can minimize this chat and keep working.</small>
+                  <small>You can leave this page. The answer will be here.</small>
                 )}
               </div>
               <button
@@ -340,7 +336,6 @@ export function AskConversation() {
                   ? "Ask a follow-up…"
                   : "Ask about your router…"
             }
-            aria-describedby="ask-composer-help"
             disabled={blocked}
             dir="auto"
             onKeyDown={(event) => {
@@ -353,37 +348,20 @@ export function AskConversation() {
               }
             }}
           />
-          <div className="ask-composer-toolbar">
-            <div className="ask-context">
-              <span>{pageContext.chain ?? "All chains"}</span>
-              <span>
-                {pageContext.page === "ask"
-                  ? "Conversation context"
-                  : `${pageContext.page} context`}
-              </span>
-              {pageContext.from && pageContext.to ? (
-                <span title={`${pageContext.from} — ${pageContext.to}`}>
-                  {data?.context ? "Saved time window" : "Current time window"}
-                </span>
-              ) : null}
-            </div>
-            <button
-              className="ask-send"
-              type="submit"
-              aria-label={ask.submitting ? "Sending…" : "Send"}
-              title="Send message"
-              disabled={blocked || !ask.draft.trim()}
-            >
-              <AskIcon name="send" size={20} />
-            </button>
-          </div>
+          <button
+            className="ask-send"
+            type="submit"
+            aria-label={ask.submitting ? "Sending…" : "Send"}
+            title="Send"
+            disabled={blocked || !ask.draft.trim()}
+          >
+            <AskIcon name="send" size={18} />
+          </button>
         </div>
-        <div className="ask-composer-help" id="ask-composer-help">
-          <span>Enter to send · Shift+Enter for a new line</span>
+        <p className="ask-composer-note">
+          <AskIcon name="lock" size={12} />
+          Private to you. Answers can be incomplete, so check the sources.
           {ask.draft.length > 3600 ? <span>{ask.draft.length}/4000</span> : null}
-        </div>
-        <p className="ask-accuracy">
-          Answers can be incomplete. Check the sources and time window.
         </p>
       </form>
     </div>

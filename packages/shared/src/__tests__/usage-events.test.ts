@@ -39,14 +39,14 @@ describe("cleanUsageProps", () => {
       expect(cleanUsageProps(name, {})).toBeNull();
     }
     expect([...USAGE_EVENT_NAMES].sort()).toEqual([
-      "ask_answer", "ask_open", "ask_question",
+      "ask_answer", "ask_question",
       "chain_pick", "filter_use", "help_open", "idle_paused", "load_older", "panel_open", "router_pick",
       "row_open", "search", "tab_change", "time_range_change", "view_problem", "view_ready",
     ]);
   });
 
   it("keeps Ask's events to how it was used: never the question, the answer or the chat", () => {
-    expect(cleanUsageProps("ask_open", { from: "shortcut", view: "full" })).toEqual({ from: "shortcut", view: "full" });
+    expect(cleanUsageProps("ask_open", { from: "shortcut", view: "full" })).toBeNull();
     expect(cleanUsageProps("ask_question", { view: "panel", page: "metrics", new_chat: true, chain: false, question: "why is ETH1 slow?", chatId: "c-1" }))
       .toEqual({ view: "panel", page: "metrics", new_chat: true, chain: false });
     expect(cleanUsageProps("ask_question", { page: "team", chain: "ETH1" })).toEqual({});

@@ -260,8 +260,7 @@ above; these are the dashboard's own:
 | `filter_use` | `list`, `filter` (view / result / retryable / error-type / customer / method / provider / time) | a list filter is changed |
 | `load_older` | `list` | "Load older" is clicked |
 | `view_problem` | `view`, `problem` (did-not-load / slow), `seconds` | a read fails (network or server error - a 4xx is the request's, not the screen's) or takes over 10 s, once per view a page load; reads cut short by leaving the page are not counted |
-| `ask_open` | `from` (button / pill / shortcut), `view` (panel / full) | Ask opens from closed or minimized: the top bar's button, the minimized pill or ⌘/Ctrl K; `view` is where it opened |
-| `ask_question` | `view` (panel / full), `page` (overview / dashboard / metrics / upstreams / ask), `new_chat`, `chain` (yes/no: a chain was picked) | a question is accepted by the api; never the question |
+| `ask_question` | `view` (always full: Ask is one page), `page` (overview / dashboard / metrics / upstreams / ask), `new_chat`, `chain` (yes/no: a chain was picked) | a question is accepted by the api; never the question |
 | `ask_answer` | `result` (succeeded / failed / cancelled / interrupted), `error` (the run's `ASK_…` code, or other), `seconds`, `sections`, `evidence` | a question this tab sent ends, read from `GET /api/ask/runs/:id` while usage data is recorded; `seconds` from sending to the end; never the answer. A tab closed before the end sends none |
 
 ## Reading it
@@ -276,8 +275,8 @@ above; these are the dashboard's own:
 - **What is never used:** clicks and heatmaps per page, `panel_open` and
   `filter_use` counts per value, per tenant.
 - **Does Ask answer?** `ask_answer.result` and `error` per tenant, and
-  `seconds` against `ask_question`; `ask_open` without an `ask_question` in
-  the session is someone who opened it and asked nothing.
+  `seconds` against `ask_question`; a view of the Ask page without an
+  `ask_question` in the session is someone who opened it and asked nothing.
 - **New people or old hands?** Any report broken down by the profile's
   `$created`, `two_factor` or `sign_in`.
 

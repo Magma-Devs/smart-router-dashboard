@@ -1,5 +1,5 @@
 import type { ComponentType } from "react";
-import { IconChart, IconLedger, IconReport, IconServer, IconSettings, IconUsers } from "./icons";
+import { IconAsk, IconChart, IconLedger, IconReport, IconServer, IconSettings, IconUsers } from "./icons";
 import { normalizeGrafanaDashboardUrl } from "@/lib/grafana-dashboard-url";
 
 export interface NavItem {
@@ -14,6 +14,10 @@ export interface NavItem {
   /** Opens the configured URL in a new tab, outside the dashboard's router. */
   external?: boolean;
 }
+
+/** The chat page. In the menu only where this person can use Ask (a managed
+ *  deployment with it on), so it is not in `NAV_SECTIONS`. */
+export const ASK_NAV_ITEM: NavItem = { href: "/ask", label: "Ask your data", icon: IconAsk };
 
 export interface NavSection {
   label: string | null;
@@ -58,10 +62,15 @@ export function visibleNavSections(
   authEnabled: boolean,
   grafanaDashboardUrl?: string | null,
   grafanaCustomerUsageDashboardUrl?: string | null,
+  askVisible = false,
 ): NavSection[] {
-  const sections = NAV_SECTIONS.map((section) => ({
+  const sections = NAV_SECTIONS.map((section, index) => ({
     ...section,
-    items: section.items.filter((item) => authEnabled || !item.requiresAuth),
+    items: [
+      ...section.items.filter((item) => authEnabled || !item.requiresAuth),
+      // Ask sits with the router's own pages, after them.
+      ...(askVisible && index === 0 ? [ASK_NAV_ITEM] : []),
+    ],
   })).filter((section) => section.items.length > 0);
   const url = normalizeGrafanaDashboardUrl(grafanaDashboardUrl);
   const usageUrl = normalizeGrafanaDashboardUrl(grafanaCustomerUsageDashboardUrl);

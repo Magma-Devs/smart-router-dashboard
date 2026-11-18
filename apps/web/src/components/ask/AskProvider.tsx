@@ -5,7 +5,6 @@ import {
   useCallback,
   useContext,
   useEffect,
-  useEffectEvent,
   useMemo,
   useRef,
   useState,
@@ -14,42 +13,19 @@ import {
 } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import useSWR, { useSWRConfig } from "swr";
-import {
-  WINDOWS,
-  type AskCapabilities,
-  type AskChatDetail,
-  type AskPageContext,
-  type AskPreferences,
-  type AskRun,
-} from "@sr/shared";
+import type { AskCapabilities, AskPageContext, AskRun } from "@sr/shared";
 import { ApiError } from "@/lib/api-client";
 import { getAuthState, getAuthVersion, subscribeAuth } from "@/lib/auth-store";
 import { askAnswerProps, getUsageState, track, usageAllowed } from "@/lib/usage";
 import { askPoll, createAskApi } from "./ask-api";
 import { validChatId } from "./ask-display";
-import { useFilters } from "@/components/gateway/FiltersProvider";
 
-const origins = ["/metrics", "/upstreams", "/team", "/audit", "/account"] as const;
-const safeOrigin = (path: AskPreferences["returnTo"]): AskPreferences["returnTo"] =>
-  (origins as readonly string[]).includes(path) ? path : "/metrics";
-const defaults: AskPreferences = { view: "panel", chatId: null, returnTo: "/metrics" };
-type Mode = "closed" | "panel" | "minimized";
+const DAY_MS = 86_400_000;
 interface Local {
   scope: string;
-  mode: Mode;
-  chatId: string | null;
   drafts: Record<string, string>;
-  pageContext: AskPageContext | null;
-  preferences: AskPreferences;
 }
-const empty = (scope: string): Local => ({
-  scope,
-  mode: "closed",
-  chatId: null,
-  drafts: {},
-  pageContext: null,
-  preferences: defaults,
-});
+const empty = (scope: string): Local => ({ scope, drafts: {} });
 interface AskContextValue {
   api: ReturnType<typeof createAskApi>;
   visible: boolean;
@@ -62,8 +38,9 @@ interface AskContextValue {
   canSwitch: boolean;
   setOff: (off: boolean) => Promise<void>;
   scope: string;
-  mode: Mode;
-  full: boolean;
+  /** Where the menu entry leads: the chat with a question still running, else
+   *  the chat last open in this tab, else a new one. */
+  href: string;
   invalidLink: boolean;
   chatId: string | null;
   draft: string;
@@ -72,20 +49,13 @@ interface AskContextValue {
   active: AskRun | null;
   activityKnown: boolean;
   notice: string | null;
-  preferenceError: boolean;
-  /** Opens Ask; `from` is what opened it, for usage data. */
-  open: (from?: "button" | "pill" | "shortcut") => Promise<void>;
-  minimize: () => void;
-  close: () => void;
-  expand: () => void;
-  back: () => void;
   select: (id: string | null) => void;
   setDraft: (value: string) => void;
   submit: (context?: AskPageContext | null) => Promise<void>;
   stop: () => Promise<void>;
+  /** What a question is sent with: the chat's chain and router, over a time that ends now. */
   context: (previous?: AskPageContext | null) => AskPageContext;
   refresh: () => Promise<void>;
-  retryPreferences: () => void;
 }
 const AskContext = createContext<AskContextValue | null>(null);
 export function useAsk(): AskContextValue {
@@ -115,7 +85,6 @@ export function AskProvider({
   const pathname = usePathname();
   const router = useRouter();
   const search = useSearchParams();
-  const filters = useFilters();
   const { mutate } = useSWRConfig();
   const visible = enabled && Boolean(principal);
   const caps = useSWR<AskCapabilities>(
@@ -124,7 +93,7 @@ export function AskProvider({
     { ...askPoll<AskCapabilities>(30_000), revalidateOnFocus: true },
   );
   // The api answers ASK_DISABLED where Ask is off for the deployment (its flag
-  // can differ from this page's): no entry point, no shortcut.
+  // can differ from this page's): no menu entry.
   const disabledByApi = caps.error instanceof ApiError && caps.error.code === "ASK_DISABLED";
   const shown = visible && !disabledByApi;
   const available =
@@ -135,29 +104,18 @@ export function AskProvider({
   const scope = available ? caps.data!.scopeId : `unavailable:${principal ?? ""}`;
   const [state, setState] = useState<Local>(() => empty(""));
   const local = useMemo(() => (state.scope === scope ? state : empty(scope)), [state, scope]);
-  const full = pathname === "/ask";
+  const onPage = pathname === "/ask";
   const linkId = search.get("chat");
-  const invalidLink = full && linkId !== null && !validChatId(linkId);
-  const chatId = full ? (validChatId(linkId) ? linkId : null) : local.chatId;
-  const preferences = useSWR<AskPreferences>(
-    available ? ["ask-preferences", scope] : null,
-    () => api.get("/api/ask/preferences"),
-    { revalidateOnFocus: false, shouldRetryOnError: false },
-  );
-  // Shares the exact cache key with the conversation: ownership is proved
-  // before a direct link can become a saved last-view preference.
-  const linkedChat = useSWR<AskChatDetail>(
-    full && available && chatId ? ["ask", scope, "chat", chatId] : null,
-    () => api.get(`/api/ask/chats/${chatId}`),
-    { revalidateOnFocus: false, shouldRetryOnError: false },
-  );
+  const invalidLink = onPage && linkId !== null && !validChatId(linkId);
+  const chatId = onPage && validChatId(linkId) ? linkId : null;
+  // The chat last open on the page, kept while the person is elsewhere.
+  const [last, setLast] = useState<{ scope: string; id: string | null }>({ scope: "", id: null });
+  if (onPage && !invalidLink && (last.scope !== scope || last.id !== chatId))
+    setLast({ scope, id: chatId });
   const [notice, setNotice] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [navigating, startNavigation] = useTransition();
-  const [preferenceError, setPreferenceError] = useState(false);
   const submittingRef = useRef(false);
-  const returnFocus = useRef<HTMLElement | null>(null);
-  const preferenceQueue = useRef<Promise<unknown>>(Promise.resolve());
   /** Runs this tab sent, so only the tab that asked reports how one ended. */
   const asked = useRef(new Set<string>());
   const retry = useRef<{
@@ -178,6 +136,7 @@ export function AskProvider({
   const activeRun = available ? (activity.data?.run ?? null) : null;
   const active =
     activeRun && ["queued", "running", "cancelling"].includes(activeRun.status) ? activeRun : null;
+  const resume = active?.chatId ?? (last.scope === scope ? last.id : null);
   const patch = useCallback(
     (change: Partial<Local> | ((old: Local) => Partial<Local>)) => {
       setState((old) => {
@@ -187,169 +146,28 @@ export function AskProvider({
     },
     [scope],
   );
-  const preferenceVersion = useRef(0);
-  const currentPreferences = useMemo(
-    () =>
-      state.scope === scope
-        ? local.preferences
-        : preferences.data
-          ? { ...preferences.data, returnTo: safeOrigin(preferences.data.returnTo) }
-          : defaults,
-    [state.scope, scope, local.preferences, preferences.data],
-  );
-  const persist = useCallback(
-    (next: AskPreferences) => {
-      const version = ++preferenceVersion.current;
-      preferenceQueue.current = preferenceQueue.current
-        .catch(() => undefined)
-        .then(() => api.send<AskPreferences>("PATCH", "/api/ask/preferences", next))
-        .then(
-          (saved) => {
-            if (version === preferenceVersion.current) {
-              patch({ preferences: saved });
-              setPreferenceError(false);
-            }
-          },
-          () => {
-            if (version === preferenceVersion.current) setPreferenceError(true);
-          },
-        );
-    },
-    [api, patch],
-  );
-  const save = useCallback(
-    (next: AskPreferences) => {
-      patch({ preferences: next });
-      persist(next);
-    },
-    [patch, persist],
-  );
-  const preferenceReady =
-    state.scope === scope ||
-    (Boolean(preferences.data) && !preferences.isValidating && !preferences.error);
-  const ownedLinkReady = !chatId || Boolean(linkedChat.data);
-  const rememberFullView = useEffectEvent(() => {
-    persist({ ...currentPreferences, view: "full", chatId });
-  });
-  useEffect(() => {
-    if (full && available && !invalidLink && preferenceReady && ownedLinkReady) rememberFullView();
-  }, [full, available, invalidLink, scope, chatId, preferenceReady, ownedLinkReady]);
-  const origin = useCallback(
-    (): AskPreferences["returnTo"] =>
-      (origins as readonly string[]).includes(pathname)
-        ? (pathname as AskPreferences["returnTo"])
-        : safeOrigin(currentPreferences.returnTo),
-    [pathname, currentPreferences.returnTo],
-  );
   const select = useCallback(
     (id: string | null) => {
       if (submittingRef.current) return;
-      patch({ chatId: id });
       setNotice(null);
       retry.current = null;
-      save({ ...currentPreferences, chatId: id, view: full ? "full" : "panel" });
-      if (full) startNavigation(() => router.replace(id ? `/ask?chat=${id}` : "/ask"));
+      startNavigation(() => router.replace(id ? `/ask?chat=${id}` : "/ask"));
     },
-    [patch, save, currentPreferences, full, router],
+    [router],
   );
-  const open = useCallback(async (from: "button" | "pill" | "shortcut" = "button") => {
-    if (!visible || caps.isLoading) return;
-    returnFocus.current =
-      document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    if (full) {
-      document.querySelector<HTMLTextAreaElement>("#ask-question")?.focus({ preventScroll: true });
-      return;
-    }
-    if (local.mode === "minimized" || local.mode === "panel") {
-      if (local.mode === "minimized") track("ask_open", { from, view: "panel" });
-      patch({ mode: "panel" });
-      document.querySelector<HTMLTextAreaElement>("#ask-question")?.focus({ preventScroll: true });
-      return;
-    }
-    setNotice(null);
-    if (!available) {
-      track("ask_open", { from, view: "panel" });
-      patch({ mode: "panel" });
-      return;
-    }
-    try {
-      // A choice still being saved is the one to restore.
-      await preferenceQueue.current.catch(() => undefined);
-      const stored = await api.get<AskPreferences>("/api/ask/preferences");
-      const preferences = { ...stored, returnTo: safeOrigin(stored.returnTo) };
-      track("ask_open", { from, view: preferences.view });
-      patch({
-        preferences,
-        chatId: preferences.chatId,
-        mode: preferences.view === "full" ? "closed" : "panel",
-      });
-      if (preferences.view === "full")
-        startNavigation(() =>
-          router.push(preferences.chatId ? `/ask?chat=${preferences.chatId}` : "/ask"),
-        );
-    } catch {
-      track("ask_open", { from, view: "panel" });
-      patch({ mode: "panel" });
-      setNotice("Your last view could not be restored. You can still open your history.");
-    }
-  }, [api, visible, caps.isLoading, local.mode, available, full, patch, router]);
-  const restoreFocus = () => {
-    if (returnFocus.current?.isConnected) returnFocus.current.focus();
-  };
-  const minimize = useCallback(() => {
-    patch({ mode: "minimized" });
-    restoreFocus();
-  }, [patch]);
-  const close = useCallback(() => {
-    patch({ mode: "closed" });
-    restoreFocus();
-  }, [patch]);
-  const context = useCallback(
-    (previous?: AskPageContext | null): AskPageContext => {
-      if (previous) return previous;
-      if (full && local.pageContext) {
-        // The page the chat was opened from, over the same length of time
-        // ending now: a question asked later is about later.
-        const span = Date.parse(local.pageContext.to) - Date.parse(local.pageContext.from);
-        const end = Date.now();
-        return {
-          ...local.pageContext,
-          from: new Date(end - span).toISOString(),
-          to: new Date(end).toISOString(),
-        };
-      }
-      const now = Date.now();
-      return {
-        page: ["overview", "dashboard", "metrics", "upstreams"].includes(pathname.slice(1))
-          ? (pathname.slice(1) as AskPageContext["page"])
-          : "ask",
-        ...(filters.chain ? { chain: filters.chain } : {}),
-        ...(filters.router ? { router: filters.router } : {}),
-        ...(filters.routerId ? { routerId: filters.routerId } : {}),
-        from: new Date(now - WINDOWS[filters.timeWindow].rangeSeconds * 1000).toISOString(),
-        to: new Date(now).toISOString(),
-      };
-    },
-    [
-      full,
-      local.pageContext,
-      pathname,
-      filters.chain,
-      filters.router,
-      filters.routerId,
-      filters.timeWindow,
-    ],
-  );
-  const expand = useCallback(() => {
-    save({ view: "full", chatId: chatId, returnTo: origin() });
-    patch({ mode: "closed", pageContext: context() });
-    startNavigation(() => router.push(chatId ? `/ask?chat=${chatId}` : "/ask"));
-  }, [save, chatId, origin, patch, router, context]);
-  const back = useCallback(() => {
-    save({ ...currentPreferences, view: "panel", chatId: chatId });
-    patch({ mode: "panel", chatId });
-    startNavigation(() => router.push(currentPreferences.returnTo));
-  }, [save, currentPreferences, chatId, patch, router]);
+  const context = useCallback((previous?: AskPageContext | null): AskPageContext => {
+    // A follow-up keeps its chat's chain and router. The time always ends now:
+    // a question asked later is about later. A new chat covers the last day,
+    // the most one read may cover.
+    const end = Date.now();
+    const kept = previous ? Date.parse(previous.to) - Date.parse(previous.from) : DAY_MS;
+    const span = Number.isFinite(kept) && kept > 0 ? kept : DAY_MS;
+    return {
+      ...(previous ?? { page: "ask" as const }),
+      from: new Date(end - span).toISOString(),
+      to: new Date(end).toISOString(),
+    };
+  }, []);
   const refresh = useCallback(async () => {
     await Promise.all([
       caps.mutate(),
@@ -378,9 +196,8 @@ export function AskProvider({
         const newChat = !id;
         if (!id) {
           id = (await api.post<{ id: string }>("/api/ask/chats", {})).id;
-          patch((old) => ({ chatId: id, drafts: { ...old.drafts, [id!]: question } }));
-          save({ ...currentPreferences, view: full ? "full" : "panel", chatId: id });
-          if (full) startNavigation(() => router.replace(`/ask?chat=${id}`));
+          patch((old) => ({ drafts: { ...old.drafts, [id!]: question } }));
+          startNavigation(() => router.replace(`/ask?chat=${id}`));
         }
         const pending =
           retry.current?.chatId === id && retry.current.question === question
@@ -400,7 +217,7 @@ export function AskProvider({
         retry.current = null;
         asked.current.add(run.id);
         track("ask_question", {
-          view: full ? "full" : "panel",
+          view: "full",
           page: pending.context.page,
           new_chat: newChat,
           chain: Boolean(pending.context.chain),
@@ -418,15 +235,12 @@ export function AskProvider({
     },
     [
       api,
-      currentPreferences,
       local,
       chatId,
       available,
       caps.data?.acceptingQuestions,
       activity,
       patch,
-      save,
-      full,
       router,
       context,
       mutate,
@@ -476,17 +290,6 @@ export function AskProvider({
     }
     lastRun.current = active?.id ?? null;
   }, [active?.id, mutate, scope, caps, api]);
-  useEffect(() => {
-    if (!shown) return;
-    const shortcut = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        void open("shortcut");
-      }
-    };
-    window.addEventListener("keydown", shortcut);
-    return () => window.removeEventListener("keydown", shortcut);
-  }, [shown, open]);
   const value: AskContextValue = useMemo(
     () => ({
       api,
@@ -498,8 +301,7 @@ export function AskProvider({
       canSwitch: available && caps.data?.canSwitch === true,
       setOff,
       scope,
-      mode: local.mode,
-      full,
+      href: resume ? `/ask?chat=${resume}` : "/ask",
       invalidLink,
       chatId: chatId,
       draft: local.drafts[chatId ?? "new"] ?? "",
@@ -508,12 +310,6 @@ export function AskProvider({
       active,
       activityKnown: available && Boolean(activity.data) && !activity.error,
       notice,
-      preferenceError,
-      open,
-      minimize,
-      close,
-      expand,
-      back,
       select,
       setDraft: (text) =>
         patch((old) => ({ drafts: { ...old.drafts, [chatId ?? "new"]: text.slice(0, 4000) } })),
@@ -521,12 +317,9 @@ export function AskProvider({
       stop,
       context,
       refresh,
-      retryPreferences: () =>
-        save({ ...currentPreferences, view: full ? "full" : "panel", chatId }),
     }),
     [
       api,
-      currentPreferences,
       shown,
       enabled,
       principal,
@@ -539,7 +332,7 @@ export function AskProvider({
       setOff,
       scope,
       local,
-      full,
+      resume,
       invalidLink,
       chatId,
       submitting,
@@ -548,19 +341,12 @@ export function AskProvider({
       activity.data,
       activity.error,
       notice,
-      preferenceError,
-      open,
-      minimize,
-      close,
-      expand,
-      back,
       select,
       patch,
       submit,
       stop,
       context,
       refresh,
-      save,
     ],
   );
   return <AskContext.Provider value={value}>{children}</AskContext.Provider>;

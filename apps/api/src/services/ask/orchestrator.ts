@@ -21,6 +21,8 @@ import { McpAdapter, type McpReadResult } from "./mcp.js";
 import { AskFailure, abortFailure } from "./errors.js";
 import { clockAnswer } from "./clock.js";
 import { redactAskData, redactAskText } from "./redact.js";
+import { FAILED_OUTCOMES } from "../relay-end.js";
+import { TX_EVENT_FILTER, TX_METHODS } from "../transactions.js";
 
 export interface AskExecutionHooks {
   checkActive: () => Promise<void>;
@@ -84,7 +86,12 @@ const system = [
   "Use page chain/time context as the default unless the question explicitly asks otherwise; it never selects authorization. Queries are bounded to 24 hours, status event windows to 7 days. State the actual queried window and any partial/truncated result; narrow reads rather than claim full coverage. Old conversations are context, not fresh measurements.",
   "Use simple PromQL/LogQL with literal range selectors totaling at most 24 hours. Subqueries, duration arithmetic, offset and @ time modifiers are unavailable; select historical time with the operation's explicit start/end/time parameters instead.",
   "For status questions, use status.chain_events if present. It reports provider status, measured incidents and protocol changes only for this customer's own chains. Without an authorized status source, explicitly state that status evidence is unavailable. Timing overlap with an error is a hypothesis, not proof of cause.",
-  "After successful reads, finish by calling present_answer once, by itself. Put the answer in its structured arguments, never free text or a code block. One-line summary up to 500 characters; 1-8 sections, title up to 120, body up to 4000; at most 8 points of 500 characters. No HTML, credentials, source/evidence/time fields or extra keys. The server authors evidence. Cite actual source IDs and times in prose where relevant. Ask for a narrower question when needed.",
+  // The Transactions tab's own reading (services/transactions.ts): the same
+  // lines, the same methods, the same results.
+  `Transactions: a transaction is a write the router relayed (${TX_METHODS.join(", ")}, or any request the router marks stateful). Never search logs for the word "transaction". The router ends every request with one JSON log line containing "relay_end", with the fields chain, method, stateful, outcome, tx_hash, tx_status, tx_code, tx_error and customer; find transactions by putting exactly this line filter after the stream selector: ${TX_EVENT_FILTER} and add |= \`"chain":"<CHAIN>"\` for one chain. For counts, first try the metric smartrouter_transactions:count1m (labels chain in lower case, outcome, tx_status, tx_refused; one sample a minute, so sum sum_over_time over the window); count the log lines only when it has no series. Results: outcome ok is accepted, unless tx_refused is true or tx_code is not 0 (rejected by the node) or tx_status is failure (failed on chain), and over gRPC without a tx_status it is unknown; node_error is rejected by the node; rejected_before_dispatch is failed and was never sent; ${FAILED_OUTCOMES.filter((o) => o !== "rejected_before_dispatch").join(", ")} are unknown, because a copy may have reached a provider. Say "unknown" for those, never "failed".`,
+  `Failed requests: requests the router could not serve are relay_end lines whose outcome is one of ${FAILED_OUTCOMES.join(", ")}; their per-minute counts are smartrouter_final_failures:count1m, out of smartrouter_final_requests:count1m.`,
+  "After successful reads, finish by calling present_answer once, by itself. Put the answer in its structured arguments, never free text or a code block. One-line summary up to 500 characters; 1-8 sections, title up to 120, body up to 4000; at most 8 points of 500 characters. No HTML, credentials, source/evidence/time fields or extra keys. The server authors evidence. Ask for a narrower question when needed.",
+  "Write for the person who operates the router, in short plain sentences. The summary is the answer itself. State the time the answer covers once, in the reader's terms (\"the last 12 hours\"), and make every figure cover that same time; no raw timestamps. The reader sees the sources and their times under the answer, so never name a source ID, label name, query, tool, catalog or this customer's ID, and report only the router's data, not the dashboard's own logs. When nothing matched, say what was looked for in the reader's words and, if the question can be read another way, ask which in one sentence.",
 ].join("\n");
 
 function record(value: unknown): Record<string, unknown> | null {

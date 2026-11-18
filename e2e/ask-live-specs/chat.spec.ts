@@ -50,9 +50,8 @@ test("live browser questions use normal admission, providers and persisted answe
 }) => {
   const records: Array<Record<string, unknown>> = [];
   await signInThroughUi(page, operator);
-  await page.getByRole("button", { name: "Ask your data" }).click();
-  const panel = page.getByRole("complementary", { name: "Ask your data" });
-  await expect(panel).toBeVisible();
+  await page.getByRole("link", { name: "Ask your data" }).click();
+  await expect(page.getByLabel("Ask a question")).toBeVisible();
   const prompts = [
     "Using the currently authorized metrics, run count(up) and explain the result and what it cannot establish about router health. State the actual source and observation time. Keep the answer short.",
     "Inspect at most 20 recent Smart Router log entries from the last five minutes, discovering current log labels if needed. Summarize observed errors and limitations. No entries in that window do not prove service health. Keep the answer short.",
@@ -70,10 +69,6 @@ test("live browser questions use normal admission, providers and persisted answe
       const response = await admission;
       expect(response.status()).toBeLessThan(300);
       const admitted = (await response.json()) as AskRun;
-      if (index === 0) {
-        await panel.getByRole("button", { name: "Minimize chat" }).click();
-        await expect(page.getByRole("button", { name: /Open chat/ })).toBeVisible();
-      }
       let terminal: AskRun | null = null;
       await expect
         .poll(
@@ -99,7 +94,6 @@ test("live browser questions use normal admission, providers and persisted answe
         errorCode: run.error?.code,
         contractValid: valid.success,
         evidence: valid.success ? valid.data.evidence : [],
-        submittedView: index === 0 ? "panel" : "full",
         shownInView: false,
         reloadVerified: false,
       };
@@ -141,15 +135,8 @@ test("live browser questions use normal admission, providers and persisted answe
           expect(Date.parse(read.to)).toBeLessThanOrEqual(Date.now() + 5000);
         }
       }
-      if (index === 0) await page.getByRole("button", { name: /Open chat/ }).click();
       await expect.poll(() => page.locator(".ask-answer").count()).toBe(index + 1);
       record.shownInView = true;
-      if (index === 0) {
-        await panel.getByRole("button", { name: "Open full chat" }).click();
-        await page.waitForURL(/\/ask\?chat=/);
-        await expect.poll(() => page.locator(".ask-answer").count()).toBe(1);
-        record.panelToFullVerified = true;
-      }
       await page.reload();
       await expect.poll(() => page.locator(".ask-answer").count()).toBe(index + 1);
       record.reloadVerified = true;

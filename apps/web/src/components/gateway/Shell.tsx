@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useEffect, useState, useSyncExternalStore, type ComponentType } from "react";
 import { signOut } from "next-auth/react";
 import { buildChainMetaByIndex, isRole } from "@sr/shared";
-import { NAV_SECTIONS, visibleNavSections } from "./nav";
+import { ASK_NAV_ITEM, NAV_SECTIONS, visibleNavSections } from "./nav";
 import { useAuthMode } from "./auth-mode";
 import { CHAIN_DRAWER_PATH, ChainDrawer, ChainDrawerProvider, useChainDrawer } from "./ChainDrawer";
 import { IconMenuCollapse, IconMenuExpand, IconMoon, IconSearch, IconSun, type IconProps } from "./icons";
@@ -16,7 +16,6 @@ import { getAuthVersion, subscribeAuth } from "@/lib/auth-store";
 import { useMe } from "@/hooks/use-me";
 import { TwoFactorCountdown, TwoFactorGate } from "@/components/auth/two-factor-gate";
 import { AskProvider, useAsk } from "@/components/ask/AskProvider";
-import { AskTrigger } from "@/components/ask/AskTrigger";
 import dynamic from "next/dynamic";
 import { ReportIncidentButton } from "@/components/incidents/ReportIncident";
 import { openRequestSearch } from "@/lib/request-search";
@@ -25,7 +24,6 @@ import { UsageConsentBar } from "./UsageConsent";
 import { roleBadgeLabel } from "./role-badge";
 import { roleChipStyle } from "@/components/team/bits";
 
-const AskDock = dynamic(() => import("@/components/ask/AskViewport").then((module) => module.AskDock), { ssr: false });
 
 export function ThemeToggle() {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
@@ -52,13 +50,26 @@ export function ThemeToggle() {
   );
 }
 
+const PHONE = "(max-width: 760px)";
+const watchPhone = (notify: () => void) => {
+  const media = matchMedia(PHONE);
+  media.addEventListener("change", notify);
+  return () => media.removeEventListener("change", notify);
+};
+const usePhone = (): boolean =>
+  useSyncExternalStore(watchPhone, () => matchMedia(PHONE).matches, () => false);
+
 function Sidebar({ grafanaDashboardUrl, grafanaCustomerUsageDashboardUrl }: {
   grafanaDashboardUrl?: string | null;
   grafanaCustomerUsageDashboardUrl?: string | null;
 }) {
   const pathname = usePathname();
-  const sections = visibleNavSections(useAuthMode(), grafanaDashboardUrl, grafanaCustomerUsageDashboardUrl);
-  const { visible: drawerOpen, menuCollapsed: compact, setMenuCollapsed } = useChainDrawer();
+  const ask = useAsk();
+  const sections = visibleNavSections(useAuthMode(), grafanaDashboardUrl, grafanaCustomerUsageDashboardUrl, ask.visible);
+  const { visible: drawerOpen, menuCollapsed, setMenuCollapsed } = useChainDrawer();
+  // On a phone the chat needs the width: the menu folds to its icons there.
+  const phone = usePhone();
+  const compact = menuCollapsed || (phone && pathname === ASK_NAV_ITEM.href);
   const { setChain, setRouterId, setRouter } = useFilters();
   // Home or Metrics while on Metrics: back to every chain, as the drawer's
   // first row does, with the menu folded again. Navigating would land on the
@@ -139,7 +150,7 @@ function Sidebar({ grafanaDashboardUrl, grafanaCustomerUsageDashboardUrl }: {
               return (
                 <Link
                   key={item.href}
-                  href={item.href}
+                  href={item === ASK_NAV_ITEM ? ask.href : item.href}
                   className={`gw-nav-item${active ? " active" : ""}`}
                   onClick={item.href === CHAIN_DRAWER_PATH ? toAllChains : undefined}
                   // The label is hidden while folded, and a hidden label names nothing.
@@ -153,6 +164,10 @@ function Sidebar({ grafanaDashboardUrl, grafanaCustomerUsageDashboardUrl }: {
                     style={{ color: active ? "var(--brand)" : undefined }}
                   />
                   <span>{item.label}</span>
+                  {/* A question still running, so its answer is not missed from another page. */}
+                  {item === ASK_NAV_ITEM && ask.active ? (
+                    <span className="ask-spinner ask-nav-busy" role="status" aria-label="Question processing" />
+                  ) : null}
                 </Link>
               );
             })}
@@ -322,7 +337,6 @@ function Topbar({ here, sub, incidentsEnabled }: { here: string; sub: string | n
         <TwoFactorCountdown />
         <RequestSearch />
         <ReportIncidentButton enabled={incidentsEnabled} />
-        <AskTrigger />
         <ThemeToggle />
       </div>
     </header>
@@ -379,19 +393,14 @@ function ShellChrome({
     viewOpened(pageOf(pathname), tabOf(pathname, window.location.search));
   }, [pathname]);
 
-  const ask = useAsk();
   const here =
-    pathname === "/ask"
-      ? "Ask your data"
-      : (NAV_SECTIONS.flatMap((section) => section.items).find(
-          (item) => pathname === item.href || pathname.startsWith(`${item.href}/`),
-        )?.label ?? "Overview");
+    [...NAV_SECTIONS.flatMap((section) => section.items), ASK_NAV_ITEM].find(
+      (item) => pathname === item.href || pathname.startsWith(`${item.href}/`),
+    )?.label ?? "Overview";
   const sub = pathname === CHAIN_DRAWER_PATH && chain ? buildChainMetaByIndex(chain).name : null;
   return (
     <>
-      <div
-        className={`gw-app${ask.full ? " gw-app--ask-full" : ""}${ask.visible && !ask.full && ask.mode === "panel" ? " gw-app--ask-panel" : ""}`}
-      >
+      <div className={`gw-app${pathname === ASK_NAV_ITEM.href ? " gw-app--ask" : ""}`}>
         <Sidebar
           grafanaDashboardUrl={grafanaDashboardUrl}
           grafanaCustomerUsageDashboardUrl={grafanaCustomerUsageDashboardUrl}
@@ -405,7 +414,6 @@ function ShellChrome({
         </div>
       </div>
       <UsageConsentBar />
-      {ask.visible && !ask.full && ask.mode !== "closed" ? <AskDock /> : null}
     </>
   );
 }

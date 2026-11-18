@@ -79,9 +79,7 @@ export const USAGE_EVENTS = {
   idle_paused: { page: USAGE_PAGES, tab: USAGE_TABS },
   /** A read that failed (network or server error), or answered after 10 seconds. */
   view_problem: { view: "view", problem: ["did-not-load", "slow"], seconds: "seconds" },
-  /** Ask opened: by its button, the minimized pill or the keyboard shortcut, as the side panel or the full page. */
-  ask_open: { from: ["button", "pill", "shortcut"], view: ["panel", "full"] },
-  /** A question sent to Ask: from which view, about which page, in a new chat or an existing one. Never the question. */
+  /** A question sent to Ask: about which page, in a new chat or an existing one. `view` is always `full` since Ask became one page. Never the question. */
   ask_question: { view: ["panel", "full"], page: ASK_PAGES, new_chat: "bool", chain: "bool" },
   /** A question this tab sent came to an end: how, why not, and the seconds from sending it. Never the answer. */
   ask_answer: { result: ["succeeded", "failed", "cancelled", "interrupted"], error: USAGE_ASK_ERRORS, seconds: "seconds", sections: "count", evidence: "count" },
