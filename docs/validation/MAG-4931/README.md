@@ -39,14 +39,14 @@ availability require the later live smoke/pilot checks.
 
 The current Bedrock preflight still returned HTTP 403. The `magma` AWS session is
 expired. A separate existing `magma-rpc-maintenance` profile successfully verified
-the expected account, but its policy denied the exact GK8 SSM delivery parameter.
+the expected account, but its policy denied the exact pilot SSM delivery parameter.
 No broader/staff data credential was substituted; no secret was retrieved or
 printed. Customer MCP/live model validation therefore remains pending the proper
 authorized runtime credential/access.
 
 No cloud IAM policy, credential, customer deployment or provider resource changed.
 Financial reservation/reconciliation, physical retention deletion, internal staff
-records/export, browser UI/UX and controlled GK8 rollout remain later slices.
+records/export, browser UI/UX and controlled pilot rollout remain later slices.
 
 ## Final local checks
 

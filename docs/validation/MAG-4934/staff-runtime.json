@@ -1,6 +1,6 @@
 {
   "timestamp": "2026-11-16T19:09:54.507Z",
-  "customerId": "gk8",
+  "customerId": "pilot",
   "flagEnabled": false,
   "checks": [
     "expected-aws-account",

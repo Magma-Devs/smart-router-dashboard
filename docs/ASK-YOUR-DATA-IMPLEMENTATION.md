@@ -32,7 +32,7 @@ Readiness for review does not establish deployed acceptance or authorize rollout
 | MAG-4931 | Bounded Bedrock tool loop, audited read allowlist, per-source policy, source/time evidence, history context | Metrics/log/status questions, malicious retrieved instructions, invalid/truncated responses, timeout and cancellation |
 | MAG-4932 | Atomic monthly cost reservation/reconciliation, internal records/export, scheduled retention | PostgreSQL concurrent spend admission; every model step, failure/cancel/unknown usage, staff/customer access and retention cutoffs |
 | MAG-4933 | Top-bar entry, keyboard shortcut, panel/pill, /ask, shared history/search/deep links, last-view preference | Real browser against API/PostgreSQL: ask, reload, minimize, expand/back, stop, ownership and disabled routes |
-| MAG-4934 | Runtime configuration delivery, operational checks and controlled GK8 flag | Current MCP/Bedrock results, browser-to-provider flow, configured cap, cleanup/export, enable/disable evidence and dated pilot start |
+| MAG-4934 | Runtime configuration delivery, operational checks and controlled pilot flag | Current MCP/Bedrock results, browser-to-provider flow, configured cap, cleanup/export, enable/disable evidence and dated pilot start |
 
 MAG-4642 follows with the error-row Investigate entry point and reuses chats,
 budget and execution. MAG-4751 self-hosted distribution remains a separate product.
@@ -124,8 +124,8 @@ establish acceptance.
 - [x] Observable scheduled retention with tested cutoffs — actual HTTP/PostgreSQL and [flag-off scheduled runtime check](validation/MAG-4934/staff-runtime.json)
 - [ ] Runtime secret/config delivery and current Bedrock model/region access — [fleet delivery implementation](https://github.com/Magma-Devs/smart-router-infrastructure/pull/1494) is prepared; deployed scoped Secrets, released pins and a fresh exact-image checkpoint remain required
 - [x] Current customer MCP discovery and bounded actual data read — [dated scoped live checks](validation/MAG-4934/LIVE.md)
-- [ ] GK8 cap, feature enable/disable and operational rollback verified
-- [ ] Dated GK8 pilot start; 60-day product measurement handed to MAG-4642
+- [ ] Pilot cap, feature enable/disable and operational rollback verified
+- [ ] Dated pilot start; 60-day product measurement handed to MAG-4642
 
 Local mocks prove policy and failure handling, not provider availability.
 Historical MCP deployment receipts are dated evidence, not a live state API.
@@ -169,7 +169,7 @@ provides selected-customer configuration, enable/disable, fresh exact-image
 checkpoints and Owner credential sealing. The chart and fleet retain their own
 delivery paths and do not allocate additional stable dashboard versions.
 
-Permanent runtime credentials, released pins and the deployed GK8
+Permanent runtime credentials, released pins and the deployed pilot
 enable/disable/rollback rehearsal remain pending. The actual pilot start belongs
 to MAG-4642 after that handoff. No customer flag, Secret or pin is changed by
 these implementation PRs.

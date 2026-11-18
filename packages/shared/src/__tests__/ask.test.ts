@@ -75,7 +75,7 @@ describe("Ask wire contract", () => {
     expect(askAnswerSchema.safeParse(answer).success).toBe(false);
     const evidence = {
       id,
-      sourceId: "gk8-logs",
+      sourceId: "acme-logs",
       operationId: "logs.query_range",
       observedAt: to,
       from,

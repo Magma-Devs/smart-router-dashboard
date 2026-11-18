@@ -32,10 +32,10 @@ configured `global.anthropic.claude-sonnet-5` profile and received **HTTP 403** 
 not current model access or the reason for the refusal. No credential was printed.
 
 The configured AWS profile `magma` has an **expired session**. The account identity
-check could not complete, so no GK8 SSM credential was retrieved and no customer
+check could not complete, so no pilot SSM credential was retrieved and no customer
 MCP read was attempted. This does not establish that the stored customer grant
 itself expired. The existing source of that credential is the encrypted delivery
-parameter `/smart-router-mcp/staging/access/gk8/pilot-20261014`.
+parameter `/smart-router-mcp/staging/access/pilot/pilot-20261014`.
 
 The full controlled question → customer MCP → Bedrock → validated answer check is
 therefore **pending current provider access and authorized customer credential
@@ -44,4 +44,4 @@ The new `ask:smoke` command can repeat the actual check after runtime credential
 are available. It prints bounded metadata/usage only, not customer result bodies.
 
 No cloud resources, IAM policies, real user credentials, feature flags or customer
-deployments were changed by this validation. No GK8 rollout is claimed.
+deployments were changed by this validation. No pilot rollout is claimed.

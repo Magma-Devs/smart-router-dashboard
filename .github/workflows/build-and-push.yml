@@ -2,6 +2,8 @@ name: Build and Push Images
 
 on:
   push:
+    # Every branch, and no tag: a tag is the release, never a build.
+    branches: ["**"]
   workflow_dispatch:
 
 env:

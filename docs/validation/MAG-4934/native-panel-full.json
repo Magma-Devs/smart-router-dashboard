@@ -1,7 +1,7 @@
 {
   "timestamp": "2026-11-16T19:22:22.703Z",
   "environment": "isolated local dashboard/API/PostgreSQL with real staging MCP and Bedrock",
-  "customerId": "gk8",
+  "customerId": "pilot",
   "rawDataInArtifact": false,
   "credentialsSaved": false,
   "pricing": {
@@ -30,7 +30,7 @@
         "evidence": [
           {
             "id": "0e6b52d9-cdfc-4ad2-91d2-9a09a55cadf6",
-            "sourceId": "gk8-metrics",
+            "sourceId": "pilot-metrics",
             "operationId": "metrics.query",
             "observedAt": "2026-11-16T19:22:55.024Z",
             "from": "2026-11-16T19:22:49.000Z",
@@ -52,7 +52,7 @@
         "evidence": [
           {
             "id": "69e9927c-5a04-4715-b160-09b00d381e28",
-            "sourceId": "gk8-logs",
+            "sourceId": "pilot-logs",
             "operationId": "logs.labels",
             "observedAt": "2026-11-16T19:23:09.880Z",
             "from": "2026-11-16T19:18:06.000Z",
@@ -62,7 +62,7 @@
           },
           {
             "id": "1e5656fd-b2e6-414d-9d97-f8aa06778e0b",
-            "sourceId": "gk8-logs",
+            "sourceId": "pilot-logs",
             "operationId": "logs.label_values",
             "observedAt": "2026-11-16T19:23:13.382Z",
             "from": "2026-11-16T19:18:06.000Z",
@@ -72,7 +72,7 @@
           },
           {
             "id": "a8b23d96-3db8-455a-83c7-5ebc7db868e6",
-            "sourceId": "gk8-logs",
+            "sourceId": "pilot-logs",
             "operationId": "logs.query_range",
             "observedAt": "2026-11-16T19:23:17.261Z",
             "from": "2026-11-16T19:18:06.000Z",
@@ -82,7 +82,7 @@
           },
           {
             "id": "41c3bcf8-d760-4d8e-a0e4-9c8729662b8f",
-            "sourceId": "gk8-logs",
+            "sourceId": "pilot-logs",
             "operationId": "logs.query_range",
             "observedAt": "2026-11-16T19:23:21.401Z",
             "from": "2026-11-16T19:18:06.000Z",
@@ -103,7 +103,7 @@
         "evidence": [
           {
             "id": "869212c5-a2d1-4625-9f0a-c63b8d1ad6db",
-            "sourceId": "gk8-grafana",
+            "sourceId": "pilot-grafana",
             "operationId": "grafana.search",
             "observedAt": "2026-11-16T19:23:38.521Z",
             "coverage": "empty",
@@ -274,37 +274,37 @@
   ],
   "tools": [
     {
-      "sourceId": "gk8-metrics",
+      "sourceId": "pilot-metrics",
       "operationId": "metrics.query",
       "ok": "success",
       "latencyMs": 2316
     },
     {
-      "sourceId": "gk8-logs",
+      "sourceId": "pilot-logs",
       "operationId": "logs.labels",
       "ok": "success",
       "latencyMs": 688
     },
     {
-      "sourceId": "gk8-logs",
+      "sourceId": "pilot-logs",
       "operationId": "logs.label_values",
       "ok": "success",
       "latencyMs": 912
     },
     {
-      "sourceId": "gk8-logs",
+      "sourceId": "pilot-logs",
       "operationId": "logs.query_range",
       "ok": "success",
       "latencyMs": 854
     },
     {
-      "sourceId": "gk8-logs",
+      "sourceId": "pilot-logs",
       "operationId": "logs.query_range",
       "ok": "success",
       "latencyMs": 947
     },
     {
-      "sourceId": "gk8-grafana",
+      "sourceId": "pilot-grafana",
       "operationId": "grafana.search",
       "ok": "success",
       "latencyMs": 1140
@@ -314,7 +314,7 @@
     "currentRunChargeMicroUsd": "132606",
     "cumulativeLocalPool": [
       {
-        "customerId": "gk8",
+        "customerId": "pilot",
         "month": "2026-11",
         "limitMicroUsd": "10000000",
         "spentMicroUsd": "854622",

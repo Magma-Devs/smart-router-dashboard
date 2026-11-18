@@ -44,12 +44,9 @@ these opt-in checks. No mock pass is counted as a live-provider pass.
 
 ## Screenshots
 
-These show synthetic test content only. The literal script text is an intentional
-plain-text rendering test; the Next development indicator is not product UI.
-
-![Actual full chat in the light theme](ask-full-desktop.png)
-
-![Actual mobile panel in the dark theme](ask-panel-mobile.png)
+The browser suite writes `ask-full-desktop.png` and `ask-panel-mobile.png` to its
+results directory (`.playwright/ask-results`) on every run. They show synthetic
+test content only.
 
 ## Remaining acceptance
 
@@ -62,7 +59,7 @@ server-clock/provenance change also passes the 21 orchestration checks and
 workspace typecheck. Screenshots above were inspected in light and dark themes.
 
 Live Bedrock/model/counter/pricing, current customer MCP and runtime internal staff
-OAuth/retention delivery still require proper runtime access. Controlled GK8
+OAuth/retention delivery still require proper runtime access. Controlled pilot
 rollout, disable/rollback and pilot-start evidence belong to MAG-4934. Previously
 observed Bedrock HTTP 403 and expired/insufficient AWS access remain open; no
 credential or broader tenant grant was substituted.

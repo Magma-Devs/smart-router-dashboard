@@ -21,7 +21,7 @@ const settings = () => ({
     AUTH_MODE: "enabled",
     DEPLOYMENT_MODE: "managed",
     ASK_DATA_ENABLED: "true",
-    ASK_DATA_CUSTOMER_ID: "gk8",
+    ASK_DATA_CUSTOMER_ID: "acme",
     ASK_DATA_MCP_TOKEN: "customer-fixture",
     AWS_BEARER_TOKEN_BEDROCK: "provider-fixture",
     ASK_DATA_BEDROCK_MODEL: "test-model",
@@ -47,7 +47,7 @@ const hooks = (): AskExecutionHooks => ({
 
 beforeEach(async () => {
   t = await createTestDb();
-  store = new AskStore(t.db, "gk8", 90);
+  store = new AskStore(t.db, "acme", 90);
   const [user] = await t.db
     .insert(users)
     .values({ email: "worker@example.test", role: "read_only", ...enrolledTwoFactor() })

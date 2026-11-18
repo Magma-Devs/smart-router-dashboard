@@ -35,9 +35,9 @@ remain recorded here; live follow-up evidence does not imply a deployed pilot.
 The current live MCP catalog and an actual customer-only read, supported free
 counter, priced Bedrock inference/usage receipts, live authorized staff OAuth
 records/export, runtime cleanup/backups/provider logging policies, fleet Secret
-and released pin delivery, and controlled GK8 enable/disable/rollback are pending.
+and released pin delivery, and controlled pilot enable/disable/rollback are pending.
 The latest provider evidence remains Bedrock HTTP 403; `magma` SSO expired and the
-alternate maintenance profile denied the exact GK8 MCP parameter. No broader
+alternate maintenance profile denied the exact pilot MCP parameter. No broader
 credential, IAM grant, cloud resource, customer pin or feature flag was substituted
 or changed. The user has renewal instructions; successful renewed access has not
 been observed.

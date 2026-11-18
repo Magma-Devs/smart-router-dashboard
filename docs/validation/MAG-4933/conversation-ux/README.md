@@ -50,26 +50,7 @@ lint warnings. Final-head hosted checks remain required before merge.
 
 ## Screenshots
 
-Full chat, light theme, with a follow-up draft:
-
-![Full chat, light theme](ask-full-desktop.png)
-
-Full chat, dark theme:
-
-![Full chat, dark theme](ask-full-desktop-dark.png)
-
-Two-turn conversation:
-
-![Two-turn conversation](ask-full-conversation.png)
-
-Starting a conversation:
-
-![Starting a conversation](ask-empty-desktop.png)
-
-Desktop panel:
-
-![Desktop panel](ask-panel-desktop.png)
-
-Mobile panel, 390 × 844:
-
-![Mobile panel](ask-panel-mobile.png)
+The presentation suite (`ask-presentation.playwright.config.ts`) writes the full
+chat in light and dark themes, a two-turn conversation, the empty state, the
+desktop panel and the 390 × 844 mobile panel to its results directory
+(`.playwright/ask-presentation`) on every run.

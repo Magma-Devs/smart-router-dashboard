@@ -64,7 +64,7 @@ Admission uses an injected non-spending test policy to exercise transaction
 rollback; it does not prove real budget accounting. Workers are exercised through
 the SQL lifecycle primitives, not a production provider execution loop. Recovery
 scheduling, cost reconciliation, actual deletion, provider/tool orchestration,
-browser UX, deployed runtime configuration and the GK8 pilot remain later slices.
+browser UX, deployed runtime configuration and the pilot remain later slices.
 
 The earlier live provider access limits in MAG-4929 still apply. No production
 customer database, cloud resource, real user credential or feature flag changed.

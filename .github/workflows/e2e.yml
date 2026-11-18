@@ -1,6 +1,6 @@
 name: Browser tests
 
-# e2e/: the 2FA flows in a browser against a real api and Postgres. Not a
+# e2e/: the 2FA and Ask flows in a browser against a real api and Postgres. Not a
 # required check. PRs only: main is strict, so a push to main is a tree its PR
 # already tested.
 on:

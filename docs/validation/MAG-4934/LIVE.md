@@ -2,7 +2,7 @@
 
 16 November 2026. These checks use an isolated local dashboard/API/PostgreSQL
 stack and actual staging MCP / AWS Bedrock services. They do not enable a
-customer deployment or start the GK8 pilot.
+customer deployment or start the pilot.
 
 ## Provider boundary
 
@@ -14,7 +14,7 @@ inference profile and its foundation model, bearer authentication, and
 `bedrock-mantle:CountTokens` on this account's default project with the exact
 model condition. No broad runtime fallback or permanent IAM identity was added.
 
-Owned one-day customer-only GK8 MCP grants verified `whoami`, the current
+Owned one-day customer-only pilot MCP grants verified `whoami`, the current
 catalog and actual bounded metrics/log reads. The catalog exposes metrics,
 logs and Grafana; it does **not** expose `status.chain_events`. Foreign-source
 and write requests were refused by the dashboard adapter before dispatch.
@@ -58,7 +58,7 @@ production configuration or a claim that these rates will remain current.
 
 [The metadata-only receipt](staff-runtime.json) records an actual browser
 password-change / PKCE exchange for an owned one-day Cognito staff identity
-restricted to GK8. No enrollment email was sent and no employee account changed.
+restricted to the pilot customer. No enrollment email was sent and no employee account changed.
 Against the normal local API with `ASK_DATA_ENABLED=false`:
 
 - Live staff could read health, records and NDJSON export. A customer override
@@ -85,7 +85,7 @@ this successful check. Every step used normal free counting/reservation before
 dispatch. Earlier validation attempts remain in the same local monthly pool:
 $0.722016 cumulative settled spend and $0.072504 held for two original unknown
 receipts, under its $10 limit. This is the disposable validation database, not
-the GK8 production budget. Test content was deleted while accounting survived;
+the pilot production budget. Test content was deleted while accounting survived;
 all temporary provider credentials/grants were revoked/deleted.
 
 [A second native run](native-panel-full.json) explicitly starts in the panel,
@@ -138,7 +138,7 @@ customer/internal traffic is admitted.
 ## Remaining deployment work
 
 Released dashboard/chart pins, permanent runtime credential delivery, deployed
-database backup/restore retention, controlled GK8 enable/disable/rollback and
+database backup/restore retention, controlled pilot enable/disable/rollback and
 the dated pilot start remain open. The separate 60-day measurement is not
 claimed. No customer flag, deployed Secret or tenant pin was changed by these
 checks.

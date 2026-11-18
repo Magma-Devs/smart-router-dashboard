@@ -44,7 +44,7 @@ counter must be established before enabling paid questions.
 
 Internal staff OAuth and retention must also be observed in the actual managed
 runtime. Provider-side invocation logging/retention and infrastructure delivery
-remain rollout checks. Browser UX and controlled GK8 enable/disable/pilot are the
+remain rollout checks. Browser UX and controlled pilot enable/disable/pilot are the
 next slices. Uncertain usage requires authoritative provider evidence; no current
 customer reservation was created or manually cleared during this work.
 
