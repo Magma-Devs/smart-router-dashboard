@@ -4,6 +4,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { SignJWT } from "jose";
 import { createTestDb, enrolledTwoFactor, type TestDb } from "@sr/db/testing";
 import { users } from "@sr/db";
+import { eq } from "drizzle-orm";
 import { USAGE_VIEWS, type Role } from "@sr/shared";
 import { buildApp } from "../app.js";
 import { readUsageSettings } from "../config.js";
@@ -65,6 +66,7 @@ async function signedIn(email: string, role: Role = "read_only"): Promise<{ head
 }
 
 const get = (headers: Record<string, string> = {}) => app!.inject({ method: "GET", url: "/api/usage/config", headers });
+const MONTH = expect.stringMatching(/^\d{4}-\d{2}$/);
 const opaque = (tenant: string, userId: string) => createHash("sha256").update(`${tenant}:${userId}`).digest("hex").slice(0, 32);
 
 afterEach(async () => {
@@ -90,8 +92,15 @@ describe("GET /api/usage/config on a deployment we host, accounts on", () => {
       tenant: "tenant-a",
       deploymentMode: "managed",
       version: "0.71.0",
-      viewer: { id: opaque("tenant-a", who.id), staff: false, role: "admin" },
+      viewer: { id: opaque("tenant-a", who.id), staff: false, role: "admin", created: MONTH, twoFactor: true, signIn: "password" },
     });
+  });
+
+  it("says the account's month, whether 2FA is set up and how the session signed in - never more of the date", async () => {
+    const who = await signedIn("ops@client.example");
+    const viewer = (await get(who.headers)).json().viewer;
+    expect(viewer.created).toMatch(/^\d{4}-\d{2}$/);
+    expect(viewer).toMatchObject({ twoFactor: true, signIn: "password" });
   });
 
   it("names the viewer by an opaque id: never the address or the account id, the same on every visit", async () => {
@@ -107,11 +116,17 @@ describe("GET /api/usage/config on a deployment we host, accounts on", () => {
     expect((await get(other.headers)).json().viewer.id).not.toBe(first.viewer.id);
   });
 
-  it("marks anyone at magmadevs.com as staff, without the address", async () => {
+  it("marks anyone at magmadevs.com as staff, and names them by their address", async () => {
     const who = await signedIn("Someone@MagmaDevs.com");
     const body = (await get(who.headers)).json();
-    expect(body.viewer).toMatchObject({ staff: true, role: "read_only" });
-    expect(JSON.stringify(body).toLowerCase()).not.toContain("magmadevs.com");
+    expect(body.viewer).toMatchObject({ staff: true, role: "read_only", email: "someone@magmadevs.com" });
+  });
+
+  it("never sends a customer's address", async () => {
+    const who = await signedIn("ops@client.example");
+    const body = (await get(who.headers)).json();
+    expect(body.viewer).not.toHaveProperty("email");
+    expect(JSON.stringify(body)).not.toContain("client.example");
   });
 
   it("refuses a caller with no session", async () => {
@@ -123,8 +138,9 @@ describe("GET /api/usage/config on a deployment we host, accounts on", () => {
     const res = await app!.inject({ method: "POST", url: "/api/usage", headers: who.headers, payload: { visit: "x", events: [] } });
     expect(res.statusCode).toBe(404);
     const paths = (app!.swagger().paths ?? {}) as Record<string, Record<string, unknown>>;
-    expect(Object.keys(paths).filter((p) => p.startsWith("/api/usage"))).toEqual(["/api/usage/config"]);
+    expect(Object.keys(paths).filter((p) => p.startsWith("/api/usage")).sort()).toEqual(["/api/usage/config", "/api/usage/viewers/{id}"]);
     expect(Object.keys(paths["/api/usage/config"]!)).toEqual(["get"]);
+    expect(Object.keys(paths["/api/usage/viewers/{id}"]!)).toEqual(["get"]);
   });
 });
 
@@ -223,16 +239,27 @@ describe("readUsageSettings", () => {
 describe("staff and role", () => {
   const s = readUsageSettings({ AUTH_MODE: "enabled", DEPLOYMENT_MODE: "managed", MIXPANEL_TOKEN: TOKEN, TENANT_ID: "t" });
 
-  it("marks a signed-in user on our domain as staff, with the role, never the address", () => {
-    const viewer = viewerOf({ id: "u-1", email: "someone@magmadevs.com", role: "admin" }, s);
-    expect(viewer).toEqual({ id: opaque("t", "u-1"), staff: true, role: "admin" });
-    expect(JSON.stringify(viewer)).not.toContain("magmadevs.com");
-    expect(viewerOf({ id: "u-2", email: "ops@client.example", role: "read_only" }, s)).toMatchObject({ staff: false, role: "read_only" });
+  it("marks a signed-in user on our domain as staff, with the role and the address; a customer without it", () => {
+    const viewer = viewerOf({ id: "u-1", email: "Someone@magmadevs.com", role: "admin" }, s);
+    expect(viewer).toEqual({ id: opaque("t", "u-1"), staff: true, role: "admin", email: "someone@magmadevs.com", created: null, twoFactor: null, signIn: null });
+    const customer = viewerOf({ id: "u-2", email: "ops@client.example", role: "read_only" }, s);
+    expect(customer).toEqual({ id: opaque("t", "u-2"), staff: false, role: "read_only", created: null, twoFactor: null, signIn: null });
+    expect(JSON.stringify(customer)).not.toContain("client.example");
+  });
+
+  it("reads the month, 2FA and the first factor from the live row and session", () => {
+    const base = { id: "u-1", email: "ops@client.example", role: "admin" as const };
+    const user = { createdAt: new Date("2026-03-31T23:59:59Z"), totpEnrolledAt: null };
+    expect(viewerOf({ ...base, user, session: { authMethod: "google+totp" } }, s)).toMatchObject({ created: "2026-03", twoFactor: false, signIn: "google" });
+    expect(viewerOf({ ...base, user: { ...user, totpEnrolledAt: new Date() }, session: { authMethod: "password" } }, s)).toMatchObject({ twoFactor: true, signIn: "password" });
+    expect(viewerOf({ ...base, user, session: { authMethod: "saml" } }, s)).toMatchObject({ signIn: "other" });
   });
 
   it("is our domain exactly: not one that ends with it, not one that starts with it", () => {
     for (const email of ["a@notmagmadevs.com", "a@magmadevs.com.example", "a@sub.magmadevs.com", "magmadevs.com@client.example"]) {
-      expect(viewerOf({ id: "u-1", email, role: "admin" }, s)).toMatchObject({ staff: false, role: "admin" });
+      const viewer = viewerOf({ id: "u-1", email, role: "admin" }, s);
+      expect(viewer).toMatchObject({ staff: false, role: "admin" });
+      expect(viewer).not.toHaveProperty("email");
     }
   });
 
@@ -250,5 +277,44 @@ describe("the views a usage event may name", () => {
       .map(([path]) => path.replace(/\{[^}]+\}/g, ":id"));
     expect(reads.length).toBeGreaterThan(20);
     expect(reads.filter((path) => !(USAGE_VIEWS as readonly string[]).includes(path))).toEqual([]);
+  });
+});
+
+describe("GET /api/usage/viewers/:id", () => {
+  beforeEach(() => boot(HOSTED));
+  const lookup = (id: string, headers: Record<string, string>) => app!.inject({ method: "GET", url: `/api/usage/viewers/${id}`, headers });
+
+  it("names the member a usage id belongs to, for an admin", async () => {
+    const admin = await signedIn("admin@client.example", "admin");
+    const who = await signedIn("ops@client.example", "approver");
+    const res = await lookup(opaque("tenant-a", who.id), admin.headers);
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["cache-control"]).toBe("no-store");
+    expect(res.json()).toEqual({ member: { id: who.id, email: "ops@client.example", name: "Noa Cohen", role: "approver", status: "active" } });
+    expect((await lookup(opaque("tenant-a", who.id).toUpperCase(), admin.headers)).json().member.id).toBe(who.id);
+  });
+
+  it("finds a removed member too, and says so", async () => {
+    const admin = await signedIn("admin@client.example", "admin");
+    const who = await signedIn("gone@client.example");
+    await t!.db.update(users).set({ status: "removed" }).where(eq(users.id, who.id));
+    expect((await lookup(opaque("tenant-a", who.id), admin.headers)).json().member).toMatchObject({ id: who.id, status: "removed" });
+  });
+
+  it("answers no member for an id of another tenant or nobody", async () => {
+    const admin = await signedIn("admin@client.example", "admin");
+    expect((await lookup(opaque("tenant-b", admin.id), admin.headers)).json()).toEqual({ member: null });
+    expect((await lookup("0".repeat(32), admin.headers)).json()).toEqual({ member: null });
+  });
+
+  it("refuses anything but a usage id", async () => {
+    const admin = await signedIn("admin@client.example", "admin");
+    for (const id of ["abc", "g".repeat(32), "0".repeat(33)]) expect((await lookup(id, admin.headers)).statusCode).toBe(400);
+  });
+
+  it("refuses everyone but an admin", async () => {
+    const who = await signedIn("ops@client.example", "approver");
+    expect((await lookup(opaque("tenant-a", who.id), who.headers)).statusCode).toBe(403);
+    expect((await lookup(opaque("tenant-a", who.id), {})).statusCode).toBe(401);
   });
 });

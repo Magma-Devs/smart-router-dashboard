@@ -18,7 +18,12 @@ per signed-in person, and sends the dashboard's own events beside them
 
 Leave our own team out of every report with `staff != true`: every event and
 every profile says whether the signed-in person's address is at
-`magmadevs.com`, never the address.
+`magmadevs.com`. A staff member's profile also carries their address; a
+customer's never does.
+
+Count clients, not people, with Mixpanel's group analytics on `tenant`: every
+event carries it, so the group key is a project setting in Mixpanel (Project
+Settings → Group Keys → `tenant`), with no code behind it.
 
 ## On or off
 
@@ -57,7 +62,11 @@ records nothing here, whatever your answer."
 `GET /api/usage/config` answers `{ enabled: false }` unless the first two hold
 and a signed-in user is on the request. Then it answers what the browser
 starts the SDK with: `{ enabled: true, token, apiHost, tenant, deploymentMode,
-version, viewer: { id, staff, role } }`. `viewer.id` is the first 32 hex
+version, viewer: { id, staff, role, email?, created, twoFactor, signIn } }`.
+`email` is there for staff only. `created` is the month the account was made
+(`2026-11`), `twoFactor` whether an authenticator is set up, and `signIn` how
+this session signed in (`password`, `google`, `github`, `invite` or `other`;
+the first factor, never the code after it). `viewer.id` is the first 32 hex
 characters of sha256(`<tenant>:<user id>`): the same person on every visit to
 one deployment, and nothing that leads back to the account without its
 database. The web asks for it on the first render of every signed-in page,
@@ -77,7 +86,7 @@ starts with usage data off.
 | `MIXPANEL_TOKEN` | unset | the project's token; handed to a signed-in browser only while usage data is on |
 | `MIXPANEL_API_HOST` | `https://api-eu.mixpanel.com` | the one host the browser sends to; https only (http for a loopback mock) |
 | `USAGE_TENANT` | `TENANT_ID` | the tenant on every event and profile |
-| `USAGE_STAFF_DOMAINS` | `magmadevs.com` | a user whose address is at one of these (anyone `@magmadevs.com`) is `staff: true` |
+| `USAGE_STAFF_DOMAINS` | `magmadevs.com` | a user whose address is at one of these (anyone `@magmadevs.com`) is `staff: true`, and their profile carries their address |
 
 The api reads all five when it starts; the web reads none. Docker Compose
 (`docker-compose.yml`, `docker-compose.dev.yml`) passes each one to the api
@@ -91,7 +100,7 @@ SDK as its own chunk of the dashboard's code (`await import("mixpanel-browser")`
 the npm bundle carries the replay recorder, so no script comes from Mixpanel's
 CDN), starts it, names the viewer by `viewer.id`, registers `tenant`,
 `deployment_mode`, `dashboard_version`, `staff` and `role` on every event, sets
-`tenant`, `staff` and `role` on the viewer's profile, and opts in (once: a
+the viewer's profile (below), and opts in (once: a
 browser already opted in is not opted in again, so `$opt_in` is sent once).
 
 The SDK's storage in a browser belongs to one account: the web notes whose it
@@ -135,8 +144,11 @@ cookies keep you signed in" stays true.
   dashboard), the recording is stopped and none starts; a new replay starts
   when it goes. Its QR tile is blocked as well.
 - **Heatmaps:** from the clicks and the replay (`record_heatmap_data: true`).
-- **Profiles:** one per signed-in person, by `viewer.id`: `tenant`, `staff`,
-  `role`, and Mixpanel's own operating system and browser.
+- **Profiles:** one per signed-in person, by `viewer.id`: `$name`,
+  `$created`, `tenant`, `staff`, `role`, `two_factor`, `sign_in`, `$email` for
+  staff only, and Mixpanel's own operating system and browser. `$name` is a
+  staff member's address, else `<tenant> · <role> · <first 8 of the id>`;
+  `$created` is the first day of the account's month.
 - **The dashboard's own events** (below): what autocapture can't see.
 
 ### What is redacted, and where
@@ -176,7 +188,9 @@ recording a stored acceptance starts at once is scrubbed too.
 
 ### What is never sent
 
-To events, profiles or replays: no name, email or account id; no request ID,
+To events, profiles or replays: no customer's name, email or account id (a
+staff member's profile carries their address, nothing else does); no Ask
+question or answer text; no request ID,
 transaction hash, customer or caller id, filter value, typed text or node url,
 in a URL, an element's attributes or its text. Our own events keep only the
 fields the catalog lists (`packages/shared/src/constants/usage-events.ts`),
@@ -226,7 +240,9 @@ same page starts it again; a browser whose answer is "no" never loads the SDK.
 
 Every event carries `distinct_id` (`viewer.id`), `tenant`, `deployment_mode`,
 `dashboard_version`, `staff` (yes/no: the signed-in user's address is at
-`magmadevs.com`) and `role` - never the address. Autocapture's events are
+`magmadevs.com`) and `role` - never the address. `page` is one of `metrics`,
+`upstreams`, `team`, `audit`, `account`, `standalone`, `ask` and `other`.
+Autocapture's events are
 above; these are the dashboard's own:
 
 | Event | Fields | Sent when |
@@ -244,6 +260,9 @@ above; these are the dashboard's own:
 | `filter_use` | `list`, `filter` (view / result / retryable / error-type / customer / method / provider / time) | a list filter is changed |
 | `load_older` | `list` | "Load older" is clicked |
 | `view_problem` | `view`, `problem` (did-not-load / slow), `seconds` | a read fails (network or server error - a 4xx is the request's, not the screen's) or takes over 10 s, once per view a page load; reads cut short by leaving the page are not counted |
+| `ask_open` | `from` (button / pill / shortcut), `view` (panel / full) | Ask opens from closed or minimized: the top bar's button, the minimized pill or ⌘/Ctrl K; `view` is where it opened |
+| `ask_question` | `view` (panel / full), `page` (overview / dashboard / metrics / upstreams / ask), `new_chat`, `chain` (yes/no: a chain was picked) | a question is accepted by the api; never the question |
+| `ask_answer` | `result` (succeeded / failed / cancelled / interrupted), `error` (the run's `ASK_…` code, or other), `seconds`, `sections`, `evidence` | a question this tab sent ends, read from `GET /api/ask/runs/:id` while usage data is recorded; `seconds` from sending to the end; never the answer. A tab closed before the end sends none |
 
 ## Reading it
 
@@ -256,3 +275,20 @@ above; these are the dashboard's own:
   `not-found` search.
 - **What is never used:** clicks and heatmaps per page, `panel_open` and
   `filter_use` counts per value, per tenant.
+- **Does Ask answer?** `ask_answer.result` and `error` per tenant, and
+  `seconds` against `ask_question`; `ask_open` without an `ask_question` in
+  the session is someone who opened it and asked nothing.
+- **New people or old hands?** Any report broken down by the profile's
+  `$created`, `two_factor` or `sign_in`.
+
+## Who a usage id is
+
+Mixpanel names a customer by `viewer.id` only. An admin of the deployment
+turns one back into a member at `/team?usage=<id>`: the Team page says which
+member it belongs to (removed members included) or that none does. Behind it
+is `GET /api/usage/viewers/:id`, admins only, which hashes every account of
+the deployment and answers `{ member: { id, email, name, role, status } }` or
+`{ member: null }`. It names no one an admin can't already see on the Team
+page, and works whether usage data is on or off. The `?usage=` value is never
+sent to Mixpanel: the redaction drops a query key the dashboard does not
+write.

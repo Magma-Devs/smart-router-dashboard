@@ -5,6 +5,23 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.73.0]
+
+### Added
+
+- **Usage profiles say who and what (MAG-5413).** Each person's Mixpanel
+  profile carries a readable `$name` (`<tenant> · <role> · <id prefix>`), the
+  account's month (`$created`), whether 2FA is set up (`two_factor`) and how
+  the session signed in (`sign_in`). A staff member's profile (an address at
+  `USAGE_STAFF_DOMAINS`) is named by their address and carries `$email`; a
+  customer's address is never sent.
+- **Ask sends usage events:** `ask_open` (button, pill or shortcut; panel or
+  full), `ask_question` (view, page, new chat, chain picked) and
+  `ask_answer` (result, error code, seconds, sections, evidence). Never the
+  question or the answer. `/ask` is its own `page` in usage events.
+- **An admin turns a usage id back into a member** at `/team?usage=<id>`,
+  backed by the admin-only `GET /api/usage/viewers/:id`.
+
 ## [0.72.0]
 
 ### Added

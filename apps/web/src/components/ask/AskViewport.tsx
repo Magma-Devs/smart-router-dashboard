@@ -139,7 +139,7 @@ export function AskDock() {
     return (
       <button
         className="ask-pill"
-        onClick={() => void ask.open()}
+        onClick={() => void ask.open("pill")}
         aria-label={ask.active ? "Open chat, question processing" : "Open chat"}
       >
         <span aria-hidden="true">✦</span>
