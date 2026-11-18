@@ -20,6 +20,8 @@ describe("bounded Ask query dialect", () => {
   it.each([
     "rate(up[365d])",
     "up offset 365d",
+    "rate(up[5m] OFFSET 30d)",
+    "up Offset 365d",
     "up offset(1h * 1000)",
     "up @ 1",
     "up @ start()",

@@ -13,7 +13,7 @@ const settings = () =>
     AUTH_MODE: "enabled",
     DEPLOYMENT_MODE: "managed",
     ASK_DATA_ENABLED: "true",
-    ASK_DATA_CUSTOMER_ID: "gk8",
+    ASK_DATA_CUSTOMER_ID: "acme",
     ASK_DATA_MCP_TOKEN: "customer-secret-test",
     AWS_BEARER_TOKEN_BEDROCK: "provider-secret-test",
     ASK_DATA_BEDROCK_MODEL: "test-model",
@@ -28,7 +28,7 @@ function run(): AskRunRow {
   return {
     id: crypto.randomUUID(),
     chatId: crypto.randomUUID(),
-    customerId: "gk8",
+    customerId: "acme",
     ownerId: crypto.randomUUID(),
     sessionId: crypto.randomUUID(),
     idempotencyKey: crypto.randomUUID(),
@@ -53,7 +53,7 @@ function run(): AskRunRow {
   };
 }
 function tool(
-  sourceId = "gk8-metrics",
+  sourceId = "acme-metrics",
   operationId = "metrics.query",
   parameters: Record<string, unknown> = { query: "count(up)", time: Date.now() / 1000 },
   id = "read-1",
@@ -85,16 +85,16 @@ function fixture(
   const client = new Client({ name: "orchestrator-fixture", version: "1" });
   const sourceList = [
     {
-      id: "gk8-metrics",
+      id: "acme-metrics",
       name: "Metrics",
       kind: "mimir",
       operationIds: ["metrics.query", "delete.everything"],
     },
-    { id: "gk8-logs", name: "Logs", kind: "loki", operationIds: ["logs.query_range"] },
+    { id: "acme-logs", name: "Logs", kind: "loki", operationIds: ["logs.query_range"] },
     ...(options.status
       ? [
           {
-            id: "gk8-status",
+            id: "acme-status",
             name: "Status",
             kind: "provider_status",
             operationIds: ["status.chain_events"],
@@ -105,7 +105,7 @@ function fixture(
   const call = vi.spyOn(client, "callTool").mockImplementation(async (request) => {
     let result: unknown;
     if (request.name === "whoami")
-      result = { tenantId: "gk8", subject: "fixture-customer", scopes: ["read"] };
+      result = { tenantId: "acme", subject: "fixture-customer", scopes: ["read"] };
     else if (request.name === "list_sources") result = sourceList;
     else if (request.name === "search_operations")
       result = {
@@ -123,7 +123,7 @@ function fixture(
       };
     else
       result = {
-        tenantId: "gk8",
+        tenantId: "acme",
         sourceId: request.arguments?.sourceId,
         operationId: request.arguments?.operationId,
         ok: !options.fail,
@@ -296,14 +296,14 @@ describe("bounded customer tool orchestration", () => {
       .flatMap((m) => m.content)
       .find((block) => block.toolResult)?.toolResult;
     expect(JSON.parse(toolMessage!.content[0]!.text)).toMatchObject({
-      sourceId: "gk8-metrics",
+      sourceId: "acme-metrics",
       operationId: "metrics.query",
       observedAt: result.evidence[0]!.observedAt,
     });
 
     expect(result.evidence).toHaveLength(1);
     expect(result.evidence[0]).toMatchObject({
-      sourceId: "gk8-metrics",
+      sourceId: "acme-metrics",
       operationId: "metrics.query",
       coverage: "complete",
       truncated: false,
@@ -341,7 +341,7 @@ describe("bounded customer tool orchestration", () => {
         provider([
           tool(),
           tool(
-            "gk8-logs",
+            "acme-logs",
             "logs.query_range",
             { query: '{component="router"}', start: end - 60, end },
             "read-2",
@@ -350,7 +350,7 @@ describe("bounded customer tool orchestration", () => {
         final(),
       ],
     });
-    expect((await f.answer()).evidence.map((e) => e.sourceId)).toEqual(["gk8-metrics", "gk8-logs"]);
+    expect((await f.answer()).evidence.map((e) => e.sourceId)).toEqual(["acme-metrics", "acme-logs"]);
     expect(f.hooks.recordTool).toHaveBeenCalledTimes(2);
   });
 
@@ -408,9 +408,9 @@ describe("bounded customer tool orchestration", () => {
 
   it.each([
     tool("other-metrics"),
-    tool("gk8-metrics", "delete.everything", {}),
-    tool("gk8-metrics", "metrics.query", { query: "up", tenantId: "other" }),
-    tool("gk8-metrics", "metrics.query", { query: "up", headers: { authorization: "secret" } }),
+    tool("acme-metrics", "delete.everything", {}),
+    tool("acme-metrics", "metrics.query", { query: "up", tenantId: "other" }),
+    tool("acme-metrics", "metrics.query", { query: "up", headers: { authorization: "secret" } }),
   ])(
     "rejects foreign/write/credential escalation even when the model requests it",
     async (request) => {
@@ -467,12 +467,14 @@ describe("bounded customer tool orchestration", () => {
   it("enforces model-step, tool-call and context bounds without extra paid dispatch", async () => {
     const steps = fixture();
     steps.settings.maxSteps = 1;
+    // A last step without a successful read cannot answer: it is never paid for.
     await expect(steps.answer()).rejects.toMatchObject({ code: "ASK_LIMIT_REACHED" });
-    expect(steps.fetchImpl).toHaveBeenCalledTimes(1);
+    expect(steps.hooks.beforeModelStep).not.toHaveBeenCalled();
+    expect(steps.fetchImpl).not.toHaveBeenCalled();
     vi.restoreAllMocks();
     const calls = fixture({
       responses: [
-        provider([tool(), tool("gk8-metrics", "metrics.query", { query: "up" }, "second")]),
+        provider([tool(), tool("acme-metrics", "metrics.query", { query: "up" }, "second")]),
         provider([presentation()]),
       ],
     });
@@ -498,13 +500,86 @@ describe("bounded customer tool orchestration", () => {
     expect(context.fetchImpl).not.toHaveBeenCalled();
   });
 
+  it("stops reading while the next input still holds a whole result, then presents", async () => {
+    const lines = Array.from({ length: 150 }, (_, i) => [
+      String(i),
+      `level=info msg="relay ok" chain=ETH1 provider=p${i} latency_ms=${i}`,
+    ]);
+    const f = fixture({
+      data: { status: "success", data: { result: [{ values: lines }] } },
+      responses: [
+        provider(
+          ["a", "b", "c", "d"].map((id) =>
+            tool("acme-metrics", "metrics.query", { query: "count(up)" }, id),
+          ),
+        ),
+        provider([presentation()]),
+      ],
+    });
+    expect((await f.answer()).summary).toBe(content.summary);
+    for (const body of f.bodies)
+      expect(Buffer.byteLength(body)).toBeLessThanOrEqual(f.settings.maxContextBytes);
+    const results = JSON.parse(f.bodies[1]!).messages.at(-1).content;
+    expect(results.at(-1).toolResult).toMatchObject({ toolUseId: "d", status: "error" });
+    expect(vi.mocked(f.hooks.recordTool).mock.calls.length).toBeLessThan(4);
+  });
+
+  it("never pays for a step once failed reads have used every read", async () => {
+    const reads = (prefix: string) =>
+      provider([1, 2, 3, 4].map((n) => tool(undefined, undefined, undefined, `${prefix}${n}`)));
+    const f = fixture({
+      fail: true,
+      responses: ["a", "b", "c", "d", "e", "f", "g", "h"].map(reads),
+    });
+    await expect(f.answer()).rejects.toMatchObject({ code: "ASK_MCP_UNAVAILABLE" });
+    expect(f.fetchImpl).toHaveBeenCalledTimes(2);
+    expect(f.hooks.recordTool).toHaveBeenCalledTimes(f.settings.maxToolCalls);
+  });
+
+  it("keeps a long chat's newest turns that fit, so a new question still runs", async () => {
+    const long = {
+      contractVersion: 1 as const,
+      summary: "Earlier answer.",
+      sections: [0, 1, 2].map((n) => ({
+        title: `Part ${n}`,
+        body: 'Router p1 returned "error" 503 on ETH1 between 10:00 and 10:05. '.repeat(30),
+      })),
+      answeredAt: new Date().toISOString(),
+      evidence: [],
+    };
+    const history: AskMessage[] = Array.from({ length: 20 }, (_, i) => ({
+      id: crypto.randomUUID(),
+      runId: crypto.randomUUID(),
+      role: i % 2 ? "assistant" : "user",
+      createdAt: new Date().toISOString(),
+      question: i % 2 ? null : `QUESTION_${i}`,
+      answer: i % 2 ? long : null,
+    }));
+    const f = fixture({ responses: [provider([tool()]), provider([presentation()])] });
+    expect((await f.answer(history)).summary).toBe(content.summary);
+    expect(f.bodies[0]).toContain("QUESTION_18");
+    expect(f.bodies[0]).not.toContain("QUESTION_0");
+  });
+
+  it("answers when a read named its time in milliseconds", async () => {
+    const f = fixture({
+      responses: [
+        provider([tool("acme-metrics", "metrics.query", { query: "count(up)", time: Date.now() })]),
+        provider([presentation()]),
+      ],
+    });
+    const answer = await f.answer();
+    expect(answer.evidence[0]).toMatchObject({ operationId: "metrics.query" });
+    expect(answer.evidence[0]?.from).toBeUndefined();
+  });
+
   it("uses verified provider-status capability and applies the local seven-day bounds", async () => {
     const until = Math.floor(Date.now() / 1000);
     const f = fixture({
       status: true,
       responses: [
         provider([
-          tool("gk8-status", "status.chain_events", {
+          tool("acme-status", "status.chain_events", {
             since: until - 3600,
             until,
             chains: ["ETH1"],
@@ -519,7 +594,7 @@ describe("bounded customer tool orchestration", () => {
     const invalid = fixture({
       status: true,
       responses: [
-        provider([tool("gk8-status", "status.chain_events", { since: until - 8 * 86_400, until })]),
+        provider([tool("acme-status", "status.chain_events", { since: until - 8 * 86_400, until })]),
       ],
     });
     await expect(invalid.answer()).rejects.toMatchObject({ code: "ASK_TOOL_DENIED" });
@@ -562,7 +637,7 @@ describe("bounded customer tool orchestration", () => {
     await expect(f.answer()).rejects.toMatchObject({ code: "ASK_MCP_UNAVAILABLE" });
     expect(f.hooks.recordTool).toHaveBeenCalledWith(
       expect.objectContaining({
-        sourceId: "gk8-metrics",
+        sourceId: "acme-metrics",
         operationId: "metrics.query",
         ok: false,
         evidence: expect.objectContaining({ coverage: "unavailable" }),

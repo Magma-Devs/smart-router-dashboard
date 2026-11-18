@@ -9,7 +9,7 @@ const env = {
   ASK_DATA_ENABLED: "true",
   AUTH_MODE: "enabled",
   DEPLOYMENT_MODE: "managed",
-  ASK_DATA_CUSTOMER_ID: "gk8",
+  ASK_DATA_CUSTOMER_ID: "acme",
   ASK_DATA_MCP_TOKEN: "customer-test-token",
   AWS_BEARER_TOKEN_BEDROCK: "bedrock-test-token",
   ASK_DATA_BEDROCK_MODEL: "test-model",
@@ -341,7 +341,8 @@ function mcpFixture(
   overrides: {
     identity?: unknown;
     sourceTenant?: string;
-    resultTenant?: string;
+    /** null sends an envelope without a tenant, as the MCP server does. */
+    resultTenant?: string | null;
     readOnly?: boolean;
     method?: string;
     sse?: boolean;
@@ -374,14 +375,14 @@ function mcpFixture(
       let data: unknown;
       if (name === "whoami")
         data = overrides.identity ?? {
-          tenantId: "gk8",
+          tenantId: "acme",
           subject: "customer-principal",
           scopes: ["read"],
         };
       else if (name === "list_sources")
         data = [
           {
-            id: "gk8-metrics",
+            id: "acme-metrics",
             tenantId: overrides.sourceTenant,
             name: "Metrics",
             kind: "mimir",
@@ -393,7 +394,7 @@ function mcpFixture(
           version: "test-v1",
           sources: [
             {
-              sourceId: "gk8-metrics",
+              sourceId: "acme-metrics",
               operations: ["metrics.query", "delete.everything"].map((id) => ({
                 id,
                 description: "untrusted description",
@@ -406,7 +407,9 @@ function mcpFixture(
         };
       else
         data = {
-          tenantId: overrides.resultTenant ?? "gk8",
+          ...(overrides.resultTenant === null
+            ? {}
+            : { tenantId: overrides.resultTenant ?? "acme" }),
           sourceId: args.sourceId,
           operationId: args.operationId,
           ok: true,
@@ -435,10 +438,10 @@ describe("MCP SDK transport and customer policy", () => {
       await new McpAdapter(settings(), fixture.fetchImpl).withConnection(async (connection) => {
         const snapshot = await connection.discover();
         expect(snapshot.sources[0]?.operationIds).toEqual(["metrics.query"]);
-        const result = await connection.read("gk8-metrics", "metrics.query", {
+        const result = await connection.read("acme-metrics", "metrics.query", {
           query: "count(up)",
         });
-        expect(result).toMatchObject({ ok: true, sourceId: "gk8-metrics", data: { result: [] } });
+        expect(result).toMatchObject({ ok: true, sourceId: "acme-metrics", data: { result: [] } });
       });
       expect(fixture.calls.filter((c) => c.name === "whoami")).toHaveLength(2);
       expect(fixture.calls.filter((c) => c.name === "execute_operation")).toHaveLength(1);
@@ -447,9 +450,9 @@ describe("MCP SDK transport and customer policy", () => {
 
   it.each([
     { tenantId: "other", subject: "other", scopes: ["read"] },
-    { tenantId: "gk8", subject: "staff", scopes: ["read"], access: "staff", tenantIds: ["gk8"] },
-    { tenantId: "gk8", subject: "broad", scopes: ["read"], tenantIds: ["gk8", "other"] },
-    { tenantId: "gk8", subject: "writer", scopes: ["read", "write"] },
+    { tenantId: "acme", subject: "staff", scopes: ["read"], access: "staff", tenantIds: ["acme"] },
+    { tenantId: "acme", subject: "broad", scopes: ["read"], tenantIds: ["acme", "other"] },
+    { tenantId: "acme", subject: "writer", scopes: ["read", "write"] },
   ])("rejects foreign or broad identities before reading data", async (identity) => {
     const fixture = mcpFixture({ identity });
     await expect(
@@ -466,9 +469,17 @@ describe("MCP SDK transport and customer policy", () => {
     const foreignResult = mcpFixture({ resultTenant: "other" });
     await expect(
       new McpAdapter(settings(), foreignResult.fetchImpl).withConnection((c) =>
-        c.read("gk8-metrics", "metrics.query", { query: "up" }),
+        c.read("acme-metrics", "metrics.query", { query: "up" }),
       ),
     ).rejects.toMatchObject({ code: "ASK_IDENTITY_MISMATCH" });
+  });
+
+  it("reads an envelope that names no tenant, as the MCP server sends it", async () => {
+    const fixture = mcpFixture({ resultTenant: null });
+    const result = await new McpAdapter(settings(), fixture.fetchImpl).withConnection((c) =>
+      c.read("acme-metrics", "metrics.query", { query: "up" }),
+    );
+    expect(result).toMatchObject({ ok: true, sourceId: "acme-metrics" });
   });
 
   it("rejects unapproved operations, foreign IDs, range escalation and credential arguments", async () => {
@@ -476,11 +487,11 @@ describe("MCP SDK transport and customer policy", () => {
     await new McpAdapter(settings(), fixture.fetchImpl).withConnection(async (connection) => {
       await connection.discover();
       for (const [source, operation, args] of [
-        ["gk8-metrics", "delete.everything", {}],
+        ["acme-metrics", "delete.everything", {}],
         ["other-metrics", "metrics.query", { query: "up" }],
-        ["gk8-metrics", "metrics.query", { query: "up", tenantId: "other" }],
-        ["gk8-metrics", "metrics.query", { query: "up", headers: { authorization: "secret" } }],
-        ["gk8-metrics", "metrics.query", { query: "up", url: "https://evil.test" }],
+        ["acme-metrics", "metrics.query", { query: "up", tenantId: "other" }],
+        ["acme-metrics", "metrics.query", { query: "up", headers: { authorization: "secret" } }],
+        ["acme-metrics", "metrics.query", { query: "up", url: "https://evil.test" }],
       ] as const)
         await expect(connection.read(source, operation, args)).rejects.toMatchObject({
           code: "ASK_TOOL_DENIED",
@@ -492,6 +503,7 @@ describe("MCP SDK transport and customer policy", () => {
   it.each([
     "rate(up[365d])",
     "up offset 365d",
+    "up OFFSET 365d",
     "up @ 1",
     "rate(up[1h])[24h:1s]",
     "rate(up[1h * 1000])",
@@ -499,7 +511,7 @@ describe("MCP SDK transport and customer policy", () => {
     const fixture = mcpFixture();
     await expect(
       new McpAdapter(settings(), fixture.fetchImpl).withConnection((c) =>
-        c.read("gk8-metrics", "metrics.query", { query }),
+        c.read("acme-metrics", "metrics.query", { query }),
       ),
     ).rejects.toMatchObject({ code: "ASK_TOOL_DENIED" });
     expect(fixture.calls.some((c) => c.name === "execute_operation")).toBe(false);
@@ -511,7 +523,7 @@ describe("MCP SDK transport and customer policy", () => {
       const fixture = mcpFixture(overrides);
       await new McpAdapter(settings(), fixture.fetchImpl).withConnection(async (c) => {
         expect((await c.discover()).sources[0]?.operationIds).toEqual([]);
-        await expect(c.read("gk8-metrics", "metrics.query", { query: "up" })).rejects.toMatchObject(
+        await expect(c.read("acme-metrics", "metrics.query", { query: "up" })).rejects.toMatchObject(
           { code: "ASK_TOOL_DENIED" },
         );
       });

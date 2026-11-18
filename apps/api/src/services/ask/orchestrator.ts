@@ -91,8 +91,11 @@ function record(value: unknown): Record<string, unknown> | null {
     ? (value as Record<string, unknown>)
     : null;
 }
+/** Unix seconds as an ISO time, or undefined outside the years 1970-9999 (a
+ * millisecond value passed as seconds lands far past them). */
 function iso(value: unknown): string | undefined {
-  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 253_402_300_799)
+    return undefined;
   const date = new Date(value * 1000);
   return Number.isFinite(date.getTime()) ? date.toISOString() : undefined;
 }
@@ -169,17 +172,7 @@ export class AskOrchestrator {
                 untrustedContext: {
                   page: run.context,
                   catalog: { sources: snapshot.sources, operations: snapshot.operations },
-                  history: history.slice(-20).map((message) => ({
-                    role: message.role,
-                    question: message.question,
-                    answer: message.answer
-                      ? {
-                          summary: message.answer.summary,
-                          sections: message.answer.sections,
-                          answeredAt: message.answer.answeredAt,
-                        }
-                      : null,
-                  })),
+                  history: this.recentHistory(history),
                 },
               }),
             },
@@ -187,39 +180,53 @@ export class AskOrchestrator {
         },
       ];
       messages[0]!.content.push({ text: redactAskText(run.question, secrets) });
+      const inputOf = (mustPresent: boolean, pending: BedrockMessage[] = []) => ({
+        system,
+        messages: redactAskData([...messages, ...pending], secrets) as BedrockMessage[],
+        tools: [
+          ...(!mustPresent
+            ? [
+                {
+                  name: "read_customer_data",
+                  description: `Execute one server-approved read from the supplied authorized source/operation catalog. ${this.settings.maxToolCalls - toolCalls} data reads remain. Use as few reads as possible and present the answer once enough evidence is available. All parameters must match the local schema. No writes, customer override, URLs, headers or credentials.`,
+                  inputSchema: z.toJSONSchema(toolInput) as Record<string, unknown>,
+                },
+              ]
+            : []),
+          ...(successfulReads
+            ? [
+                {
+                  name: "present_answer",
+                  description:
+                    "Finish this run with a concise structured answer grounded in the actual reads. Call this once, alone, instead of producing free text. This only formats the reply; it never reads or writes customer systems.",
+                  inputSchema: answerToolSchema,
+                  strict: true,
+                },
+              ]
+            : []),
+        ],
+        forceTool: true,
+      });
+      // Another read fits when the next input still has room for a whole
+      // result: one is embedded as a JSON string, so escaping can double it.
+      const roomToRead = (pending: BedrockMessage[] = []) =>
+        Buffer.byteLength(JSON.stringify(inputOf(false, pending))) +
+          2 * this.settings.maxToolResultBytes +
+          256 <=
+        this.settings.maxContextBytes;
       for (let step = 0; step < this.settings.maxSteps; step++) {
         if (signal.aborted) throw abortFailure(signal);
         await hooks.checkActive();
-        const mustPresent =
-          successfulReads > 0 &&
-          (step === this.settings.maxSteps - 1 || toolCalls >= this.settings.maxToolCalls);
-        const input = {
-          system,
-          messages: redactAskData(messages, secrets) as BedrockMessage[],
-          tools: [
-            ...(!mustPresent
-              ? [
-                  {
-                    name: "read_customer_data",
-                    description: `Execute one server-approved read from the supplied authorized source/operation catalog. ${this.settings.maxToolCalls - toolCalls} data reads remain. Use as few reads as possible and present the answer once enough evidence is available. All parameters must match the local schema. No writes, customer override, URLs, headers or credentials.`,
-                    inputSchema: z.toJSONSchema(toolInput) as Record<string, unknown>,
-                  },
-                ]
-              : []),
-            ...(successfulReads
-              ? [
-                  {
-                    name: "present_answer",
-                    description:
-                      "Finish this run with a concise structured answer grounded in the actual reads. Call this once, alone, instead of producing free text. This only formats the reply; it never reads or writes customer systems.",
-                    inputSchema: answerToolSchema,
-                    strict: true,
-                  },
-                ]
-              : []),
-          ],
-          forceTool: true,
-        };
+        const lastStep = step === this.settings.maxSteps - 1;
+        const canRead = toolCalls < this.settings.maxToolCalls && roomToRead();
+        // Without a successful read no step can end in an answer once no read
+        // is left: stop before paying for one.
+        if (!successfulReads && (lastStep || !canRead))
+          throw evidence.length
+            ? new AskFailure("ASK_MCP_UNAVAILABLE")
+            : new AskFailure("ASK_LIMIT_REACHED", 422);
+        const mustPresent = successfulReads > 0 && (lastStep || !canRead);
+        const input = inputOf(mustPresent);
         if (Buffer.byteLength(JSON.stringify(input)) > this.settings.maxContextBytes)
           throw new AskFailure("ASK_LIMIT_REACHED", 422);
         const stepId = await hooks.beforeModelStep({
@@ -296,7 +303,11 @@ export class AskOrchestrator {
             )
           )
             throw new AskFailure("ASK_TOOL_DENIED", 403);
-          if (mustPresent || toolCalls >= this.settings.maxToolCalls) {
+          if (
+            mustPresent ||
+            toolCalls >= this.settings.maxToolCalls ||
+            !roomToRead([{ role: "user", content: results }])
+          ) {
             // Refuse additional I/O without discarding evidence already read.
             // Every requested ID still gets a result before the final step.
             results.push({
@@ -312,8 +323,8 @@ export class AskOrchestrator {
             });
             continue;
           }
-          toolCalls++;
           const { sourceId, operationId, parameters } = request.data;
+          toolCalls++;
           const started = performance.now();
           let rawResult: McpReadResult;
           try {
@@ -396,6 +407,31 @@ export class AskOrchestrator {
       }
       throw new AskFailure("ASK_LIMIT_REACHED", 422);
     }, signal);
+  }
+
+  /** The chat's newest turns that fit in a quarter of the input, measured as
+   * they are sent: inside the request's JSON text. */
+  private recentHistory(history: AskMessage[]) {
+    const budget = Math.floor(this.settings.maxContextBytes / 4);
+    const kept = [];
+    let used = 0;
+    for (const message of history.slice(-20).reverse()) {
+      const turn = {
+        role: message.role,
+        question: message.question,
+        answer: message.answer
+          ? {
+              summary: message.answer.summary,
+              sections: message.answer.sections,
+              answeredAt: message.answer.answeredAt,
+            }
+          : null,
+      };
+      used += Buffer.byteLength(JSON.stringify(JSON.stringify(turn)));
+      if (used > budget) break;
+      kept.unshift(turn);
+    }
+    return kept;
   }
 
   private finalAnswer(raw: unknown, evidence: AskEvidence[], secrets: string[]): AskAnswer {

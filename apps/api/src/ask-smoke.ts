@@ -40,11 +40,16 @@ async function smoke(): Promise<void> {
   const capabilities = await request<{ acceptingQuestions: boolean }>("/api/ask/capabilities");
   if (!capabilities.acceptingQuestions) throw new Error("SMOKE_API_UNAVAILABLE");
   const chat = await request<{ id: string }>("/api/ask/chats", {});
+  const asked = Date.now();
   const run = await request<AskRun>(`/api/ask/chats/${chat.id}/runs`, {
     idempotencyKey: randomUUID(),
     question:
       "Using current authorized metrics, explain the count(up) result and what it cannot establish about router health. State the actual source, observation time and limitations.",
-    context: { page: "ask" },
+    context: {
+      page: "ask",
+      from: new Date(asked - 3_600_000).toISOString(),
+      to: new Date(asked).toISOString(),
+    },
   });
   const deadline = Date.now() + 125_000;
   while (Date.now() < deadline) {

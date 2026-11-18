@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { askSubmitSchema } from "@sr/shared";
 
 let exitCode: typeof process.exitCode;
 beforeEach(() => {
@@ -41,6 +42,10 @@ describe("metered operator smoke", () => {
       "/api/ask/chats/chat-fixture/runs",
       "/api/ask/runs/run-fixture",
     ]);
+    // The question it submits is one the API admits.
+    expect(askSubmitSchema.safeParse(JSON.parse(String(fetchImpl.mock.calls[2]![1]!.body))).success).toBe(
+      true,
+    );
     for (const [url, init] of fetchImpl.mock.calls) {
       expect(new URL(String(url)).hostname).toBe("127.0.0.1");
       expect(init!.headers).toMatchObject({ authorization: "Bearer synthetic-session-secret" });

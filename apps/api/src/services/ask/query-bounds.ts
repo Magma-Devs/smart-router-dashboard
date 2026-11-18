@@ -26,7 +26,8 @@ export function hasBoundedAskQuery(value: string): boolean {
   }
   if (quote) return false;
   const syntax = code.join("");
-  if (syntax.includes("@") || /\boffset\b/.test(syntax)) return false;
+  // PromQL and LogQL keywords are case-insensitive.
+  if (syntax.includes("@") || /\boffset\b/i.test(syntax)) return false;
   const unitSeconds: Record<string, number> = {
     ms: 0.001,
     s: 1,

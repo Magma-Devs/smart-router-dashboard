@@ -345,7 +345,9 @@ export class McpConnection {
     await this.verifyIdentity();
     const result = z
       .object({
-        tenantId: identifier,
+        // The MCP server picks the tenant from this credential; an envelope
+        // that names one must name this customer.
+        tenantId: identifier.optional(),
         sourceId: identifier,
         operationId: z.string(),
         ok: z.boolean(),
@@ -358,7 +360,7 @@ export class McpConnection {
       );
     if (!result.success) throw new AskFailure("ASK_MCP_UNAVAILABLE");
     if (
-      result.data.tenantId !== this.settings.customerId ||
+      (result.data.tenantId !== undefined && result.data.tenantId !== this.settings.customerId) ||
       result.data.sourceId !== sourceId ||
       result.data.operationId !== operationId
     )
