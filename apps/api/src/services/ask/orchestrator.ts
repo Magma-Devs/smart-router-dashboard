@@ -14,7 +14,7 @@ import type { AskRunRow } from "@sr/db";
 import type { AskSettings } from "../../config.js";
 import { type BedrockInput, type BedrockReceipt, type BedrockUsage } from "./bedrock.js";
 import { McpAdapter, assertAskRead, askReadOperations, type McpReadResult } from "./mcp.js";
-import { askAgentModel } from "./agent-model.js";
+import { askAgentModel, type AskHistoryTurn } from "./agent-model.js";
 import { requestSummaryInput, requestSummaryQueries } from "./request-summary.js";
 import { formatAskPresentation } from "./presentation.js";
 import { routerLogsInput, routerLogQuery } from "./router-logs.js";
@@ -180,6 +180,7 @@ export class AskOrchestrator {
     let successfulReads = 0;
     let toolCalls = 0;
     let inputBytes = 0;
+    let protectedInputBytes = 0;
     let pendingBytes = 0;
     let final: AskAnswer | undefined;
     let fatal: unknown;
@@ -215,7 +216,7 @@ export class AskOrchestrator {
         }
         assertAskRead(operationId, parameters);
         if (
-          inputBytes + pendingBytes + 2 * this.settings.maxToolResultBytes + 512 >
+          protectedInputBytes + pendingBytes + 2 * this.settings.maxToolResultBytes + 512 >
           this.settings.maxContextBytes
         )
           return {
@@ -365,15 +366,18 @@ export class AskOrchestrator {
       `Trusted server request context: ${JSON.stringify(request)}`,
       `Untrusted page context: ${JSON.stringify(redactAskData(run.context, secrets))}`,
     ].join("\n");
+    const historyTurns = this.recentHistory(history, secrets);
     const agent = new ToolLoopAgent<never, ToolSet>({
       model: askAgentModel({
         settings: this.settings,
         hooks,
         runId: run.id,
         signal: active,
+        history: historyTurns,
         fetchImpl: this.fetchImpl,
-        inputSize: (bytes) => {
+        inputSize: (bytes, protectedBytes) => {
           inputBytes = bytes;
+          protectedInputBytes = protectedBytes;
           pendingBytes = 0;
         },
         timing: hooks.timing,
@@ -464,7 +468,7 @@ export class AskOrchestrator {
           stepNumber === this.settings.maxSteps - 1 ||
           toolCalls >= this.settings.maxToolCalls ||
           (inputBytes > 0 &&
-            inputBytes + pendingBytes + 2 * this.settings.maxToolResultBytes + 512 >
+            protectedInputBytes + pendingBytes + 2 * this.settings.maxToolResultBytes + 512 >
               this.settings.maxContextBytes);
         if (mustPresent && evidence.length && !successfulReads)
           throw new AskFailure("ASK_MCP_UNAVAILABLE");
@@ -551,7 +555,7 @@ export class AskOrchestrator {
     });
     try {
       const messages: ModelMessage[] = [
-        ...this.recentHistory(history, secrets),
+        ...historyTurns,
         { role: "user", content: redactAskText(run.question, secrets) },
       ];
       await agent.generate({ messages, abortSignal: active });
@@ -565,9 +569,9 @@ export class AskOrchestrator {
     }
   }
 
-  private recentHistory(history: AskMessage[], secrets: string[]): ModelMessage[] {
+  private recentHistory(history: AskMessage[], secrets: string[]): AskHistoryTurn[] {
     const budget = Math.floor(this.settings.maxContextBytes / 4);
-    const kept: ModelMessage[] = [];
+    const kept: AskHistoryTurn[] = [];
     let used = 0;
     for (const message of history.slice(-20).reverse()) {
       const content =
@@ -582,7 +586,7 @@ export class AskOrchestrator {
               })
             : null;
       if (!content) continue;
-      const turn: ModelMessage = { role: message.role, content: redactAskText(content, secrets) };
+      const turn: AskHistoryTurn = { role: message.role, content: redactAskText(content, secrets) };
       used += Buffer.byteLength(JSON.stringify(turn));
       if (used > budget) break;
       kept.unshift(turn);

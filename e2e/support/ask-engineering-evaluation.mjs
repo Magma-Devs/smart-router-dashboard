@@ -33,6 +33,7 @@ if (!profile) throw new Error("Explicit engineering AWS profile required");
 const output = process.env.ASK_EVALUATION_OUTPUT;
 if (!output?.startsWith("/private/tmp/"))
   throw new Error("External temporary receipts directory required");
+const longHistory = process.env.ASK_EVALUATION_LONG_HISTORY === "true";
 const python = process.env.ASK_EVALUATION_PYTHON ?? "python3";
 const model = process.env.ASK_EVALUATION_MODEL;
 const region = process.env.ASK_EVALUATION_REGION;
@@ -523,25 +524,74 @@ async function turn(actor, session, chat, question) {
   if (run?.id !== submission.id) throw new Error("Unexpected evaluation queue owner");
   const detail = await store.chatDetail(actor, chat);
   const started = performance.now();
+  const inputBytes = [];
+  const admitted = budget.hooks(run);
   try {
     const answer = await new AskOrchestrator(settings, fetchImpl).answer(
       run,
       detail.messages.filter((message) => message.runId !== run.id),
-      budget.hooks(run),
+      {
+        ...admitted,
+        beforeModelStep: async (bounds) => {
+          inputBytes.push(bounds.inputBytes);
+          return admitted.beforeModelStep(bounds);
+        },
+      },
       AbortSignal.timeout(settings.runTimeoutMs),
     );
     if (!(await store.succeed(run.id, run.leaseToken, answer)))
       throw new Error("Evaluation lost its lease");
     await budget.reconcile(run.id);
-    return { ok: true, answer, wallMs: Math.round(performance.now() - started) };
+    return { ok: true, answer, inputBytes, wallMs: Math.round(performance.now() - started) };
   } catch (error) {
     await store.fail(run.id, run.leaseToken, error?.code ?? "ASK_UNAVAILABLE");
     await budget.reconcile(run.id);
     return {
       ok: false,
       code: error?.code ?? error?.name ?? "unknown",
+      inputBytes,
       wallMs: Math.round(performance.now() - started),
     };
+  }
+}
+
+async function seedHistory(actor, session, chat) {
+  // Local fixture records, not previous inference outputs or paid calls.
+  for (let i = 0; i < 12; i++) {
+    const now = new Date();
+    const saved = await store.submit(
+      actor,
+      session,
+      chat,
+      {
+        idempotencyKey: randomUUID(),
+        question: `Earlier general discussion ${i}`,
+        context: {
+          page: "ask",
+          from: new Date(now.getTime() - 86400000).toISOString(),
+          to: now.toISOString(),
+        },
+      },
+      (tx, run) => budget.admit(tx, run),
+    );
+    const run = await store.claim(120000);
+    if (run?.id !== saved.id) throw new Error("Unexpected history fixture lease");
+    if (
+      !(await store.succeed(run.id, run.leaseToken, {
+        contractVersion: 1,
+        summary: `Earlier general explanation ${i}`,
+        sections: [
+          {
+            title: "Explanation",
+            body: "General router terminology and historical explanatory context. ".repeat(28),
+          },
+        ],
+        evidence: [],
+        answeredAt: now.toISOString(),
+      }))
+    )
+      throw new Error("History fixture lost its lease");
+    await budget.reconcile(run.id);
   }
 }
 try {
@@ -556,6 +606,7 @@ try {
       client: { ip: "127.0.0.1", userAgent: "Engineering evaluation" },
     });
     const chat = await store.createChat(actor.id);
+    if (longHistory) await seedHistory(actor.id, session.id, chat.id);
     if (entry.setup) {
       const setup = await turn(actor.id, session.id, chat.id, entry.setup);
       if (!setup.ok) {
@@ -566,7 +617,11 @@ try {
     }
     currentReads = [];
     const before = receipts.length;
-    const result = await turn(actor.id, session.id, chat.id, entry.question);
+    const question = longHistory
+      ? `${entry.question}\n\n${"Background: this is a review after a longer conversation. Keep the answer focused on the current question and distinguish observed data from missing coverage. ".repeat(20)}`
+      : entry.question;
+    if (question.length > 4000) throw new Error("Evaluation question exceeds the product limit");
+    const result = await turn(actor.id, session.id, chat.id, question);
     const expectedReads =
       sourceMode === "no_status" &&
       ["data-18", "data-19", "data-20", "data-25", "followup-9"].includes(entry.id)
@@ -585,7 +640,8 @@ try {
       receiptMatches,
       modelCalls: receipts.length - before,
       readCount: currentReads.length,
-      question: entry.question,
+      question,
+      seededHistoryTurns: longHistory ? 12 : 0,
       reads: currentReads,
     };
     answers.push(record);
