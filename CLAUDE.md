@@ -1290,6 +1290,11 @@ Compose / Makefile knobs:
   `v*` tag and publishes nothing for it, so a stale number is a release that
   never happens. The pull request's title ends with the version, and
   `CHANGELOG.md` has a `## [<VERSION>]` section above the previous release's.
+- **A pull request's evidence lives in its body and its Jira ticket**, never in
+  the repository: no per-ticket validation folders, dated test logs, recorded
+  provider receipts or screenshots of the change. Screenshots go into the body
+  with `gh pr create`/`gh pr edit --attach`. Docs describe how the product works
+  now and point at the tests that prove it.
 
 ## Gotchas
 

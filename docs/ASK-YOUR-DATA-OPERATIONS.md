@@ -110,11 +110,6 @@ If `magma` uses an expired AWS SSO session, the operator renews it with
 permissions nor renews an independent Bedrock bearer. Do not save secrets in shell
 history, PR bodies, screenshots, transcripts or ordinary application logs.
 
-The [16 November live follow-up](validation/MAG-4934/LIVE.md) records renewed
-SSO, actual scoped source reads and the native provider compatibility work.
-Its disposable local stack and temporary credentials are validation evidence;
-they do not establish permanent runtime delivery or a deployed pilot.
-
 ## Internal records and retention checkpoint
 
 Using the separately authorized live Magma staff MCP OAuth identity, read
@@ -137,11 +132,11 @@ expired reads, physical deletion, retry and unchanged financial totals. Never ag
 or delete a customer's real records for a rehearsal. Record that runtime backups
 may retain deleted content until their separate backup expiry; verify the current
 backup and provider request-logging policies with the owners before pilot signoff.
-The [dated control-plane receipt](validation/MAG-4934/cloud-policy.json) verifies
-DEV seven-day / PROD fourteen-day automated backups, the fourteen-day PROD
-cross-region replica, explicit DDL/role audit with parameter logging off, and
-absent Bedrock invocation logging. It does not establish effective SQL engine
-defaults or exercise a restore. After restore, sweep retention and verify old
+The control-plane check recorded on MAG-4934 covers DEV seven-day / PROD
+fourteen-day automated backups, the fourteen-day PROD cross-region replica,
+explicit DDL/role audit with parameter logging off, and absent Bedrock invocation
+logging. It does not establish effective SQL engine defaults or exercise a
+restore. After restore, sweep retention and verify old
 content is inaccessible before admitting customer or internal traffic.
 
 Internal exports contain private content. Keep them in the authorized internal

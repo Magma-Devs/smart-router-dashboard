@@ -274,8 +274,9 @@ obtained through the normal login process. Never put its value in shell history.
 The command prints IDs and evidence metadata only; no raw values/answer/credential.
 A successful smoke is not browser UX, semantic quality or pilot acceptance.
 
-See [MAG-4932 validation](validation/MAG-4932/README.md) for actual PostgreSQL tests
-and the remaining live-provider/runtime/browser/rollout acceptance limits.
+`apps/api/src/__tests__/ask-postgres.test.ts` runs these flows against a real
+PostgreSQL (the "Ask isolation and concurrency" check). Live-provider, runtime and
+rollout acceptance is tracked on MAG-4934.
 
 
 ## Chat UI
@@ -320,7 +321,8 @@ On mobile, the panel uses the shared dialog layer for counted scroll locking,
 focus containment and Escape, with the background inert. Desktop remains nonmodal.
 The full view adapts history controls to small screens. Theme tokens, reduced
 motion and keyboard/focus labels follow the existing dashboard components.
-See [MAG-4933 verification and screenshots](validation/MAG-4933/README.md).
+The browser suites (`e2e/ask-specs`, `e2e/ask-presentation`) cover these views
+and write their screenshots to their results directories.
 
 See [the readiness and pilot runbook](ASK-YOUR-DATA-OPERATIONS.md) for runtime
 delivery, free preflight, staff/retention checks, controlled activation and rollback.

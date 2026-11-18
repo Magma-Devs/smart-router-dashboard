@@ -103,33 +103,29 @@ bounded; direct IDs always require ownership checks.
 
 ## Acceptance ledger
 
-The [17 November requirement-by-requirement and security review](validation/MAG-4934/REQUIREMENTS-SECURITY-REVIEW.md)
-maps all ticket clauses to code, tests and PRs, records reproduced fixes, and
-separates implemented behavior from the remaining deployed acceptance gates.
+An item is checked when the tests named beside it prove it. A check against the
+live MCP server, Bedrock or the staff OAuth identity is recorded on MAG-4934, not
+in this repository; opening or merging a PR does not establish acceptance.
 
-An item is checked only with corresponding observed evidence. Each slice records
-dated commands/results and remaining limits; opening or merging its PR does not
-establish acceptance.
-
-- [x] Customer identity, source ownership and read-only enforcement — adapter tests and [scoped live checks](validation/MAG-4934/LIVE.md)
-- [x] Managed/customer flags and current-session gate on UI and API — [browser evidence](validation/MAG-4933/README.md), API/HTTP gate checks
-- [x] Two customers and personal ownership through HTTP/real PostgreSQL — [MAG-4930 evidence](validation/MAG-4930/README.md)
-- [x] Separate API replicas, idempotency, leases, crash/restart and cancellation — [HTTP/PostgreSQL evidence](validation/MAG-4930/README.md)
-- [x] Every model step reserved/accounted; shared-customer concurrency and rollover — [budget evidence](validation/MAG-4932/README.md) and [actual provider receipts](validation/MAG-4934/native-browser.json)
-- [x] Malicious prompts/logs cannot change tools, customer, endpoint or credentials — [orchestration policy checks](validation/MAG-4931/README.md)
-- [x] Answer contract, evidence/time context, missing/partial/truncated data — orchestration tests and [native browser checks](validation/MAG-4934/LIVE.md)
-- [x] Personal history, search, pagination, direct links and last view — [browser evidence](validation/MAG-4933/README.md)
-- [x] Browser panel/full flow, minimize, navigation, reload, copy and stop — [browser evidence](validation/MAG-4933/README.md)
-- [x] Internal authorized staff read/export and customer denial — [actual staff OAuth/runtime checks](validation/MAG-4934/staff-runtime.json)
-- [x] Observable scheduled retention with tested cutoffs — actual HTTP/PostgreSQL and [flag-off scheduled runtime check](validation/MAG-4934/staff-runtime.json)
+- [x] Customer identity, source ownership and read-only enforcement — `ask-adapters.test.ts`; live scoped reads on MAG-4934
+- [x] Managed/customer flags and current-session gate on UI and API — `ask-routes.test.ts`, `e2e/specs/ask-disabled.spec.ts`
+- [x] Two customers and personal ownership through HTTP/real PostgreSQL — `ask-postgres.test.ts`
+- [x] Separate API replicas, idempotency, leases, crash/restart and cancellation — `ask-postgres.test.ts`, `ask-worker.test.ts`
+- [x] Every model step reserved/accounted; shared-customer concurrency and rollover — `ask-budget.test.ts`, `ask-postgres.test.ts`; live provider usage on MAG-4934
+- [x] Malicious prompts/logs cannot change tools, customer, endpoint or credentials — `ask-orchestrator.test.ts`, `ask-query-bounds.test.ts`
+- [x] Answer contract, evidence/time context, missing/partial/truncated data — `ask-orchestrator.test.ts`, `packages/shared/src/__tests__/ask.test.ts`
+- [x] Personal history, search, pagination, direct links and last view — `e2e/ask-specs/chat.spec.ts`
+- [x] Browser panel/full flow, minimize, navigation, reload, copy and stop — `e2e/ask-specs/chat.spec.ts`, `e2e/ask-presentation/chat.spec.ts`
+- [x] An admin turns Ask off for everyone and back on — `ask-switch.test.ts`, `e2e/ask-specs/chat.spec.ts`
+- [x] Internal authorized staff read/export and customer denial — `ask-internal.test.ts`; live staff OAuth on MAG-4934
+- [x] Observable scheduled retention with tested cutoffs — `ask-postgres.test.ts`, `ask-budget.test.ts`
 - [ ] Runtime secret/config delivery and current Bedrock model/region access — [fleet delivery implementation](https://github.com/Magma-Devs/smart-router-infrastructure/pull/1494) is prepared; deployed scoped Secrets, released pins and a fresh exact-image checkpoint remain required
-- [x] Current customer MCP discovery and bounded actual data read — [dated scoped live checks](validation/MAG-4934/LIVE.md)
+- [x] Current customer MCP discovery and bounded actual data read — live checks on MAG-4934
 - [ ] Pilot cap, feature enable/disable and operational rollback verified
 - [ ] Dated pilot start; 60-day product measurement handed to MAG-4642
 
-Local mocks prove policy and failure handling, not provider availability.
-Historical MCP deployment receipts are dated evidence, not a live state API.
-No acceptance item is complete without the corresponding observed evidence.
+Test files without a path are under `apps/api/src/__tests__/`. Local mocks prove policy
+and failure handling, not provider availability.
 
 ## Pull request progress
 
@@ -157,10 +153,6 @@ additional review or merge queue:
    metadata. Separate real-provider browser receipts cover full view and
    panel/minimize/full navigation. Actual staff OAuth, read/export, customer-admin
    denial, grant revocation and scheduled retention pass with the flag off.
-
-[Dated provider/runtime receipts and limits](validation/MAG-4934/LIVE.md) preserve
-the scope of each check. Earlier expired-access observations are historical;
-they do not describe the successful later provider checks.
 
 [Chart #189](https://github.com/Magma-Devs/smart-router-helm-chart/pull/189)
 provides workload configuration/schema and backend-only Secret references.
