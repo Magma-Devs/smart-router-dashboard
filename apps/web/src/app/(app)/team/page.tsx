@@ -9,7 +9,7 @@
  * it exports, because that is the artifact an auditor asks for first.
  */
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { apiDownload, apiSend } from "@/lib/api-client";
 import { ROLE_LABELS } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
@@ -28,6 +28,7 @@ import { ResetLinkModal } from "@/components/team/ResetLinkModal";
 import { ResetTwoFactorModal } from "@/components/team/ResetTwoFactorModal";
 import { RevokeInviteModal } from "@/components/team/RevokeInviteModal";
 import { RowActions } from "@/components/team/RowActions";
+import { UsageIdLookup } from "@/components/team/UsageIdLookup";
 import {
   closedCount,
   inviteActions,
@@ -161,6 +162,10 @@ export default function TeamPage() {
           )}
         </div>
       </div>
+
+      <Suspense fallback={null}>
+        <UsageIdLookup isAdmin={isAdmin} />
+      </Suspense>
 
       {/* A prompt, never a block: admin has to stay transferable, or a
           departing employee's account can't be removed. */}

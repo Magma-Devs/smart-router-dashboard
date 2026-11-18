@@ -546,8 +546,8 @@ export function readIncidentSettings(source: NodeJS.ProcessEnv = process.env): I
  *    only; http for a loopback mock.
  *  - `USAGE_STAFF_DOMAINS` — default `magmadevs.com`: a user whose email is
  *    at one of these (anyone `@magmadevs.com`) is marked `staff`, so our own
- *    use can be left out. Only the yes/no and the role go out, never the
- *    address.
+ *    use can be left out. A staff member's address goes out on their
+ *    profile; a customer's never does.
  *  - `USAGE_TENANT` — the tenant every event and profile carries, so the
  *    store splits everything per client. Default `TENANT_ID`, which the chart
  *    sets on every deployment; read here only as that label, never to pick

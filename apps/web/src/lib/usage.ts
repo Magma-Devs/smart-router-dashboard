@@ -24,7 +24,15 @@
  * while it is off: it does nothing.
  */
 import type { AutocaptureConfig, Config, Mixpanel } from "mixpanel-browser";
-import { cleanUsageProps, guidMintedSecond, type Role, type UsageEventName, type UsageProps } from "@sr/shared";
+import {
+  cleanUsageProps,
+  guidMintedSecond,
+  USAGE_ASK_ERRORS,
+  type AskRun,
+  type Role,
+  type UsageEventName,
+  type UsageProps,
+} from "@sr/shared";
 import { apiGet } from "./api-client";
 import { getIdlePhase, subscribeIdle } from "./idle-store";
 import { redactProfileUpdate, redactUsageEvent, redactUsageProps } from "./usage-redact";
@@ -55,18 +63,72 @@ export type UsageConfig =
       tenant: string;
       deploymentMode: "managed" | "onprem";
       version: string;
-      viewer: { id: string; staff: boolean; role: Role };
+      viewer: UsageViewer;
     };
+/** The signed-in person as usage data names them (`apps/api/src/services/usage.ts`). */
+export interface UsageViewer {
+  id: string;
+  staff: boolean;
+  role: Role;
+  /** Staff only: a customer's address is never in the answer. */
+  email?: string;
+  /** The month the account was made, `YYYY-MM`. */
+  created: string | null;
+  twoFactor: boolean | null;
+  signIn: "password" | "google" | "github" | "invite" | "other" | null;
+}
 type OnConfig = Extract<UsageConfig, { enabled: true }>;
 
-export function pageOf(pathname: string): "metrics" | "upstreams" | "team" | "audit" | "account" | "standalone" | "other" {
+export function pageOf(pathname: string): "metrics" | "upstreams" | "team" | "audit" | "account" | "standalone" | "ask" | "other" {
   const first = pathname.split("/")[1] ?? "";
-  return first === "metrics" || first === "upstreams" || first === "team" || first === "audit" || first === "account" || first === "standalone" ? first : "other";
+  return first === "metrics" || first === "upstreams" || first === "team" || first === "audit" || first === "account" || first === "standalone" || first === "ask"
+    ? first
+    : "other";
+}
+
+/**
+ * What the viewer's profile says about them. `$name` makes the Users list
+ * readable: a staff member's address, else `<tenant> · <role> · <id prefix>`.
+ * `$email` is set for staff only, so a customer's profile never holds one.
+ */
+export function profileOf(c: { tenant: string; viewer: UsageViewer }): Record<string, string | boolean> {
+  const v = c.viewer;
+  const out: Record<string, string | boolean> = {
+    $name: v.staff && v.email ? v.email : `${c.tenant} · ${v.role} · ${v.id.slice(0, 8)}`,
+    tenant: c.tenant,
+    staff: v.staff,
+    role: v.role,
+  };
+  if (v.staff && v.email) out.$email = v.email;
+  if (v.created && /^\d{4}-\d{2}$/.test(v.created)) out.$created = `${v.created}-01T00:00:00`;
+  if (typeof v.twoFactor === "boolean") out.two_factor = v.twoFactor;
+  if (v.signIn) out.sign_in = v.signIn;
+  return out;
 }
 
 export function tabOf(pathname: string, search: string): string {
   if (pageOf(pathname) !== "metrics") return "none";
   return new URLSearchParams(search).get("tab") ?? "metrics";
+}
+
+/**
+ * How an Ask run ended, as `ask_answer` says it: the status, the error code
+ * (one the catalog lists, else "other"), the seconds from sending to the end,
+ * and how many sections and evidence rows the answer had. Never the question
+ * or the answer's text. Null for a run that has not ended.
+ */
+export function askAnswerProps(run: Pick<AskRun, "status" | "createdAt" | "completedAt" | "error" | "answer">): UsageProps | null {
+  if (run.status !== "succeeded" && run.status !== "failed" && run.status !== "cancelled" && run.status !== "interrupted") return null;
+  const code = run.error?.code;
+  const props: UsageProps = { result: run.status };
+  if (code) props.error = (USAGE_ASK_ERRORS as readonly string[]).includes(code) ? code : "other";
+  const seconds = run.completedAt ? (Date.parse(run.completedAt) - Date.parse(run.createdAt)) / 1000 : NaN;
+  if (Number.isFinite(seconds) && seconds >= 0) props.seconds = seconds;
+  if (run.answer) {
+    props.sections = run.answer.sections.length;
+    props.evidence = run.answer.evidence.length;
+  }
+  return props;
 }
 
 /** What kind of value a look-up was for - never the value itself. */
@@ -286,7 +348,7 @@ async function begin(): Promise<void> {
   if (!mp.has_opted_in_tracking()) mp.opt_in_tracking();
   // Autocapture set up again with tracking allowed: it sends this page's view.
   mp.set_config({ autocapture: AUTOCAPTURE });
-  mp.people.set({ tenant: c.tenant, staff: c.viewer.staff, role: c.viewer.role });
+  mp.people.set(profileOf(c));
   recording = true;
   for (const [name, props] of pending) mp.track(name, props);
   pending = [];

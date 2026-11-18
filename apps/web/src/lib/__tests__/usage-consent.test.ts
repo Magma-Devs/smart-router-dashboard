@@ -40,7 +40,7 @@ const ON = {
   tenant: "tenant-a",
   deploymentMode: "managed",
   version: "0.71.0",
-  viewer: { id: "6f1e0c2a9b8d7e6f5a4b3c2d1e0f9a8b", staff: false, role: "admin" },
+  viewer: { id: "6f1e0c2a9b8d7e6f5a4b3c2d1e0f9a8b", staff: false, role: "admin", created: "2026-03", twoFactor: true, signIn: "password" },
 };
 /** Where this account's answer is kept. */
 const KEY = `sr:usage-consent:2:${ON.viewer.id}`;
@@ -214,7 +214,15 @@ describe("accepting", () => {
     expect(local.kept.get("sr:usage-sdk-viewer")).toBe(ON.viewer.id);
     expect(h.sdk.identify).toHaveBeenCalledWith(ON.viewer.id);
     expect(h.sdk.register).toHaveBeenCalledWith({ tenant: "tenant-a", deployment_mode: "managed", dashboard_version: "0.71.0", staff: false, role: "admin" });
-    expect(h.sdk.people.set).toHaveBeenCalledWith({ tenant: "tenant-a", staff: false, role: "admin" });
+    expect(h.sdk.people.set).toHaveBeenCalledWith({
+      $name: "tenant-a · admin · 6f1e0c2a",
+      $created: "2026-03-01T00:00:00",
+      tenant: "tenant-a",
+      staff: false,
+      role: "admin",
+      two_factor: true,
+      sign_in: "password",
+    });
     expect(h.sdk.set_config).toHaveBeenCalledWith({ autocapture: usage.AUTOCAPTURE });
     // What came before the acceptance is not sent.
     expect(tracked()).toEqual([]);

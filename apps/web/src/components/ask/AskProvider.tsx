@@ -24,6 +24,7 @@ import {
 } from "@sr/shared";
 import { ApiError } from "@/lib/api-client";
 import { getAuthState, getAuthVersion, subscribeAuth } from "@/lib/auth-store";
+import { askAnswerProps, getUsageState, track, usageAllowed } from "@/lib/usage";
 import { askPoll, createAskApi } from "./ask-api";
 import { validChatId } from "./ask-display";
 import { useFilters } from "@/components/gateway/FiltersProvider";
@@ -72,7 +73,8 @@ interface AskContextValue {
   activityKnown: boolean;
   notice: string | null;
   preferenceError: boolean;
-  open: () => Promise<void>;
+  /** Opens Ask; `from` is what opened it, for usage data. */
+  open: (from?: "button" | "pill" | "shortcut") => Promise<void>;
   minimize: () => void;
   close: () => void;
   expand: () => void;
@@ -156,6 +158,8 @@ export function AskProvider({
   const submittingRef = useRef(false);
   const returnFocus = useRef<HTMLElement | null>(null);
   const preferenceQueue = useRef<Promise<unknown>>(Promise.resolve());
+  /** Runs this tab sent, so only the tab that asked reports how one ended. */
+  const asked = useRef(new Set<string>());
   const retry = useRef<{
     chatId: string;
     question: string;
@@ -248,7 +252,7 @@ export function AskProvider({
     },
     [patch, save, currentPreferences, full, router],
   );
-  const open = useCallback(async () => {
+  const open = useCallback(async (from: "button" | "pill" | "shortcut" = "button") => {
     if (!visible || caps.isLoading) return;
     returnFocus.current =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -257,12 +261,14 @@ export function AskProvider({
       return;
     }
     if (local.mode === "minimized" || local.mode === "panel") {
+      if (local.mode === "minimized") track("ask_open", { from, view: "panel" });
       patch({ mode: "panel" });
       document.querySelector<HTMLTextAreaElement>("#ask-question")?.focus({ preventScroll: true });
       return;
     }
     setNotice(null);
     if (!available) {
+      track("ask_open", { from, view: "panel" });
       patch({ mode: "panel" });
       return;
     }
@@ -271,6 +277,7 @@ export function AskProvider({
       await preferenceQueue.current.catch(() => undefined);
       const stored = await api.get<AskPreferences>("/api/ask/preferences");
       const preferences = { ...stored, returnTo: safeOrigin(stored.returnTo) };
+      track("ask_open", { from, view: preferences.view });
       patch({
         preferences,
         chatId: preferences.chatId,
@@ -281,6 +288,7 @@ export function AskProvider({
           router.push(preferences.chatId ? `/ask?chat=${preferences.chatId}` : "/ask"),
         );
     } catch {
+      track("ask_open", { from, view: "panel" });
       patch({ mode: "panel" });
       setNotice("Your last view could not be restored. You can still open your history.");
     }
@@ -367,6 +375,7 @@ export function AskProvider({
           return;
         }
         let id = chatId;
+        const newChat = !id;
         if (!id) {
           id = (await api.post<{ id: string }>("/api/ask/chats", {})).id;
           patch((old) => ({ chatId: id, drafts: { ...old.drafts, [id!]: question } }));
@@ -389,6 +398,13 @@ export function AskProvider({
           idempotencyKey: pending.idempotencyKey,
         });
         retry.current = null;
+        asked.current.add(run.id);
+        track("ask_question", {
+          view: full ? "full" : "panel",
+          page: pending.context.page,
+          new_chat: newChat,
+          chain: Boolean(pending.context.chain),
+        });
         patch((old) => ({ drafts: { ...old.drafts, [id!]: "", new: "" } }));
         await activity.mutate({ run }, false);
         await mutate((key) => Array.isArray(key) && key[0] === "ask" && key[1] === scope);
@@ -440,19 +456,32 @@ export function AskProvider({
   );
   const lastRun = useRef<string | null>(null);
   useEffect(() => {
-    if (lastRun.current && lastRun.current !== active?.id) {
+    const ended = lastRun.current;
+    if (ended && ended !== active?.id) {
+      // How a question this tab sent ended, read only while usage data is recorded.
+      if (asked.current.delete(ended)) {
+        const usage = getUsageState();
+        if (usageAllowed(usage.available, usage.consent))
+          void api.get<AskRun>(`/api/ask/runs/${ended}`).then(
+            (run) => {
+              const props = askAnswerProps(run);
+              if (props) track("ask_answer", props);
+            },
+            () => undefined,
+          );
+      }
       void mutate((key) => Array.isArray(key) && key[0] === "ask" && key[1] === scope);
       // A question that ended may have been stopped by an admin's switch.
       void caps.mutate();
     }
     lastRun.current = active?.id ?? null;
-  }, [active?.id, mutate, scope, caps]);
+  }, [active?.id, mutate, scope, caps, api]);
   useEffect(() => {
     if (!shown) return;
     const shortcut = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === "k") {
         event.preventDefault();
-        void open();
+        void open("shortcut");
       }
     };
     window.addEventListener("keydown", shortcut);
