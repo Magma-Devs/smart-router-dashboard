@@ -348,21 +348,31 @@ test("an admin turns Ask off for everyone, stopping a member's question, and bac
     await page.goto("/ask");
     await page.getByRole("button", { name: "Turn off", exact: true }).click();
     const confirm = page.getByRole("dialog", { name: "Turn Ask off for everyone?" });
+    await expect(confirm).toBeVisible();
     if (process.env.E2E_SHOTS)
-      await page.screenshot({ path: `${process.env.E2E_SHOTS}/ask-turn-off-confirm.png` });
+      await page.screenshot({
+        path: `${process.env.E2E_SHOTS}/ask-turn-off-confirm.png`,
+        animations: "disabled",
+      });
     await confirm.getByRole("button", { name: "Turn off Ask" }).click();
     await expect(confirm).toHaveCount(0);
     await expect(page.getByText(/An admin turned Ask off for everyone/)).toBeVisible();
     await expect(page.getByLabel("Ask a question")).toBeDisabled();
     if (process.env.E2E_SHOTS)
-      await page.screenshot({ path: `${process.env.E2E_SHOTS}/ask-off-admin.png` });
+      await page.screenshot({
+        path: `${process.env.E2E_SHOTS}/ask-off-admin.png`,
+        animations: "disabled",
+      });
 
     await expect(memberPanel.getByText("The question was stopped.", { exact: true })).toBeVisible();
     await expect(memberPanel.getByText(/An admin turned Ask off for everyone/)).toBeVisible();
     await expect(memberPanel.getByRole("button", { name: "Turn Ask back on" })).toHaveCount(0);
     await expect(memberPanel.getByLabel("Ask a question")).toBeDisabled();
     if (process.env.E2E_SHOTS)
-      await memberPage.screenshot({ path: `${process.env.E2E_SHOTS}/ask-off-member.png` });
+      await memberPage.screenshot({
+        path: `${process.env.E2E_SHOTS}/ask-off-member.png`,
+        animations: "disabled",
+      });
 
     await page.getByRole("button", { name: "Turn Ask back on" }).click();
     await expect(page.getByText(/An admin turned Ask off for everyone/)).toHaveCount(0);
