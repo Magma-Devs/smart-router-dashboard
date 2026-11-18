@@ -529,27 +529,29 @@ export function readIncidentSettings(source: NodeJS.ProcessEnv = process.env): I
 }
 
 /**
- * Usage data (`POST /api/usage`, MAG-5373): which pages, tabs, searches and
- * clicks a visit uses, forwarded to the product-analytics store (Mixpanel) so
- * the layout can be decided from what clients do. From the live env, so tests
- * can flip it per app instance.
+ * Usage data (`GET /api/usage/config`, MAG-5373): whether the web loads
+ * Mixpanel's browser SDK, and what it starts it with. The browser sends to
+ * Mixpanel itself, after the person at it accepts; the api never does. From
+ * the live env, so tests can flip it per app instance.
  *
- *  - Accounts (`AUTH_MODE=enabled`) — required. Usage data is sent only for a
- *    signed-in user, who is asked first in the browser and is marked `staff`
- *    or not. With accounts off nothing is sent, whatever else is set.
+ *  - Accounts (`AUTH_MODE=enabled`) — required. The config route answers on
+ *    only to a signed-in user, who is asked first in the browser and is
+ *    marked `staff` or not. With accounts off it is off, whatever else is set.
  *  - `USAGE_ANALYTICS` — `on` / `off`. Unset: on where we host the deployment
  *    (`DEPLOYMENT_MODE=managed`), off where the client does (`onprem`).
- *  - `MIXPANEL_TOKEN` — the project's token. Without it nothing is sent,
- *    whatever the switch says. Server side only: the browser never sees it.
+ *  - `MIXPANEL_TOKEN` — the project's token. Without it usage data is off,
+ *    whatever the switch says. Handed to a signed-in browser only while on.
  *  - `MIXPANEL_API_HOST` — default `https://api-eu.mixpanel.com` (the project
- *    keeps its data in the EU). https only; http for a loopback mock.
+ *    keeps its data in the EU): the one host the browser sends to. https
+ *    only; http for a loopback mock.
  *  - `USAGE_STAFF_DOMAINS` — default `magmadevs.com`: a user whose email is
  *    at one of these (anyone `@magmadevs.com`) is marked `staff`, so our own
- *    use can be left out. Only the yes/no and the role are sent, never the
+ *    use can be left out. Only the yes/no and the role go out, never the
  *    address.
- *  - `USAGE_TENANT` — the tenant every event carries, so the store splits
- *    everything per client. Default `TENANT_ID`, which the chart sets on every
- *    deployment; read here only as that label, never to pick an org.
+ *  - `USAGE_TENANT` — the tenant every event and profile carries, so the
+ *    store splits everything per client. Default `TENANT_ID`, which the chart
+ *    sets on every deployment; read here only as that label, never to pick
+ *    an org.
  */
 export interface UsageSettings {
   enabled: boolean;
@@ -560,7 +562,7 @@ export interface UsageSettings {
   version: string;
   /** Why it is off although the switch says on; null otherwise. */
   problem: string | null;
-  /** Email domains of our own staff, so their use can be filtered out (`staff` on each event). */
+  /** Email domains of our own staff, so their use can be filtered out (`staff` on each event and profile). */
   staffDomains: string[];
 }
 

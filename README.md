@@ -35,6 +35,7 @@ The observability dashboard for the [Smart Router](https://github.com/Magma-Devs
 - **Live test console** — fire requests at any chain × interface the router serves, sent from the dashboard's server so a deployment that admits only listed addresses still works, with a full method catalog generated from the [lava-specs](https://github.com/Magma-Devs/lava-specs) repo (238 chains, jsonrpc/rest/tendermint/grpc, archive/debug/trace/blockbook tiers).
 - **Self-contained** — `make up` gives you router + Prometheus + api + web from nothing. No accounts, no cloud, optional auth.
 - **Optional authentication** — `AUTH_MODE=enabled` adds Auth.js sign-in (email+password + Google/GitHub) backed by Postgres. Default is open (`disabled`) for private deployments.
+- **Usage data** — with accounts on, and only after the person at the browser accepts, Mixpanel records page views, clicks, masked session replays and heatmaps, with addresses and attributes cleaned in the browser first. Off on a self-hosted install.
 
 > **Repo layout:** a pnpm/TypeScript monorepo — `apps/api` (Fastify 5 Prometheus proxy) + `apps/web` (Next.js 16) + `packages/shared` + `packages/db`. Everything runs from the repo root.
 
@@ -136,6 +137,20 @@ With `INCIDENTS_ENABLED=true` on both containers, the top bar carries a
 deployment's own inbound webhook in Magma's on-call system, which decides who
 hears about it: Critical calls the on-call engineer. Off by default. Full guide:
 [`docs/INCIDENTS.md`](./docs/INCIDENTS.md).
+
+## Usage data
+
+Off on a self-hosted install. On only with accounts on (`AUTH_MODE=enabled`),
+`USAGE_ANALYTICS` (on by default only with `DEPLOYMENT_MODE=managed`),
+`MIXPANEL_TOKEN`, and the signed-in person's acceptance in the consent banner,
+asked of each account in each browser. After an acceptance the browser loads
+Mixpanel's bundled SDK and sends autocapture, masked session replays and
+heatmaps to `MIXPANEL_API_HOST` (default `https://api-eu.mixpanel.com`, the
+one host to allow in a CSP), which derives a city and country from the
+browser's IP address. Addresses and attributes are cleaned in the browser
+first, the 2FA enrolment is never recorded, and signing out resets the SDK. A
+browser that sends Do Not Track sends nothing. Full guide:
+[`docs/USAGE-DATA.md`](./docs/USAGE-DATA.md).
 
 ## Development
 

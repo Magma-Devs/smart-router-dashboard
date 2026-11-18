@@ -225,6 +225,13 @@ services:
       - INCIDENTS_ENABLED=${INCIDENTS_ENABLED:-}
       - INCIDENT_WEBHOOK_URL=${INCIDENT_WEBHOOK_URL:-}
       - LOKI_ORG_ID=${LOKI_ORG_ID:-}
+      # Usage data (docs/USAGE-DATA.md): on only with accounts on, the switch
+      # on and a project token. Empty = unset = the api's defaults.
+      - USAGE_ANALYTICS=${USAGE_ANALYTICS:-}
+      - MIXPANEL_TOKEN=${MIXPANEL_TOKEN:-}
+      - MIXPANEL_API_HOST=${MIXPANEL_API_HOST:-}
+      - USAGE_TENANT=${USAGE_TENANT:-}
+      - USAGE_STAFF_DOMAINS=${USAGE_STAFF_DOMAINS:-magmadevs.com}
       # Deployment scope (see .env.example). Empty = unset = the whole store.
       - METRICS_SCOPE_LABEL=${METRICS_SCOPE_LABEL:-}
       - METRICS_SCOPE_VALUE=${METRICS_SCOPE_VALUE:-}

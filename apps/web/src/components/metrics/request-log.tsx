@@ -372,7 +372,7 @@ export function TxHash({ hash, spec, full = false }: { hash: string; spec: strin
   return (
     <span onClick={keepClick} style={{ display: "inline-flex", alignItems: "center", gap: 6, minWidth: 0, maxWidth: "100%" }}>
       {url
-        ? <a className="gw-mono" href={url} target="_blank" rel="noopener noreferrer" onClick={() => track("link_out", { target: "explorer" })} title={`${hash} - on the chain's explorer`} style={{ ...style, color: "var(--brand)", textDecoration: "none" }}>{text}{full ? "" : " ↗"}</a>
+        ? <a className="gw-mono" href={url} target="_blank" rel="noopener noreferrer" title={`${hash} - on the chain's explorer`} style={{ ...style, color: "var(--brand)", textDecoration: "none" }}>{text}{full ? "" : " ↗"}</a>
         : <span className="gw-mono" title={hash} style={{ ...style, color: "var(--text-3)" }}>{text}</span>}
       <CopyButton text={hash} />
     </span>
@@ -384,7 +384,7 @@ export function RequestLogsLink({ id, startMs, tookMs }: { id: string; startMs: 
   const grafana = useGrafanaUrl();
   if (!grafana) return null;
   return (
-    <a href={requestLogsHref(grafana, id, startMs, tookMs)} target="_blank" rel="noopener noreferrer" onClick={() => track("link_out", { target: "grafana" })}
+    <a href={requestLogsHref(grafana, id, startMs, tookMs)} target="_blank" rel="noopener noreferrer"
       title="Every line the router wrote for this request, on the Grafana logs board"
       style={{ color: "var(--brand)", fontWeight: 600, textDecoration: "none", whiteSpace: "nowrap" }}>
       Logs ↗

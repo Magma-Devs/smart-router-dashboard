@@ -11,7 +11,6 @@ import {
 import type { DirectTarget } from "./direct-request";
 import type { UpstreamTier } from "./pin-support";
 import { IconZap, TryMeDrawer } from "./drawer";
-import { track } from "@/lib/usage";
 
 /** SSR/hydration snapshot: render as "catalog not loaded yet" so server and
  *  client hydration agree; the store bumps to the real version afterwards. */
@@ -106,7 +105,6 @@ export function TryNowButton({
         className="gw-btn gw-btn--ghost"
         onClick={(e) => {
           e.stopPropagation();
-          track("link_out", { target: "try-it" });
           setDrawerOpen(true);
         }}
         title="Fire a live request against this endpoint"

@@ -11,7 +11,7 @@ under test is what a person sees:
 | `password-reset.spec.ts` | a reset link on screen: the success state, a used link reading the same as any dead one, and a link spent while its form is open landing on that page |
 | `countdown.spec.ts` | the grace period is counted down in the header, and reads as a deadline in its last week |
 | `team-reset.spec.ts` | the reset is offered only where there is something to clear, names the person before it acts, and updates the row |
-| `usage-consent.spec.ts` | a signed-in person is asked before any usage data goes; the page behind the consent banner sends nothing; each button and the X do what they say; the Account page changes the answer; the banner fits a phone and reads in the light theme |
+| `usage-consent.spec.ts` | a signed-in person is asked before any usage data goes; nothing of Mixpanel's is loaded, stored or sent before Accept; after it the SDK records page views (client-side navigation too), clicks and a session replay with every URL redacted, a click carries no title or label, and only Mixpanel's EU host is contacted; a replay upload carries no typed value, hash, id, title or address; an answer belongs to one account and to this release (0.70.0's is not read, another account is asked, and shares no device id), and signing out makes the SDK forget the account; each button, the X and the Account page's Turn off stop it and remove what it kept; the banner fits a phone and reads in the light theme |
 
 Everything else about two-factor is asserted where it is cheaper:
 `apps/api/src/__tests__` for the rules, and `scripts/sanity-two-factor.mjs` for

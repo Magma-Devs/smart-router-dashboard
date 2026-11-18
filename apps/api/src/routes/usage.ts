@@ -1,105 +1,43 @@
 /**
- * The dashboard's usage events (MAG-5373).
+ * Usage data (MAG-5373): `GET /api/usage/config`, what the web starts
+ * Mixpanel's browser SDK with. The browser sends to Mixpanel itself, and only
+ * after the person at it accepts; the api never talks to Mixpanel.
  *
- *  - `GET /api/usage/config` → `{ enabled }`: whether the web should send any.
- *  - `POST /api/usage` → `{ visit, events: [{ name, at, seq, props }] }`, at
- *    most 50 a batch. 202 with how many were kept; 204 and nothing sent while
- *    usage data is off. The answer doesn't wait for Mixpanel.
+ *  - `{ enabled: false }` unless accounts are on, the deployment's switch is
+ *    on, it holds a token, and a signed-in user is on the request.
+ *  - Then `{ enabled: true, token, apiHost, tenant, deploymentMode, version,
+ *    viewer: { id, staff, role } }`, where `viewer.id` is opaque
+ *    (`services/usage.ts`).
  *
- * Accounts only: usage data is on only with `AUTH_MODE=enabled`, where the
- * global gate has already required a session, and a batch is forwarded only
- * for a signed-in user, so every event says `staff` or not. The body is
- * checked against a closed catalog (`cleanUsageProps`) and the route has its
- * own per-caller limit. See `services/usage.ts` and docs/USAGE-DATA.md.
+ * See docs/USAGE-DATA.md.
  */
 import type { FastifyInstance } from "fastify";
-import { USAGE_BATCH_MAX } from "@sr/shared";
 import type { UsageSettings } from "../config.js";
-import { sendToMixpanel, toMixpanel, viewerOf, type IncomingUsageEvent } from "../services/usage.js";
-import { ReportBudget } from "../services/incidents.js";
+import { viewerOf } from "../services/usage.js";
 
 export interface UsageRoutesOptions {
   settings: UsageSettings;
-  /** Injected by tests; the global `fetch` otherwise. */
-  fetchImpl?: typeof fetch;
-  /** Injected by tests; USAGE_POD_BATCHES_PER_MIN otherwise. */
-  podBatchesPerMin?: number;
 }
-
-const WARN_INTERVAL_MS = 60_000;
-
-/**
- * Batches forwarded per api process per minute, every caller together: each
- * batch spends the Mixpanel project's event quota. A visit sends about six a
- * minute, so this holds dozens of people at once and caps a flood at
- * 300 x 50 events.
- */
-export const USAGE_POD_BATCHES_PER_MIN = 300;
 
 export async function usageRoutes(app: FastifyInstance, opts: UsageRoutesOptions) {
   const { settings } = opts;
-  let warnedAt = 0;
-  let cappedAt = 0;
-  const budget = new ReportBudget(opts.podBatchesPerMin ?? USAGE_POD_BATCHES_PER_MIN, 60_000);
   if (settings.problem) app.log.warn({ problem: settings.problem }, "usage data is off");
 
-  app.get("/api/usage/config", { schema: { tags: ["usage"], summary: "Whether the dashboard sends usage data" } }, async () => ({
-    enabled: settings.enabled,
-  }));
-
-  app.post<{ Body: { visit: string; events: IncomingUsageEvent[] } }>(
-    "/api/usage",
-    {
-      config: { rateLimit: { max: 120, timeWindow: "1 minute" } },
-      bodyLimit: 64 * 1024,
-      schema: {
-        tags: ["usage"],
-        summary: "Usage events of one visit, forwarded to the analytics store",
-        body: {
-          type: "object",
-          required: ["visit", "events"],
-          additionalProperties: false,
-          properties: {
-            visit: { type: "string", pattern: "^[a-z0-9-]{8,64}$" },
-            events: {
-              type: "array",
-              maxItems: USAGE_BATCH_MAX,
-              items: {
-                type: "object",
-                required: ["name", "at", "seq"],
-                additionalProperties: false,
-                properties: {
-                  name: { type: "string", maxLength: 40 },
-                  at: { type: "number" },
-                  seq: { type: "integer", minimum: 0, maximum: 1_000_000 },
-                  props: { type: "object", maxProperties: 12 },
-                },
-              },
-            },
-          },
-        },
-      },
-    },
-    async (request, reply) => {
-      if (!settings.enabled) return reply.code(204).send();
-      // No signed-in user (an audit token, a gate that let the call through):
-      // nothing is forwarded, so no event is ever without its `staff` mark.
-      const viewer = viewerOf(request.authUser, settings);
-      if (!viewer) return reply.code(204).send();
-      if (!budget.take()) {
-        if (Date.now() - cappedAt >= WARN_INTERVAL_MS) {
-          cappedAt = Date.now();
-          app.log.warn({ max: USAGE_POD_BATCHES_PER_MIN }, "usage data: this process's batches per minute are spent; dropping");
-        }
-        return reply.code(202).send({ accepted: 0 });
-      }
-      const events = toMixpanel(request.body.visit, request.body.events, settings, Date.now(), viewer);
-      void sendToMixpanel(events, settings, opts.fetchImpl).then((r) => {
-        if (r.ok || Date.now() - warnedAt < WARN_INTERVAL_MS) return;
-        warnedAt = Date.now();
-        app.log.warn({ status: r.status, detail: r.detail }, "usage data: Mixpanel refused a batch");
-      });
-      return reply.code(202).send({ accepted: events.length });
-    },
-  );
+  app.get("/api/usage/config", { schema: { tags: ["usage"], summary: "Whether the dashboard records usage data, and what the browser starts it with" } }, async (request, reply) => {
+    // An answer per signed-in user: never kept by a cache along the way.
+    reply.header("Cache-Control", "no-store");
+    // No signed-in user (an audit token, a gate that let the call through):
+    // off, so no event is ever without its `staff` mark.
+    const viewer = settings.enabled ? viewerOf(request.authUser, settings) : null;
+    if (!viewer || !settings.token) return { enabled: false };
+    return {
+      enabled: true,
+      token: settings.token,
+      apiHost: settings.host,
+      tenant: settings.tenant,
+      deploymentMode: settings.deploymentMode,
+      version: settings.version,
+      viewer,
+    };
+  });
 }

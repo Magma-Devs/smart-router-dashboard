@@ -1,9 +1,9 @@
 /**
- * The dashboard's usage events (MAG-5373): what a visit opens, searches and
- * clicks, so the layout can be decided from what clients do. The web sends
- * them to the api (`POST /api/usage`), which keeps only what this catalog
- * allows and forwards it to the product-analytics store, tagged with the
- * tenant.
+ * The dashboard's own usage events (MAG-5373): what Mixpanel's autocapture
+ * cannot see - a chain or a time range picked, what kind of value a look-up
+ * was for and what it found, how long a view took to have its data. The web
+ * sends them through Mixpanel's browser SDK beside the clicks, page views and
+ * session replays the SDK records itself, every one cleaned here first.
  *
  * Every field is a closed list, a yes/no, a bounded number, a chain's spec, a
  * window key or one of the api's listed reads. Nothing free-form is ever
@@ -28,12 +28,6 @@ export type UsageField =
   | "view";
 
 export const USAGE_EVENTS = {
-  /** A visit begins: how it arrived, and where. */
-  visit_start: {
-    arrived: ["link-request", "link", "typed"], page: USAGE_PAGES, tab: USAGE_TABS, window: "window", chain_picked: "bool",
-    screen: ["phone", "tablet", "laptop", "wide"], theme: ["dark", "light"],
-  },
-  page_view: { page: USAGE_PAGES, tab: USAGE_TABS },
   tab_change: { from: USAGE_TABS, to: USAGE_TABS },
   chain_pick: { chain: "chain", from: ["list", "router-row", "cleared"] },
   router_pick: { from: ["list"] },
@@ -53,7 +47,6 @@ export const USAGE_EVENTS = {
   panel_open: { panel: ["router-row", "chart-tile", "provider", "see-requests", "errors-bar", "timeline-line", "grouped-error"] },
   filter_use: { list: LISTS, filter: ["view", "result", "retryable", "error-type", "customer", "method", "provider", "time"] },
   load_older: { list: LISTS },
-  link_out: { target: ["grafana", "explorer", "try-it", "report-incident", "copy"] },
   /**
    * Time to information: a page or tab has all its data on screen. Seconds
    * from opening it until its reads settled the first time, how many reads it
@@ -62,13 +55,10 @@ export const USAGE_EVENTS = {
   view_ready: { page: USAGE_PAGES, tab: USAGE_TABS, seconds: "seconds", reads: "count", failed: "count" },
   /** A "More about this" note held open: where the words on screen weren't enough. */
   help_open: { page: USAGE_PAGES, tab: USAGE_TABS },
-  /** Three or more quick clicks in one spot: something didn't respond as expected. */
-  rage_click: { page: USAGE_PAGES, tab: USAGE_TABS },
   /** Polling paused after an hour with nobody at the page: left open, likely on a screen. */
   idle_paused: { page: USAGE_PAGES, tab: USAGE_TABS },
   /** A read that failed (network or server error), or answered after 10 seconds. */
   view_problem: { view: "view", problem: ["did-not-load", "slow"], seconds: "seconds" },
-  visit_end: { seconds: "seconds", active_seconds: "seconds", pages: "count", tabs: "count", events: "count" },
 } as const satisfies Record<string, Record<string, UsageField>>;
 
 export type UsageEventName = keyof typeof USAGE_EVENTS;
@@ -77,12 +67,6 @@ export type UsageEventName = keyof typeof USAGE_EVENTS;
 export type UsageProps = Record<string, string | number | boolean | null | undefined>;
 
 export const USAGE_EVENT_NAMES = Object.keys(USAGE_EVENTS) as UsageEventName[];
-
-/** At most this many events in one `POST /api/usage`. */
-export const USAGE_BATCH_MAX = 50;
-
-/** A visit's id: random, per browser tab, new after 30 minutes away. */
-export const USAGE_VISIT_ID = /^[a-z0-9-]{8,64}$/;
 
 const CHAIN = /^[A-Z0-9]{2,24}$/;
 const MAX_SECONDS = 86_400;

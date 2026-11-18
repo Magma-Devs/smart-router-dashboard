@@ -33,6 +33,17 @@ describe("the setup screen before the QR arrives", () => {
   });
 });
 
+describe("the QR tile", () => {
+  it("is left out of every session replay, before and after the QR arrives", async () => {
+    const { REPLAY_BLOCK_CLASS } = await import("@/lib/usage");
+    const { QrSlot } = await import("../enrol-panel");
+    for (const qrSvg of [undefined, '<svg><path d="M1 1.5h7"/></svg>']) {
+      const html = renderToStaticMarkup(createElement(QrSlot, { qrSvg }));
+      expect(html, String(qrSvg)).toMatch(new RegExp(`^<div [^>]*class="${REPLAY_BLOCK_CLASS}"`));
+    }
+  });
+});
+
 describe("the key typed by hand", () => {
   it("is cut into groups of four", () => {
     expect(keyGroups(SECRET)).toEqual([

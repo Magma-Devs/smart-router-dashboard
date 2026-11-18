@@ -165,6 +165,7 @@ async function failure(
     endingSession = true; // concurrent panels all fail at once; act once
     // An admin's act gets a sentence on the sign-in page; see `sign-in-notice.ts`.
     const redirectTo = signInPathAfter(endedBy);
+    void import("./usage").then(({ usageSignOut }) => usageSignOut()).catch(() => {});
     void import("next-auth/react").then(({ signOut }) => signOut({ redirectTo }));
   }
   const retryAfterMs = res.status === 429 ? parseRetryAfter(res.headers.get("retry-after")) : null;
@@ -192,24 +193,6 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
   });
   if (!res.ok) throw await failure(res, authenticated);
   return (await res.json()) as T;
-}
-
-/**
- * A POST that may outlive the page (`keepalive`), for the usage events sent as
- * the tab closes. Fire and forget: never throws, and its answer is not read.
- */
-export async function apiPostKeepalive(path: string, body: unknown): Promise<void> {
-  try {
-    const { base, headers } = await requestContext();
-    await fetch(`${base}${path}`, {
-      method: "POST",
-      headers: { "content-type": "application/json", ...headers },
-      body: JSON.stringify(body),
-      keepalive: true,
-    });
-  } catch {
-    /* usage data is best effort */
-  }
 }
 
 /**
