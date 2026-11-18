@@ -19,7 +19,7 @@ artifacts; the stable dashboard release is shared by the complete feature.
 Chart and fleet delivery use their own repositories and versioning. Pilot rollout
 uses the resulting released dashboard image and the fresh checkpoint below.
 
-The aggregate candidate is `release/MAG-4750-managed-ask`. It proposes `0.71.0`
+The aggregate candidate is `release/MAG-4750-managed-ask`. It proposes `0.72.0`
 with the full feature and one [changelog entry](../CHANGELOG.md). Closed slices
 remain historical references. An open PR reserves no number: compare
 current main and tags before merging and adjust that one proposal if needed.

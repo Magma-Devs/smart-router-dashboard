@@ -19,7 +19,7 @@ customer's requested test-server validation precedes any merge or production
 deployment. Review readiness does not authorize deployment.
 
 `release/MAG-4750-managed-ask` is that aggregate release candidate. It proposes
-`0.71.0`, the next feature minor after main's `0.70.0`, with one
+`0.72.0`, the next feature minor after main's `0.71.0`, with one
 [changelog version entry](../CHANGELOG.md). Closed slice PRs remain available as
 historical references. An open PR reserves no release number: verify the then-current
 main and tags before merging and adjust this one release proposal if needed.
