@@ -52,13 +52,28 @@ export function ThemeToggle() {
   );
 }
 
+const NARROW_SCREEN = "(max-width: 1599px)";
+const watchNarrow = (notify: () => void) => {
+  const media = matchMedia(NARROW_SCREEN);
+  media.addEventListener("change", notify);
+  return () => media.removeEventListener("change", notify);
+};
+function useNarrowScreen(): boolean {
+  return useSyncExternalStore(watchNarrow, () => matchMedia(NARROW_SCREEN).matches, () => false);
+}
+
 function Sidebar({ grafanaDashboardUrl, grafanaCustomerUsageDashboardUrl }: {
   grafanaDashboardUrl?: string | null;
   grafanaCustomerUsageDashboardUrl?: string | null;
 }) {
   const pathname = usePathname();
   const sections = visibleNavSections(useAuthMode(), grafanaDashboardUrl, grafanaCustomerUsageDashboardUrl);
-  const { visible: drawerOpen, menuCollapsed: compact, setMenuCollapsed } = useChainDrawer();
+  const { visible: drawerOpen, menuCollapsed, setMenuCollapsed } = useChainDrawer();
+  // Beside the Ask panel on a screen under 1600 px the menu folds too, so the
+  // page keeps its width; closing the panel brings it back.
+  const ask = useAsk();
+  const besideAsk = useNarrowScreen() && ask.visible && !ask.full && ask.mode === "panel";
+  const compact = menuCollapsed || besideAsk;
   const { setChain, setRouterId, setRouter } = useFilters();
   // Home or Metrics while on Metrics: back to every chain, as the drawer's
   // first row does, with the menu folded again. Navigating would land on the
@@ -99,7 +114,7 @@ function Sidebar({ grafanaDashboardUrl, grafanaCustomerUsageDashboardUrl }: {
         </div>
       </Link>
       <nav className="gw-side__nav">
-        {drawerOpen && (
+        {drawerOpen && !besideAsk && (
           <button
             type="button"
             className="gw-nav-item gw-side__toggle"

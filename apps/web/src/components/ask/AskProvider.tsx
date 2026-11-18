@@ -252,47 +252,55 @@ export function AskProvider({
     },
     [patch, save, currentPreferences, full, router],
   );
-  const open = useCallback(async (from: "button" | "pill" | "shortcut" = "button") => {
-    if (!visible || caps.isLoading) return;
-    returnFocus.current =
-      document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    if (full) {
-      document.querySelector<HTMLTextAreaElement>("#ask-question")?.focus({ preventScroll: true });
-      return;
-    }
-    if (local.mode === "minimized" || local.mode === "panel") {
-      if (local.mode === "minimized") track("ask_open", { from, view: "panel" });
-      patch({ mode: "panel" });
-      document.querySelector<HTMLTextAreaElement>("#ask-question")?.focus({ preventScroll: true });
-      return;
-    }
-    setNotice(null);
-    if (!available) {
-      track("ask_open", { from, view: "panel" });
-      patch({ mode: "panel" });
-      return;
-    }
-    try {
-      // A choice still being saved is the one to restore.
-      await preferenceQueue.current.catch(() => undefined);
-      const stored = await api.get<AskPreferences>("/api/ask/preferences");
-      const preferences = { ...stored, returnTo: safeOrigin(stored.returnTo) };
-      track("ask_open", { from, view: preferences.view });
-      patch({
-        preferences,
-        chatId: preferences.chatId,
-        mode: preferences.view === "full" ? "closed" : "panel",
-      });
-      if (preferences.view === "full")
-        startNavigation(() =>
-          router.push(preferences.chatId ? `/ask?chat=${preferences.chatId}` : "/ask"),
-        );
-    } catch {
-      track("ask_open", { from, view: "panel" });
-      patch({ mode: "panel" });
-      setNotice("Your last view could not be restored. You can still open your history.");
-    }
-  }, [api, visible, caps.isLoading, local.mode, available, full, patch, router]);
+  const open = useCallback(
+    async (from: "button" | "pill" | "shortcut" = "button") => {
+      if (!visible || caps.isLoading) return;
+      returnFocus.current =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      if (full) {
+        document
+          .querySelector<HTMLTextAreaElement>("#ask-question")
+          ?.focus({ preventScroll: true });
+        return;
+      }
+      if (local.mode === "minimized" || local.mode === "panel") {
+        if (local.mode === "minimized") track("ask_open", { from, view: "panel" });
+        patch({ mode: "panel" });
+        document
+          .querySelector<HTMLTextAreaElement>("#ask-question")
+          ?.focus({ preventScroll: true });
+        return;
+      }
+      setNotice(null);
+      if (!available) {
+        track("ask_open", { from, view: "panel" });
+        patch({ mode: "panel" });
+        return;
+      }
+      try {
+        // A choice still being saved is the one to restore.
+        await preferenceQueue.current.catch(() => undefined);
+        const stored = await api.get<AskPreferences>("/api/ask/preferences");
+        const preferences = { ...stored, returnTo: safeOrigin(stored.returnTo) };
+        track("ask_open", { from, view: preferences.view });
+        // A question still running is the chat to open on: its answer is what
+        // the person is waiting for.
+        const chatId = active?.chatId ?? preferences.chatId;
+        patch({
+          preferences,
+          chatId,
+          mode: preferences.view === "full" ? "closed" : "panel",
+        });
+        if (preferences.view === "full")
+          startNavigation(() => router.push(chatId ? `/ask?chat=${chatId}` : "/ask"));
+      } catch {
+        track("ask_open", { from, view: "panel" });
+        patch({ mode: "panel" });
+        setNotice("Your last view could not be restored. You can still open your history.");
+      }
+    },
+    [api, visible, caps.isLoading, local.mode, available, full, patch, router, active?.chatId],
+  );
   const restoreFocus = () => {
     if (returnFocus.current?.isConnected) returnFocus.current.focus();
   };

@@ -210,7 +210,7 @@ test("one active question spans tabs, Stop persists, and failed answers remain r
   await page.reload();
   await expect(page.getByText("The question was stopped.", { exact: true })).toBeVisible();
   await expect(page.getByRole("article", { name: "Answer" })).toHaveCount(0);
-  await page.getByRole("button", { name: "+ New chat", exact: true }).first().click();
+  await page.getByRole("button", { name: "New chat", exact: true }).first().click();
   await page.getByLabel("Ask a question").fill("INVALID_FIXTURE invalid answer case");
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(

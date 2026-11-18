@@ -90,7 +90,8 @@ export function AskFull() {
             onClick={() => ask.select(null)}
             disabled={ask.submitting}
           >
-            + New chat
+            <AskIcon name="plus" size={14} />
+            New chat
           </button>
           <AskTurnOff />
           <button className="gw-btn" onClick={ask.back}>
@@ -142,7 +143,7 @@ export function AskDock() {
         onClick={() => void ask.open("pill")}
         aria-label={ask.active ? "Open chat, question processing" : "Open chat"}
       >
-        <span aria-hidden="true">✦</span>
+        <AskIcon name="sparkle" size={16} />
         <strong>Ask your data</strong>
         <span>{ask.active ? "Processing…" : "Open chat"}</span>
         {ask.active ? <span className="ask-spinner" aria-hidden="true" /> : null}
@@ -166,12 +167,7 @@ export function AskDock() {
     >
       <header className="ask-header">
         <div>
-          <h2 id="ask-panel-title">
-            <span className="ask-avatar">
-              <AskIcon name="sparkle" size={17} />
-            </span>
-            Ask your data
-          </h2>
+          <h2 id="ask-panel-title">Ask your data</h2>
         </div>
         <div className="ask-header-actions">
           <button
@@ -207,20 +203,23 @@ export function AskDock() {
           onClick={() => setHistory(!history)}
         >
           <AskIcon name={history ? "back" : "history"} size={14} />
-          {history ? "← Back to chat" : "History"}
+          {history ? "Back to chat" : "History"}
         </button>
-        <button
-          className="gw-btn gw-btn--ghost"
-          disabled={ask.submitting}
-          onClick={() => {
-            ask.select(null);
-            setHistory(false);
-          }}
-        >
-          + New chat
-        </button>
+        {history ? null : (
+          <button
+            className="gw-btn gw-btn--ghost"
+            disabled={ask.submitting}
+            onClick={() => ask.select(null)}
+          >
+            <AskIcon name="plus" size={14} />
+            New chat
+          </button>
+        )}
+        <span className="ask-toolbar-private">
+          <AskIcon name="lock" size={12} />
+          Private to you
+        </span>
         <AskTurnOff />
-        <span>Private to you</span>
       </div>
       <PreferenceNotice />
       <AskBody key={ask.scope} history={history} closeHistory={() => setHistory(false)} />

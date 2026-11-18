@@ -3,13 +3,20 @@ import { useEffect, useRef, useState } from "react";
 import type { AskAnswer as Answer } from "@sr/shared";
 import { answerSections, answerText } from "./ask-display";
 import { AskIcon } from "./AskIcon";
+import { LocalTime } from "@/components/gateway/LocalTime";
 
+/** A time in the dashboard's one format: today's as a time, an older one with its day. */
 export function AskTime({ value }: { value: string }) {
-  return (
-    <time dateTime={value} title={value}>
-      {new Date(value).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}
-    </time>
-  );
+  const today = new Date(value).toDateString() === new Date().toDateString();
+  return <LocalTime t={value} format={today ? "time" : "dayTime"} />;
+}
+/** What a read was of, in a word: the operation ids are the data service's own. */
+function sourceKind(operationId: string): string {
+  return operationId.startsWith("logs.")
+    ? "Logs"
+    : operationId.startsWith("metrics.")
+      ? "Metrics"
+      : "Data";
 }
 function CopyAnswer({ answer }: { answer: Answer }) {
   const [status, setStatus] = useState<"idle" | "copied" | "failed">("idle");
@@ -58,12 +65,6 @@ export function AskAnswer({ answer, messageId }: { answer: Answer; messageId?: s
   );
   return (
     <article className="ask-answer" aria-label="Answer" data-ask-message={messageId}>
-      <div className="ask-assistant-label">
-        <span className="ask-avatar">
-          <AskIcon name="sparkle" size={17} />
-        </span>
-        <span>Smart Router</span>
-      </div>
       <p className="ask-summary" dir="auto">
         {answer.summary}
       </p>
@@ -94,8 +95,7 @@ export function AskAnswer({ answer, messageId }: { answer: Answer; messageId?: s
       ) : null}
       {partial ? (
         <p className="ask-coverage-warning">
-          Some sources returned partial, truncated or unavailable data. Check the evidence before
-          drawing conclusions.
+          Some of the data behind this answer was missing or cut short. Check the sources below.
         </p>
       ) : null}
       {answer.evidence.length ? (
@@ -105,16 +105,16 @@ export function AskAnswer({ answer, messageId }: { answer: Answer; messageId?: s
             {answer.evidence.map((item) => (
               <li key={item.id}>
                 <div>
-                  <code>{item.sourceId}</code>
-                  <span className={`ask-coverage ask-coverage--${item.coverage}`}>
-                    {item.truncated
-                      ? "Truncated"
-                      : item.coverage === "unknown"
-                        ? "Coverage not confirmed"
-                        : item.coverage}
+                  <span>
+                    <strong>{sourceKind(item.operationId)}</strong>{" "}
+                    <code title={item.operationId}>{item.sourceId}</code>
                   </span>
+                  {item.truncated || ["partial", "unavailable"].includes(item.coverage) ? (
+                    <span className={`ask-coverage ask-coverage--${item.coverage}`}>
+                      {item.truncated ? "Cut short" : item.coverage}
+                    </span>
+                  ) : null}
                 </div>
-                <code>{item.operationId}</code>
                 <div>
                   {item.from ? (
                     <>
@@ -122,7 +122,7 @@ export function AskAnswer({ answer, messageId }: { answer: Answer; messageId?: s
                       {item.to ? (
                         <>
                           {" "}
-                          — <AskTime value={item.to} />
+                          to <AskTime value={item.to} />
                         </>
                       ) : null}
                     </>

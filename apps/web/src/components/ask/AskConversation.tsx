@@ -210,16 +210,13 @@ export function AskConversation() {
           ) : null}
           {empty ? (
             <div className="ask-empty">
-              <div className="ask-symbol" aria-hidden="true">
-                <AskIcon name="sparkle" size={30} />
-              </div>
               <h2>What’s happening with your router?</h2>
-              <p>Ask a question. Explore your metrics and logs, together.</p>
+              <p>Answers come from your router’s metrics and logs.</p>
               <div className="ask-suggestions">
                 {[
-                  "Which chains need attention?",
-                  "How has the error rate changed?",
-                  "What do the recent logs tell us?",
+                  "Which chains had failed requests?",
+                  "Which provider had the most errors?",
+                  "Is any provider behind on blocks?",
                 ].map((question) => (
                   <button
                     className="gw-btn gw-btn--ghost"

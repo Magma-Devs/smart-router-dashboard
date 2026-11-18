@@ -1,5 +1,6 @@
 "use client";
 import { useAsk } from "./AskProvider";
+import { AskIcon } from "./AskIcon";
 export function AskTrigger() {
   const ask = useAsk();
   if (!ask.visible) return null;
@@ -11,7 +12,8 @@ export function AskTrigger() {
       aria-expanded={ask.full || ask.mode === "panel"}
       title="Ask your data (⌘/Ctrl K)"
     >
-      <span aria-hidden="true">✦</span>Ask your data
+      <AskIcon name="sparkle" size={15} />
+      Ask your data
       {ask.active ? (
         <span className="ask-active-dot" aria-label="Question processing" />
       ) : (

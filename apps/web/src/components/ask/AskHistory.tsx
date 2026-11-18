@@ -75,7 +75,6 @@ export function AskHistory({
       </div>
       <button
         className="gw-btn ask-new-chat"
-        aria-label="+ New chat"
         onClick={() => {
           ask.select(null);
           onSelect?.();

@@ -70,7 +70,7 @@ test("a readable conversation keeps questions, answers and composer usable acros
   await shot("ask-panel-mobile.png");
   await dialog.getByRole("button", { name: "History", exact: true }).click();
   await expect(dialog.getByLabel("Search your chats")).toBeVisible();
-  await dialog.getByRole("button", { name: "← Back to chat", exact: true }).click();
+  await dialog.getByRole("button", { name: "Back to chat", exact: true }).click();
   await dialog.getByRole("button", { name: "Send", exact: true }).click();
   await expect(dialog.getByRole("article", { name: "Answer" })).toHaveCount(2);
   await expect(
