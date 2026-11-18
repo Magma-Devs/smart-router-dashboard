@@ -5,6 +5,17 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.73.1]
+
+### Fixed
+
+- **Simple clock questions avoid remote work (MAG-5419).** Standalone date/time
+  questions in English or Hebrew use the server's UTC clock without MCP reads
+  or paid model calls. Normal admission, active-session ownership, run leases
+  and persisted personal history still apply. The chat shows the answer once
+  and hides an empty sources disclosure. Operational questions still require
+  actual source evidence.
+
 ## [0.73.0]
 
 ### Added

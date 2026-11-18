@@ -190,6 +190,31 @@ function fixture(
 afterEach(() => vi.restoreAllMocks());
 
 describe("bounded customer tool orchestration", () => {
+  it("answers the clock without MCP, inference or model accounting, after the active-run check", async () => {
+    const f = fixture();
+    const question = { ...run(), question: "what is the date today?" };
+    const answer = () =>
+      new AskOrchestrator(f.settings, f.fetchImpl).answer(
+        question,
+        [],
+        f.hooks,
+        new AbortController().signal,
+      );
+    expect((await answer()).summary).toContain("UTC");
+    expect(f.hooks.checkActive).toHaveBeenCalledOnce();
+    expect(McpAdapter.prototype.withConnection).not.toHaveBeenCalled();
+    expect(f.fetchImpl).not.toHaveBeenCalled();
+    expect(f.hooks.beforeModelStep).not.toHaveBeenCalled();
+    expect(f.hooks.recordUsage).not.toHaveBeenCalled();
+    const cancelled = AbortSignal.abort(new AskFailure("ASK_CANCELLED"));
+    await expect(
+      new AskOrchestrator(f.settings, f.fetchImpl).answer(question, [], f.hooks, cancelled),
+    ).rejects.toMatchObject({ code: "ASK_CANCELLED" });
+    vi.mocked(f.hooks.checkActive).mockRejectedValue(new AskFailure("ASK_INTERRUPTED"));
+    await expect(answer()).rejects.toMatchObject({ code: "ASK_INTERRUPTED" });
+    question.customerId = "other-customer";
+    await expect(answer()).rejects.toMatchObject({ code: "ASK_IDENTITY_MISMATCH" });
+  });
   it("presents a validated local answer after a successful read using forced tools", async () => {
     const f = fixture({ responses: [provider([tool()]), provider([presentation()])] });
     expect((await f.answer()).summary).toBe(content.summary);

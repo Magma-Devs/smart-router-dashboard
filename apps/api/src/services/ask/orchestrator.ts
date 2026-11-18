@@ -19,6 +19,7 @@ import {
 } from "./bedrock.js";
 import { McpAdapter, type McpReadResult } from "./mcp.js";
 import { AskFailure, abortFailure } from "./errors.js";
+import { clockAnswer } from "./clock.js";
 import { redactAskData, redactAskText } from "./redact.js";
 
 export interface AskExecutionHooks {
@@ -144,6 +145,9 @@ export class AskOrchestrator {
   ): Promise<AskAnswer> {
     if (run.customerId !== this.settings.customerId) throw new AskFailure("ASK_IDENTITY_MISMATCH");
     await hooks.checkActive();
+    if (signal.aborted) throw abortFailure(signal);
+    const clock = clockAnswer(run.question);
+    if (clock) return clock;
     const secrets = [this.settings.mcpToken, this.settings.bedrockToken];
     const mcp = new McpAdapter(this.settings, this.fetchImpl);
     const model = new BedrockAdapter(this.settings, this.fetchImpl);
