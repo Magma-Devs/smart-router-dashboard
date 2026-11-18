@@ -99,8 +99,8 @@ describe("sendDeadlineMs", () => {
 describe("directiveHeaders", () => {
   it("turns the drawer's two directives into the headers the router reads", () => {
     expect(directiveHeaders({ selectProvider: "eth-publicnode", forceCacheRefresh: true })).toEqual({
-      "lava-select-provider": "eth-publicnode",
-      "lava-force-cache-refresh": "true",
+      "router-select-provider": "eth-publicnode",
+      "router-force-cache-refresh": "true",
     });
   });
 
@@ -124,16 +124,16 @@ describe("retriesOf", () => {
 });
 
 describe("relayRouterHttp", () => {
-  it("hands back the router's body and its Lava-* telemetry", async () => {
+  it("hands back the router's body and its Router-* telemetry", async () => {
     vi.stubGlobal("fetch", async () =>
       new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: "0x10" }), {
         status: 200,
         headers: {
-          "Lava-Provider-Address": "eth-publicnode",
-          "Lava-Retries": "1",
-          "Lava-Cross-Validation-Status": "agreed",
-          "Lava-Cross-Validation-Agreeing-Providers": "a,b",
-          "Lava-Cross-Validation-Disagreeing-Providers": "",
+          "Router-Provider-Address": "eth-publicnode",
+          "Router-Retries": "1",
+          "router-cross-validation-status": "agreed",
+          "router-cross-validation-agreeing-providers": "a,b",
+          "router-cross-validation-disagreeing-providers": "",
         },
       }),
     );
@@ -160,14 +160,14 @@ describe("relayRouterHttp", () => {
     await relayRouterHttp("http://eth1-router:3000/", {
       ...OPTS,
       body: { method: "eth_blockNumber" },
-      headers: { "lava-select-provider": "eth-publicnode" },
+      headers: { "router-select-provider": "eth-publicnode" },
     });
     const init = calls[0]!.init;
     expect(init.method).toBe("POST");
     expect(init.redirect).toBe("manual");
     expect(init.body).toBe(JSON.stringify({ method: "eth_blockNumber" }));
     expect(init.headers).toEqual({
-      "lava-select-provider": "eth-publicnode",
+      "router-select-provider": "eth-publicnode",
       "content-type": "application/json",
     });
   });
