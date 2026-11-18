@@ -372,7 +372,7 @@ export function RequestBreakdown(p: BreakdownProps) {
             <div style={kvGrid}>
               {/* The request's one ID is Smart Router's. The X-Request-Id, X-Task-Id and X-Tx-Id headers the
                   router also logs aren't shown: behind the gateway the first is the gateway's own ID for every request. */}
-              <KV label="Smart Router request ID"><span title="The ID Smart Router gives every request: its GUID in the router's logs, and the Lava-Guid header on the reply" style={{ display: "contents" }}><Id value={p.guid} /></span><RequestLogsLink id={p.guid} startMs={p.time} tookMs={p.tookMs} /></KV>
+              <KV label="Smart Router request ID"><span title="The ID Smart Router gives every request: its GUID in the router's logs, and the Router-Guid header on the reply" style={{ display: "contents" }}><Id value={p.guid} /></span><RequestLogsLink id={p.guid} startMs={p.time} tookMs={p.tookMs} /></KV>
               <KV label="Chain"><span title={p.chainTitle}>{p.chain}</span></KV>
               <KV label="Time"><LocalTime t={p.time} format="dateTime" className="gw-mono gw-tnum" /></KV>
               {facts.customer && <KV label="Customer"><Id value={facts.customer} /></KV>}

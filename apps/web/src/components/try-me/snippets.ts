@@ -464,7 +464,7 @@ function grpcCli(req: ResolvedGrpc, metadata: Record<string, string> = {}): Snip
 export function grpcDiscoveryCli(url: string, selectUpstream?: string): string {
   const addr = dialAuthority(url);
   const flags = isPlaintext(url) ? "-plaintext " : "";
-  const pin = selectUpstream ? `-H "lava-select-provider: ${selectUpstream}" ` : "";
+  const pin = selectUpstream ? `-H "router-select-provider: ${selectUpstream}" ` : "";
   return [
     `# What does this endpoint serve?`,
     `grpcurl ${flags}${addr} list`,
@@ -652,7 +652,7 @@ export function snippetsFor(req: ResolvedRequest, selectUpstream?: string): Snip
   // listener hands to the same directive parser as an HTTP header. WebSocket
   // carries none — the router reads no directives there (`pinCarrierFor`).
   const pin: Record<string, string> = selectUpstream
-    ? { "lava-select-provider": selectUpstream }
+    ? { "router-select-provider": selectUpstream }
     : {};
   if (req.transport === "http") {
     return {

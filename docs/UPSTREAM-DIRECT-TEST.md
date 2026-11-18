@@ -4,8 +4,8 @@ The Upstreams page's **Try now** drawer can send the same request two ways:
 
 | Mode | Path | What it measures |
 |---|---|---|
-| **Via router** (default) | browser → dashboard api → router → upstream ([`ROUTER-RELAY.md`](ROUTER-RELAY.md)); browser → router → upstream with `ROUTER_RELAY_ENABLED=false` | What a real client gets. The router's cache can answer it, its retries and hedging can change who served it, and it reports all of that back in `Lava-*` headers. |
-| **Direct to upstream** | browser → dashboard api → upstream | What the upstream does on its own. No cache, no retries, no hedging, no `Lava-*` headers — just the vendor's answer. |
+| **Via router** (default) | browser → dashboard api → router → upstream ([`ROUTER-RELAY.md`](ROUTER-RELAY.md)); browser → router → upstream with `ROUTER_RELAY_ENABLED=false` | What a real client gets. The router's cache can answer it, its retries and hedging can change who served it, and it reports all of that back in `Router-*` headers. |
+| **Direct to upstream** | browser → dashboard api → upstream | What the upstream does on its own. No cache, no retries, no hedging, no `Router-*` headers — just the vendor's answer. |
 
 **Compare both** — offered in direct mode, where there is a second leg to
 compare against — fires them in sequence and puts the two answers side by side.
@@ -14,14 +14,14 @@ Every upstream row on the page carries its own Try-now, so the mode applies to
 exactly one node url. What the drawer shows changes with it:
 
 - **Via router** — the address bar shows the router's own url with a copy
-  button, and the banner explains the `lava-select-provider` pin.
+  button, and the banner explains the `router-select-provider` pin.
 - **Direct to upstream** — the address bar shows the upstream's masked host
   followed by a dimmed `/…`, and the copy button gives way to a `url masked`
   tag: there is nothing to copy, because the dashboard never receives the
   full address.
 
 A direct result reports what it can and nothing more — the latency, the
-upstream's status, and a `direct · no router` tag where the `Lava-*` chips
+upstream's status, and a `direct · no router` tag where the `Router-*` chips
 would otherwise be.
 
 ## Why the api has to make the call
@@ -123,7 +123,7 @@ reporting the upstream's 401 as the upstream's verdict on the request.
 
 ### Backup-tier upstreams can only be reached direct
 
-The router matches `lava-select-provider` against its **primary** pool and
+The router matches `router-select-provider` against its **primary** pool and
 nothing else. A provider declared under `backup-direct-rpc` (SR_CONFIG) or with
 `is_backup: true` (helm values) lives in a separate pool it reaches only once
 every primary is exhausted, and it chooses among those by QoS itself — the
@@ -249,7 +249,7 @@ Other knobs: `UPSTREAM_RELAY_TIMEOUT_MS`, `UPSTREAM_RELAY_MAX_BODY_BYTES`,
 - **Differing bodies are usually fine.** Anything that tracks the head (block
   number, latest block, gas price) legitimately moves between two calls made a
   moment apart. A difference on a *fixed-height* read is the one worth chasing.
-- **A cache hit makes the router look fast.** `Lava-Provider-Address: Cached` on
+- **A cache hit makes the router look fast.** `Router-Provider-Address: Cached` on
   the router leg means you're comparing a cache read against a network call.
 
 ## Where the pieces live

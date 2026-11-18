@@ -164,7 +164,7 @@ describe("router relay · AUTH_MODE=enabled", () => {
       () =>
         new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: "0x10" }), {
           status: 200,
-          headers: { "Lava-Provider-Address": "eth-publicnode", "Lava-Retries": "0" },
+          headers: { "Router-Provider-Address": "eth-publicnode", "Router-Retries": "0" },
         }),
     );
     const res = await post("/api/routers/relay", {
@@ -186,8 +186,8 @@ describe("router relay · AUTH_MODE=enabled", () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]!.url).toBe("http://eth1-router:3000/");
     expect(calls[0]!.init.headers).toEqual({
-      "lava-select-provider": "eth-publicnode",
-      "lava-force-cache-refresh": "true",
+      "router-select-provider": "eth-publicnode",
+      "router-force-cache-refresh": "true",
       "content-type": "application/json",
     });
   });
@@ -298,7 +298,7 @@ describe("router relay · AUTH_MODE=enabled", () => {
     const calls = stubRouter(() => new Response("{}"));
     const res = await post("/api/routers/relay", { routerId: "ETH1", iface: "jsonrpc", selectProvider: "café eth-1" });
     expect(res.statusCode).toBe(200);
-    expect(calls[0]!.init.headers).toMatchObject({ "lava-select-provider": "café eth-1" });
+    expect(calls[0]!.init.headers).toMatchObject({ "router-select-provider": "café eth-1" });
   });
 
   it("is a 502 when the router cannot be reached", async () => {
