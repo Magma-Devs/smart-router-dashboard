@@ -55,7 +55,7 @@ export function AskPage() {
           </button>
         </div>
       ) : (
-        <AskConversation key={`${ask.scope}:${ask.chatId ?? "new"}`} />
+        <AskConversation key={ask.scope} />
       )}
     </section>
   );

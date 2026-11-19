@@ -16,11 +16,17 @@ function fitComposer(field: HTMLTextAreaElement) {
 
 export function AskConversation() {
   const ask = useAsk();
+  const pending =
+    ask.pending &&
+    (ask.pending.chatId === ask.chatId ||
+      (ask.submitting && ask.pending.originChatId === ask.chatId))
+      ? ask.pending
+      : null;
   const feed = useSWR<AskChatDetail>(
     ask.available && ask.chatId ? ["ask", ask.scope, "chat", ask.chatId] : null,
     () => ask.api.get(`/api/ask/chats/${ask.chatId}`),
     {
-      ...askPoll<AskChatDetail>(ask.active?.chatId === ask.chatId ? 1500 : 0),
+      ...askPoll<AskChatDetail>(ask.active?.chatId === ask.chatId || pending?.run ? 1500 : 0),
       revalidateOnFocus: true,
       keepPreviousData: false,
     },
@@ -44,6 +50,13 @@ export function AskConversation() {
   const outcomes = new Map(
     [...pages.flatMap((page) => page.runs), ...(data?.runs ?? [])].map((run) => [run.id, run]),
   );
+  const savedPending =
+    pending?.run && messages.some((message) => message.runId === pending.run!.id);
+  const optimistic = pending && !savedPending ? pending : null;
+  const { acknowledge } = ask;
+  useEffect(() => {
+    if (savedPending && pending?.run) acknowledge(pending.run.id);
+  }, [savedPending, pending?.run, acknowledge]);
   const before = pages[0]?.nextMessageCursor ?? (pages.length ? null : data?.nextMessageCursor);
   const scroller = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLTextAreaElement>(null);
@@ -97,7 +110,15 @@ export function AskConversation() {
       }
     }
     lastChat.current = ask.chatId;
-  }, [messages.length, latestId, latestRole, outcomeVersion, ask.chatId, ask.active?.status]);
+  }, [
+    messages.length,
+    latestId,
+    latestRole,
+    outcomeVersion,
+    ask.chatId,
+    ask.active?.status,
+    optimistic?.id,
+  ]);
 
   const loadOlder = async () => {
     if (!before || !ask.chatId || loadingOlder) return;
@@ -120,6 +141,7 @@ export function AskConversation() {
     !ask.accepting ||
     !ask.activityKnown ||
     Boolean(ask.active) ||
+    Boolean(optimistic) ||
     ask.submitting ||
     ask.navigating ||
     Boolean(ask.chatId && (feed.isLoading || feed.error));
@@ -150,7 +172,7 @@ export function AskConversation() {
     )
       composer.current?.focus({ preventScroll: true });
   }, [blocked]);
-  const empty = ask.available && !feed.isLoading && !feed.error && !messages.length;
+  const empty = ask.available && !feed.isLoading && !feed.error && !messages.length && !optimistic;
   useEffect(() => {
     const field = composer.current;
     if (!field) return;
@@ -204,7 +226,7 @@ export function AskConversation() {
               </button>
             </div>
           ) : null}
-          {ask.available && feed.isLoading ? (
+          {ask.available && feed.isLoading && !optimistic ? (
             <p className="ask-muted" role="status">
               Loading conversation…
             </p>
@@ -278,16 +300,29 @@ export function AskConversation() {
               </div>
             ),
           )}
-          {ask.active ? (
+          {optimistic ? (
+            <div className="ask-turn" data-ask-message={optimistic.id}>
+              <div className="ask-question">
+                <p dir="auto">{optimistic.question}</p>
+                <div className="ask-message-meta">
+                  <span className="ask-sr">You</span>
+                  <AskTime value={optimistic.createdAt} />
+                </div>
+              </div>
+            </div>
+          ) : null}
+          {ask.submitting || optimistic || ask.active ? (
             <div className="ask-processing" role="status">
               <span className="ask-spinner" aria-hidden="true" />
               <div>
-                {ask.connectionLost
-                  ? "Reconnecting…"
-                  : ask.active.status === "cancelling"
-                    ? "Stopping…"
-                    : "Processing…"}
-                {ask.active.chatId !== ask.chatId ? (
+                {ask.submitting && !pending?.run
+                  ? "Sending…"
+                  : ask.connectionLost
+                    ? "Reconnecting…"
+                    : ask.active?.status === "cancelling"
+                      ? "Stopping…"
+                      : "Processing…"}
+                {ask.active && ask.active.chatId !== ask.chatId ? (
                   <button
                     className="gw-btn gw-btn--ghost"
                     onClick={() => ask.select(ask.active!.chatId)}
@@ -296,19 +331,23 @@ export function AskConversation() {
                   </button>
                 ) : (
                   <small>
-                    {ask.connectionLost
-                      ? "Your question is saved. Reconnecting won’t send it again."
-                      : "You can leave this page. The answer will be here."}
+                    {ask.submitting && !pending?.run
+                      ? "You can keep this page open while it sends."
+                      : ask.connectionLost
+                        ? "Your question is saved. Reconnecting won’t send it again."
+                        : "You can leave this page. The answer will be here."}
                   </small>
                 )}
               </div>
-              <button
-                className="gw-btn"
-                disabled={ask.active.status === "cancelling"}
-                onClick={() => void ask.stop()}
-              >
-                Stop
-              </button>
+              {ask.active ? (
+                <button
+                  className="gw-btn"
+                  disabled={ask.active.status === "cancelling"}
+                  onClick={() => void ask.stop()}
+                >
+                  Stop
+                </button>
+              ) : null}
             </div>
           ) : null}
         </div>
