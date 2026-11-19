@@ -89,8 +89,17 @@ test("a readable conversation keeps questions, answers and composer usable on de
   await expect(page.getByRole("button", { name: "Send", exact: true })).toBeInViewport({
     ratio: 1,
   });
-  // The off switch is the Team page's.
+  // While an answer runs, Stop takes the send button's place in the input box.
   await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.getByLabel("Ask a question").fill("SLOW_FIXTURE what changed in the last hour?");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(page.locator(".ask-input").getByRole("button", { name: "Stop" })).toBeVisible();
+  await expect(page.locator(".ask-processing").getByRole("button")).toHaveCount(0);
+  await page.mouse.move(700, 300);
+  await shot("ask-running-desktop.png");
+  await page.locator(".ask-input").getByRole("button", { name: "Stop" }).click();
+  await expect(page.getByText("The question was stopped.", { exact: true })).toBeVisible();
+  // The off switch is the Team page's.
   await page.getByRole("link", { name: "Team", exact: true }).click();
   await expect(page.getByText("On for everyone")).toBeVisible();
   await shot("ask-team-switch.png");

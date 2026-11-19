@@ -20,7 +20,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 - **A cleaner chat.** The summary leads each answer and the body is quieter. The
   empty chat says where answers come from and offers three concrete questions.
   The composer has an orange send button and one line under it: private to you,
-  answers can be incomplete. The scope line (chain, page, time window) is gone.
+  answers can be incomplete. While an answer runs, Stop takes the send button's
+  place in the input box. The scope line (chain, page, time window) is gone.
   A source reads as Logs or Metrics, with a tag only when its data was missing
   or cut short. Times use the dashboard's own format.
 - **Turning it off is on the Team page**, for admins: on or off for everyone,

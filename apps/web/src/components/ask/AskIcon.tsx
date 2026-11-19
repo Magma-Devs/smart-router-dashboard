@@ -1,9 +1,19 @@
 import type { ReactNode } from "react";
 
-type IconName = "send" | "copy" | "check" | "search" | "plus" | "history" | "back" | "lock";
+type IconName =
+  | "send"
+  | "stop"
+  | "copy"
+  | "check"
+  | "search"
+  | "plus"
+  | "history"
+  | "back"
+  | "lock";
 
 const paths: Record<IconName, ReactNode> = {
   send: <path d="M12 19V5m-6 6 6-6 6 6" />,
+  stop: <rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor" />,
   copy: (
     <>
       <rect x="8" y="8" width="12" height="12" rx="3" />

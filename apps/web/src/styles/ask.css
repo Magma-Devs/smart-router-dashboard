@@ -309,6 +309,15 @@
   background: var(--bg-2);
   cursor: default;
 }
+.ask-send--stop {
+  color: var(--surface);
+  background: var(--text);
+}
+.ask-send--stop:disabled {
+  color: var(--surface);
+  background: var(--text-3);
+  cursor: progress;
+}
 .ask-send:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 3px;

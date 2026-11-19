@@ -276,13 +276,6 @@ export function AskConversation() {
                   <small>You can leave this page. The answer will be here.</small>
                 )}
               </div>
-              <button
-                className="gw-btn"
-                disabled={ask.active.status === "cancelling"}
-                onClick={() => void ask.stop()}
-              >
-                Stop
-              </button>
             </div>
           ) : null}
         </div>
@@ -348,15 +341,28 @@ export function AskConversation() {
               }
             }}
           />
-          <button
-            className="ask-send"
-            type="submit"
-            aria-label={ask.submitting ? "Sending…" : "Send"}
-            title="Send"
-            disabled={blocked || !ask.draft.trim()}
-          >
-            <AskIcon name="send" size={18} />
-          </button>
+          {ask.active && ask.active.chatId === ask.chatId ? (
+            <button
+              className="ask-send ask-send--stop"
+              type="button"
+              aria-label={ask.active.status === "cancelling" ? "Stopping…" : "Stop"}
+              title="Stop"
+              disabled={ask.active.status === "cancelling"}
+              onClick={() => void ask.stop()}
+            >
+              <AskIcon name="stop" size={18} />
+            </button>
+          ) : (
+            <button
+              className="ask-send"
+              type="submit"
+              aria-label={ask.submitting ? "Sending…" : "Send"}
+              title="Send"
+              disabled={blocked || !ask.draft.trim()}
+            >
+              <AskIcon name="send" size={18} />
+            </button>
+          )}
         </div>
         <p className="ask-composer-note">
           <AskIcon name="lock" size={12} />
