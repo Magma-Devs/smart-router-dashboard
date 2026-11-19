@@ -2,7 +2,7 @@
 # architecture like the build stage that copies it. Its version matches
 # `packageManager` in package.json; Dependabot moves this line, so move the
 # pin with it.
-FROM --platform=$BUILDPLATFORM ghcr.io/pnpm/pnpm:12.21.0-alpine@sha256:0251e9865e906e94d68a1267b4b4bc10e07f6350b850b4532404ee65dc1bfbb8 AS pnpm
+FROM --platform=$BUILDPLATFORM ghcr.io/pnpm/pnpm:12.22.0-alpine@sha256:54164442d1219cc54b6d16af9d52d15a6fa710e7e724024956487b7fc84416eb AS pnpm
 
 # The build stage runs on the runner's own architecture whatever the image
 # targets: its output is plain JS and none of the api's runtime dependencies
