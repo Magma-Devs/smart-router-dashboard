@@ -5,6 +5,17 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.74.3]
+
+### Fixed
+
+- Sending a chat question shows it and clears the composer immediately. The
+  question stays visible through chat creation, acceptance and transcript
+  loading; Sending changes to Processing when the server accepts it.
+- Failed delivery restores the question for editing or retry. A lost acceptance
+  response keeps the same idempotency key, and a failed transcript refresh
+  never restores an already accepted question as a new submission.
+
 ## [0.74.2]
 
 ### Fixed

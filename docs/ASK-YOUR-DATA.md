@@ -68,6 +68,15 @@ the admin. The switch is one row per customer in `ask_switch` (migration
 
 ## Personal history and durable runs
 
+Send immediately clears the composer and displays a pending question with
+`Sending…`. This in-memory state is scoped to the current authenticated person,
+session and customer. The same conversation remains mounted when a new chat
+gets its URL. After acceptance, the UI shows `Processing…` and keeps the pending
+question until the transcript contains its exact run ID. Identical questions
+remain distinct turns. Failed delivery restores the draft; an uncertain retry
+uses the same idempotency key and context. Refreshing accepted state only reads
+the server and never resubmits the question.
+
 Migration `0010_ask_runs` adds chats, runs, ordered messages and last-view
 preferences. Every query/mutation scopes both the server customer ID and the
 session's person. Composite foreign keys prevent attaching a message to another

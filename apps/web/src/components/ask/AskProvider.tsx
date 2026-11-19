@@ -21,11 +21,20 @@ import { askPoll, createAskApi } from "./ask-api";
 import { validChatId } from "./ask-display";
 
 const DAY_MS = 86_400_000;
+interface PendingQuestion {
+  id: string;
+  originChatId: string | null;
+  chatId: string | null;
+  question: string;
+  createdAt: string;
+  run: AskRun | null;
+}
 interface Local {
   scope: string;
   drafts: Record<string, string>;
+  pending: PendingQuestion | null;
 }
-const empty = (scope: string): Local => ({ scope, drafts: {} });
+const empty = (scope: string): Local => ({ scope, drafts: {}, pending: null });
 interface AskContextValue {
   api: ReturnType<typeof createAskApi>;
   visible: boolean;
@@ -45,6 +54,8 @@ interface AskContextValue {
   chatId: string | null;
   draft: string;
   submitting: boolean;
+  pending: PendingQuestion | null;
+  acknowledge: (runId: string) => void;
   navigating: boolean;
   active: AskRun | null;
   activityKnown: boolean;
@@ -176,28 +187,48 @@ export function AskProvider({
       mutate((key) => Array.isArray(key) && key[0] === "ask" && key[1] === scope),
     ]);
   }, [caps, activity, mutate, scope]);
+  const acknowledge = useCallback(
+    (runId: string) => {
+      patch((old) => (old.pending?.run?.id === runId ? { pending: null } : {}));
+    },
+    [patch],
+  );
   const submit = useCallback(
     async (previous?: AskPageContext | null) => {
       const question = (local.drafts[chatId ?? "new"] ?? "").trim();
-      if (submittingRef.current || !question || !available || !caps.data?.acceptingQuestions)
+      if (
+        submittingRef.current ||
+        active ||
+        !question ||
+        !available ||
+        !caps.data?.acceptingQuestions
+      )
         return;
       submittingRef.current = true;
       setSubmitting(true);
       setNotice(null);
+      // Paint the question before any network work. Keep it until the saved
+      // transcript contains this exact run, including across the new-chat URL.
+      const optimistic: PendingQuestion = {
+        id: crypto.randomUUID(),
+        originChatId: chatId,
+        chatId,
+        question,
+        createdAt: new Date().toISOString(),
+        run: null,
+      };
+      patch((old) => ({
+        pending: optimistic,
+        drafts: { ...old.drafts, [chatId ?? "new"]: "" },
+      }));
+      let id = chatId;
       try {
-        // Check again across tabs before committing. PostgreSQL still owns the
-        // final atomic rule if two browsers race after this read.
-        const current = await api.get<{ run: AskRun | null }>("/api/ask/runs/active");
-        if (current.run) {
-          await activity.mutate(current);
-          setNotice("A question is already processing. Wait or stop it first.");
-          return;
-        }
-        let id = chatId;
+        // PostgreSQL atomically enforces one active run across tabs/replicas.
+        // A separate preflight read adds latency and cannot prevent that race.
         const newChat = !id;
         if (!id) {
           id = (await api.post<{ id: string }>("/api/ask/chats", {})).id;
-          patch((old) => ({ drafts: { ...old.drafts, [id!]: question } }));
+          patch({ pending: { ...optimistic, chatId: id } });
           startNavigation(() => router.replace(`/ask?chat=${id}`));
         }
         const pending =
@@ -216,6 +247,7 @@ export function AskProvider({
           idempotencyKey: pending.idempotencyKey,
         });
         retry.current = null;
+        patch({ pending: { ...optimistic, chatId: id, run } });
         asked.current.add(run.id);
         track("ask_question", {
           view: "full",
@@ -224,11 +256,29 @@ export function AskProvider({
           chain: Boolean(pending.context.chain),
         });
         patch((old) => ({ drafts: { ...old.drafts, [id!]: "", new: "" } }));
-        await activity.mutate({ run }, false);
-        await mutate((key) => Array.isArray(key) && key[0] === "ask" && key[1] === scope);
+        void activity.mutate({ run }, false);
+        // Delivery is confirmed. A failed transcript refresh must not restore
+        // the draft or turn the next Send into a second paid question.
+        void mutate((key) => Array.isArray(key) && key[0] === "ask" && key[1] === scope).catch(
+          () => undefined,
+        );
       } catch (error) {
+        // A retry retains the same idempotency key/context when a response
+        // was lost after acceptance. Never silently resubmit a paid turn.
+        patch((old) => ({
+          pending: null,
+          drafts: {
+            ...old.drafts,
+            [id ?? "new"]: question,
+            new: chatId ? (old.drafts.new ?? "") : question,
+          },
+        }));
         setNotice(errorMessage(error));
-        await activity.mutate();
+        // Acceptance may have committed even when its response was lost.
+        void mutate((key) => Array.isArray(key) && key[0] === "ask" && key[1] === scope).catch(
+          () => undefined,
+        );
+        await activity.mutate().catch(() => undefined);
       } finally {
         submittingRef.current = false;
         setSubmitting(false);
@@ -239,6 +289,7 @@ export function AskProvider({
       local,
       chatId,
       available,
+      active,
       caps.data?.acceptingQuestions,
       activity,
       patch,
@@ -307,6 +358,8 @@ export function AskProvider({
       chatId: chatId,
       draft: local.drafts[chatId ?? "new"] ?? "",
       submitting,
+      pending: local.pending,
+      acknowledge,
       navigating,
       active,
       activityKnown: available && Boolean(activity.data) && !activity.error,
@@ -338,6 +391,7 @@ export function AskProvider({
       invalidLink,
       chatId,
       submitting,
+      acknowledge,
       navigating,
       active,
       activity.data,
