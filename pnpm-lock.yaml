@@ -230,8 +230,8 @@ importers:
         specifier: 4.0.39
         version: 4.0.39
       '@aws-sdk/client-sesv2':
-        specifier: 3.1168.0
-        version: 3.1168.0
+        specifier: 3.1170.0
+        version: 3.1170.0
       '@fastify/cors':
         specifier: 11.3.0
         version: 11.3.0
@@ -462,8 +462,8 @@ packages:
       nodemailer:
         optional: true
 
-  '@aws-sdk/client-sesv2@3.1168.0':
-    resolution: {integrity: sha512-cQGqoBdDnzKDRoVyhnaO16JqO9lLk5sDxkS+4LJbtgvJvBLQbpCpOss+4YmK4xTA8QppzHKiG75NsL8mNOXPPw==}
+  '@aws-sdk/client-sesv2@3.1170.0':
+    resolution: {integrity: sha512-a3hlssZv86kSK1/jyz1VS5348NpLkmitN38FzWv6RYR1cyiBk8a1rvo6CyeG1/yPnb0FDWdYST7xYN02vmWfpw==}
     engines: {node: '>=20.0.0'}
 
   '@aws-sdk/core@3.981.0':
@@ -3115,7 +3115,7 @@ snapshots:
       preact: 10.24.3
       preact-render-to-string: 6.5.11(preact@10.24.3)
 
-  '@aws-sdk/client-sesv2@3.1168.0':
+  '@aws-sdk/client-sesv2@3.1170.0':
     dependencies:
       '@aws-sdk/core': 3.981.0
       '@aws-sdk/credential-provider-node': 3.972.97
