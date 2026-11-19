@@ -119,7 +119,7 @@ describe("Ask settings and provider boundary", () => {
           },
         },
       ),
-    ).rejects.toMatchObject({ message: "Ask your data is temporarily unavailable." });
+    ).rejects.toMatchObject({ message: "AI investigation is temporarily unavailable." });
   });
 
   it("respects pre-existing cancellation and a live request deadline", async () => {

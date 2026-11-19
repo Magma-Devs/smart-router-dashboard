@@ -10,7 +10,7 @@ test("disabled/self-hosted chat has no entry, personal calls or direct-route acc
     if (new URL(request.url()).pathname.startsWith("/api/ask/")) calls.push(request.url());
   });
   await signInThroughUi(page, operator);
-  await expect(page.getByRole("link", { name: /Ask your data/ })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: /AI investigation/ })).toHaveCount(0);
   await page.goto("/ask");
   await expect(page.getByRole("heading", { name: "Chat is unavailable" })).toBeVisible();
   await expect(page.getByLabel("Ask a question")).toHaveCount(0);

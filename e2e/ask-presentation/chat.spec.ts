@@ -22,11 +22,11 @@ test("a readable conversation keeps questions, answers and composer usable on de
   await page.addStyleTag({ content: "nextjs-portal { display: none; }" });
   const shot = (name: string) =>
     page.screenshot({ path: testInfo.outputPath(name), animations: "disabled" });
-  await page.getByRole("link", { name: "Ask your data" }).click();
+  await page.getByRole("link", { name: "AI investigation" }).click();
   await page.waitForURL(/\/ask/);
   await expect(page.getByText("What’s happening with your router?")).toBeVisible();
   // One name on the page: the top bar's. No second title, no second menu.
-  await expect(page.getByRole("heading", { name: "Ask your data" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "AI investigation" })).toHaveCount(0);
   await expect(page.locator(".gw-side")).toBeVisible();
   await page.mouse.move(700, 300);
   await shot("ask-empty-desktop.png");

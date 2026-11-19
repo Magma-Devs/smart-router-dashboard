@@ -17,7 +17,7 @@ export interface NavItem {
 
 /** The chat page. In the menu only where this person can use Ask (a managed
  *  deployment with it on), so it is not in `NAV_SECTIONS`. */
-export const ASK_NAV_ITEM: NavItem = { href: "/ask", label: "Ask your data", icon: IconAsk };
+export const ASK_NAV_ITEM: NavItem = { href: "/ask", label: "AI investigation", icon: IconAsk };
 
 export interface NavSection {
   label: string | null;

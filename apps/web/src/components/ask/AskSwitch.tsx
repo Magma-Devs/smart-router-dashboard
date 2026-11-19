@@ -35,7 +35,7 @@ export function AskTeamSwitch() {
   return (
     <div className="ask-team-switch">
       <div>
-        <strong>Ask your data</strong>
+        <strong>AI investigation</strong>
         <span>{ask.off ? "Off for everyone" : "On for everyone"}</span>
         {error && !confirming ? <span role="alert">{error}</span> : null}
       </div>
@@ -58,7 +58,7 @@ export function AskTeamSwitch() {
       <Modal
         open={confirming}
         onClose={() => setConfirming(false)}
-        title="Turn Ask off for everyone?"
+        title="Turn AI investigation off for everyone?"
         footer={
           <>
             <button className="gw-btn" onClick={() => setConfirming(false)}>
@@ -69,7 +69,7 @@ export function AskTeamSwitch() {
               disabled={busy}
               onClick={() => void set(true)}
             >
-              {busy ? "Turning off…" : "Turn off Ask"}
+              {busy ? "Turning off…" : "Turn off AI investigation"}
             </button>
           </>
         }
@@ -77,7 +77,7 @@ export function AskTeamSwitch() {
         <div style={{ display: "grid", gap: 12, fontSize: 13, lineHeight: 1.6 }}>
           <ul style={{ margin: 0, paddingLeft: 18, color: "var(--text-2)", fontSize: 12.5 }}>
             <li>Every question in progress stops within seconds, for everyone.</li>
-            <li>Nobody can ask a new question until an admin turns Ask back on.</li>
+            <li>Nobody can ask a new question until an admin turns it back on.</li>
             <li>Chats stay readable. The audit log records who turned it off.</li>
           </ul>
           {error ? (
@@ -97,7 +97,7 @@ export function AskOffNotice() {
   if (!ask.off) return null;
   return (
     <p className="ask-notice" role="status">
-      An admin turned Ask off for everyone on this dashboard. You can still read your chats.
+      An admin turned AI investigation off for everyone on this dashboard. You can still read your chats.
       {ask.canSwitch ? (
         <>
           {" "}

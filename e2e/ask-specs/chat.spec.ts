@@ -9,7 +9,7 @@ test.beforeEach(async ({ context }) => {
 });
 
 const openAsk = (page: import("@playwright/test").Page) =>
-  page.getByRole("link", { name: "Ask your data" }).click();
+  page.getByRole("link", { name: "AI investigation" }).click();
 const DAY_MS = 86_400_000;
 
 test("a new chat covers the last day, and a follow-up keeps its scope over a time ending now", async ({
@@ -27,7 +27,7 @@ test("a new chat covers the last day, and a follow-up keeps its scope over a tim
   await signInThroughUi(page, member);
   await page.goto("/upstreams");
   // One way in: the menu. No top-bar button, no shortcut.
-  await expect(page.getByRole("button", { name: /Ask your data/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /AI investigation/ })).toHaveCount(0);
   await openAsk(page);
   await page.waitForURL(/\/ask$/);
   const runs = () =>
@@ -310,17 +310,17 @@ test("an admin turns Ask off for everyone, stopping a member's question, and bac
     await page.goto("/team");
     await expect(page.getByText("On for everyone")).toBeVisible();
     await page.getByRole("button", { name: "Turn off", exact: true }).click();
-    const confirm = page.getByRole("dialog", { name: "Turn Ask off for everyone?" });
+    const confirm = page.getByRole("dialog", { name: "Turn AI investigation off for everyone?" });
     await expect(confirm).toBeVisible();
-    await confirm.getByRole("button", { name: "Turn off Ask" }).click();
+    await confirm.getByRole("button", { name: "Turn off AI investigation" }).click();
     await expect(confirm).toHaveCount(0);
     await expect(page.getByText("Off for everyone")).toBeVisible();
     await openAsk(page);
-    await expect(page.getByText(/An admin turned Ask off for everyone/)).toBeVisible();
+    await expect(page.getByText(/An admin turned AI investigation off for everyone/)).toBeVisible();
     await expect(page.getByLabel("Ask a question")).toBeDisabled();
 
     await expect(memberPage.getByText("The question was stopped.", { exact: true })).toBeVisible();
-    await expect(memberPage.getByText(/An admin turned Ask off for everyone/)).toBeVisible();
+    await expect(memberPage.getByText(/An admin turned AI investigation off for everyone/)).toBeVisible();
     await expect(memberPage.getByRole("link", { name: "Turn it back on in Team" })).toHaveCount(0);
     await expect(memberPage.getByLabel("Ask a question")).toBeDisabled();
 
@@ -329,7 +329,7 @@ test("an admin turns Ask off for everyone, stopping a member's question, and bac
     await page.getByRole("button", { name: "Turn on", exact: true }).click();
     await expect(page.getByText("On for everyone")).toBeVisible();
     await openAsk(page);
-    await expect(page.getByText(/An admin turned Ask off for everyone/)).toHaveCount(0);
+    await expect(page.getByText(/An admin turned AI investigation off for everyone/)).toHaveCount(0);
     await expect(page.getByLabel("Ask a question")).toBeEnabled();
   } finally {
     // The suite shares one database: never leave Ask off for the flows after this one.

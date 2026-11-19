@@ -417,7 +417,7 @@ export const AUDIT_EVENTS = {
   "ask.turned_off": {
     group: "config",
     description:
-      "An admin turned Ask your data off for everyone on this dashboard. Questions in progress stopped, and no new question is accepted until an admin turns it back on.",
+      "An admin turned AI investigation off for everyone on this dashboard. Questions in progress stopped, and no new question is accepted until an admin turns it back on.",
     carriesChanges: false,
     carriesAccessContext: false,
     origin: "MAG-4750",
@@ -425,7 +425,7 @@ export const AUDIT_EVENTS = {
   "ask.turned_on": {
     group: "config",
     description:
-      "An admin turned Ask your data back on for this dashboard. Questions are accepted again, within the deployment's monthly limit.",
+      "An admin turned AI investigation back on for this dashboard. Questions are accepted again, within the deployment's monthly limit.",
     carriesChanges: false,
     carriesAccessContext: false,
     origin: "MAG-4750",

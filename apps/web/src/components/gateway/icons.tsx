@@ -35,7 +35,7 @@ export const IconHome = svg(
     <polyline points="9 22 9 12 15 12 15 22" />
   </>,
 );
-/** Ask your data: a speech bubble holding a small bar chart. */
+/** AI investigation: a speech bubble holding a small bar chart. */
 export const IconAsk = svg(
   <>
     <path d="M6.5 3h11A2.5 2.5 0 0 1 20 5.5v9a2.5 2.5 0 0 1-2.5 2.5H11l-4.5 4v-4A2.5 2.5 0 0 1 4 14.5v-9A2.5 2.5 0 0 1 6.5 3Z" />

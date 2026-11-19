@@ -334,7 +334,7 @@ export function AskConversation() {
                 ? "Wait for the answer or stop the current question"
                 : messages.length
                   ? "Ask a follow-up…"
-                  : "Ask about your router…"
+                  : "What do you want to investigate?"
             }
             disabled={blocked}
             dir="auto"

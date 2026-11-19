@@ -67,7 +67,7 @@ export async function setAskSwitch(
       {
         action: off ? "ask.turned_off" : "ask.turned_on",
         actor: { id: actorId, kind: "user" },
-        target: { type: "ask", id: customerId, name: "Ask your data" },
+        target: { type: "ask", id: customerId, name: "AI investigation" },
       },
       tx,
     );

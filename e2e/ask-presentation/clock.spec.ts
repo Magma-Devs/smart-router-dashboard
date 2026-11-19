@@ -12,7 +12,7 @@ test("a clock question gets a short persisted reply with no external work", asyn
   await page.addInitScript(() => localStorage.setItem("sr:theme", "light"));
   await signInThroughUi(page, operator);
   await page.addStyleTag({ content: "nextjs-portal { display: none; }" });
-  await page.getByRole("link", { name: "Ask your data" }).click();
+  await page.getByRole("link", { name: "AI investigation" }).click();
   await page.getByLabel("Ask a question").fill("what is the date today?");
   const started = Date.now();
   const submitted = page.waitForResponse(

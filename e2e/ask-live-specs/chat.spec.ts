@@ -50,7 +50,7 @@ test("live browser questions use normal admission, providers and persisted answe
 }) => {
   const records: Array<Record<string, unknown>> = [];
   await signInThroughUi(page, operator);
-  await page.getByRole("link", { name: "Ask your data" }).click();
+  await page.getByRole("link", { name: "AI investigation" }).click();
   await expect(page.getByLabel("Ask a question")).toBeVisible();
   const prompts = [
     "Using the currently authorized metrics, run count(up) and explain the result and what it cannot establish about router health. State the actual source and observation time. Keep the answer short.",

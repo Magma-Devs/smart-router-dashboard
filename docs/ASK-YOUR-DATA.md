@@ -1,5 +1,9 @@
 # Ask your data: backend contracts and persistence
 
+> The dashboard calls this feature **AI investigation**: the menu entry, the
+> page, the Team switch, its messages and audit labels. The code, routes,
+> environment variables, usage events and this document keep the name Ask.
+
 [MAG-4750](https://magmadevs.atlassian.net/browse/MAG-4750) owns the canonical
 scope. The [implementation and acceptance ledger](ASK-YOUR-DATA-IMPLEMENTATION.md)
 tracks all six delivery slices. This document describes MAG-4929's foundation
@@ -302,7 +306,7 @@ The web and API both require managed authenticated deployment and
 source of authority; browser visibility never grants access. Customer roles all
 use the same customer-only read boundary.
 
-Ask is one page, `/ask?chat=<id>`, reached from **Ask your data** in the left
+Ask is one page, `/ask?chat=<id>`, reached from **AI investigation** in the left
 menu, under Upstreams. There is no top-bar button, keyboard shortcut, side panel
 or minimized pill. The menu entry leads to the chat with a question still
 running, else to the chat last open in the tab, else to a new one, and shows a

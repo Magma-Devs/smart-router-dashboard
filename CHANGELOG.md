@@ -9,7 +9,9 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ### Changed
 
-- **Ask your data is one page in the left menu (MAG-5423).** The top-bar
+- **Ask your data is now AI investigation, one page in the left menu
+  (MAG-5423).** The name changes in the menu, the page, the Team switch, its
+  messages and the audit log's labels; routes and settings keep `ask`. The top-bar
   button, the ⌘/Ctrl K shortcut, the side panel and the minimized pill are
   gone. The menu entry leads back to the chat with a question still running, or
   to the chat last open, and shows a spinner while a question runs. History and
@@ -21,7 +23,7 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   answers can be incomplete. The scope line (chain, page, time window) is gone.
   A source reads as Logs or Metrics, with a tag only when its data was missing
   or cut short. Times use the dashboard's own format.
-- **Turning Ask off is on the Team page**, for admins: on or off for everyone,
+- **Turning it off is on the Team page**, for admins: on or off for everyone,
   behind the same confirmation.
 - **A new chat's questions default to the last 24 hours**, and a follow-up's
   time ends now instead of when its chat started.

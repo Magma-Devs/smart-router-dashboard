@@ -19,11 +19,11 @@ export function AskPage() {
     return (
       <section className="ask-unavailable">
         <h1>Chat is unavailable</h1>
-        <p>Ask your data isn’t enabled on this dashboard.</p>
+        <p>AI investigation isn’t enabled on this dashboard.</p>
       </section>
     );
   return (
-    <section className="ask-page" aria-label="Ask your data">
+    <section className="ask-page" aria-label="AI investigation">
       <div className="ask-page-actions">
         <button
           className="gw-btn gw-btn--ghost"

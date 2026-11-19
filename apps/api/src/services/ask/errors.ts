@@ -2,10 +2,10 @@ import type { AskErrorCode } from "@sr/shared";
 
 /** Fixed public messages: provider exceptions and tool text can contain secrets. */
 const messages: Record<AskErrorCode, string> = {
-  ASK_DISABLED: "Ask your data is unavailable on this deployment.",
+  ASK_DISABLED: "AI investigation is unavailable on this deployment.",
   ASK_TURNED_OFF:
-    "An admin turned Ask your data off for this dashboard. You can still read your chats.",
-  ASK_UNAVAILABLE: "Ask your data is temporarily unavailable.",
+    "An admin turned AI investigation off for this dashboard. You can still read your chats.",
+  ASK_UNAVAILABLE: "AI investigation is temporarily unavailable.",
   ASK_NOT_FOUND: "This chat or question could not be found.",
   ASK_INVALID_REQUEST: "The question or page context is invalid.",
   ASK_CONFLICT: "This retry does not match the original question.",
