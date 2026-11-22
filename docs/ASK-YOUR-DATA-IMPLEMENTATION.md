@@ -49,8 +49,8 @@ budget and execution. MAG-4751 self-hosted distribution remains a separate produ
   and newer explicitly attributed response shapes only after strict validation.
   `chain_events` is capability-dependent. Missing status evidence is reported.
 - PostgreSQL is the durable queue. Submission atomically commits a run, personal
-  active-run lock and budget eligibility. Each paid step first counts tokens
-  for free, then atomically reserves a bounded cost. Workers claim with leases and
+  active-run lock and budget eligibility. Each paid step atomically reserves a
+  cost bounded by the request's byte length, with no network call. Workers claim with leases and
   fencing tokens; each step records usage. No work depends on a browser connection.
   A crashed in-flight provider call is uncertain, never blindly replayed or freed.
 - Run states: queued, running, cancelling, succeeded, failed, cancelled,

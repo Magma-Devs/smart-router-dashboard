@@ -5,6 +5,19 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.76.0]
+
+### Changed
+
+- Ask reserves each model step's cost without a network call. The input bound is
+  the UTF-8 byte length of the serialized request plus 2,048 tokens for the
+  provider's tool-use prompt and message framing, priced at the highest
+  input-side rate; a token covers at least one byte, so the bound holds. The
+  remote token count it replaces was part of the about 2.5 s admission before
+  every step. Settlement
+  still charges the usage Bedrock reports. `ASK_DATA_TOKEN_COUNTER` and
+  `ASK_DATA_TOKEN_COUNTER_MODEL` stay required: the readiness preflight uses them.
+
 ## [0.75.0]
 
 ### Added

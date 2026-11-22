@@ -9,12 +9,13 @@ import {
   type Database,
 } from "@sr/db";
 import type { AskSettings } from "../../config.js";
-import { BedrockAdapter, type BedrockReceipt, type BedrockUsage } from "./bedrock.js";
+import type { BedrockReceipt, BedrockUsage } from "./bedrock.js";
 import { AskFailure } from "./errors.js";
 import type { AskExecutionHooks } from "./orchestrator.js";
 import {
   assertCurrentPricing,
   askPricingSchema,
+  inputTokenBound,
   maximumStepCost,
   observedStepCost,
   type AskBillingSettings,
@@ -30,7 +31,6 @@ export class AskBudget {
     private readonly db: Database,
     private readonly settings: AskSettings,
     private readonly billing: AskBillingSettings | null,
-    private readonly fetchImpl?: typeof fetch,
   ) {
     this.store = new AskStore(db, settings.customerId, settings.retentionDays);
   }
@@ -287,15 +287,10 @@ export class AskBudget {
       },
       beforeModelStep: async ({ input, outputTokens, signal }) => {
         assertCurrentPricing(this.configured.pricing);
-        const count = await new BedrockAdapter(this.settings, this.fetchImpl).countTokens(
-          input,
-          this.configured.counter,
-          signal,
-        );
-        // Counter overhead can differ between API representations. The paid
-        // request also has a hard byte/output cap; retain a conservative margin.
-        const bound = count + Math.max(128, Math.ceil(count * 0.05));
-        return this.reserve(run, bound, outputTokens);
+        signal?.throwIfAborted();
+        // No network call: the request's byte length bounds its input tokens,
+        // priced at the highest input-side rate; settlement charges the real usage.
+        return this.reserve(run, inputTokenBound(input), outputTokens);
       },
       modelDispatched: (id) => this.dispatched(run, id),
       recordUsage: (id, usage, receipt) => this.usage(run.id, id, usage, receipt),
