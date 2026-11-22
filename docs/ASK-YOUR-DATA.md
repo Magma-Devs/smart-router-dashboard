@@ -105,10 +105,15 @@ The database independently enforces one active run per customer/person through a
 partial unique index. A changed retry is a conflict; an expired retry cannot
 resurrect an old answer. Admission failure rolls everything back.
 
-Workers claim queued runs with `FOR UPDATE SKIP LOCKED`, a unique fencing token
-and a bounded lease. Completion, heartbeat and failure first acquire the row
-lock, then recheck the current wall clock in a second statement: PostgreSQL may
-evaluate an UPDATE's WHERE before a lock wait. A lease that expires during that
+The replica that saves a question wakes its own worker, which claims it at once;
+other replicas find it by polling every second. A claim is one statement whose
+subquery takes the oldest queued run younger than the run deadline with
+`FOR UPDATE SKIP LOCKED`; an older one is left for recovery, which fails it with
+`ASK_TIMEOUT`. A claim sets a unique fencing token and a bounded lease.
+Completion, heartbeat and failure first acquire the row lock, then recheck the
+current wall clock in a second statement: PostgreSQL may evaluate an UPDATE's
+WHERE before a lock wait. The lease check renews a running run's lease and reads
+a cancelling one's status in that second statement, without extending it. A lease that expires during that
 wait cannot be extended or publish a late answer. Success and its assistant
 message commit together, after answer validation. A failed/cancelled/interrupted
 run creates no assistant success message.
@@ -131,6 +136,20 @@ execution-boundary authorization no longer opens a heartbeat transaction for
 every tool. Fixed error codes and per-phase durations provide diagnostics without
 logging questions, answers, tool results or credentials.
 
+The hot path is shaped by round trips, because a fleet API reaches its database
+across regions through a tunnel. Every query is a named prepared statement
+(`preparing` in `@sr/db`): one round trip once a connection has prepared it, where
+an unprepared query with parameters costs two and holds back the queries after
+it. A transaction's statements that do not wait on each other's results go out
+together and share a round trip; PostgreSQL still runs them one at a time in the
+order sent, so each is its own statement after any lock the one before it took,
+and the code reads their results in that order, failing where a one-at-a-time
+transaction would. The worker's first lease check and its history read run side
+by side. The lease check at a model call's dispatch reuses the reservation's own
+check when that is under a second old; `dispatched` verifies the lease, the
+running status and the session again before a paid request leaves. A tool event
+is one statement that locks the run while its lease is current.
+
 The API starts the worker once the database is ready, with the budget hooks
 below installed, on a managed deployment with Ask enabled and a valid rate card.
 
@@ -147,7 +166,18 @@ windows; the current UTC reference is explicit and never comes from an old answe
 Data tools have locally authored names and parameter schemas. The customer MCP
 connection opens only on the first requested read. Identity verification comes
 first; independent catalog/tool-list requests then run concurrently. Every read
-rechecks identity and the immutable local policy. A source is selected implicitly
+rechecks identity and the immutable local policy: the identity check and the read
+go to the MCP server together, and the read's result is used only once the
+identity check has passed.
+
+Each API replica keeps one MCP client and its discovery for five minutes
+(`McpPool`) and gives each run its own view of it, bound to that run's stop. The
+MCP server is stateless and authenticates every request, so the shared client
+holds no server session. The client belongs to one MCP URL, credential and
+customer; a change to any of them opens a new one. A failed call or a refused
+identity retires it, and a retired client closes once its last run lets go of it,
+or at shutdown. A source added to or removed from the credential's grant reaches
+Ask within five minutes; the MCP server refuses a removed source's reads at once. A source is selected implicitly
 only if exactly one authorized source supports the operation; ambiguity returns
 choices and never sums replicas. Remote descriptions cannot grant tools.
 Metrics/log reads keep their 24-hour bounds; provider-status event reads keep

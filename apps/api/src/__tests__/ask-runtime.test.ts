@@ -334,7 +334,7 @@ describe("Ask failures name their cause", () => {
           signal.addEventListener("abort", () => reject(signal.reason), { once: true });
         }),
     );
-    vi.spyOn(AskStore.prototype, "leaseState").mockRejectedValue(terminated());
+    vi.spyOn(AskStore.prototype, "renew").mockRejectedValue(terminated());
     const lines: string[] = [];
     const runtime = await boot(lines);
     await vi.waitFor(() => expect(runtime.ready()).toBe(true));

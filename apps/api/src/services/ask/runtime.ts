@@ -16,6 +16,7 @@ export function installAskRuntime(app: FastifyInstance): {
   admit: AskAdmission;
   ready: () => boolean;
   switched: (off: boolean) => void;
+  submitted: () => void;
 } {
   let stopped = false;
   let worker: AskWorker | null = null;
@@ -139,6 +140,8 @@ export function installAskRuntime(app: FastifyInstance): {
   return {
     ready,
     switched: (off) => turnedOff?.remember(off),
+    // The replica that saved a question claims it now; the others still poll.
+    submitted: () => worker?.wake(),
     admit: async (tx, run) => {
       if (!ready() || !budget) throw new AskFailure("ASK_UNAVAILABLE");
       await budget.admit(tx, run);

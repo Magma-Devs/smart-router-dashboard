@@ -3,6 +3,7 @@ import {
   StreamableHTTPClientTransport,
   type CallToolResult,
 } from "@modelcontextprotocol/client";
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { AskSettings } from "../../config.js";
 import { AskFailure, abortFailure } from "./errors.js";
@@ -248,12 +249,23 @@ function unwrap(result: CallToolResult): unknown {
   }
 }
 
+/** What runs that share a pooled client share: the discovery it made and a
+ * way to retire the client after a failure. */
+interface SharedDiscovery {
+  snapshot: McpSnapshot | null;
+  at: number;
+  ttlMs: number;
+  now: () => number;
+  retire: () => void;
+}
+
 export class McpConnection {
   private snapshotValue: McpSnapshot | null = null;
   constructor(
     private readonly client: Client,
     private readonly settings: AskSettings,
     private readonly signal?: AbortSignal,
+    private readonly shared?: SharedDiscovery,
   ) {}
 
   private async call(name: string, args: Record<string, unknown> = {}): Promise<unknown> {
@@ -266,9 +278,15 @@ export class McpConnection {
       );
     } catch (error) {
       if (this.signal?.aborted) throw abortFailure(this.signal);
+      this.shared?.retire();
       if (error instanceof AskFailure) throw error;
       throw new AskFailure("ASK_MCP_UNAVAILABLE");
     }
+  }
+
+  private mismatch(): never {
+    this.shared?.retire();
+    throw new AskFailure("ASK_IDENTITY_MISMATCH");
   }
 
   private async verifyIdentity(): Promise<string> {
@@ -283,12 +301,28 @@ export class McpConnection {
         (identity.data.tenantIds.length !== 1 ||
           identity.data.tenantIds[0] !== this.settings.customerId))
     ) {
-      throw new AskFailure("ASK_IDENTITY_MISMATCH");
+      this.mismatch();
     }
     return identity.data.subject;
   }
 
+  /** A pooled client's discovery is reused until it is `ttlMs` old; every read
+   * still verifies this credential's identity with the MCP server. */
   async discover(): Promise<McpSnapshot> {
+    const shared = this.shared;
+    if (shared?.snapshot && shared.now() - shared.at < shared.ttlMs) {
+      this.snapshotValue = shared.snapshot;
+      return structuredClone(shared.snapshot);
+    }
+    const snapshot = await this.discoverNow();
+    if (shared) {
+      shared.snapshot = snapshot;
+      shared.at = shared.now();
+    }
+    return structuredClone(snapshot);
+  }
+
+  private async discoverNow(): Promise<McpSnapshot> {
     const subject = await this.verifyIdentity();
     const [rawSources, rawCatalog, tools] = await Promise.all([
       this.call("list_sources"),
@@ -309,7 +343,7 @@ export class McpConnection {
       new Set(catalog.data.sources.map((s) => s.sourceId)).size !== catalog.data.sources.length ||
       catalog.data.sources.some((s) => !sources.data.some((source) => source.id === s.sourceId))
     ) {
-      throw new AskFailure("ASK_IDENTITY_MISMATCH");
+      this.mismatch();
     }
     // Keep the catalog as data, not instructions. Only the local policy can
     // admit an operation; discovery narrows it to this credential's grant.
@@ -343,9 +377,12 @@ export class McpConnection {
         inputSchema: z.toJSONSchema(readPolicy[operationId]!.parameters) as Record<string, unknown>,
       })),
     );
-    if (!snapshot.tools.includes("execute_operation")) throw new AskFailure("ASK_MCP_UNAVAILABLE");
+    if (!snapshot.tools.includes("execute_operation")) {
+      this.shared?.retire();
+      throw new AskFailure("ASK_MCP_UNAVAILABLE");
+    }
     this.snapshotValue = snapshot;
-    return structuredClone(snapshot);
+    return snapshot;
   }
 
   async read(
@@ -359,8 +396,15 @@ export class McpConnection {
     const parsed = policy?.parameters.safeParse(parameters);
     if (!source || !source.operationIds.includes(operationId) || !parsed?.success)
       throw new AskFailure("ASK_TOOL_DENIED", 403);
-    // Do not accept a changed/revoked grant merely because discovery once worked.
-    await this.verifyIdentity();
+    // Do not accept a changed/revoked grant merely because discovery once
+    // worked. The identity check and the read go out together; the read's
+    // result is used only once the identity check has passed.
+    const [identity, executed] = await Promise.allSettled([
+      this.verifyIdentity(),
+      this.call("execute_operation", { sourceId, operationId, parameters: parsed.data }),
+    ]);
+    if (identity.status === "rejected") throw identity.reason;
+    if (executed.status === "rejected") throw executed.reason;
     const result = z
       .object({
         // The MCP server picks the tenant from this credential; an envelope
@@ -373,16 +417,14 @@ export class McpConnection {
         error: z.string().max(128).optional(),
       })
       .passthrough()
-      .safeParse(
-        await this.call("execute_operation", { sourceId, operationId, parameters: parsed.data }),
-      );
+      .safeParse(executed.value);
     if (!result.success) throw new AskFailure("ASK_MCP_UNAVAILABLE");
     if (
       (result.data.tenantId !== undefined && result.data.tenantId !== this.settings.customerId) ||
       result.data.sourceId !== sourceId ||
       result.data.operationId !== operationId
     )
-      throw new AskFailure("ASK_IDENTITY_MISMATCH");
+      this.mismatch();
     return {
       sourceId,
       operationId,
@@ -400,27 +442,12 @@ export class McpAdapter {
     private readonly fetchImpl?: typeof fetch,
   ) {}
 
-  async withConnection<T>(
-    work: (connection: McpConnection) => Promise<T>,
-    signal?: AbortSignal,
-  ): Promise<T> {
-    const opened = await this.open(signal);
-    try {
-      return await work(opened.connection);
-    } finally {
-      await opened.close();
-    }
-  }
-
-  async open(
-    signal?: AbortSignal,
-  ): Promise<{ connection: McpConnection; close: () => Promise<void> }> {
+  /** The connected client before a run's view is put on it. `signal` bounds
+   * the connection's own requests; a pooled client's is the pool's, so one
+   * run's stop cannot cut another run's request. */
+  async connect(signal: AbortSignal): Promise<Client> {
     if (!this.settings.enabled) throw new AskFailure("ASK_DISABLED", 404);
     if (this.settings.problem) throw new AskFailure("ASK_UNAVAILABLE");
-    const activeSignal = AbortSignal.any([
-      AbortSignal.timeout(this.settings.runTimeoutMs),
-      ...(signal ? [signal] : []),
-    ]);
     const endpoint = new URL(this.settings.mcpUrl).toString();
     const client = new Client(
       { name: "smart-router-dashboard", version: "1" },
@@ -448,7 +475,7 @@ export class McpAdapter {
           { method: request.method, headers: request.headers, body, signal: request.signal },
           {
             fetchImpl: this.fetchImpl,
-            signal: activeSignal,
+            signal,
             timeoutMs: this.settings.requestTimeoutMs,
             maxBytes: this.settings.maxResponseBytes,
           },
@@ -456,19 +483,170 @@ export class McpAdapter {
       },
     });
     try {
-      await client.connect(transport, {
-        signal: activeSignal,
-        timeout: this.settings.requestTimeoutMs,
-      });
-      return {
-        connection: new McpConnection(client, this.settings, activeSignal),
-        close: () => client.close().catch(() => undefined),
-      };
+      await client.connect(transport, { signal, timeout: this.settings.requestTimeoutMs });
+      return client;
     } catch (error) {
       await client.close().catch(() => undefined);
-      if (activeSignal.aborted) throw abortFailure(activeSignal);
+      if (signal.aborted) throw abortFailure(signal);
       if (error instanceof AskFailure) throw error;
       throw new AskFailure("ASK_MCP_UNAVAILABLE");
     }
   }
+
+  async withConnection<T>(
+    work: (connection: McpConnection) => Promise<T>,
+    signal?: AbortSignal,
+  ): Promise<T> {
+    const opened = await this.open(signal);
+    try {
+      return await work(opened.connection);
+    } finally {
+      await opened.close();
+    }
+  }
+
+  async open(
+    signal?: AbortSignal,
+  ): Promise<{ connection: McpConnection; close: () => Promise<void> }> {
+    if (!this.settings.enabled) throw new AskFailure("ASK_DISABLED", 404);
+    if (this.settings.problem) throw new AskFailure("ASK_UNAVAILABLE");
+    const activeSignal = AbortSignal.any([
+      AbortSignal.timeout(this.settings.runTimeoutMs),
+      ...(signal ? [signal] : []),
+    ]);
+    const client = await this.connect(activeSignal);
+    return {
+      connection: new McpConnection(client, this.settings, activeSignal),
+      close: () => client.close().catch(() => undefined),
+    };
+  }
+}
+
+interface Pooled {
+  key: string;
+  openedAt: number;
+  client: Promise<Client>;
+  controller: AbortController;
+  users: number;
+  retired: boolean;
+  discovery: SharedDiscovery;
+}
+
+/**
+ * One MCP client per replica, shared by its runs for up to `ttlMs` (five
+ * minutes). The MCP server is stateless and authenticates every request, so
+ * a shared client holds no session. Each run gets its own view of it, bound to
+ * that run's signal. The client and its discovery belong to one MCP URL,
+ * credential and customer: a run with any of the three changed gets a new
+ * client. Any failed call retires the client, and so do the TTL and `close()`.
+ * A retired client closes once its last run lets go of it. So a source added
+ * to or removed from this credential's grant reaches Ask within five minutes,
+ * and the MCP server refuses a removed source's reads at once.
+ */
+export class McpPool {
+  private current: Pooled | null = null;
+  private closed = false;
+  constructor(
+    private readonly settings: AskSettings,
+    private readonly fetchImpl?: typeof fetch,
+    private readonly ttlMs = 300_000,
+    private readonly now: () => number = () => Date.now(),
+  ) {}
+
+  private static key(settings: AskSettings): string {
+    return createHash("sha256")
+      .update([settings.mcpUrl, settings.mcpToken, settings.customerId].join("\n"))
+      .digest("hex");
+  }
+
+  private retire(entry: Pooled): void {
+    entry.retired = true;
+    if (this.current === entry) this.current = null;
+    if (entry.users === 0) this.shut(entry);
+  }
+
+  private shut(entry: Pooled): void {
+    entry.controller.abort(new AskFailure("ASK_INTERRUPTED"));
+    void entry.client.then((client) => client.close()).catch(() => undefined);
+  }
+
+  async open(
+    signal?: AbortSignal,
+    settings: AskSettings = this.settings,
+  ): Promise<{ connection: McpConnection; close: () => Promise<void> }> {
+    if (!settings.enabled) throw new AskFailure("ASK_DISABLED", 404);
+    if (settings.problem || this.closed) throw new AskFailure("ASK_UNAVAILABLE");
+    const key = McpPool.key(settings);
+    const stale = this.current;
+    if (stale && (stale.key !== key || this.now() - stale.openedAt >= this.ttlMs))
+      this.retire(stale);
+    if (!this.current) {
+      const controller = new AbortController();
+      const entry: Pooled = {
+        key,
+        openedAt: this.now(),
+        controller,
+        users: 0,
+        retired: false,
+        client: new McpAdapter(settings, this.fetchImpl).connect(controller.signal),
+        discovery: {
+          snapshot: null,
+          at: 0,
+          ttlMs: this.ttlMs,
+          now: this.now,
+          retire: () => this.retire(entry),
+        },
+      };
+      entry.client.catch(() => this.retire(entry));
+      this.current = entry;
+    }
+    const entry = this.current;
+    entry.users++;
+    let released = false;
+    const release = async () => {
+      if (released) return;
+      released = true;
+      entry.users--;
+      if (entry.retired && entry.users === 0) this.shut(entry);
+    };
+    try {
+      const client = await raceAbort(entry.client, signal);
+      const runSignal = AbortSignal.any([
+        AbortSignal.timeout(settings.runTimeoutMs),
+        ...(signal ? [signal] : []),
+      ]);
+      return {
+        connection: new McpConnection(client, settings, runSignal, entry.discovery),
+        close: release,
+      };
+    } catch (error) {
+      await release();
+      throw error;
+    }
+  }
+
+  /** Retires the current client; it closes once no run holds it. */
+  async close(): Promise<void> {
+    this.closed = true;
+    if (this.current) this.retire(this.current);
+  }
+}
+
+function raceAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return promise;
+  if (signal.aborted) return Promise.reject(abortFailure(signal));
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(abortFailure(signal));
+    signal.addEventListener("abort", abort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener("abort", abort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", abort);
+        reject(error);
+      },
+    );
+  });
 }

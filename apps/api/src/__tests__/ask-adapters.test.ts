@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readAskSettings } from "../config.js";
 import { BedrockAdapter } from "../services/ask/bedrock.js";
-import { McpAdapter } from "../services/ask/mcp.js";
+import { Client } from "@modelcontextprotocol/client";
+import { McpAdapter, McpPool } from "../services/ask/mcp.js";
 import { boundedFetch } from "../services/ask/http.js";
 import { AskFailure } from "../services/ask/errors.js";
 
@@ -420,15 +421,31 @@ function mcpFixture(
     readOnly?: boolean;
     method?: string;
     sse?: boolean;
+    /** Bearer tokens the server accepts. */
+    tokens?: string[];
+    /** A tool whose next call answers 500. */
+    failOnce?: string;
+    /** Identities `whoami` answers in turn; the last one repeats. */
+    identities?: unknown[];
   } = {},
 ) {
   const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+  const methods: string[] = [];
+  let failing = overrides.failOnce;
+  let whoami = 0;
   const fetchImpl = vi.fn<typeof fetch>(async (_url, init) => {
     expect(init?.redirect).toBe("error");
-    expect(new Headers(init?.headers).get("authorization")).toBe("Bearer customer-test-token");
+    expect(
+      (overrides.tokens ?? ["customer-test-token"]).map((token) => `Bearer ${token}`),
+    ).toContain(new Headers(init?.headers).get("authorization"));
     if (init?.method !== "POST") return new Response(null, { status: 405 });
     const request = JSON.parse(String(init.body));
+    methods.push(request.method);
     if (request.method.startsWith("notifications/")) return new Response(null, { status: 202 });
+    if (request.method === "tools/call" && request.params.name === failing) {
+      failing = undefined;
+      return new Response("unavailable", { status: 500 });
+    }
     let result: unknown;
     if (request.method === "initialize")
       result = {
@@ -448,11 +465,13 @@ function mcpFixture(
       calls.push({ name, args });
       let data: unknown;
       if (name === "whoami")
-        data = overrides.identity ?? {
-          tenantId: "acme",
-          subject: "customer-principal",
-          scopes: ["read"],
-        };
+        data = overrides.identities
+          ? overrides.identities[Math.min(whoami++, overrides.identities.length - 1)]
+          : (overrides.identity ?? {
+              tenantId: "acme",
+              subject: "customer-principal",
+              scopes: ["read"],
+            });
       else if (name === "list_sources")
         data = [
           {
@@ -501,7 +520,7 @@ function mcpFixture(
         })
       : Response.json(response);
   });
-  return { fetchImpl, calls };
+  return { fetchImpl, calls, methods };
 }
 
 describe("MCP SDK transport and customer policy", () => {
@@ -603,4 +622,93 @@ describe("MCP SDK transport and customer policy", () => {
       });
     },
   );
+});
+
+describe("the replica's shared MCP client", () => {
+  const acme = { tenantId: "acme", subject: "customer-principal", scopes: ["read"] };
+  const count = (list: string[], value: string) => list.filter((v) => v === value).length;
+  const run = async (pool: McpPool, settingsUsed = settings()) => {
+    const opened = await pool.open(undefined, settingsUsed);
+    try {
+      await opened.connection.discover();
+      return await opened.connection.read("acme-metrics", "metrics.query", { query: "up" });
+    } finally {
+      await opened.close();
+    }
+  };
+
+  it("connects and discovers once for several runs; every read still asks who the credential is", async () => {
+    const fixture = mcpFixture();
+    const pool = new McpPool(settings(), fixture.fetchImpl);
+    await run(pool);
+    expect(await run(pool)).toMatchObject({ ok: true, sourceId: "acme-metrics" });
+    expect(count(fixture.methods, "initialize")).toBe(1);
+    expect(fixture.calls.filter((c) => c.name === "list_sources")).toHaveLength(1);
+    expect(fixture.calls.filter((c) => c.name === "whoami")).toHaveLength(3);
+    expect(fixture.calls.filter((c) => c.name === "execute_operation")).toHaveLength(2);
+  });
+
+  it("gives a changed credential its own connection and discovery", async () => {
+    const fixture = mcpFixture({ tokens: ["customer-test-token", "customer-test-token-2"] });
+    const pool = new McpPool(settings(), fixture.fetchImpl);
+    await run(pool);
+    await run(pool, readAskSettings({ ...env, ASK_DATA_MCP_TOKEN: "customer-test-token-2" }));
+    expect(count(fixture.methods, "initialize")).toBe(2);
+    expect(fixture.calls.filter((c) => c.name === "list_sources")).toHaveLength(2);
+  });
+
+  it("retires the connection after a failed call, so the next run connects again", async () => {
+    const fixture = mcpFixture({ failOnce: "execute_operation" });
+    const pool = new McpPool(settings(), fixture.fetchImpl);
+    await expect(run(pool)).rejects.toMatchObject({ code: "ASK_MCP_UNAVAILABLE" });
+    expect(await run(pool)).toMatchObject({ ok: true });
+    expect(count(fixture.methods, "initialize")).toBe(2);
+    expect(fixture.calls.filter((c) => c.name === "list_sources")).toHaveLength(2);
+  });
+
+  it("connects and discovers again once the connection is five minutes old", async () => {
+    const fixture = mcpFixture();
+    let now = 0;
+    const pool = new McpPool(settings(), fixture.fetchImpl, 300_000, () => now);
+    await run(pool);
+    now = 299_999;
+    await run(pool);
+    expect(count(fixture.methods, "initialize")).toBe(1);
+    now = 300_000;
+    await run(pool);
+    expect(count(fixture.methods, "initialize")).toBe(2);
+    expect(fixture.calls.filter((c) => c.name === "list_sources")).toHaveLength(2);
+  });
+
+  it("refuses a read whose credential no longer answers as this customer, and retires the connection", async () => {
+    const fixture = mcpFixture({
+      identities: [acme, { tenantId: "other", subject: "other", scopes: ["read"] }, acme],
+    });
+    const pool = new McpPool(settings(), fixture.fetchImpl);
+    await expect(run(pool)).rejects.toMatchObject({ code: "ASK_IDENTITY_MISMATCH" });
+    expect(await run(pool)).toMatchObject({ ok: true });
+    expect(count(fixture.methods, "initialize")).toBe(2);
+  });
+
+  it("closes the connection on shutdown once no run holds it, and opens nothing after", async () => {
+    const fixture = mcpFixture();
+    const close = vi.spyOn(Client.prototype, "close");
+    const pool = new McpPool(settings(), fixture.fetchImpl);
+    const opened = await pool.open();
+    await pool.close();
+    expect(close).not.toHaveBeenCalled();
+    await opened.close();
+    await vi.waitFor(() => expect(close).toHaveBeenCalledOnce());
+    await expect(pool.open()).rejects.toMatchObject({ code: "ASK_UNAVAILABLE" });
+  });
+
+  it("closes an idle connection on shutdown at once", async () => {
+    const fixture = mcpFixture();
+    const close = vi.spyOn(Client.prototype, "close");
+    const pool = new McpPool(settings(), fixture.fetchImpl);
+    await run(pool);
+    expect(close).not.toHaveBeenCalled();
+    await pool.close();
+    await vi.waitFor(() => expect(close).toHaveBeenCalledOnce());
+  });
 });
