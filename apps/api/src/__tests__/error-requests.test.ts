@@ -310,13 +310,13 @@ describe("scrubUrls", () => {
 
 describe("ErrorRequestsService", () => {
   /** Loki answering the service's reads: the error lines in a range, then every line of those GUIDs. */
-  function lokiStub(lines: LokiLine[]) {
+  function lokiStub(lines: LokiLine[], relayEnd: boolean | null = null) {
     const queries: string[] = [];
     const found = ["received node error reply from provider", "Relay received a node error", "could not send relay to provider",
       "direct RPC relay failed in goroutine", "[StateMachine] policy.Decide", "failed relay, insufficient results",
       "failed getting responses from RPC endpoints", "failed processing responses from RPC endpoints"];
     const loki = {
-      async labelValues() { return null; }, async volume() { return 0; },
+      async labelValues() { return null; }, async hasStreams() { return relayEnd; }, async volume() { return 0; },
       async queryRange(query: string, startMs: number, endMs: number, limit: number) {
         queries.push(query);
         const asked = /`"GUID":"\(([^)]*)\)"`/.exec(query)?.[1]?.split("|");
@@ -357,6 +357,15 @@ describe("ErrorRequestsService", () => {
     expect(r.rows.map((x) => [x.method, x.result])).toEqual([
       ["eth_getLogs", "error-reply"], ["eth_gasPrice", "failed"], ["getSlot", "recovered"], ["getBlock", "recovered"],
     ]);
+  });
+
+  it("where the log agent labels relay_end lines, only the relay_end finder reads their streams", async () => {
+    const { loki, queries } = lokiStub(LINES, true);
+    const r = await new ErrorRequestsService(loki, '{service="router"}', configSvc).report(RANGE);
+    expect(queries[0]).toMatch(/^\{service="router"\} \|~ /);
+    expect(queries[1]).toMatch(/^\{service="router", relay_end="1"\} \|= `"event":"relay_end"`/);
+    expect(queries[2]).toMatch(/^\{service="router"\} /); // a GUID's every line
+    expect(r.rows).toHaveLength(4);
   });
 
   it("a chain or a config router narrows the read to its upstreams, and keeps only its own requests", async () => {
@@ -419,7 +428,7 @@ describe("ErrorRequestsService", () => {
     const { loki } = lokiStub(many);
     // The second batch holds the 50 oldest: 700000..700049.
     const late = {
-      async labelValues() { return null; }, async volume() { return 0; },
+      async labelValues() { return null; }, async hasStreams() { return null; }, async volume() { return 0; },
       queryRange: (query: string, ...rest: [number, number, number, "forward" | "backward"]) =>
         query.includes('"GUID":"(') && query.includes("|700000)") ? Promise.resolve(null) : loki.queryRange(query, ...rest),
     } as unknown as LokiClient;
@@ -431,7 +440,7 @@ describe("ErrorRequestsService", () => {
 
   it("no log store, or one that does not answer, is 'not available' - never 'no errors'", async () => {
     expect((await new ErrorRequestsService(null, '{service="router"}').report(RANGE)).available).toBe(false);
-    const down = { async queryRange() { return null; }, async labelValues() { return null; }, async volume() { return 0; } } as unknown as LokiClient;
+    const down = { async queryRange() { return null; }, async labelValues() { return null; }, async hasStreams() { return null; }, async volume() { return 0; } } as unknown as LokiClient;
     expect((await new ErrorRequestsService(down, '{service="router"}').report(RANGE)).available).toBe(false);
     const { loki } = lokiStub([]);
     expect(await new ErrorRequestsService(loki, '{service="router"}').report(RANGE)).toEqual({ available: true, rows: [], more: false, nextBefore: null, range: RANGE });
@@ -462,7 +471,7 @@ describe("readStart", () => {
   const sized = (perHour: (tMs: number) => number | null) => {
     const asked: [number, number][] = [];
     const loki = {
-      async labelValues() { return null; }, async volume(_s: string, a: number, b: number) {
+      async labelValues() { return null; }, async hasStreams() { return null; }, async volume(_s: string, a: number, b: number) {
         asked.push([a, b]);
         let bytes = 0;
         for (let t = a; t < b; t += 60_000) {
@@ -533,7 +542,7 @@ describe("a range too heavy for one read", () => {
   }).flat();
   const reads: [number, number][] = [];
   const loki = {
-    async labelValues() { return null; }, async volume(_s: string, a: number, b: number) { return ((b - a) / (24 * HOUR)) * 4 * LOG_READ_BUDGET_BYTES; },
+    async labelValues() { return null; }, async hasStreams() { return null; }, async volume(_s: string, a: number, b: number) { return ((b - a) / (24 * HOUR)) * 4 * LOG_READ_BUDGET_BYTES; },
     async queryRange(query: string, startMs: number, endMs: number, limit: number) {
       if (!query.includes('"GUID":"(')) reads.push([startMs, endMs]);
       const asked = /`"GUID":"\(([^)]*)\)"`/.exec(query)?.[1]?.split("|");
@@ -748,7 +757,7 @@ describe("a request no upstream answered", () => {
     const node = (name: string) => ({ name, endpoints: [{ interface: "jsonrpc" }] });
     const cfg = { getRouters: () => [{ id: "eth", spec: "ETH1", nodes: [node("eth-publicnode"), node("eth-tenderly")] }] } as unknown as ConfigurationService;
     const loki = {
-      async labelValues() { return null; }, async volume() { return 0; },
+      async labelValues() { return null; }, async hasStreams() { return null; }, async volume() { return 0; },
       async queryRange(query: string, startMs: number, endMs: number) {
         return NO_ANSWER.filter((l) => l.tsMs >= startMs && l.tsMs < endMs && (query.includes("GUID") || /failed getting|direct RPC/.test(l.line)));
       },
@@ -793,7 +802,7 @@ describe("a write the router could not settle", () => {
         queries.push(query);
         return UNSETTLED.filter((l) => l.tsMs >= startMs && l.tsMs < endMs && (query.includes("GUID") || /failed getting|direct RPC/.test(l.line)));
       },
-      async labelValues() { return null; }, async volume() { return 0; },
+      async labelValues() { return null; }, async hasStreams() { return null; }, async volume() { return 0; },
     } as unknown as LokiClient;
     const r = await new ErrorRequestsService(loki, SEL, cfg).report({ startMs: 0, endMs: 100_000 });
     expect(queries.at(-1)).toContain("write outcome unknown");
@@ -819,7 +828,7 @@ describe("reading on with Load older", () => {
   it("lists a request whose lines sit between a kept request's first and last - one per read", async () => {
     const cfg = { getRouters: () => [{ id: "eth", spec: "ETH1", nodes: [nodeOf("eth-publicnode"), nodeOf("eth-tenderly")] }] } as unknown as ConfigurationService;
     const loki = {
-      async labelValues() { return null; }, async volume() { return 0; },
+      async labelValues() { return null; }, async hasStreams() { return null; }, async volume() { return 0; },
       async queryRange(query: string, startMs: number, endMs: number, limit: number) {
         const asked = /`"GUID":"\(([^)]*)\)"`/.exec(query)?.[1]?.split("|");
         if (asked) return lines.filter((l) => asked.some((g) => l.line.includes(`"GUID":"${g}"`)));
@@ -881,11 +890,11 @@ describe("which chain a request was on", () => {
 });
 
 describe("the Failed requests count", () => {
-  const counter = (value: number | null, bytes: number | null = 0) => {
+  const counter = (value: number | null, bytes: number | null = 0, relayEnd: boolean | null = null) => {
     const queries: string[] = [];
     const loki = {
       async count(q: string) { queries.push(q); return value; },
-      async labelValues() { return null; }, async volume() { return bytes; },
+      async labelValues() { return null; }, async hasStreams() { return relayEnd; }, async volume() { return bytes; },
     } as unknown as LokiClient;
     return { loki, queries };
   };
@@ -957,6 +966,14 @@ describe("the Failed requests count", () => {
     expect(queries).toHaveLength(1);
   });
 
+  it("where the log agent labels relay_end lines, the relay_end leg reads only their streams; the older lines' leg reads every line", async () => {
+    const { loki, queries } = counter(2, 0, true);
+    expect(await new ErrorRequestsService(loki, SEL, cfg).failedCount("1h")).toEqual({ available: true, value: 2 });
+    const [lines, events] = queries[0]!.split(" + ");
+    expect(lines).toContain(`count_over_time(${SEL} |~`);
+    expect(events).toContain('count_over_time({service="router", relay_end="1"} |= `"event":"relay_end"`');
+  });
+
   it("a chain the values file doesn't serve is zero, without reading the logs", async () => {
     const { loki, queries } = counter(9);
     expect(await new ErrorRequestsService(loki, SEL, cfg).failedCount("1h", "NOPE")).toEqual({ available: true, value: 0 });
@@ -968,7 +985,7 @@ describe("the Failed requests count", () => {
     let settle: (v: number | null) => void = () => {};
     const loki = {
       count: () => { calls += 1; return new Promise<number | null>((r) => { settle = r; }); },
-      async labelValues() { return null; }, async volume() { return 0; },
+      async labelValues() { return null; }, async hasStreams() { return null; }, async volume() { return 0; },
     } as unknown as LokiClient;
     const svc = new ErrorRequestsService(loki, SEL, cfg);
     const first = svc.failedCount("1h");
@@ -1064,7 +1081,7 @@ describe("a bar's requests", () => {
   it("an upstream narrows the read to its name, and keeps the requests whose try at it failed", async () => {
     const queries: string[] = [];
     const loki = {
-      async labelValues() { return null; }, async volume() { return 0; },
+      async labelValues() { return null; }, async hasStreams() { return null; }, async volume() { return 0; },
       async queryRange(query: string) {
         queries.push(query);
         return PRUNED_THEN_OK;
@@ -1120,7 +1137,7 @@ describe("a request no upstream could be chosen for", () => {
   ];
   /** A Loki stub that applies the query's own line filters, as regexes. */
   const realLoki = (lines: LokiLine[]) => ({
-    async labelValues() { return null; }, async volume() { return 0; },
+    async labelValues() { return null; }, async hasStreams() { return null; }, async volume() { return 0; },
     async queryRange(query: string, startMs: number, endMs: number, limit: number) {
       const filters = [...query.matchAll(/(\|~|!~|\|=) (`[^`]*`|"[^"]*")/g)].map(([, op, q]) => ({ op, re: op === "|=" ? null : new RegExp(q!.slice(1, -1)), text: q!.slice(1, -1) }));
       return lines
@@ -1163,7 +1180,7 @@ describe("a router with a bar's upstream", () => {
 
 describe("the range a read covers", () => {
   it("comes back with the read, so older reads can ask for the same times", async () => {
-    const loki = { async queryRange() { return []; }, async labelValues() { return null; }, async volume() { return 0; } } as unknown as LokiClient;
+    const loki = { async queryRange() { return []; }, async labelValues() { return null; }, async hasStreams() { return null; }, async volume() { return 0; } } as unknown as LokiClient;
     const r = await new ErrorRequestsService(loki, SEL).report({ startMs: 1000, endMs: 5000 }, undefined, undefined, 3000);
     expect(r.range).toEqual({ startMs: 1000, endMs: 5000 });
   });

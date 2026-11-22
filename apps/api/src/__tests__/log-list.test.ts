@@ -49,7 +49,7 @@ function lokiOf(logs: Logged[], down: () => boolean = () => false, weigh: (start
   const reads: Read[] = [];
   const weighed: Read[] = [];
   const loki = {
-    async labelValues() { return null; }, async volume(selector: string, startMs: number, endMs: number) {
+    async labelValues() { return null; }, async hasStreams() { return null; }, async volume(selector: string, startMs: number, endMs: number) {
       weighed.push({ query: selector, startMs, endMs });
       return weigh(startMs, endMs);
     },
@@ -321,6 +321,7 @@ describe("a failed cross-validation in the Errors list", () => {
     const { loki } = lokiOf(LOGS);
     const flaky = {
       labelValues: async () => null,
+      hasStreams: async () => null,
       volume: (...args: [string, number, number]) => loki.volume(...args),
       queryRange: (query: string, ...rest: [number, number, number, "forward" | "backward"]) =>
         query.includes('"GUID":"(') ? Promise.resolve(null) : loki.queryRange(query, ...rest),
@@ -459,6 +460,7 @@ describe("what a poll can't see", () => {
     const { loki } = lokiOf(logs);
     const flaky = {
       labelValues: async () => null,
+      hasStreams: async () => null,
       volume: (...args: [string, number, number]) => loki.volume(...args),
       queryRange: (query: string, ...rest: [number, number, number, "forward" | "backward"]) =>
         refuse && query.includes('"GUID":"(') ? Promise.resolve(null) : loki.queryRange(query, ...rest),

@@ -249,6 +249,40 @@ export class LokiClient {
   }
 
   /**
+   * Whether any stream `selector` picks holds a line between two unix-ms
+   * times, from Loki's series index: no chunk is read. Unlike `labelValues`,
+   * whose recent answers come from every stream in memory whatever the range,
+   * the series index keeps to the range. Null when Loki didn't answer.
+   */
+  async hasStreams(selector: string, startMs: number, endMs: number): Promise<boolean | null> {
+    const base = new URL(this.baseUrl);
+    if (!base.pathname.endsWith("/")) base.pathname += "/";
+    const url = new URL("loki/api/v1/series", base);
+    url.searchParams.set("match[]", selector);
+    url.searchParams.set("start", msToNs(startMs));
+    url.searchParams.set("end", msToNs(endMs));
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    try {
+      const res = await fetch(url, { signal: controller.signal, headers: this.headers });
+      if (!res.ok) {
+        const body = (await res.text().catch(() => "")).slice(0, 300);
+        this.warn(`http:${res.status}:${body}`, { status: res.status, body }, "loki series failed");
+        return null;
+      }
+      const parsed = (await res.json()) as { status?: string; data?: unknown };
+      return parsed.status === "success" && Array.isArray(parsed.data) ? parsed.data.length > 0 : null;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.warn(`fetch:${message}`, { error: message, url: url.origin }, "loki unreachable");
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /**
    * Bytes of log lines the streams `selector` picks hold between two unix-ms
    * times, from Loki's index (`index/stats`): no chunk is read, so it answers
    * in well under a second for a month of a busy deployment. A line filter
