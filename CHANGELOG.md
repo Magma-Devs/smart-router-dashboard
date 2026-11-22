@@ -5,6 +5,20 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.77.0]
+
+### Changed
+
+- Ask caches its prompt across model steps. Each Converse request to a Claude
+  model carries three cache points: after the tool definitions, after the
+  instructions every run shares, and after the newest message. The run's own
+  context moves to a system block after the shared instructions, so their prefix
+  stays the same across steps and runs. A step reads the earlier steps from the
+  cache instead of reprocessing them, and the cached part of its input costs the
+  `cacheRead` rate. A cache write reported without a TTL breakdown is priced at
+  the five-minute TTL the request asked for, so it settles instead of holding
+  its reservation as uncertain.
+
 ## [0.76.0]
 
 ### Changed
@@ -14,9 +28,9 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   provider's tool-use prompt and message framing, priced at the highest
   input-side rate; a token covers at least one byte, so the bound holds. The
   remote token count it replaces was part of the about 2.5 s admission before
-  every step. Settlement
-  still charges the usage Bedrock reports. `ASK_DATA_TOKEN_COUNTER` and
-  `ASK_DATA_TOKEN_COUNTER_MODEL` stay required: the readiness preflight uses them.
+  every step. Settlement still charges the usage Bedrock reports.
+  `ASK_DATA_TOKEN_COUNTER` and `ASK_DATA_TOKEN_COUNTER_MODEL` stay required: the
+  readiness preflight uses them.
 
 ## [0.75.0]
 

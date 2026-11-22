@@ -15,7 +15,11 @@ import type { AskSettings } from "../../config.js";
 import { type BedrockInput, type BedrockReceipt, type BedrockUsage } from "./bedrock.js";
 import { McpAdapter, assertAskRead, askReadOperations, type McpReadResult } from "./mcp.js";
 import { askAgentModel, type AskHistoryTurn } from "./agent-model.js";
-import { RECORDED_WARN_ERROR, requestSummaryInput, requestSummaryQueries } from "./request-summary.js";
+import {
+  RECORDED_WARN_ERROR,
+  requestSummaryInput,
+  requestSummaryQueries,
+} from "./request-summary.js";
 import { formatAskPresentation } from "./presentation.js";
 import { routerLogsInput, routerLogQuery } from "./router-logs.js";
 import { askQueryLookbackSeconds } from "./query-bounds.js";
@@ -371,11 +375,18 @@ export class AskOrchestrator {
         last24Hours: { start: serverUnixSeconds - 86_400, end: serverUnixSeconds },
       },
     };
+    // Two system messages: the shared instructions, which the prompt cache keeps
+    // across steps and runs, then this run's context after the cache point.
     const instructions = [
-      system,
-      `Trusted server request context: ${JSON.stringify(request)}`,
-      `Untrusted page context: ${JSON.stringify(redactAskData(run.context, secrets))}`,
-    ].join("\n");
+      { role: "system" as const, content: system },
+      {
+        role: "system" as const,
+        content: [
+          `Trusted server request context: ${JSON.stringify(request)}`,
+          `Untrusted page context: ${JSON.stringify(redactAskData(run.context, secrets))}`,
+        ].join("\n"),
+      },
+    ];
     const historyTurns = this.recentHistory(history, secrets);
     const agent = new ToolLoopAgent<never, ToolSet>({
       model: askAgentModel({
