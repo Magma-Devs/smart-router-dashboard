@@ -5,6 +5,27 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.79.0]
+
+### Added
+
+- Ask reads the recorded counts before its first model turn: per chain, the
+  requests and router failures of the last hour and the last 24 hours, and
+  whether the recording ran, in one range read. A count question for those
+  windows is answered in one model turn instead of reading turn by turn. A
+  tenant with no requests while the recording ran reads as "no requests reached
+  the routers, so nothing failed", not as a coverage gap. The read follows the
+  same policy, redaction, evidence and audit as every read, does not count
+  against the model's read limit, and a failed read leaves the run to its own
+  reads. The MCP connection opens before the first turn, a conversation
+  reply included; its answer carries no source.
+- Each source under an answer says what it read, in the progress list's words
+  ("Metrics · Failure counts", "Logs · Request log lines"), so two reads of one
+  source tell apart. The API names each source from the operation and query its
+  audited tool event recorded when it serves a run or a chat: no stored answer
+  carries a label, so an earlier version still reads every answer, and earlier
+  answers get labels too while their tool events are kept.
+
 ## [0.78.0]
 
 ### Changed

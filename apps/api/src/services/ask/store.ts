@@ -29,7 +29,7 @@ import {
   type AskSubmit,
 } from "@sr/shared";
 import { AskFailure } from "./errors.js";
-import { runProgress } from "./progress.js";
+import { readLabel, runProgress } from "./progress.js";
 import { askTurnedOff } from "./switch.js";
 
 export type AskTransaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -82,6 +82,20 @@ export async function inOrder<T extends readonly unknown[]>(
   return settled.map(
     (outcome) => (outcome as PromiseFulfilledResult<unknown>).value,
   ) as unknown as T;
+}
+/** A stored answer never carries the reads' labels, so an earlier API version
+ * still parses it; they are attached from the audited tool events on the way out. */
+function storedAnswer(answer: AskAnswer): AskAnswer {
+  return { ...answer, evidence: answer.evidence.map(({ label: _label, ...item }) => item) };
+}
+function labelled(answer: AskAnswer | null, labels: Map<string, string>): AskAnswer | null {
+  if (!answer?.evidence.some((item) => labels.has(item.id))) return answer;
+  return {
+    ...answer,
+    evidence: answer.evidence.map((item) =>
+      labels.has(item.id) ? { ...item, label: labels.get(item.id)! } : item,
+    ),
+  };
 }
 function fingerprint(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -231,6 +245,7 @@ export class AskStore {
       )
       .limit(1);
     const turnIds = [...new Set(page.map((message) => message.runId))];
+    const labels = await this.evidenceLabels([...turnIds, ...(run ? [run.id] : [])]);
     const turns = turnIds.length
       ? await this.db
           .select()
@@ -248,8 +263,11 @@ export class AskStore {
           ? { code: turn.errorCode, message: new AskFailure(turn.errorCode).message }
           : null,
       })),
-      messages: [...page].reverse().map(messageWire),
-      activeRun: run ? runWire(run) : null,
+      messages: [...page].reverse().map((row) => {
+        const message = messageWire(row);
+        return { ...message, answer: labelled(message.answer, labels) };
+      }),
+      activeRun: run ? this.labelledRun(runWire(run), labels) : null,
       nextMessageCursor:
         rows.length > 50 ? cursor({ seq: page.at(-1)!.seq.toString(), filter }) : null,
     };
@@ -290,7 +308,7 @@ export class AskStore {
       .where(this.runOwned(personId, runId))
       .limit(1);
     if (!run) throw new AskFailure("ASK_NOT_FOUND", 404);
-    return runWire(run);
+    return this.labelledRun(runWire(run), await this.evidenceLabels([run.id]));
   }
 
   async activeRun(personId: string): Promise<AskRun | null> {
@@ -301,7 +319,8 @@ export class AskStore {
       .limit(1);
     if (!run) return null;
     const wire = runWire(run);
-    if (run.status !== "running") return wire;
+    if (run.status !== "running")
+      return this.labelledRun(wire, await this.evidenceLabels([run.id]));
     // Read-only: the turns and reads the run records as it goes. Both lookups
     // use the (customer, run) indexes and run side by side.
     const [steps, reads] = await Promise.all([
@@ -326,6 +345,32 @@ export class AskStore {
         .orderBy(askToolEvents.createdAt),
     ]);
     return { ...wire, progress: runProgress(steps, reads) };
+  }
+
+  /** Each read's label, by evidence id: named from the operation and the query
+   * its audited tool event recorded, in the words the progress list uses. */
+  private async evidenceLabels(runIds: string[]): Promise<Map<string, string>> {
+    const labels = new Map<string, string>();
+    if (!runIds.length) return labels;
+    const rows = await this.db
+      .select({
+        operationId: askToolEvents.operationId,
+        parameters: askToolEvents.parameters,
+        evidence: askToolEvents.evidence,
+      })
+      .from(askToolEvents)
+      .where(
+        and(eq(askToolEvents.customerId, this.customerId), inArray(askToolEvents.runId, runIds)),
+      );
+    for (const row of rows) {
+      const id = row.evidence.id;
+      if (typeof id === "string") labels.set(id, readLabel(row.operationId, row.parameters));
+    }
+    return labels;
+  }
+
+  private labelledRun(run: AskRun, labels: Map<string, string>): AskRun {
+    return run.answer ? { ...run, answer: labelled(run.answer, labels) } : run;
   }
 
   async submit(
@@ -637,6 +682,7 @@ export class AskStore {
   ): Promise<boolean> {
     const parsed = askAnswerSchema.safeParse(raw);
     if (!parsed.success) throw new AskFailure("ASK_INVALID_ANSWER", 502);
+    const answer = storedAnswer(parsed.data);
     return this.db.transaction(async (tx) => {
       const lock = this.lockLease(tx, runId, token);
       if (!run && !(await lock)) return false;
@@ -644,7 +690,7 @@ export class AskStore {
         .update(askRuns)
         .set({
           status: "succeeded",
-          answer: parsed.data,
+          answer,
           completedAt: sql`clock_timestamp()`,
           leaseToken: null,
           leaseUntil: null,
@@ -669,7 +715,7 @@ export class AskStore {
         first,
         second,
         tx.execute(
-          sql`insert into ask_messages (run_id, chat_id, customer_id, owner_id, role, answer) select ${runId}::uuid, ${run.chatId}::uuid, ${run.customerId}, ${run.ownerId}::uuid, 'assistant', ${JSON.stringify(parsed.data)}::jsonb where ${took}`,
+          sql`insert into ask_messages (run_id, chat_id, customer_id, owner_id, role, answer) select ${runId}::uuid, ${run.chatId}::uuid, ${run.customerId}, ${run.ownerId}::uuid, 'assistant', ${JSON.stringify(answer)}::jsonb where ${took}`,
         ),
         tx
           .update(askChats)

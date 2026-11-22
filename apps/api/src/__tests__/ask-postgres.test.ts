@@ -24,6 +24,7 @@ import { BedrockAdapter } from "../services/ask/bedrock.js";
 import { AskBudget } from "../services/ask/budget.js";
 import { AskRetention } from "../services/ask/retention.js";
 import { AskFailure } from "../services/ask/errors.js";
+import { prefetchRead } from "../services/ask/prefetch.js";
 import type { AskChatDetail, AskChatPage, AskPreferences, AskRun } from "@sr/shared";
 
 /** Deliberately opt-in and destructive only to a named test database. The CI
@@ -436,6 +437,58 @@ suite("Ask HTTP backed by independent PostgreSQL connections", () => {
     expect(
       (await request(a, alice, `/chats/${id}`)).body.messages.map((m: { role: string }) => m.role),
     ).toEqual(["user", "assistant", "user"]);
+  });
+
+  it("names each source from its tool event's read and never stores a label in the answer", async () => {
+    const id = await chat();
+    const submitted = await submit(a, alice, id);
+    const lease = (await aStore.claim(10_000))!;
+    const item = {
+      id: crypto.randomUUID(),
+      sourceId: "acme-metrics",
+      operationId: "metrics.query_range",
+      observedAt: "2026-11-16T10:00:00Z",
+      from: "2026-11-15T10:00:00Z",
+      to: "2026-11-16T10:00:00Z",
+      coverage: "complete" as const,
+      truncated: false,
+    };
+    const parameters = prefetchRead(1_795_377_600).parameters;
+    const label = "Request counts and failure counts and log line counts";
+    await handles[0]!.db.insert(askToolEvents).values({
+      runId: lease.id,
+      customerId: lease.customerId,
+      sourceId: item.sourceId,
+      operationId: item.operationId,
+      parameters,
+      evidence: item,
+      ok: "success",
+      latencyMs: 1,
+    });
+    // A label reaching the store in the answer itself is dropped before it is written.
+    expect(
+      await aStore.succeed(lease.id, lease.leaseToken!, {
+        ...answer,
+        evidence: [{ ...item, label: "Not stored" }],
+      }),
+    ).toBe(true);
+    const [stored] = await handles[0]!.db
+      .select({ answer: askRuns.answer })
+      .from(askRuns)
+      .where(eq(askRuns.id, lease.id));
+    expect(JSON.stringify(stored!.answer)).not.toContain("label");
+    const [message] = await handles[0]!.db
+      .select({ answer: askMessages.answer })
+      .from(askMessages)
+      .where(eq(askMessages.runId, lease.id));
+    expect(JSON.stringify(message!.answer)).not.toContain("label");
+    expect((await request(a, alice, `/runs/${submitted.body.id}`)).body.answer!.evidence).toEqual([
+      { ...item, label },
+    ]);
+    const detail = (await request(replica, alice, `/chats/${id}`)).body;
+    expect(detail.messages.find((m) => m.role === "assistant")!.answer!.evidence).toEqual([
+      { ...item, label },
+    ]);
   });
 
   it.each(["completion", "heartbeat"])(

@@ -10,7 +10,8 @@ import { installAskRuntime } from "../services/ask/runtime.js";
 import { AskOrchestrator } from "../services/ask/orchestrator.js";
 import { BedrockAdapter } from "../services/ask/bedrock.js";
 import { AskWorker } from "../services/ask/worker.js";
-import { McpAdapter } from "../services/ask/mcp.js";
+import { McpPool } from "../services/ask/mcp.js";
+import { AskFailure } from "../services/ask/errors.js";
 import { AskStore } from "../services/ask/store.js";
 import { askRoutes } from "../routes/ask.js";
 
@@ -132,7 +133,7 @@ function expectNoSecrets(lines: string[]) {
 }
 
 describe("API runtime accounting/worker wiring", () => {
-  it("persists a conversational reply through HTTP and the real worker, with model accounting and no MCP", async () => {
+  it("persists a conversational reply through HTTP and the real worker, with model accounting, while the MCP is down", async () => {
     const count = vi.spyOn(BedrockAdapter.prototype, "countTokens");
     vi.spyOn(BedrockAdapter.prototype, "converse").mockImplementation(async (_input, options) => {
       await options.onDispatch();
@@ -159,7 +160,10 @@ describe("API runtime accounting/worker wiring", () => {
         region: "us-east-1",
       };
     });
-    const connect = vi.spyOn(McpAdapter.prototype, "open");
+    // The counts read before the first turn fails; the reply does not need it.
+    const connect = vi
+      .spyOn(McpPool.prototype, "open")
+      .mockRejectedValue(new AskFailure("ASK_MCP_UNAVAILABLE"));
     const runtime = await boot();
     await vi.waitFor(() => expect(runtime.ready()).toBe(true));
     const chatResponse = await request("/chats", {});
@@ -184,7 +188,7 @@ describe("API runtime accounting/worker wiring", () => {
     expect(Date.parse(answer.answeredAt)).toBeLessThanOrEqual(Date.now());
     expect(answer.evidence).toEqual([]);
     expect(count).not.toHaveBeenCalled();
-    expect(connect).not.toHaveBeenCalled();
+    expect(connect).toHaveBeenCalledOnce();
     expect(await t.db.select().from(askModelSteps)).toEqual([
       expect.objectContaining({ state: "settled", chargedMicroUsd: 20n }),
     ]);

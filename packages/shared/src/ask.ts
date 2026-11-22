@@ -53,6 +53,10 @@ export const askEvidenceSchema = z
     to: instant.optional(),
     coverage: z.enum(["complete", "partial", "empty", "unavailable", "unknown"]),
     truncated: z.boolean(),
+    /** What the read was, in the reader's words (`readLabel`). The API names it
+     * from the run's audited tool events when it serves an answer; a stored
+     * answer never carries it, so every API version parses every stored answer. */
+    label: z.string().min(1).max(120).optional(),
   })
   .strict();
 export type AskEvidence = z.infer<typeof askEvidenceSchema>;
