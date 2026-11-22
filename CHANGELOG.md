@@ -5,6 +5,40 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.78.0]
+
+### Changed
+
+- Every database query is a named prepared statement. Drizzle sends queries
+  through postgres-js's `sql.unsafe`, which leaves them unprepared, and an
+  unprepared query with parameters costs two round trips and holds back the
+  queries sent after it on its connection. A prepared one costs two on its first
+  use on a connection and one after that. This applies to every API route, not
+  only Ask. Named statements need a direct database connection; the fleet APIs
+  reach RDS through a cloudflared tunnel with no transaction pooler.
+- Ask starts a question at once: the replica that saves it wakes its worker,
+  which claims before its maintenance sweep, in one statement. A run past its
+  deadline is not claimed; recovery fails it with `ASK_TIMEOUT`, as before.
+- Ask's database work on a run's path takes about a quarter of the round trips.
+  Statements in one transaction that do not wait on each other's results go out
+  together, each still its own statement after the lock before it; a tool event
+  is one statement; the lease check renews and reads the status in one
+  transaction; the worker's first lease check and its history read run side by
+  side; the success write's own fencing replaces the lease check before it; the
+  dispatch check right after a reservation reuses the reservation's check for up
+  to a second, and `dispatched` verifies the lease, status and session again
+  before a paid request. Measured through a proxy adding 50 ms a round trip,
+  warm: a model turn's lease check, reservation, dispatch and settlement take
+  14 round trips instead of 55, a read's lease check and audit row 2 instead of
+  9, submission 8 instead of 29.
+- Each API replica keeps its Ask MCP client and discovery for five minutes,
+  keyed by MCP URL, credential and customer. A failed call or a refused identity
+  retires it, and it closes at shutdown. A source added to or removed from the
+  credential's grant reaches Ask within five minutes; the MCP server refuses a
+  removed source's reads at once. Every read still verifies the credential's
+  identity, sent alongside the read; the read's result is used only once that
+  check passes.
+
 ## [0.77.0]
 
 ### Changed

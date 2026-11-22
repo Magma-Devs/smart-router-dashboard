@@ -23,6 +23,8 @@ export interface AskRoutesOptions {
   ready?: () => boolean;
   /** Tells this replica's runtime the switch an admin just set. */
   switched?: (off: boolean) => void;
+  /** Tells this replica's worker a question is waiting, so it claims it now. */
+  submitted?: () => void;
 }
 interface Context {
   me: AuthUser;
@@ -171,10 +173,10 @@ export async function askRoutes(app: FastifyInstance, opts: AskRoutesOptions = {
   );
   app.post(
     "/api/ask/chats/:id/runs",
-    personal((request, { me, store, settings }) => {
+    personal(async (request, { me, store, settings }) => {
       if (!opts.admit || settings.problem || !(opts.ready?.() ?? true))
         throw new AskFailure("ASK_UNAVAILABLE");
-      return store.submit(
+      const run = await store.submit(
         me.id,
         me.sessionId,
         uuid((request.params as { id: unknown }).id),
@@ -191,6 +193,8 @@ export async function askRoutes(app: FastifyInstance, opts: AskRoutesOptions = {
         })(),
         opts.admit,
       );
+      if (run.status === "queued") opts.submitted?.();
+      return run;
     }),
   );
   app.get(

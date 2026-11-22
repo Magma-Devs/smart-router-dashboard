@@ -109,14 +109,14 @@ function pendingAnswer() {
 function leaseChecks() {
   const pending: Promise<unknown>[] = [];
   const leaseState = store.leaseState.bind(store);
-  const heartbeat = store.heartbeat.bind(store);
+  const renew = store.renew.bind(store);
   vi.spyOn(store, "leaseState").mockImplementation((...args) => {
     const call = leaseState(...args);
     pending.push(call.catch(() => undefined));
     return call;
   });
-  vi.spyOn(store, "heartbeat").mockImplementation((...args) => {
-    const call = heartbeat(...args);
+  vi.spyOn(store, "renew").mockImplementation((...args) => {
+    const call = renew(...args);
     pending.push(call.catch(() => undefined));
     return call;
   });
@@ -335,7 +335,7 @@ describe("durable run worker scheduling and cancellation", () => {
     const run = await submit();
     pendingAnswer();
     const failure = new DrizzleQueryError("select status from ask_runs", [], new Error("refused"));
-    vi.spyOn(store, "leaseState").mockRejectedValue(failure);
+    vi.spyOn(store, "renew").mockRejectedValue(failure);
     const onError = vi.fn();
     const { instance } = worker({ onError });
     await instance.tick();
@@ -378,6 +378,81 @@ describe("durable run worker scheduling and cancellation", () => {
       error: { code: "ASK_INVALID_ANSWER" },
     });
     expect((await store.chatDetail(owner, chatId)).messages).toHaveLength(1);
+  });
+
+  it("a saved run is claimed when its replica wakes the worker, not at the next poll", async () => {
+    const spy = vi.spyOn(AskOrchestrator.prototype, "answer").mockResolvedValue(answer);
+    const instance = new AskWorker(
+      store,
+      { ...settings(), workerPollMs: 60_000 },
+      { hooks, afterTerminal: vi.fn(async () => undefined) },
+    );
+    workers.push(instance);
+    instance.start();
+    const run = await submit();
+    instance.wake();
+    await vi.waitFor(() => expect(spy).toHaveBeenCalledOnce(), { timeout: 2000 });
+    await instance.drained();
+    expect((await store.getRun(owner, run.id)).status).toBe("succeeded");
+  });
+
+  it("a wake during a tick runs one more tick when that one ends", async () => {
+    const spy = vi.spyOn(AskOrchestrator.prototype, "answer").mockResolvedValue(answer);
+    let release!: () => void;
+    const claim = store.claim.bind(store);
+    vi.spyOn(store, "claim")
+      .mockImplementationOnce(async () => {
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        return null;
+      })
+      .mockImplementation(claim);
+    const instance = new AskWorker(
+      store,
+      { ...settings(), workerPollMs: 60_000 },
+      { hooks, afterTerminal: vi.fn(async () => undefined) },
+    );
+    workers.push(instance);
+    instance.start();
+    await vi.waitFor(() => expect(release).toBeTypeOf("function"));
+    const run = await submit();
+    instance.wake();
+    release();
+    await vi.waitFor(() => expect(spy).toHaveBeenCalledOnce(), { timeout: 2000 });
+    await instance.drained();
+    expect((await store.getRun(owner, run.id)).status).toBe("succeeded");
+  });
+
+  it("claims a run in one statement and a run past its deadline not at all", async () => {
+    const run = await submit();
+    await t.db
+      .update(askRuns)
+      .set({ createdAt: new Date(Date.now() - 6000) })
+      .where(eq(askRuns.id, run.id));
+    expect(await store.claim(1000, 5000)).toBeNull();
+    expect((await store.getRun(owner, run.id)).status).toBe("queued");
+    const claimed = await store.claim(1000);
+    expect(claimed).toMatchObject({ id: run.id, status: "running", attempts: 1 });
+    expect(await store.claim(1000)).toBeNull();
+  });
+
+  it("a lease renewal extends a running run, reads a cancelling one without extending it, and loses a revoked one", async () => {
+    await submit();
+    const run = (await store.claim(1000))!;
+    const until = async () =>
+      (await t.db.select().from(askRuns).where(eq(askRuns.id, run.id)))[0]!.leaseUntil!.getTime();
+    const before = await until();
+    expect(await store.renew(run.id, run.leaseToken!, 60_000)).toBe("running");
+    const extended = await until();
+    expect(extended).toBeGreaterThan(before + 30_000);
+    await t.db.update(askRuns).set({ status: "cancelling" }).where(eq(askRuns.id, run.id));
+    expect(await store.renew(run.id, run.leaseToken!, 120_000)).toBe("cancelling");
+    expect(await until()).toBe(extended);
+    expect(await store.renew(run.id, crypto.randomUUID(), 60_000)).toBe("lost");
+    await t.db.update(askRuns).set({ status: "running" }).where(eq(askRuns.id, run.id));
+    await t.db.update(users).set({ status: "suspended" }).where(eq(users.id, owner));
+    expect(await store.renew(run.id, run.leaseToken!, 60_000)).toBe("lost");
   });
 
   it("passes only retained earlier personal turns as history", async () => {

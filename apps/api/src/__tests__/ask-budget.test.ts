@@ -96,6 +96,73 @@ const pool = async () =>
   )[0]!;
 
 describe("durable shared customer spending", () => {
+  it("the dispatch check right after a reservation reuses it, and a cancel in between still stops the paid request", async () => {
+    const run = await running("customer-a", 1_000_000n);
+    const leaseState = vi.spyOn(AskStore.prototype, "leaseState");
+    const hooks = new AskBudget(t.db, settings, billing(1_000_000n)).hooks(run);
+    const step = await hooks.beforeModelStep({
+      input: { system: "Fixture", messages: [] },
+      inputBytes: 10,
+      outputTokens: 10,
+    });
+    await hooks.checkActive();
+    expect(leaseState).not.toHaveBeenCalled();
+    await hooks.checkActive();
+    expect(leaseState).toHaveBeenCalledOnce();
+    const next = await hooks.beforeModelStep({
+      input: { system: "Fixture", messages: [] },
+      inputBytes: 10,
+      outputTokens: 10,
+    });
+    await t.db.update(askRuns).set({ status: "cancelling" }).where(eq(askRuns.id, run.id));
+    await hooks.checkActive();
+    await expect(hooks.modelDispatched(next)).rejects.toMatchObject({ code: "ASK_INTERRUPTED" });
+    expect(step).not.toBe(next);
+  });
+
+  it("a reservation's dispatch check expires after a second", async () => {
+    const run = await running("customer-a", 1_000_000n);
+    const leaseState = vi.spyOn(AskStore.prototype, "leaseState");
+    const hooks = new AskBudget(t.db, settings, billing(1_000_000n)).hooks(run);
+    await hooks.beforeModelStep({
+      input: { system: "Fixture", messages: [] },
+      inputBytes: 10,
+      outputTokens: 10,
+    });
+    const real = Date.now.bind(Date);
+    vi.spyOn(Date, "now").mockImplementation(() => real() + 1000);
+    await hooks.checkActive();
+    expect(leaseState).toHaveBeenCalledOnce();
+  });
+
+  it("writes a tool event in one statement, and none for a run whose lease is gone", async () => {
+    const run = await running();
+    const hooks = budget.hooks(run);
+    const tool = {
+      sourceId: "customer-a-metrics",
+      operationId: "metrics.query",
+      parameters: { query: "up" },
+      ok: true,
+      latencyMs: 3,
+      evidence: { id: crypto.randomUUID() } as never,
+    };
+    await hooks.recordTool(tool);
+    const [event] = await t.db.select().from(askToolEvents);
+    expect(event).toMatchObject({
+      runId: run.id,
+      sourceId: "customer-a-metrics",
+      parameters: { query: "up" },
+      ok: "success",
+      latencyMs: 3,
+    });
+    await t.db
+      .update(askRuns)
+      .set({ leaseToken: crypto.randomUUID() })
+      .where(eq(askRuns.id, run.id));
+    await hooks.recordTool({ ...tool, ok: false });
+    expect(await t.db.select().from(askToolEvents)).toHaveLength(1);
+  });
+
   it("refuses an admission whose run was already stopped, reserving nothing", async () => {
     const run = await running();
     const controller = new AbortController();

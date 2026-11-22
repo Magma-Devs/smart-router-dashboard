@@ -3,6 +3,7 @@ import type { AskSettings } from "../../config.js";
 import { AskStore } from "./store.js";
 import { AskOrchestrator, type AskExecutionHooks } from "./orchestrator.js";
 import { AskFailure } from "./errors.js";
+import { McpPool } from "./mcp.js";
 
 export interface AskWorkerOptions {
   hooks: (run: AskRunRow) => AskExecutionHooks;
@@ -23,44 +24,61 @@ export class AskWorker {
   private readonly jobs = new Map<string, { controller: AbortController; done: Promise<void> }>();
   private timer: ReturnType<typeof setInterval> | null = null;
   private busy = false;
+  private again = false;
   private stopped = false;
   private idle: Promise<void> = Promise.resolve();
+  private readonly mcp: McpPool;
   constructor(
     private readonly store: AskStore,
     private readonly settings: AskSettings,
     private readonly options: AskWorkerOptions,
-  ) {}
+  ) {
+    this.mcp = new McpPool(settings, options.fetchImpl);
+  }
 
   start(): void {
     if (this.timer || this.stopped) return;
-    const wake = () => {
-      void this.tick().catch(() => this.options.onError?.("ASK_WORKER_UNAVAILABLE"));
-    };
-    this.timer = setInterval(wake, this.settings.workerPollMs);
+    this.timer = setInterval(() => this.wake(), this.settings.workerPollMs);
     this.timer.unref();
-    wake();
+    this.wake();
+  }
+
+  /** Claims now rather than at the next poll: the replica that saved a run
+   * calls this, and other replicas still find it by polling. A wake during a
+   * tick runs one more tick when that one ends, so a run saved meanwhile is
+   * not left for the poll. */
+  wake(): void {
+    if (this.stopped) return;
+    if (this.busy) {
+      this.again = true;
+      return;
+    }
+    void this.tick().catch(() => this.options.onError?.("ASK_WORKER_UNAVAILABLE"));
   }
 
   async tick(): Promise<void> {
     if (this.busy || this.stopped) return;
     this.busy = true;
+    this.again = false;
     let becameIdle!: () => void;
     this.idle = new Promise((resolve) => {
       becameIdle = resolve;
     });
     try {
-      await this.store.recover(this.settings.runTimeoutMs);
-      await this.options.afterTerminal();
       if (!(this.options.enabled?.() ?? this.settings.enabled)) {
+        await this.store.recover(this.settings.runTimeoutMs);
+        await this.options.afterTerminal();
         for (const job of this.jobs.values())
           job.controller.abort(new AskFailure("ASK_INTERRUPTED"));
         await this.store.interruptQueued();
         await this.options.afterTerminal();
         return;
       }
+      // Claim before maintenance: a claim needs nothing recovery or
+      // reconciliation does, and a waiting question should not wait on them.
       const canClaim = () => !this.options.canClaim || this.options.canClaim();
       while (!this.stopped && canClaim() && this.jobs.size < this.settings.workerConcurrency) {
-        const run = await this.store.claim(this.settings.leaseMs);
+        const run = await this.store.claim(this.settings.leaseMs, this.settings.runTimeoutMs);
         if (!run) break;
         if (this.stopped || !(this.options.enabled?.() ?? this.settings.enabled)) {
           await this.store.fail(run.id, run.leaseToken!, "ASK_INTERRUPTED");
@@ -72,9 +90,12 @@ export class AskWorker {
         const done = this.execute(run, controller).finally(() => this.jobs.delete(run.id));
         this.jobs.set(run.id, { controller, done });
       }
+      await this.store.recover(this.settings.runTimeoutMs);
+      await this.options.afterTerminal();
     } finally {
       this.busy = false;
       becameIdle();
+      if (this.again && !this.stopped) this.wake();
     }
   }
 
@@ -89,12 +110,9 @@ export class AskWorker {
             controller.abort(new AskFailure("ASK_INTERRUPTED"));
             return;
           }
-          const state = await this.store.leaseState(run.id, run.leaseToken!);
+          const state = await this.store.renew(run.id, run.leaseToken!, this.settings.leaseMs);
           if (state === "cancelling") controller.abort(new AskFailure("ASK_CANCELLED", 409));
-          else if (
-            state === "lost" ||
-            !(await this.store.heartbeat(run.id, run.leaseToken!, this.settings.leaseMs))
-          ) {
+          else if (state === "lost") {
             this.options.onError?.("ASK_LEASE_LOST");
             controller.abort(new AskFailure("ASK_INTERRUPTED"));
           }
@@ -127,9 +145,10 @@ export class AskWorker {
     );
     deadline.unref();
     try {
-      await check();
+      // The first lease check and the history read go together; nothing
+      // external starts until the check has passed.
+      const [, history] = await Promise.all([check(), this.store.history(run)]);
       if (controller.signal.aborted) throw controller.signal.reason;
-      const detail = await this.store.chatDetail(run.ownerId, run.chatId);
       const supplied = this.options.hooks(run);
       const hooks: AskExecutionHooks = {
         ...supplied,
@@ -141,17 +160,25 @@ export class AskWorker {
           await supplied.checkActive();
         },
       };
-      const result = await new AskOrchestrator(this.settings, this.options.fetchImpl).answer(
+      const result = await new AskOrchestrator(
+        this.settings,
+        this.options.fetchImpl,
+        this.mcp,
+      ).answer(
         run,
-        detail.messages.filter((message) => message.runId !== run.id),
+        history.filter((message) => message.runId !== run.id),
         hooks,
         controller.signal,
       );
-      clearInterval(heartbeat);
-      await check();
+      // `succeed` publishes only under a current lease, a running status and
+      // a live session, and the branch below handles each refusal; this
+      // replica's own switch is checked here.
+      await quiesce();
+      if (!(this.options.enabled?.() ?? this.settings.enabled))
+        controller.abort(new AskFailure("ASK_INTERRUPTED"));
       if (controller.signal.aborted) throw controller.signal.reason;
       const persisting = performance.now();
-      if (!(await this.store.succeed(run.id, run.leaseToken!, result))) {
+      if (!(await this.store.succeed(run.id, run.leaseToken!, result, run))) {
         const state = await this.store.leaseState(run.id, run.leaseToken!);
         if (state === "cancelling") await this.store.fail(run.id, run.leaseToken!, "ASK_CANCELLED");
         else {
@@ -186,6 +213,14 @@ export class AskWorker {
     this.stopped = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    try {
+      await this.drain(drainMs);
+    } finally {
+      await this.mcp.close();
+    }
+  }
+
+  private async drain(drainMs: number): Promise<void> {
     await this.idle;
     const settled = () => Promise.allSettled([...this.jobs.values()].map((job) => job.done));
     if (drainMs > 0 && this.jobs.size > 0) {

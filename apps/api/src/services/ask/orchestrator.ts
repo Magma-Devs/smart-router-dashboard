@@ -158,6 +158,8 @@ export class AskOrchestrator {
   constructor(
     private readonly settings: AskSettings,
     private readonly fetchImpl?: typeof fetch,
+    /** The replica's shared MCP client; without one each answer connects its own. */
+    private readonly mcpPool?: Pick<McpAdapter, "open">,
   ) {}
 
   async answer(
@@ -180,7 +182,7 @@ export class AskOrchestrator {
     const defaultWindow = { start: Math.max(contextStart, contextEnd - 86400), end: contextEnd };
     const controller = new AbortController();
     const active = AbortSignal.any([signal, controller.signal]);
-    const mcp = new McpAdapter(this.settings, this.fetchImpl);
+    const mcp = this.mcpPool ?? new McpAdapter(this.settings, this.fetchImpl);
     let opened: Awaited<ReturnType<McpAdapter["open"]>> | undefined;
     let snapshot:
       Awaited<ReturnType<NonNullable<typeof opened>["connection"]["discover"]>> | undefined;

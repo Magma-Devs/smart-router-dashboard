@@ -23,6 +23,7 @@ import {
   type AskChatDetail,
   type AskChatPage,
   type AskErrorCode,
+  type AskMessage,
   type AskPreferences,
   type AskRun,
   type AskSubmit,
@@ -58,6 +59,29 @@ export function runWire(row: AskRunRow): AskRun {
       ? { code: row.errorCode, message: new AskFailure(row.errorCode).message }
       : null,
   };
+}
+function messageWire(row: typeof askMessages.$inferSelect): AskMessage {
+  return {
+    id: row.id,
+    runId: row.runId,
+    role: row.role,
+    createdAt: row.createdAt.toISOString(),
+    question: row.question,
+    answer: row.answer ? askAnswerSchema.parse(row.answer) : null,
+  };
+}
+/** Awaits statements a transaction sent together and settles them in the order
+ * they were sent. PostgreSQL runs them in that order and a failure aborts the
+ * ones after it, so the first rejection by position is the statement that
+ * failed, as if they had been awaited one at a time. */
+export async function inOrder<T extends readonly unknown[]>(
+  statements: readonly [...{ [K in keyof T]: PromiseLike<T[K]> }],
+): Promise<T> {
+  const settled = await Promise.allSettled(statements);
+  for (const outcome of settled) if (outcome.status === "rejected") throw outcome.reason;
+  return settled.map(
+    (outcome) => (outcome as PromiseFulfilledResult<unknown>).value,
+  ) as unknown as T;
 }
 function fingerprint(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -224,18 +248,39 @@ export class AskStore {
           ? { code: turn.errorCode, message: new AskFailure(turn.errorCode).message }
           : null,
       })),
-      messages: [...page].reverse().map((row) => ({
-        id: row.id,
-        runId: row.runId,
-        role: row.role,
-        createdAt: row.createdAt.toISOString(),
-        question: row.question,
-        answer: row.answer ? askAnswerSchema.parse(row.answer) : null,
-      })),
+      messages: [...page].reverse().map(messageWire),
       activeRun: run ? runWire(run) : null,
       nextMessageCursor:
         rows.length > 50 ? cursor({ seq: page.at(-1)!.seq.toString(), filter }) : null,
     };
+  }
+
+  /** The retained messages a worker gives a run as history: the newest page
+   * `chatDetail` shows, in one round trip. The chat check and the page are
+   * read side by side; a chat that is gone fails the run as `chatDetail` does. */
+  async history(run: Pick<AskRunRow, "ownerId" | "chatId">): Promise<AskMessage[]> {
+    const [chat, rows] = await Promise.all([
+      this.db
+        .select({ id: askChats.id })
+        .from(askChats)
+        .where(this.chatOwned(run.ownerId, run.chatId))
+        .limit(1),
+      this.db
+        .select()
+        .from(askMessages)
+        .where(
+          and(
+            eq(askMessages.chatId, run.chatId),
+            eq(askMessages.customerId, this.customerId),
+            eq(askMessages.ownerId, run.ownerId),
+            sql`exists (select 1 from ask_runs r where r.id=${askMessages.runId} and r.expires_at>now() and r.created_at>now()-${this.retentionDays} * interval '1 day')`,
+          ),
+        )
+        .orderBy(desc(askMessages.seq))
+        .limit(50),
+    ]);
+    if (!chat[0]) throw new AskFailure("ASK_NOT_FOUND", 404);
+    return [...rows].reverse().map(messageWire);
   }
 
   async getRun(personId: string, runId: string): Promise<AskRun> {
@@ -307,52 +352,65 @@ export class AskStore {
         .where(and(eq(users.id, personId), eq(users.status, "active")))
         .for("update");
       if (!person) throw new AskFailure("ASK_NOT_FOUND", 404);
-      const [session] = await tx
-        .select({ id: sessions.id })
-        .from(sessions)
-        .where(
-          and(
-            eq(sessions.id, sessionId),
-            eq(sessions.userId, personId),
-            isNull(sessions.revokedAt),
-            gt(sessions.expiresAt, sql`clock_timestamp()`),
-          ),
-        )
-        .limit(1);
-      if (!session) throw new AskFailure("ASK_INTERRUPTED", 409);
-      const [chat] = await tx
-        .select()
-        .from(askChats)
-        .where(this.chatOwned(personId, chatId))
-        .limit(1);
-      if (!chat) throw new AskFailure("ASK_NOT_FOUND", 404);
-      const [existing] = await tx
-        .select()
-        .from(askRuns)
-        .where(
-          and(
-            eq(askRuns.customerId, this.customerId),
-            eq(askRuns.ownerId, personId),
-            eq(askRuns.idempotencyKey, request.idempotencyKey),
-          ),
-        )
-        .limit(1);
-      if (existing) {
-        if (existing.requestHash !== requestHash) throw new AskFailure("ASK_CONFLICT", 409);
+      // Everything below reads after the lock. One statement asks the four
+      // questions a submission checks; they are answered in the order the
+      // submission reports them.
+      const [found] = await tx
+        .select({
+          session: sql<string | null>`(${tx
+            .select({ id: sessions.id })
+            .from(sessions)
+            .where(
+              and(
+                eq(sessions.id, sessionId),
+                eq(sessions.userId, personId),
+                isNull(sessions.revokedAt),
+                gt(sessions.expiresAt, sql`clock_timestamp()`),
+              ),
+            )
+            .limit(1)})`,
+          chat: sql<string | null>`(${tx
+            .select({ id: askChats.id })
+            .from(askChats)
+            .where(this.chatOwned(personId, chatId))
+            .limit(1)})`,
+          existing: sql<string | null>`(${tx
+            .select({ id: askRuns.id })
+            .from(askRuns)
+            .where(
+              and(
+                eq(askRuns.customerId, this.customerId),
+                eq(askRuns.ownerId, personId),
+                eq(askRuns.idempotencyKey, request.idempotencyKey),
+              ),
+            )
+            .limit(1)})`,
+          current: sql<string | null>`(${tx
+            .select({ id: askRuns.id })
+            .from(askRuns)
+            .where(and(this.runOwned(personId), inArray(askRuns.status, active)))
+            .limit(1)})`,
+        })
+        .from(users)
+        .where(eq(users.id, personId));
+      if (!found?.session) throw new AskFailure("ASK_INTERRUPTED", 409);
+      if (!found.chat) throw new AskFailure("ASK_NOT_FOUND", 404);
+      if (found.existing) {
+        const [existing] = await tx
+          .select()
+          .from(askRuns)
+          .where(eq(askRuns.id, found.existing))
+          .limit(1);
+        if (existing!.requestHash !== requestHash) throw new AskFailure("ASK_CONFLICT", 409);
         const [visible] = await tx
           .select({ id: askRuns.id })
           .from(askRuns)
-          .where(this.runOwned(personId, existing.id))
+          .where(this.runOwned(personId, existing!.id))
           .limit(1);
         if (!visible) throw new AskFailure("ASK_NOT_FOUND", 404);
-        return runWire(existing);
+        return runWire(existing!);
       }
-      const [current] = await tx
-        .select({ id: askRuns.id })
-        .from(askRuns)
-        .where(and(this.runOwned(personId), inArray(askRuns.status, active)))
-        .limit(1);
-      if (current) throw new AskFailure("ASK_ACTIVE_RUN", 409);
+      if (found.current) throw new AskFailure("ASK_ACTIVE_RUN", 409);
       const [run] = await tx
         .insert(askRuns)
         .values({
@@ -369,25 +427,27 @@ export class AskStore {
         })
         .returning();
       await admit(tx, run!);
-      await tx.insert(askMessages).values({
-        runId: run!.id,
-        chatId,
-        customerId: this.customerId,
-        ownerId: personId,
-        role: "user",
-        question: request.question,
-      });
-      await tx
-        .update(askChats)
-        .set({
-          // Keep a preview of the newest retained question, so an old first
-          // question cannot survive its retention period in the chat title.
-          title: request.question.slice(0, 120),
-          updatedAt: sql`now()`,
-          expiresAt: this.expiry(),
-          activitySeq: sql`nextval('ask_chat_activity_seq')`,
-        })
-        .where(this.chatOwned(personId, chatId));
+      await inOrder([
+        tx.insert(askMessages).values({
+          runId: run!.id,
+          chatId,
+          customerId: this.customerId,
+          ownerId: personId,
+          role: "user",
+          question: request.question,
+        }),
+        tx
+          .update(askChats)
+          .set({
+            // Keep a preview of the newest retained question, so an old first
+            // question cannot survive its retention period in the chat title.
+            title: request.question.slice(0, 120),
+            updatedAt: sql`now()`,
+            expiresAt: this.expiry(),
+            activitySeq: sql`nextval('ask_chat_activity_seq')`,
+          })
+          .where(this.chatOwned(personId, chatId)),
+      ]);
       return runWire(run!);
     });
   }
@@ -448,39 +508,45 @@ export class AskStore {
     return parsed.data;
   }
 
-  async claim(leaseMs: number): Promise<AskRunRow | null> {
+  /** Claims the oldest queued run younger than `maxAgeMs`; an older one is
+   * left for `recover`, which fails it as timed out. */
+  async claim(leaseMs: number, maxAgeMs?: number): Promise<AskRunRow | null> {
     if (!Number.isInteger(leaseMs) || leaseMs < 1 || leaseMs > 120_000)
       throw new AskFailure("ASK_UNAVAILABLE");
-    return this.db.transaction(async (tx) => {
-      const [run] = await tx
-        .select()
-        .from(askRuns)
-        .where(
-          and(
-            eq(askRuns.customerId, this.customerId),
-            eq(askRuns.status, "queued"),
-            alive(askRuns.expiresAt),
-            this.sessionActive(),
-            sql`not ${askTurnedOff(this.customerId)}`,
-          ),
-        )
-        .orderBy(askRuns.createdAt, askRuns.id)
-        .limit(1)
-        .for("update", { skipLocked: true });
-      if (!run) return null;
-      const [claimed] = await tx
-        .update(askRuns)
-        .set({
-          status: "running",
-          leaseToken: randomUUID(),
-          leaseUntil: sql`clock_timestamp() + ${leaseMs} * interval '1 millisecond'`,
-          startedAt: sql`now()`,
-          attempts: sql`${askRuns.attempts}+1`,
-        })
-        .where(eq(askRuns.id, run.id))
-        .returning();
-      return claimed!;
-    });
+    if (maxAgeMs !== undefined && (!Number.isInteger(maxAgeMs) || maxAgeMs < 1))
+      throw new AskFailure("ASK_UNAVAILABLE");
+    // One statement: the scalar subquery runs once, locks the oldest claimable
+    // run (skipping any another replica holds) and the update takes that row.
+    const next = this.db
+      .select({ id: askRuns.id })
+      .from(askRuns)
+      .where(
+        and(
+          eq(askRuns.customerId, this.customerId),
+          eq(askRuns.status, "queued"),
+          alive(askRuns.expiresAt),
+          maxAgeMs === undefined
+            ? undefined
+            : sql`${askRuns.createdAt} >= clock_timestamp() - ${maxAgeMs} * interval '1 millisecond'`,
+          this.sessionActive(),
+          sql`not ${askTurnedOff(this.customerId)}`,
+        ),
+      )
+      .orderBy(askRuns.createdAt, askRuns.id)
+      .limit(1)
+      .for("update", { skipLocked: true });
+    const [claimed] = await this.db
+      .update(askRuns)
+      .set({
+        status: "running",
+        leaseToken: randomUUID(),
+        leaseUntil: sql`clock_timestamp() + ${leaseMs} * interval '1 millisecond'`,
+        startedAt: sql`now()`,
+        attempts: sql`${askRuns.attempts}+1`,
+      })
+      .where(eq(askRuns.id, sql`(${next})`))
+      .returning();
+    return claimed ?? null;
   }
 
   private lease(runId: string, token: string) {
@@ -530,14 +596,51 @@ export class AskStore {
     });
   }
 
+  /** The worker's lease check: one renewal that also reads the run's status.
+   * A running run's lease is extended; a cancelling run keeps its lease and
+   * reads `cancelling`; anything else, a revoked session included, is `lost`. */
+  async renew(
+    runId: string,
+    token: string,
+    leaseMs: number,
+  ): Promise<"running" | "cancelling" | "lost"> {
+    if (!Number.isInteger(leaseMs) || leaseMs < 1 || leaseMs > 120_000)
+      throw new AskFailure("ASK_UNAVAILABLE");
+    return this.db.transaction(async (tx) => {
+      // The lock and the update go together. The update is its own statement,
+      // so it re-evaluates wall time AFTER the lock wait, as `heartbeat` does,
+      // and its own lease condition matches nothing when the lock found nothing.
+      const [locked, [row]] = await inOrder([
+        this.lockLease(tx, runId, token),
+        tx
+          .update(askRuns)
+          .set({
+            leaseUntil: sql`case when ${askRuns.status}='running' then clock_timestamp() + ${leaseMs} * interval '1 millisecond' else ${askRuns.leaseUntil} end`,
+          })
+          .where(and(this.lease(runId, token), this.sessionActive()))
+          .returning({ status: askRuns.status }),
+      ]);
+      if (!locked) return "lost";
+      return row?.status === "running" || row?.status === "cancelling" ? row.status : "lost";
+    });
+  }
+
   /** A fencing token and current lease prevent a late/crashed worker publishing
-   * after cancellation or recovery. No assistant success exists on failure. */
-  async succeed(runId: string, token: string, raw: AskAnswer): Promise<boolean> {
+   * after cancellation or recovery. No assistant success exists on failure.
+   * The message and chat writes go with the update: each writes only when
+   * the update took the run, and the transaction keeps the three together. */
+  async succeed(
+    runId: string,
+    token: string,
+    raw: AskAnswer,
+    run?: Pick<AskRunRow, "chatId" | "customerId" | "ownerId">,
+  ): Promise<boolean> {
     const parsed = askAnswerSchema.safeParse(raw);
     if (!parsed.success) throw new AskFailure("ASK_INVALID_ANSWER", 502);
     return this.db.transaction(async (tx) => {
-      if (!(await this.lockLease(tx, runId, token))) return false;
-      const [run] = await tx
+      const lock = this.lockLease(tx, runId, token);
+      if (!run && !(await lock)) return false;
+      const update = tx
         .update(askRuns)
         .set({
           status: "succeeded",
@@ -548,20 +651,32 @@ export class AskStore {
         })
         .where(and(this.lease(runId, token), eq(askRuns.status, "running"), this.sessionActive()))
         .returning();
-      if (!run) return false;
-      await tx.insert(askMessages).values({
-        runId,
-        chatId: run.chatId,
-        customerId: run.customerId,
-        ownerId: run.ownerId,
-        role: "assistant",
-        answer: parsed.data,
-      });
-      await tx
-        .update(askChats)
-        .set({ updatedAt: sql`now()`, activitySeq: sql`nextval('ask_chat_activity_seq')` })
-        .where(eq(askChats.id, run.chatId));
-      return true;
+      // The lease row is locked, so the run reads succeeded with no lease
+      // token exactly when the update took it. Given the run, the lock, the
+      // update and both writes go together; the update's own lease condition
+      // matches nothing when the lock found nothing.
+      const took = sql`exists (select 1 from ask_runs r where r.id=${runId} and r.status='succeeded' and r.lease_token is null)`;
+      let first: PromiseLike<unknown> = lock;
+      let second: PromiseLike<unknown[]> = update;
+      if (!run) {
+        const updated = await update;
+        if (!updated[0]) return false;
+        run = updated[0];
+        first = Promise.resolve(true);
+        second = Promise.resolve(updated);
+      }
+      const [, updated] = await inOrder([
+        first,
+        second,
+        tx.execute(
+          sql`insert into ask_messages (run_id, chat_id, customer_id, owner_id, role, answer) select ${runId}::uuid, ${run.chatId}::uuid, ${run.customerId}, ${run.ownerId}::uuid, 'assistant', ${JSON.stringify(parsed.data)}::jsonb where ${took}`,
+        ),
+        tx
+          .update(askChats)
+          .set({ updatedAt: sql`now()`, activitySeq: sql`nextval('ask_chat_activity_seq')` })
+          .where(and(eq(askChats.id, run.chatId), took)),
+      ]);
+      return updated.length === 1;
     });
   }
 
