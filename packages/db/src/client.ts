@@ -121,6 +121,44 @@ export function createDb(databaseUrl: string, options: DbConnectOptions = {}): D
     connect_timeout: 10,
     ...(tlsServername ? { ssl: { servername: tlsServername } } : {}),
   });
-  const db = drizzle(sql, { schema });
+  const db = drizzle(preparing(sql), { schema });
   return { db, sql };
+}
+
+/**
+ * The client drizzle is given: postgres-js with every query a named prepared
+ * statement. Drizzle sends each query through `sql.unsafe`, which postgres-js
+ * leaves unprepared, and an unprepared query with parameters costs two round
+ * trips (Parse/Describe, then Bind/Execute) and holds back the queries sent
+ * after it. A prepared one costs two round trips on its first use on a
+ * connection and one after that, and statements sent together share a round
+ * trip. Transactions and savepoints get the same client. The database is
+ * reached directly, never through a transaction pooler, which named
+ * statements need; postgres-js re-prepares a statement whose plan a
+ * migration changed.
+ */
+export function preparing(sql: Sql): Sql {
+  return new Proxy(sql, {
+    get(target, property, receiver) {
+      if (property === "unsafe")
+        return (query: string, args?: unknown[], options?: Record<string, unknown>) =>
+          target.unsafe(query, (args ?? []) as never, { prepare: true, ...options });
+      if (property === "begin")
+        return (...args: unknown[]) => {
+          const work = args.pop() as (tx: Sql) => unknown;
+          return (target.begin as (...a: unknown[]) => unknown)(...args, (tx: Sql) =>
+            work(preparing(tx)),
+          );
+        };
+      if (property === "savepoint")
+        return (...args: unknown[]) => {
+          const work = args.pop() as (tx: Sql) => unknown;
+          return (Reflect.get(target, property, receiver) as (...a: unknown[]) => unknown)(
+            ...args,
+            (tx: Sql) => work(preparing(tx)),
+          );
+        };
+      return Reflect.get(target, property, receiver);
+    },
+  });
 }

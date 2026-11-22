@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createDb, DEFAULT_DB_POOL, isTlsServername } from "../client.js";
+import type { Sql } from "postgres";
+import { createDb, DEFAULT_DB_POOL, isTlsServername, preparing } from "../client.js";
 
 /**
  * The pool options reach the driver, and the ones that could not work are
@@ -88,5 +89,45 @@ describe("createDb", () => {
     }
     expect(isTlsServername("db.example.com")).toBe(true);
     expect(isTlsServername("rds")).toBe(true);
+  });
+});
+
+describe("preparing", () => {
+  type Call = { query: string; args: unknown[]; options: Record<string, unknown> };
+  function fake(calls: Call[]): Sql {
+    const unsafe = (query: string, args: unknown[] = [], options: Record<string, unknown> = {}) => {
+      calls.push({ query, args, options });
+      return Promise.resolve([]);
+    };
+    const tx = { unsafe, savepoint: (work: (s: unknown) => unknown) => work({ unsafe }) };
+    return {
+      unsafe,
+      begin: (...args: unknown[]) => (args.pop() as (s: unknown) => unknown)(tx),
+      options: { parsers: {}, serializers: {} },
+    } as unknown as Sql;
+  }
+
+  it("sends every query drizzle makes as a prepared statement, in transactions and savepoints too", async () => {
+    const calls: Call[] = [];
+    const sql = preparing(fake(calls));
+    await sql.unsafe("select $1", [1]);
+    await sql.begin(async (tx) => {
+      await tx.unsafe("select $1", [2]);
+      await (tx as unknown as { savepoint: (w: (s: Sql) => unknown) => unknown }).savepoint(
+        (inner) => inner.unsafe("select $1", [3]),
+      );
+    });
+    await sql.begin("isolation level serializable", (tx) => tx.unsafe("select 4"));
+    expect(calls.map((c) => c.options.prepare)).toEqual([true, true, true, true]);
+    expect(calls.map((c) => c.args)).toEqual([[1], [2], [3], []]);
+  });
+
+  it("keeps an explicit choice and the client's own options", async () => {
+    const calls: Call[] = [];
+    const base = fake(calls);
+    const sql = preparing(base);
+    await sql.unsafe("select 1", [], { prepare: false });
+    expect(calls[0]!.options.prepare).toBe(false);
+    expect(sql.options).toBe(base.options);
   });
 });
