@@ -7,6 +7,7 @@ import { readAskSettings } from "../config.js";
 import { AskStore } from "../services/ask/store.js";
 import { AskWorker } from "../services/ask/worker.js";
 import { AskOrchestrator, type AskExecutionHooks } from "../services/ask/orchestrator.js";
+import { AskFailure } from "../services/ask/errors.js";
 import { createSession } from "../services/sessions.js";
 
 const answer: AskAnswer = {
@@ -74,7 +75,13 @@ const submit = () =>
     { idempotencyKey: crypto.randomUUID(), question: "Fixture question" },
     async () => undefined,
   );
-function worker(options: { enabled?: () => boolean; canClaim?: () => boolean } = {}) {
+function worker(
+  options: {
+    enabled?: () => boolean;
+    canClaim?: () => boolean;
+    onError?: (code: string) => void;
+  } = {},
+) {
   const afterTerminal = vi.fn(async () => undefined);
   const instance = new AskWorker(store, settings(), { hooks, afterTerminal, ...options });
   workers.push(instance);
@@ -95,6 +102,35 @@ function pendingAnswer() {
     });
   return { spy, started, release: () => release(answer) };
 }
+/** Records every lease read and renewal so a test can wait for the ones the
+ * heartbeat starts without awaiting, including those still running after
+ * `drained()`. */
+function leaseChecks() {
+  const pending: Promise<unknown>[] = [];
+  const leaseState = store.leaseState.bind(store);
+  const heartbeat = store.heartbeat.bind(store);
+  vi.spyOn(store, "leaseState").mockImplementation((...args) => {
+    const call = leaseState(...args);
+    pending.push(call.catch(() => undefined));
+    return call;
+  });
+  vi.spyOn(store, "heartbeat").mockImplementation((...args) => {
+    const call = heartbeat(...args);
+    pending.push(call.catch(() => undefined));
+    return call;
+  });
+  return async () => {
+    for (let seen = -1; seen !== pending.length;) {
+      seen = pending.length;
+      await Promise.all(pending);
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    }
+  };
+}
+/** Holds a terminal write open after its commit for several heartbeat periods,
+ * as a slow database round trip does. */
+const slowAfterCommit = <T>(call: Promise<T>) =>
+  call.then((value) => new Promise<T>((resolve) => setTimeout(() => resolve(value), 60)));
 
 describe("durable run worker scheduling and cancellation", () => {
   it("a starting replica awaiting readiness leaves another replica's admitted question queued", async () => {
@@ -237,10 +273,68 @@ describe("durable run worker scheduling and cancellation", () => {
     expect((await store.getRun(owner, submitted.id)).status).toBe("interrupted");
   });
 
+  it("a completed run logs no lease error while its answer is persisted", async () => {
+    const run = await submit();
+    vi.spyOn(AskOrchestrator.prototype, "answer").mockResolvedValue(answer);
+    const succeed = store.succeed.bind(store);
+    vi.spyOn(store, "succeed").mockImplementation((...args) => slowAfterCommit(succeed(...args)));
+    const settled = leaseChecks();
+    const onError = vi.fn();
+    const { instance } = worker({ onError });
+    await instance.tick();
+    await instance.drained();
+    await settled();
+    expect((await store.getRun(owner, run.id)).status).toBe("succeeded");
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("a failed run logs no lease error while its failure is persisted", async () => {
+    const run = await submit();
+    vi.spyOn(AskOrchestrator.prototype, "answer").mockRejectedValue(
+      new AskFailure("ASK_UNAVAILABLE"),
+    );
+    const fail = store.fail.bind(store);
+    vi.spyOn(store, "fail").mockImplementation((...args) => slowAfterCommit(fail(...args)));
+    const settled = leaseChecks();
+    const onError = vi.fn();
+    const { instance } = worker({ onError });
+    await instance.tick();
+    await instance.drained();
+    await settled();
+    expect(await store.getRun(owner, run.id)).toMatchObject({
+      status: "failed",
+      error: { code: "ASK_UNAVAILABLE" },
+    });
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("a lease lost while the answer is persisted is reported and publishes no answer", async () => {
+    const run = await submit();
+    vi.spyOn(AskOrchestrator.prototype, "answer").mockResolvedValue(answer);
+    const succeed = store.succeed.bind(store);
+    vi.spyOn(store, "succeed").mockImplementation(async (...args) => {
+      await t.db
+        .update(askRuns)
+        .set({ leaseUntil: new Date(0) })
+        .where(eq(askRuns.id, run.id));
+      return succeed(...args);
+    });
+    const settled = leaseChecks();
+    const onError = vi.fn();
+    const { instance } = worker({ onError });
+    await instance.tick();
+    await instance.drained();
+    await settled();
+    expect((await store.getRun(owner, run.id)).status).toBe("interrupted");
+    expect((await store.chatDetail(owner, chatId)).messages).toHaveLength(1);
+    expect(onError.mock.calls).toEqual([["ASK_LEASE_LOST"]]);
+  });
+
   it("a lost lease interrupts instead of replaying and recovery releases the person's slot", async () => {
     const run = await submit();
     const waiting = pendingAnswer();
-    const { instance } = worker();
+    const onError = vi.fn();
+    const { instance } = worker({ onError });
     await instance.tick();
     await vi.waitFor(() => expect(waiting.started).toHaveBeenCalled());
     await t.db
@@ -248,6 +342,10 @@ describe("durable run worker scheduling and cancellation", () => {
       .set({ leaseUntil: new Date(0) })
       .where(eq(askRuns.id, run.id));
     await instance.drained();
+    expect(onError).toHaveBeenCalledWith("ASK_LEASE_LOST");
+    const signal = waiting.spy.mock.calls[0]![3];
+    expect(signal.aborted).toBe(true);
+    expect(signal.reason).toMatchObject({ code: "ASK_INTERRUPTED" });
     await instance.tick();
     expect((await store.getRun(owner, run.id)).status).toBe("interrupted");
     expect(waiting.spy).toHaveBeenCalledTimes(1);

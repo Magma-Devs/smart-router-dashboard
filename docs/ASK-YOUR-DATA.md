@@ -187,6 +187,10 @@ internal records retain their own authorization/retention boundary.
 
 `AskWorker` claims under SQL leases, renews them while active, observes stop,
 session/lease loss and feature disable, and aborts work at shutdown/deadline.
+Renewal stops, and the check in flight finishes, before the run's terminal write
+(success or failure), so a run never reads its own completion as a lost lease.
+A check that finds the lease lost logs `ASK_LEASE_LOST` and aborts the run, and
+so does a success write the database refuses because the lease is gone.
 Stop during a pending queue claim cannot start work after shutdown. A model
 response arriving after cancellation cannot become an assistant success.
 Recovery never replays a potentially billable invocation. Unknown usage remains

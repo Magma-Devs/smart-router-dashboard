@@ -110,6 +110,13 @@ export class AskWorker {
       void check();
     }, this.settings.heartbeatMs);
     heartbeat.unref();
+    // A terminal write clears the lease token, so a check running beside it
+    // reads its own run's completion as a lost lease. Each write waits for
+    // the check in flight and starts no other.
+    const quiesce = async (): Promise<void> => {
+      clearInterval(heartbeat);
+      await checking;
+    };
     const deadline = setTimeout(
       () => {
         this.options.onError?.("ASK_DEADLINE_EXCEEDED");
@@ -139,13 +146,17 @@ export class AskWorker {
         hooks,
         controller.signal,
       );
+      clearInterval(heartbeat);
       await check();
       if (controller.signal.aborted) throw controller.signal.reason;
       const persisting = performance.now();
       if (!(await this.store.succeed(run.id, run.leaseToken!, result))) {
         const state = await this.store.leaseState(run.id, run.leaseToken!);
         if (state === "cancelling") await this.store.fail(run.id, run.leaseToken!, "ASK_CANCELLED");
-        else await this.store.recover(this.settings.runTimeoutMs);
+        else {
+          this.options.onError?.("ASK_LEASE_LOST");
+          await this.store.recover(this.settings.runTimeoutMs);
+        }
       }
       this.options.timing?.(run.id, "persistence", performance.now() - persisting);
     } catch (error) {
@@ -155,6 +166,7 @@ export class AskWorker {
           : error instanceof AskFailure
             ? error
             : new AskFailure("ASK_UNAVAILABLE");
+      await quiesce();
       await this.store
         .fail(run.id, run.leaseToken!, failure.code)
         .catch(() => this.options.onError?.("ASK_TERMINAL_PERSIST_FAILED"));

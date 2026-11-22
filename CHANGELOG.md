@@ -5,6 +5,16 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.74.4]
+
+### Fixed
+
+- A completed Ask run logs no lease error. The worker stops renewing the lease,
+  and lets the check in flight finish, before it saves the answer or the
+  failure, so a run never reads its own completion as a lost lease.
+- A lease lost while the answer is saved logs `ASK_LEASE_LOST`; the answer is
+  not published and recovery interrupts the run.
+
 ## [0.74.3]
 
 ### Fixed
