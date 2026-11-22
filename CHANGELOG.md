@@ -5,6 +5,18 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.90.0]
+
+### Added
+
+- **Traffic over time on the Metrics Overview tab (MAG-5644).** A Traffic card
+  above the Routers table: requests per second for all chains together, as one
+  line, with the window's average and peak. One line on purpose: a deployment
+  can serve 50 chains, and the Routers table already splits it by router. It
+  counts the requests the Requests served card counts (a retried request counts
+  once), from the existing `GET /api/metrics/rps`, one read. Shown with all
+  chains in view; a picked chain keeps its Traffic by provider card.
+
 ## [0.89.0]
 
 ### Fixed
