@@ -142,8 +142,10 @@ Metrics/log reads keep their 24-hour bounds; provider-status event reads keep
 their seven-day bounds.
 
 `router_request_summary` selects the dashboard's recorded request/failure or transaction families into two verified MCP reads over the same window. Missing series stay
-unknown, without a zero fallback. The newest approximately two minutes of
-recorded counts are marked partial. Counts do not establish an acceptable error rate or a cause without actual evidence and an SLO. `router_recent_requests` reads a small, customer-scoped backwards sample of the dashboard's `relay_end` events for request details. Sampling never proves the absence of errors. Effective status/instant-query times and literal lookback windows are returned explicitly; absence of a provider-status source is reported as unavailable.
+unknown, without a zero fallback. A window that ends within two minutes of the
+server's time reaches into the recording lag: the model reads it as partial
+coverage and states the gap, and the stored evidence keeps the read's own
+coverage. Counts do not establish an acceptable error rate or a cause without actual evidence and an SLO. `router_recent_requests` reads a small, customer-scoped backwards sample of the dashboard's `relay_end` events for request details. Sampling never proves the absence of errors. Effective status/instant-query times and literal lookback windows are returned explicitly; absence of a provider-status source is reported as unavailable.
 
 Model dispatch guards live inside the model execution boundary, not SDK
 notification callbacks. Automatic model retries and tool repair are disabled.
@@ -366,9 +368,15 @@ ends now. The composer shows no scope line.
 Questions use right-aligned bubbles. Structured answers render as plain text,
 with a summary, quiet numbered headings and optional compact inline stats. Copy
 feedback, answer timestamps and expandable sources follow each answer; a source
-reads as Logs, Metrics or Data, and carries a tag only when its data was
-missing or cut short. A short answer keeps its question visible; a long answer
-opens at its start. Reading older messages is not interrupted. The composer
+reads as Logs, Metrics or Data, with its window's day on both ends when they
+fall on different days. A source's tag says what its read returned: Cut short,
+Partial or Unavailable in the warning colour, No matches or Limited coverage in
+a muted one. A metrics source whose window ends less than two minutes before
+its read also carries a muted "Last 2 min pending" (`recentGap` in
+`ask-display.ts`, read off the stored window and read time). The line "Some of
+the data behind this answer was missing or cut short" shows only for a warning
+tag, never for the recording lag alone. A short answer keeps its question
+visible; a long answer opens at its start. Reading older messages is not interrupted. The composer
 grows with the draft and available width. Enter sends, Shift+Enter inserts a
 line and IME composition does not submit. Under it one line says the chat is
 private to the person and that answers can be incomplete. A single active

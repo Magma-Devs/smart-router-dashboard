@@ -310,7 +310,7 @@ export class AskOrchestrator {
           coverage:
             observedCoverage === "unavailable" || observedCoverage === "empty"
               ? observedCoverage
-              : truncated || sourceTruncated || observedWindow?.partial
+              : truncated || sourceTruncated
                 ? "partial"
                 : observedCoverage,
           truncated: truncated || sourceTruncated,
@@ -325,12 +325,18 @@ export class AskOrchestrator {
           latencyMs: Math.round(performance.now() - started),
           evidence: item,
         });
+        // The model reads the recording lag as partial coverage, so it states the
+        // gap. The evidence keeps what the read returned; the web derives the lag.
+        const modelCoverage =
+          observedWindow?.partial && ["complete", "unknown"].includes(item.coverage)
+            ? "partial"
+            : item.coverage;
         const output = {
           evidenceId: item.id,
-          coverage: item.coverage,
+          coverage: modelCoverage,
           window: { from: item.from, to: item.to },
           interpretation:
-            item.coverage === "complete"
+            modelCoverage === "complete"
               ? "Only the returned values and labels are established. Missing series or labels are unknown, never zero or false. A complete query response does not prove that every chain reported data."
               : "Coverage is not exhaustive. Report only returned observations, never zero/no incidents/no other errors over the full window. Missing series or labels are unknown, not zero or false. Current status does not establish incident-free history.",
           ...(JSON.parse(payload) as Record<string, unknown>),

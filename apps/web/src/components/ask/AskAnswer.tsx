@@ -1,14 +1,22 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import type { AskAnswer as Answer } from "@sr/shared";
-import { answerSections, answerText, evidenceSourceLabel } from "./ask-display";
+import {
+  answerHasGap,
+  answerSections,
+  answerText,
+  evidenceBadges,
+  evidenceSourceLabel,
+  windowSpansDays,
+} from "./ask-display";
 import { AskIcon } from "./AskIcon";
 import { LocalTime } from "@/components/gateway/LocalTime";
 
-/** A time in the dashboard's one format: today's as a time, an older one with its day. */
-export function AskTime({ value }: { value: string }) {
+/** A time in the dashboard's one format: today's as a time, an older one with
+ * its day. `withDay` shows the day on today's too. */
+export function AskTime({ value, withDay = false }: { value: string; withDay?: boolean }) {
   const today = new Date(value).toDateString() === new Date().toDateString();
-  return <LocalTime t={value} format={today ? "time" : "dayTime"} />;
+  return <LocalTime t={value} format={today && !withDay ? "time" : "dayTime"} />;
 }
 function CopyAnswer({ answer }: { answer: Answer }) {
   const [status, setStatus] = useState<"idle" | "copied" | "failed">("idle");
@@ -52,9 +60,7 @@ function CopyAnswer({ answer }: { answer: Answer }) {
 }
 export function AskAnswer({ answer, messageId }: { answer: Answer; messageId?: string }) {
   const sections = answerSections(answer);
-  const partial = answer.evidence.some(
-    (item) => item.truncated || ["partial", "unavailable"].includes(item.coverage),
-  );
+  const partial = answerHasGap(answer);
   return (
     <article className="ask-answer" aria-label="Answer" data-ask-message={messageId}>
       <p className="ask-summary" dir="auto">
@@ -100,26 +106,27 @@ export function AskAnswer({ answer, messageId }: { answer: Answer; messageId?: s
                   <span>
                     <strong>{evidenceSourceLabel(item.operationId)}</strong>
                   </span>
-                  {item.truncated || item.coverage !== "complete" ? (
-                    <span className={`ask-coverage ask-coverage--${item.coverage}`}>
-                      {item.truncated
-                        ? "Cut short"
-                        : item.coverage === "unknown"
-                          ? "Limited coverage"
-                          : item.coverage === "empty"
-                            ? "No matches"
-                            : item.coverage}
-                    </span>
-                  ) : null}
+                  <span className="ask-coverage-badges">
+                    {evidenceBadges(item).map((badge) => (
+                      <span
+                        key={badge.label}
+                        className={`ask-coverage ask-coverage--${badge.tone}`}
+                        title={badge.title}
+                      >
+                        {badge.label}
+                      </span>
+                    ))}
+                  </span>
                 </div>
                 <div>
                   {item.from ? (
                     <>
-                      <AskTime value={item.from} />
+                      <AskTime value={item.from} withDay={windowSpansDays(item.from, item.to)} />
                       {item.to ? (
                         <>
                           {" "}
-                          to <AskTime value={item.to} />
+                          to{" "}
+                          <AskTime value={item.to} withDay={windowSpansDays(item.from, item.to)} />
                         </>
                       ) : null}
                     </>
