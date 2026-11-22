@@ -444,12 +444,14 @@ export class TransactionsService {
       // A relay_end names its chain: a write by the spec, or a transaction
       // method by name - unlisted (`Default-`) or inside a batch (`&`) too.
       const eventNarrow = !scoped && chain && LABEL_TOKEN.test(chain) ? ` |= \`"chain":"${chain}"\`` : "";
+      // The relay_end finder reads only those lines' streams where the log agent labels them.
+      const events = await this.scope(loki).relayEnd(selector, range.startMs, endMs);
       const index = new UpstreamIndex(routers);
       const got = await readList(loki, selector, {
         finders: [
           { query: `${selector} |= "${MSG.choosing}" |= \`"stateful":"1"\`${narrow}`, limit: this.cap },
           { query: `${selector} |= "${MSG.received}" |~ \`(${TX_METHODS.join("|")})\``, limit: this.cap },
-          { query: `${selector} ${TX_EVENT_FILTER}${eventNarrow}`, limit: this.cap },
+          { query: `${events} ${TX_EVENT_FILTER}${eventNarrow}`, limit: this.cap },
         ],
         // A transaction found by its relay_end needs nothing more. One found by
         // its lines needs the rest of them, and its relay_end when it has one:

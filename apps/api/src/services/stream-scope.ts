@@ -31,10 +31,16 @@ import { escapeRe } from "./router-log.js";
 
 export const CHAIN_LABEL = "chain";
 export const ROUTER_LABEL = "service_name";
+/** The label the fleet's log agent puts on a router's `relay_end` lines, as `relay_end="1"`. */
+export const RELAY_END_LABEL = "relay_end";
 
 /** How far back the labels' values are looked up, and how long the answer is kept. */
 const LOOK_BACK_MS = 24 * 3600_000;
 const KEEP_MS = 10 * 60_000;
+/** The stretch before a read's start, and at its end, the `relay_end` label is looked up over. */
+const EDGE_MS = 5 * 60_000;
+/** How long an answer about the `relay_end` label is kept, per minute of a read's start and end. */
+const RELAY_END_KEEP_MS = 60_000;
 
 /** A label value spliced into a selector: a plain token only. */
 export const SAFE_VALUE = /^[A-Za-z0-9_.:-]{1,128}$/;
@@ -85,6 +91,7 @@ const clusterOf = (selector: string) => /\bcluster="([^"]+)"/.exec(selector)?.[1
 
 export class StreamScope {
   private readonly kept = new Map<string, { at: number; values: Set<string> | null }>();
+  private readonly relayEndKept = new Map<string, { at: number; labelled: boolean }>();
 
   constructor(
     private readonly loki: LokiClient,
@@ -125,5 +132,32 @@ export class StreamScope {
       if (chains?.has(chain)) return withMatcher(this.selector, CHAIN_LABEL, chain);
     }
     return null;
+  }
+
+  /**
+   * `selector` narrowed to the router's `relay_end` lines (`relay_end="1"`)
+   * for a read from `startMs` to `endMs`, where the log agent labels them
+   * through the whole read; else `selector` as it is. Labelled streams must
+   * hold lines in the five minutes before the start and in the read's last
+   * five, by the series index (`hasStreams`): a line written before the label
+   * existed carries none, and a deployment whose agent sets no such label, or
+   * a Loki that doesn't say, reads every line as before. Only a read of
+   * `relay_end` lines alone may use it.
+   */
+  async relayEnd(selector: string, startMs: number, endMs: number): Promise<string> {
+    const narrowed = withMatcher(selector, RELAY_END_LABEL, "1");
+    if (!narrowed) return selector;
+    const key = `${selector} ${Math.floor(startMs / 60_000)} ${Math.floor(endMs / 60_000)}`;
+    const t = this.now();
+    const hit = this.relayEndKept.get(key);
+    if (hit && t - hit.at < RELAY_END_KEEP_MS) return hit.labelled ? narrowed : selector;
+    const [before, last] = await Promise.all([
+      this.loki.hasStreams(narrowed, startMs - EDGE_MS, startMs),
+      this.loki.hasStreams(narrowed, Math.max(startMs, endMs - EDGE_MS), endMs),
+    ]);
+    const labelled = before === true && last === true;
+    for (const [k, v] of this.relayEndKept) if (t - v.at >= RELAY_END_KEEP_MS) this.relayEndKept.delete(k);
+    this.relayEndKept.set(key, { at: t, labelled });
+    return labelled ? narrowed : selector;
   }
 }

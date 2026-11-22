@@ -210,6 +210,20 @@ on every chain it serves, and one chain's errors at it filled the read's line
 limit in two seconds, leaving another chain's list empty for 12 hours
 (2026-10-29).
 
+**Reading only `relay_end` lines.** The fleet's log agent also labels a
+router's `relay_end` lines `relay_end="1"`, about a third of a busy router's
+bytes. The `relay_end` reads - the finder of both lists, the Failed requests
+card's line count and the Transactions chart's log counts - select that stream
+(`StreamScope.relayEnd`) where Loki's series index has labelled streams with
+lines in the five minutes before the read's start and in its last five, kept a
+minute. The label index can't answer that: its recent answers come from every
+stream in memory, whatever the range asked. Each of those reads comes after the
+recorded counts it backs (the card's and the chart's), as before. A line
+written before the label existed carries none, so a read that reaches back
+past it, or a deployment whose agent sets no such label, keeps the plain
+selector. The old-shape finders and the per-GUID follow-ups read every line,
+as they must.
+
 **Naming one router.** `service_name` carries the router id lower-cased: the
 chart labels a router's pods `app.smart-router-id: {{ $router.id | lower }}`
 and the fleet's collector builds `service_name` from that label, on the log

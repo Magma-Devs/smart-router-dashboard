@@ -457,7 +457,8 @@ export class ErrorRequestsService {
     // Each leg summed on its own, then added: `or vector(0)` keeps a leg with
     // no lines from emptying the total.
     const lines = `sum(count_over_time(${this.selector} |~ \`${GAVE_UP}\` | json msg="message", ep="endpoint" | msg=~\`${GAVE_UP}\`${byChain} [${r}]))`;
-    const events = `sum(count_over_time(${this.selector}${eventChain} ${FAILED_PIPELINE} [${r}]))`;
+    const eventSelector = await this.scope(loki).relayEnd(this.selector, now - seconds * 1000, now);
+    const events = `sum(count_over_time(${eventSelector}${eventChain} ${FAILED_PIPELINE} [${r}]))`;
     const value = await loki.count(`(${lines} or vector(0)) + (${events} or vector(0))`);
     return value === null ? { ...unavailable("unreachable"), value: null } : { available: true, value };
   }
@@ -562,6 +563,8 @@ export class ErrorRequestsService {
       const eventNarrow = upstream
         ? inRawString(upstream) ? ` |= \`"upstream":"${upstream}"\`` : ""
         : chain && LABEL_TOKEN.test(chain) ? ` |= \`"chain":"${chain}"\`` : "";
+      // The relay_end finder reads only those lines' streams where the log agent labels them.
+      const events = await this.scope(loki).relayEnd(selector, range.startMs, endMs);
       const index = new UpstreamIndex(routers);
       const got = await readList(loki, selector, {
         finders: [
@@ -570,7 +573,7 @@ export class ErrorRequestsService {
             limit: this.cap * 4,
           },
           {
-            query: `${selector} |= \`${RELAY_END}\` != \`"selection":"subscription"\` |~ \`"outcome":"(${WRONG_OUTCOMES.join("|")})"\`${eventNarrow} ${PARSED_PIPELINE}`,
+            query: `${events} |= \`${RELAY_END}\` != \`"selection":"subscription"\` |~ \`"outcome":"(${WRONG_OUTCOMES.join("|")})"\`${eventNarrow} ${PARSED_PIPELINE}`,
             limit: this.cap,
           },
         ],

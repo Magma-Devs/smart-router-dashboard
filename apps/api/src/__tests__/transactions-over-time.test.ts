@@ -54,9 +54,13 @@ function promOf(matrix: PromMatrixSample[] | null, vector: PromVectorSample[] | 
   } as unknown as PrometheusClient;
 }
 
-/** A Loki that answers metric range reads with `range` and instant ones with `now`; null = no answer. */
-function lokiOf(range: LokiSeries[] | null, now: LokiSeries[] | null, calls: Calls) {
+/** A Loki that answers metric range reads with `range` and instant ones with `now`; null = no answer.
+ *  Its series index answers `relayEnd` for the relay_end="1" streams (null: Loki didn't say). */
+function lokiOf(range: LokiSeries[] | null, now: LokiSeries[] | null, calls: Calls, relayEnd: boolean | null = null) {
   return {
+    async hasStreams() {
+      return relayEnd;
+    },
     async metricRange(query: string, start: number, end: number, step: number) {
       calls.loki.push(`range ${query} ${start} ${end} ${step}`);
       return range;
@@ -155,6 +159,14 @@ describe("transactions over time, from the store's recorded counts", () => {
     });
   });
 
+  it("where the log agent labels relay_end lines through the read, the newest minutes read only their streams", async () => {
+    const calls: Calls = { prom: [], loki: [] };
+    await new TransactionsOverTimeService(promOf(MATRIX, VECTOR, calls), lokiOf(TAIL, RUNNING, calls, true), SEL, cfg).overTime("1h", "ETH1");
+    const labelled = SEL.replace(/\}$/, ', relay_end="1"}');
+    expect(calls.loki).toHaveLength(2);
+    for (const q of calls.loki) expect(q).toContain(`count_over_time(${labelled} ${TX_EVENT_FILTER}`);
+  });
+
   it("the newest minutes the logs didn't count are marked, not shown short in silence", async () => {
     const calls: Calls = { prom: [], loki: [] };
     const r = await new TransactionsOverTimeService(promOf(MATRIX, VECTOR, calls), lokiOf(null, RUNNING, calls), SEL, cfg).overTime("1h", "ETH1");
@@ -200,6 +212,14 @@ describe("transactions over time, where the store records none", () => {
     expect(calls.prom[0]).toContain(`(sum_over_time(${RECORDED_TX}[600s]))`); // no chain asked for
     expect(r).toMatchObject({ available: true, source: "logs", partialFrom: null });
     expect(r.counts).toEqual({ accepted: bars({ 0: 4, 5: 1 }), unknown: bars({ 4: 2, 6: 1 }) });
+  });
+
+  it("where the log agent labels relay_end lines through the window, the whole window reads only their streams", async () => {
+    const calls: Calls = { prom: [], loki: [] };
+    await new TransactionsOverTimeService(promOf([], [], calls), lokiOf(WHOLE, FILLING, calls, true), SEL, cfg).overTime("1h");
+    const labelled = SEL.replace(/\}$/, ', relay_end="1"}');
+    expect(calls.loki).toHaveLength(2);
+    for (const q of calls.loki) expect(q).toContain(`count_over_time(${labelled} ${TX_EVENT_FILTER}`);
   });
 
   it("logs that don't answer are 'not available', never zero; no logs at all, the same", async () => {

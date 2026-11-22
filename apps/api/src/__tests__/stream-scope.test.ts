@@ -124,3 +124,72 @@ describe("StreamScope · the router's streams narrowed by their own labels", () 
     expect(asked[0]).toBe(`chain ${SELECTOR}`);
   });
 });
+
+/* The fleet's log agent labels a router's relay_end lines relay_end="1". A
+   line written before the label existed carries none, so a read uses the label
+   only where the index has it before the read's start and at its end. */
+describe("StreamScope.relayEnd", () => {
+  const MIN = 60_000;
+  const END = 1_800_000_000_000;
+  const START = END - 60 * MIN;
+
+  /** A series index whose relay_end="1" streams hold lines from `since` on (null: Loki doesn't say). */
+  function index(since: number | null) {
+    const asked: [number, number][] = [];
+    const client = {
+      async hasStreams(selector: string, startMs: number, endMs: number) {
+        asked.push([startMs, endMs]);
+        if (!selector.includes('relay_end="1"') || since === null) return null;
+        return endMs > since;
+      },
+    } as unknown as LokiClient;
+    return { client, asked };
+  }
+
+  it("narrows to relay_end=\"1\" when labelled streams hold lines before the start and at the end", async () => {
+    const { client, asked } = index(START - 30 * MIN);
+    expect(await new StreamScope(client, SELECTOR, () => END).relayEnd(SELECTOR, START, END))
+      .toBe('{cluster="t1",component="router", relay_end="1"}');
+    expect(asked).toEqual([[START - 5 * MIN, START], [END - 5 * MIN, END]]);
+  });
+
+  it("keeps the selector for a read that starts before the label existed, or where it never does", async () => {
+    expect(await new StreamScope(index(START + MIN).client, SELECTOR, () => END).relayEnd(SELECTOR, START, END)).toBe(SELECTOR);
+    expect(await new StreamScope(index(START).client, SELECTOR, () => END).relayEnd(SELECTOR, START, END)).toBe(SELECTOR);
+    expect(await new StreamScope(index(Infinity).client, SELECTOR, () => END).relayEnd(SELECTOR, START, END)).toBe(SELECTOR);
+  });
+
+  it("keeps the selector when Loki doesn't say, and for one it can't add a matcher to, without asking", async () => {
+    expect(await new StreamScope(index(null).client, SELECTOR, () => END).relayEnd(SELECTOR, START, END)).toBe(SELECTOR);
+    const { client, asked } = index(0);
+    const piped = `${SELECTOR} |= "x"`;
+    expect(await new StreamScope(client, SELECTOR, () => END).relayEnd(piped, START, END)).toBe(piped);
+    expect(asked).toEqual([]);
+  });
+
+  it("asks about a read shorter than five minutes from its start to its end", async () => {
+    const { client, asked } = index(0);
+    await new StreamScope(client, SELECTOR, () => END).relayEnd(SELECTOR, END - 2 * MIN, END);
+    expect(asked[1]).toEqual([END - 2 * MIN, END]);
+  });
+
+  it("narrows a selector already narrowed to a chain, as the caller passes it", async () => {
+    const chain = withMatcher(SELECTOR, "chain", "solana")!;
+    expect(await new StreamScope(index(0).client, SELECTOR, () => END).relayEnd(chain, START, END))
+      .toBe('{cluster="t1",component="router", chain="solana", relay_end="1"}');
+  });
+
+  it("keeps an answer a minute, per minute of the read's start and end", async () => {
+    let now = END;
+    const { client, asked } = index(0);
+    const scope = new StreamScope(client, SELECTOR, () => now);
+    await scope.relayEnd(SELECTOR, START, END);
+    await scope.relayEnd(SELECTOR, START + 1_000, END + 1_000);
+    expect(asked).toHaveLength(2);
+    await scope.relayEnd(SELECTOR, START + MIN, END + MIN);
+    expect(asked).toHaveLength(4);
+    now += MIN;
+    await scope.relayEnd(SELECTOR, START, END);
+    expect(asked).toHaveLength(6);
+  });
+});

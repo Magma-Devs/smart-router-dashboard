@@ -5,6 +5,17 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.74.7]
+
+### Changed
+
+- The Transactions and Errors lists, the Failed requests card's line count and
+  the Transactions chart's log counts read a router's `relay_end` lines from
+  their own `relay_end="1"` stream where the log agent labels them through the
+  whole read. On a busy fleet tenant that is about a third of the router's log
+  bytes. A deployment without the label, and a read that reaches back past it,
+  read as before.
+
 ## [0.74.6]
 
 ### Changed

@@ -35,7 +35,7 @@ import type { MetricWindow, RouterTopology, TransactionsOverTime, TxResult } fro
 import { bucketGrid, WINDOWS } from "@sr/shared";
 import type { PrometheusClient } from "./prometheus-client.js";
 import type { LokiClient, LokiSeries } from "./loki-client.js";
-import { ROUTER_LABEL, serviceNameOf, withMatcher } from "./stream-scope.js";
+import { ROUTER_LABEL, serviceNameOf, StreamScope, withMatcher } from "./stream-scope.js";
 import type { ConfigurationService } from "./configuration.js";
 import { LABEL_TOKEN } from "./router-log.js";
 import { TX_EVENT_FILTER, txResultOf } from "./transactions.js";
@@ -93,6 +93,7 @@ export class TransactionsOverTimeService {
   private readonly kept = new Map<string, { at: number; result: TransactionsOverTime }>();
   private readonly reading = new Map<string, Promise<TransactionsOverTime>>();
   private readonly ruler = new Map<number, { at: number; present: boolean }>();
+  private streams?: StreamScope;
 
   constructor(
     private readonly prom: PrometheusClient | null,
@@ -103,6 +104,11 @@ export class TransactionsOverTimeService {
 
   private routers(): RouterTopology[] {
     return this.configSvc?.getRouters() ?? [];
+  }
+
+  /** `selector` narrowed to the `relay_end` lines' streams from `fromSec` to `toSec`, where the log agent labels them. */
+  private relayEnd(selector: string, fromSec: number, toSec: number): Promise<string> {
+    return (this.streams ??= new StreamScope(this.loki!, this.selector)).relayEnd(selector, fromSec * 1000, toSec * 1000);
   }
 
   /**
@@ -277,9 +283,10 @@ export class TransactionsOverTimeService {
   private async readTail(selector: string, chain: string | undefined, fromSec: number, nowSec: number): Promise<LokiSeries[] | null> {
     const loki = this.loki!;
     const lastMinute = fromSec + Math.floor((nowSec - fromSec) / 60) * 60;
+    const events = await this.relayEnd(selector, fromSec, nowSec);
     const [minutes, running] = await Promise.all([
-      lastMinute > fromSec ? loki.metricRange(this.logCount(selector, chain, 60), fromSec + 60, lastMinute, 60) : Promise.resolve([]),
-      nowSec > lastMinute ? loki.metricAt(this.logCount(selector, chain, nowSec - lastMinute), nowSec) : Promise.resolve([]),
+      lastMinute > fromSec ? loki.metricRange(this.logCount(events, chain, 60), fromSec + 60, lastMinute, 60) : Promise.resolve([]),
+      nowSec > lastMinute ? loki.metricAt(this.logCount(events, chain, nowSec - lastMinute), nowSec) : Promise.resolve([]),
     ]);
     if (minutes === null || running === null) return null;
     return [...minutes, ...running.map((s) => ({ metric: s.metric, values: s.values.map(([, n]): [number, number] => [nowSec, n]) }))];
@@ -289,9 +296,11 @@ export class TransactionsOverTimeService {
   private async readLogs(bars: ReturnType<typeof bucketGrid>, chain: string | undefined): Promise<LokiSeries[] | null> {
     const loki = this.loki!;
     const { grid, lastFull, partialSec } = bars;
+    // The first bar counts the step before grid.start; the bar still filling ends partialSec after the last whole one.
+    const events = await this.relayEnd(this.selector, grid.start - grid.stepSec, lastFull + partialSec);
     const [whole, filling] = await Promise.all([
-      lastFull >= grid.start ? loki.metricRange(this.logCount(this.selector, chain, grid.stepSec), grid.start, lastFull, grid.stepSec) : Promise.resolve([]),
-      partialSec > 0 ? loki.metricAt(this.logCount(this.selector, chain, partialSec), lastFull + partialSec) : Promise.resolve([]),
+      lastFull >= grid.start ? loki.metricRange(this.logCount(events, chain, grid.stepSec), grid.start, lastFull, grid.stepSec) : Promise.resolve([]),
+      partialSec > 0 ? loki.metricAt(this.logCount(events, chain, partialSec), lastFull + partialSec) : Promise.resolve([]),
     ]);
     if (whole === null || filling === null) return null;
     return [...whole, ...filling.map((s) => ({ metric: s.metric, values: s.values.map(([, n]): [number, number] => [grid.end, n]) }))];
