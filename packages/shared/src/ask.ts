@@ -149,6 +149,28 @@ export interface AskRun {
   completedAt: string | null;
   error: { code: AskErrorCode; message: string } | null;
   answer: AskAnswer | null;
+  /** Only on `GET /api/ask/runs/active` while the run is running; an API
+   * without it, or a run not yet started, has none. */
+  progress?: AskRunProgress | null;
+}
+/**
+ * Where a running answer is, read from the model turns and reads the run has
+ * already recorded. `starting`: no model turn yet. `planning`: the first turn,
+ * with no data read. `reading`: reads finished after the last turn ended.
+ * `reviewing`: a turn after reads, which reads more or writes the answer.
+ * `working`: a turn ended and nothing after it is recorded yet.
+ */
+export type AskRunStep = "starting" | "planning" | "reading" | "reviewing" | "working";
+export interface AskRunRead {
+  /** Server-authored from the operation and the series or streams it read,
+   * never from the model's words or the data returned. */
+  label: string;
+  ok: boolean;
+}
+export interface AskRunProgress {
+  step: AskRunStep;
+  /** Every read the run has finished, oldest first. */
+  reads: AskRunRead[];
 }
 export interface AskChatDetail {
   chat: AskChat;

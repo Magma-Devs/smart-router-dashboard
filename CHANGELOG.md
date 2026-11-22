@@ -5,6 +5,21 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.75.0]
+
+### Added
+
+- A pending Ask answer shows its step instead of `Processing…`: `Starting…`,
+  `Choosing what to read…`, `Reading data…`, `Reviewing what it read…` or
+  `Working…`, and under it the reads it has finished (newest five), each named
+  by the server from the operation and the series or streams it selected
+  (`Failure counts`, `Request log lines`, `Metric <name>`), with a cross for a
+  source that was unavailable. `GET /api/ask/runs/active` returns the step and
+  reads as `progress` while the run is running. They come from the model turns
+  and reads the run already records: the run writes nothing extra, and each
+  poll reads two indexed lookups. A web without this ignores the field; this
+  web shows `Processing…` for an API that sends none.
+
 ## [0.74.9]
 
 ### Fixed

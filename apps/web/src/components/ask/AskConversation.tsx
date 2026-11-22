@@ -7,6 +7,8 @@ import { useAsk } from "./AskProvider";
 import { AskAnswer, AskTime } from "./AskAnswer";
 import { AskIcon } from "./AskIcon";
 import { askPoll } from "./ask-api";
+import { processingText } from "./ask-display";
+import { AskReads } from "./AskReads";
 import { AskOffNotice } from "./AskSwitch";
 
 function fitComposer(field: HTMLTextAreaElement) {
@@ -319,9 +321,7 @@ export function AskConversation() {
                   ? "Sending…"
                   : ask.connectionLost
                     ? "Reconnecting…"
-                    : ask.active?.status === "cancelling"
-                      ? "Stopping…"
-                      : "Processing…"}
+                    : processingText(ask.active)}
                 {ask.active && ask.active.chatId !== ask.chatId ? (
                   <button
                     className="gw-btn gw-btn--ghost"
@@ -338,6 +338,9 @@ export function AskConversation() {
                         : "You can leave this page. The answer will be here."}
                   </small>
                 )}
+                {!ask.connectionLost && ask.active?.chatId === ask.chatId ? (
+                  <AskReads run={ask.active} />
+                ) : null}
               </div>
               {ask.active ? (
                 <button

@@ -71,8 +71,17 @@ the admin. The switch is one row per customer in `ask_switch` (migration
 Send immediately clears the composer and displays a pending question with
 `Sending…`. This in-memory state is scoped to the current authenticated person,
 session and customer. The same conversation remains mounted when a new chat
-gets its URL. After acceptance, the UI shows `Processing…` and keeps the pending
-question until the transcript contains its exact run ID. Identical questions
+gets its URL. After acceptance, the UI shows the run's step and keeps the pending
+question until the transcript contains its exact run ID. The step is
+`Starting…` before the first model turn, `Choosing what to read…` during it,
+`Reading data…` once a read finishes after a turn, `Reviewing what it read…`
+during a later turn, and `Working…` between a turn's end and its first read or
+the answer. Under it, the reads the run has finished, newest five, each with a
+server-written label (`Failure counts`, `Request log lines`, `Metric <name>`)
+and a cross when its source was unavailable. An API that reports no progress
+shows `Processing…`. The step comes from the model turns and reads the run
+already records, read on each poll of `GET /api/ask/runs/active` (every 1.5 s
+while a question runs); the run writes nothing extra for it. Identical questions
 remain distinct turns. Failed delivery restores the draft; an uncertain retry
 uses the same idempotency key and context. Refreshing accepted state only reads
 the server and never resubmits the question.

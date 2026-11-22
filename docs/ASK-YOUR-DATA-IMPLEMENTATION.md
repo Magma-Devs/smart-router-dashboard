@@ -93,7 +93,7 @@ server's customer feature flag. No spending route exists in the foundation PR.
 | GET /api/ask/chats/:id | Authorized chat and ordered messages |
 | POST /api/ask/chats/:id/runs | Idempotent submission with validated page context |
 | GET /api/ask/runs/:id | Authorized run state and validated terminal response |
-| GET /api/ask/runs/active | This person's active question across all their chats/tabs |
+| GET /api/ask/runs/active | This person's active question across all their chats/tabs; while it runs, its `progress`: the step and the finished reads' labels |
 | POST /api/ask/runs/:id/cancel | Idempotent durable cancellation |
 | GET/PATCH /api/ask/preferences | Last panel/full view, chat and originating local page |
 
