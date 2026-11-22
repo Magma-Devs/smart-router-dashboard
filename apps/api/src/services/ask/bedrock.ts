@@ -122,21 +122,47 @@ export interface BedrockReceipt {
   providerStatus: number | null;
 }
 export interface BedrockInput {
+  /** Instructions shared by every run; the prompt cache's prefix ends after them. */
   system: string;
+  /** This run's own system text, sent after the cache point. */
+  context?: string;
   messages: BedrockMessage[];
   tools?: BedrockTool[];
   forceTool?: boolean;
   requestMetadata?: Record<string, string>;
 }
 
-function converseBody(input: BedrockInput, maxOutputTokens: number, model: string) {
+const CACHE_POINT = { cachePoint: { type: "default" } } as const;
+
+/** Claude models on Bedrock cache a prompt prefix up to each cache point. */
+export function cachesPrompt(model: string): boolean {
+  return /^(?:(?:global|us|eu|apac|au|in)\.)?anthropic\.claude-/.test(model);
+}
+
+/** Three cache points: after the tools, after the shared instructions, and after
+ * the newest message, so each step reads every earlier step from the cache. */
+function converseBody(
+  input: BedrockInput,
+  maxOutputTokens: number,
+  model: string,
+  cache = cachesPrompt(model),
+) {
   // Sonnet 5 enables adaptive thinking by default. The bounded JSON/tool
   // contract consumes text/tool blocks only, so select its documented off mode.
   const disableThinking =
     /^(?:(?:global|us|eu|apac|au|in)\.)?anthropic\.claude-sonnet-5(?:[-.:]|$)/.test(model);
+  const last = input.messages.length - 1;
   return {
-    system: [{ text: input.system }],
-    messages: input.messages,
+    system: [
+      { text: input.system },
+      ...(cache ? [CACHE_POINT] : []),
+      ...(input.context ? [{ text: input.context }] : []),
+    ],
+    messages: cache
+      ? input.messages.map((message, index) =>
+          index === last ? { ...message, content: [...message.content, CACHE_POINT] } : message,
+        )
+      : input.messages,
     inferenceConfig: { maxTokens: maxOutputTokens },
     ...(disableThinking
       ? { additionalModelRequestFields: { thinking: { type: "disabled" } } }
@@ -146,18 +172,29 @@ function converseBody(input: BedrockInput, maxOutputTokens: number, model: strin
       ? {
           toolConfig: {
             toolChoice: input.forceTool ? { any: {} } : { auto: {} },
-            tools: input.tools.map((tool) => ({
-              toolSpec: {
-                name: tool.name,
-                description: tool.description,
-                inputSchema: { json: tool.inputSchema },
-                ...(tool.strict ? { strict: true } : {}),
-              },
-            })),
+            tools: [
+              ...input.tools.map((tool) => ({
+                toolSpec: {
+                  name: tool.name,
+                  description: tool.description,
+                  inputSchema: { json: tool.inputSchema },
+                  ...(tool.strict ? { strict: true } : {}),
+                },
+              })),
+              ...(cache ? [CACHE_POINT] : []),
+            ],
           },
         }
       : {}),
   };
+}
+
+/** Every cache point this adapter sends asks for Bedrock's default five-minute
+ * TTL, so a cache write the provider reports without a TTL breakdown is one. */
+function withRequestedCacheTtl(usage: BedrockUsage): BedrockUsage {
+  const writes = usage.cacheWriteInputTokens ?? 0;
+  if (writes === 0 || usage.cacheDetails?.length) return usage;
+  return { ...usage, cacheDetails: [{ ttl: "5m", inputTokens: writes }] };
 }
 
 /** No automatic model retries: a timed-out invocation may already be billable. */
@@ -174,7 +211,13 @@ export class BedrockAdapter {
     signal?: AbortSignal,
   ): Promise<number> {
     if (!this.settings.enabled || this.settings.problem) throw new AskFailure("ASK_UNAVAILABLE");
-    const runtime = converseBody(input, this.settings.maxOutputTokens, this.settings.bedrockModel);
+    // The counter takes the request without cache points.
+    const runtime = converseBody(
+      input,
+      this.settings.maxOutputTokens,
+      this.settings.bedrockModel,
+      false,
+    );
     const body =
       counter.mode === "runtime"
         ? {
@@ -189,7 +232,7 @@ export class BedrockAdapter {
         : {
             model: counter.model,
             ...runtime.additionalModelRequestFields,
-            system: input.system,
+            system: [input.system, input.context].filter(Boolean).join("\n"),
             messages: input.messages.map((message) => ({
               role: message.role,
               content: message.content.map((block) => {
@@ -277,8 +320,9 @@ export class BedrockAdapter {
   ): Promise<BedrockStep> {
     if (!this.settings.enabled) throw new AskFailure("ASK_DISABLED", 404);
     if (this.settings.problem) throw new AskFailure("ASK_UNAVAILABLE");
+    const cache = cachesPrompt(this.settings.bedrockModel);
     const body = JSON.stringify(
-      converseBody(input, this.settings.maxOutputTokens, this.settings.bedrockModel),
+      converseBody(input, this.settings.maxOutputTokens, this.settings.bedrockModel, cache),
     );
     if (Buffer.byteLength(body) > this.settings.maxContextBytes)
       throw new AskFailure("ASK_LIMIT_REACHED", 422);
@@ -319,9 +363,9 @@ export class BedrockAdapter {
         throw error;
       throw new AskFailure("ASK_BEDROCK_UNAVAILABLE");
     }
-    const usage = wireUsageSchema.safeParse(
-      typeof raw === "object" && raw !== null && "usage" in raw ? raw.usage : undefined,
-    );
+    const usage = wireUsageSchema
+      .transform((value) => (cache ? withRequestedCacheTtl(value) : value))
+      .safeParse(typeof raw === "object" && raw !== null && "usage" in raw ? raw.usage : undefined);
     await options.onUsage(usage.success ? usage.data : null, receipt);
     if (!usage.success && typeof raw === "object" && raw !== null && "usage" in raw)
       throw new AskFailure("ASK_INVALID_ANSWER", 502);

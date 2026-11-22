@@ -309,7 +309,18 @@ are billed separately according to
 [AWS caching semantics](https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html)
 and [usage fields](https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_TokenUsage.html).
 Missing usage, unsupported fields or an unverified cache TTL keep the full
-reservation uncertain. Never-dispatched reservations are released after terminal
+reservation uncertain.
+
+For a Claude model, each Converse request carries three cache points, all with
+Bedrock's default five-minute TTL: after the tool definitions, after the
+instructions every run shares, and after the newest message. The run's own
+context (server time, page context) is a separate system block after the second
+point, so the shared prefix is identical across steps and runs. A step reads the
+tools, the instructions and every earlier step of its run from the cache and
+writes only what is new. A cache write that Bedrock reports without a TTL
+breakdown is attributed to the five-minute TTL the request asked for and priced
+at `cacheWrite5m`; a request with no cache point gets no such attribution. The
+token counter receives the request without cache points. Never-dispatched reservations are released after terminal
 state/recovery. Dispatched reservations are never freed merely because the user
 stopped, an HTTP request failed, or a process restarted. Authoritative late usage
 can settle them. Provider bound violations persist observed spending before

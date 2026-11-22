@@ -147,6 +147,80 @@ describe("Ask settings and provider boundary", () => {
 });
 
 describe("Bedrock adapter", () => {
+  const claude = () => ({ ...settings(), bedrockModel: "global.anthropic.claude-sonnet-5" });
+  const cached = {
+    system: "System policy",
+    context: "Run context",
+    tools: [{ name: "read", description: "Read", inputSchema: { type: "object" } }],
+    messages: [
+      { role: "user" as const, content: [{ text: "Question" }] },
+      { role: "assistant" as const, content: [{ text: "Reading" }] },
+      { role: "user" as const, content: [{ text: "Result" }] },
+    ],
+  };
+  const cachePoint = { cachePoint: { type: "default" } };
+  it("caches the tools, the shared instructions and every earlier step for a Claude model", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(Response.json(providerResult()));
+    await new BedrockAdapter(claude(), fetchImpl).converse(cached, {
+      onUsage: vi.fn(),
+      onDispatch: async () => undefined,
+    });
+    const body = JSON.parse(String(fetchImpl.mock.calls[0]![1]!.body));
+    expect(body.system).toEqual([{ text: "System policy" }, cachePoint, { text: "Run context" }]);
+    expect(body.toolConfig.tools.at(-1)).toEqual(cachePoint);
+    expect(body.messages.at(-1).content).toEqual([{ text: "Result" }, cachePoint]);
+    expect(body.messages[0].content).toEqual([{ text: "Question" }]);
+    expect(JSON.stringify(body).match(/"cachePoint"/g)).toHaveLength(3);
+  });
+  it("sends no cache point to a model that is not Claude", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(Response.json(providerResult()));
+    await new BedrockAdapter(settings(), fetchImpl).converse(cached, {
+      onUsage: vi.fn(),
+      onDispatch: async () => undefined,
+    });
+    const body = JSON.parse(String(fetchImpl.mock.calls[0]![1]!.body));
+    expect(String(fetchImpl.mock.calls[0]![1]!.body)).not.toContain("cachePoint");
+    expect(body.system).toEqual([{ text: "System policy" }, { text: "Run context" }]);
+  });
+  it.each([
+    ["runtime" as const, { inputTokens: 9 }],
+    ["mantle" as const, { input_tokens: 9 }],
+  ])("counts %s tokens without cache points, with the run context", async (mode, reply) => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(Response.json(reply));
+    const counted = await new BedrockAdapter(claude(), fetchImpl).countTokens(cached, {
+      mode,
+      model: "anthropic.claude-sonnet-5",
+    });
+    expect(counted).toBe(9);
+    const sent = String(fetchImpl.mock.calls[0]![1]!.body);
+    expect(sent).not.toContain("cachePoint");
+    expect(sent).toContain("Run context");
+  });
+  it("attributes a cache write reported without a TTL breakdown to the five-minute TTL it asked for", async () => {
+    const written = {
+      inputTokens: 20,
+      outputTokens: 10,
+      totalTokens: 70,
+      cacheWriteInputTokens: 40,
+    };
+    const reply = () => Response.json({ ...providerResult(), usage: written });
+    const onUsage = vi.fn().mockResolvedValue(undefined);
+    await new BedrockAdapter(claude(), vi.fn<typeof fetch>().mockResolvedValue(reply())).converse(
+      cached,
+      { onUsage, onDispatch: async () => undefined },
+    );
+    expect(onUsage.mock.calls[0]![0]).toEqual({
+      ...written,
+      cacheDetails: [{ ttl: "5m", inputTokens: 40 }],
+    });
+    // A request that sent no cache point gets no assumed TTL: its write stays uncertain.
+    const plain = vi.fn().mockResolvedValue(undefined);
+    await new BedrockAdapter(settings(), vi.fn<typeof fetch>().mockResolvedValue(reply())).converse(
+      cached,
+      { onUsage: plain, onDispatch: async () => undefined },
+    );
+    expect(plain.mock.calls[0]![0]).toEqual(written);
+  });
   it("uses the fixed region/model endpoint, bounded output and server bearer", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(Response.json(providerResult()));
     const onUsage = vi.fn().mockResolvedValue(undefined);

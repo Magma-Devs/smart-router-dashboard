@@ -221,8 +221,11 @@ function toBedrock(call: LanguageModelV4CallOptions): BedrockInput {
       ...(tool.name === "present_answer" ? { strict: true } : {}),
     };
   });
+  // The first system message is the instructions every run shares; the rest is
+  // this run's own context, which the adapter sends after the prompt cache point.
   return {
-    system: system.join("\n"),
+    system: system[0] ?? "",
+    ...(system.length > 1 ? { context: system.slice(1).join("\n") } : {}),
     messages,
     tools,
     forceTool: call.toolChoice?.type === "required",

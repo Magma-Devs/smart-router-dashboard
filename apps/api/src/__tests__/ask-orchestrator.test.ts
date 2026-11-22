@@ -313,9 +313,10 @@ describe("bounded customer tool orchestration", () => {
     const result = await f.answer();
     expect(result.summary).toBe(content.summary);
     const clockBody = JSON.parse(f.bodies[0]!) as { system: Array<{ text: string }> };
-    const contextLine = clockBody.system[0]!.text.split("\n").find((line) =>
-      line.startsWith("Trusted server request context: "),
-    )!;
+    const contextLine = clockBody.system
+      .at(-1)!
+      .text.split("\n")
+      .find((line) => line.startsWith("Trusted server request context: "))!;
     const requestContext = JSON.parse(
       contextLine.slice("Trusted server request context: ".length),
     ) as {
@@ -435,9 +436,14 @@ describe("bounded customer tool orchestration", () => {
     async (_name, input, names) => {
       for (const empty of [true, false]) {
         const f = fixture({
-          data: { status: "success", data: { result: empty ? [] : [{ metric: {}, value: [1, "5"] }] } },
+          data: {
+            status: "success",
+            data: { result: empty ? [] : [{ metric: {}, value: [1, "5"] }] },
+          },
           responses: [
-            provider([{ toolUse: { toolUseId: "summary", name: "router_request_summary", input } }]),
+            provider([
+              { toolUse: { toolUseId: "summary", name: "router_request_summary", input } },
+            ]),
             final(),
           ],
         });
@@ -445,7 +451,9 @@ describe("bounded customer tool orchestration", () => {
         const body = JSON.parse(f.bodies[1]!);
         const result = JSON.parse(body.messages.at(-1).content[0].toolResult.content[0].text);
         expect(result.counts.map((count: { name: string }) => count.name)).toEqual(names);
-        for (const count of result.counts as { fallback?: { tool: string; query: string; time: number } }[]) {
+        for (const count of result.counts as {
+          fallback?: { tool: string; query: string; time: number };
+        }[]) {
           if (!empty) expect(count.fallback).toBeUndefined();
           else {
             expect(count.fallback?.tool).toBe("logs_query");
@@ -454,7 +462,11 @@ describe("bounded customer tool orchestration", () => {
           }
         }
         // Only the recorded reads ran: the fallback is the model's to run, once, if needed.
-        expect(vi.mocked(f.hooks.recordTool).mock.calls.every(([read]) => read.operationId === "metrics.query")).toBe(true);
+        expect(
+          vi
+            .mocked(f.hooks.recordTool)
+            .mock.calls.every(([read]) => read.operationId === "metrics.query"),
+        ).toBe(true);
       }
     },
   );
@@ -1075,7 +1087,10 @@ describe("conversation, grounding and execution boundaries", () => {
     expect(body.messages[1].content[0].text).toContain(
       "Historical answer; not fresh measurements.",
     );
-    expect(body.system[0].text).toContain("Trusted server request context");
+    // The shared instructions come first and carry nothing of this run, so the
+    // prompt cache can keep them; the run's context follows in its own block.
+    expect(body.system[0].text).not.toContain("Trusted server request context");
+    expect(body.system.at(-1).text).toContain("Trusted server request context");
     expect(McpAdapter.prototype.open).not.toHaveBeenCalled();
     // Counts: the recorded series first, every family named, raw lines only as the fallback.
     const prompt = body.system[0].text as string;

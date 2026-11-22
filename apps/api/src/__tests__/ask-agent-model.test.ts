@@ -57,6 +57,19 @@ function call(history: AskHistoryTurn[], question: string): LanguageModelV4CallO
 }
 
 describe("personal history and protected native context", () => {
+  it("sends the first system message as the shared instructions and the rest as run context", async () => {
+    const f = fixture([]);
+    await f.model.doGenerate({
+      prompt: [
+        { role: "system", content: "Fixed system" },
+        { role: "system", content: "Run context" },
+        { role: "user", content: [{ type: "text", text: "Question" }] },
+      ],
+    });
+    const { input } = vi.mocked(f.hooks.beforeModelStep).mock.calls[0]![0];
+    expect(input.system).toBe("Fixed system");
+    expect(input.context).toBe("Run context");
+  });
   it("keeps small history intact and counts exactly the input it generates with", async () => {
     const history: AskHistoryTurn[] = [
       { role: "user", content: "Earlier question" },
