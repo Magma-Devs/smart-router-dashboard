@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { and, desc, eq, exists, gt, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import {
   askChats,
   askMessages,
@@ -79,7 +79,9 @@ export async function inOrder<T extends readonly unknown[]>(
 ): Promise<T> {
   const settled = await Promise.allSettled(statements);
   for (const outcome of settled) if (outcome.status === "rejected") throw outcome.reason;
-  return settled.map((outcome) => (outcome as PromiseFulfilledResult<unknown>).value) as unknown as T;
+  return settled.map(
+    (outcome) => (outcome as PromiseFulfilledResult<unknown>).value,
+  ) as unknown as T;
 }
 function fingerprint(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");

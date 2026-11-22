@@ -400,12 +400,14 @@ describe("durable run worker scheduling and cancellation", () => {
     const spy = vi.spyOn(AskOrchestrator.prototype, "answer").mockResolvedValue(answer);
     let release!: () => void;
     const claim = store.claim.bind(store);
-    vi.spyOn(store, "claim").mockImplementationOnce(async () => {
-      await new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      return null;
-    }).mockImplementation(claim);
+    vi.spyOn(store, "claim")
+      .mockImplementationOnce(async () => {
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        return null;
+      })
+      .mockImplementation(claim);
     const instance = new AskWorker(
       store,
       { ...settings(), workerPollMs: 60_000 },

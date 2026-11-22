@@ -155,7 +155,10 @@ describe("durable shared customer spending", () => {
       ok: "success",
       latencyMs: 3,
     });
-    await t.db.update(askRuns).set({ leaseToken: crypto.randomUUID() }).where(eq(askRuns.id, run.id));
+    await t.db
+      .update(askRuns)
+      .set({ leaseToken: crypto.randomUUID() })
+      .where(eq(askRuns.id, run.id));
     await hooks.recordTool({ ...tool, ok: false });
     expect(await t.db.select().from(askToolEvents)).toHaveLength(1);
   });

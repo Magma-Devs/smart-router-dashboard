@@ -130,7 +130,10 @@ export class AskBudget {
         ),
     ] as const;
   }
-  private current(locked: { id: string }[], current: { month: string; instant: string; steps: number }[]) {
+  private current(
+    locked: { id: string }[],
+    current: { month: string; instant: string; steps: number }[],
+  ) {
     if (!locked[0] || !current[0]) throw new AskFailure("ASK_INTERRUPTED");
     return current[0];
   }
@@ -143,18 +146,15 @@ export class AskBudget {
     const amount = maximumStepCost(this.configured.pricing, inputTokenBound, outputTokenBound);
     return this.db.transaction(async (tx) => {
       const [lock, check] = this.active(tx, run);
-      const checked = await sent<[{ id: string }[], { month: string; instant: string; steps: number }[]]>([
-        lock,
-        check,
-      ]);
+      const checked = await sent<
+        [{ id: string }[], { month: string; instant: string; steps: number }[]]
+      >([lock, check]);
       const clock = this.current(checked(0), checked(1));
       assertCurrentPricing(this.configured.pricing, new Date(clock.instant));
       // The pool, the step and the pool's new reservation go together; each
       // check below runs where it ran when they went one at a time, and a
       // refusal rolls all three back.
-      const take = await sent<
-        [Awaited<ReturnType<AskBudget["pool"]>>, { id: string }[], unknown]
-      >([
+      const take = await sent<[Awaited<ReturnType<AskBudget["pool"]>>, { id: string }[], unknown]>([
         this.pool(tx, clock.month),
         tx
           .insert(askModelSteps)
@@ -200,7 +200,9 @@ export class AskBudget {
       tx
         .select()
         .from(askModelSteps)
-        .where(and(eq(askModelSteps.id, id), eq(askModelSteps.customerId, this.settings.customerId)))
+        .where(
+          and(eq(askModelSteps.id, id), eq(askModelSteps.customerId, this.settings.customerId)),
+        )
         .for("update"),
     ] as const;
   }

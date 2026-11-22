@@ -74,7 +74,8 @@ export interface DbConnectOptions extends DbPoolOptions {
 /** A DNS name: labels of letters, digits and hyphens, joined by dots. An IP
  *  address is refused on purpose — RDS certificates name the endpoint, never
  *  an address, so an IP here would fail every connection. */
-const HOSTNAME = /^(?=.{1,253}$)[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$/;
+const HOSTNAME =
+  /^(?=.{1,253}$)[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$/;
 export function isTlsServername(value: string): boolean {
   return HOSTNAME.test(value) && !/^[0-9.]+$/.test(value);
 }

@@ -64,7 +64,9 @@ describe("createDb", () => {
       tlsServername: "fleet-prod.abc123.us-east-1.rds.amazonaws.com",
     });
     try {
-      expect(h.sql.options.ssl).toEqual({ servername: "fleet-prod.abc123.us-east-1.rds.amazonaws.com" });
+      expect(h.sql.options.ssl).toEqual({
+        servername: "fleet-prod.abc123.us-east-1.rds.amazonaws.com",
+      });
     } finally {
       await h.sql.end({ timeout: 0 });
     }
@@ -84,7 +86,13 @@ describe("createDb", () => {
   });
 
   it("refuses a server name that is not a DNS name", () => {
-    for (const bad of ["https://db.example.com", "db.example.com:5432", "db example", "10.0.0.1", "-db.example.com"]) {
+    for (const bad of [
+      "https://db.example.com",
+      "db.example.com:5432",
+      "db example",
+      "10.0.0.1",
+      "-db.example.com",
+    ]) {
       expect(() => createDb(URL, { tlsServername: bad })).toThrow(/TLS server name/);
     }
     expect(isTlsServername("db.example.com")).toBe(true);
