@@ -32,6 +32,15 @@ provisioning is not a current availability check. There is no provider/key fallb
 Use `secretKeyRef` for both tokens, never a public ConfigMap or frontend env. The
 foundation does not change fleet resources or enable a customer deployment.
 
+`GET /api/ask/capabilities` requires a live session, or [the shared guest](#ask-without-accounts), and the deployment gates. It
+returns contract version 1; `acceptingQuestions`, true only while this replica's
+worker runs with budget admission installed, a current rate card and the admins'
+switch on; `off`, true while an admin has Ask turned off; and `canSwitch`, true
+for an admin. Personal history/preferences routes are authenticated, except for the shared guest. Submission
+goes through budget admission and queues a run; only the worker calls MCP or
+Bedrock. Disabled, self-hosted and auth-off deployments without `ASK_DATA_GUEST` cannot use these routes.
+Existing session revocation and 2FA gates apply.
+
 ## Ask without accounts
 
 `ASK_DATA_GUEST=true` with `AUTH_MODE` off (and `ASK_DATA_ENABLED=true`,
@@ -41,8 +50,12 @@ sign-in, team, account or audit route exists.
 
 - **One shared guest.** After its migrations the API keeps a `users` row and a
   `sessions` row at fixed ids (`services/ask/guest.ts`), and answers every Ask
-  route as that guest. Every visitor reads and writes one history, and one
-  question runs at a time for the whole deployment.
+  route as that guest. Every visitor reads and writes one history and one set
+  of preferences (the open chat, the view). One question runs at a time for
+  the whole deployment, and any visitor can stop it.
+- **Readiness.** `/health/ready` reports the database, and never fails on it:
+  the database is Ask's alone, so the other pages keep serving while it is
+  down.
 - **The guest cannot sign in.** It has no password or linked provider, and its
   address is on the reserved `.invalid` domain.
 - **Nobody holds the off switch.** `canSwitch` is false and `POST
@@ -60,15 +73,6 @@ session with Ask's requests, and says the history is shared. The preflight
 passes with `AUTH_MODE` off when `ASK_DATA_GUEST=true`.
 [`ask-guest.test.ts`](../apps/api/src/__tests__/ask-guest.test.ts) pins the
 API side.
-
-`GET /api/ask/capabilities` requires a live session and the deployment gates. It
-returns contract version 1; `acceptingQuestions`, true only while this replica's
-worker runs with budget admission installed, a current rate card and the admins'
-switch on; `off`, true while an admin has Ask turned off; and `canSwitch`, true
-for an admin. Personal history/preferences routes are authenticated. Submission
-goes through budget admission and queues a run; only the worker calls MCP or
-Bedrock. Disabled, self-hosted and auth-off deployments without `ASK_DATA_GUEST` cannot use these routes.
-Existing session revocation and 2FA gates apply.
 
 ## Turning Ask off
 

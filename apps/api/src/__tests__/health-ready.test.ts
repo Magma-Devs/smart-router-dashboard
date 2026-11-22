@@ -153,4 +153,21 @@ describe("GET /health/ready", () => {
     });
     expect(res.statusCode).toBe(200);
   });
+
+  it("with accounts off and Ask's guest database down, is ready and says so", async () => {
+    setEnv({
+      AUTH_MODE: "disabled",
+      ASK_DATA_GUEST: "true",
+      ASK_DATA_ENABLED: "true",
+      DEPLOYMENT_MODE: "managed",
+      DATABASE_URL: DEAD_DB,
+    });
+    app = await buildApp();
+    const res = await ready();
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      status: "ready",
+      components: { prometheus: "ok", database: "not_connected" },
+    });
+  });
 });

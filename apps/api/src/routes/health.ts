@@ -83,7 +83,10 @@ export async function healthRoutes(app: FastifyInstance) {
     },
     async (_request, reply) => {
       const [prometheus, database] = await Promise.all([app.prom.ping(), databaseReadiness(app)]);
-      const ready = prometheus && (database === null || database === "ok");
+      // With accounts off the database is Ask's alone (ASK_DATA_GUEST): reported,
+      // never a reason to take the dashboard's other pages out of service.
+      const databaseGates = process.env.AUTH_MODE === "enabled";
+      const ready = prometheus && (database === null || database === "ok" || !databaseGates);
       if (!ready) reply.status(503);
       return {
         status: ready ? "ready" : "not_ready",
