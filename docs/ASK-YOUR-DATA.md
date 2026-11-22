@@ -15,7 +15,8 @@ a GitHub repository secret alone does not inject a running container's secret.
 
 | Backend variable | Meaning |
 | --- | --- |
-| AUTH_MODE=enabled | Existing live PostgreSQL session gate |
+| AUTH_MODE=enabled | Existing live PostgreSQL session gate; or, with accounts off, ASK_DATA_GUEST=true |
+| ASK_DATA_GUEST=true | Accounts off: one shared guest asks for every visitor ([below](#ask-without-accounts)) |
 | DEPLOYMENT_MODE=managed | Managed deployments only |
 | ASK_DATA_ENABLED=true | Explicit per-deployment/customer availability |
 | ASK_DATA_CUSTOMER_ID | Exact registry customer ID; separate from display name |
@@ -31,13 +32,42 @@ provisioning is not a current availability check. There is no provider/key fallb
 Use `secretKeyRef` for both tokens, never a public ConfigMap or frontend env. The
 foundation does not change fleet resources or enable a customer deployment.
 
+## Ask without accounts
+
+`ASK_DATA_GUEST=true` with `AUTH_MODE` off (and `ASK_DATA_ENABLED=true`,
+`DEPLOYMENT_MODE=managed`, `DATABASE_URL`) runs Ask on a dashboard without
+accounts. The API opens Postgres for Ask alone and registers Ask's routes; no
+sign-in, team, account or audit route exists.
+
+- **One shared guest.** After its migrations the API keeps a `users` row and a
+  `sessions` row at fixed ids (`services/ask/guest.ts`), and answers every Ask
+  route as that guest. Every visitor reads and writes one history, and one
+  question runs at a time for the whole deployment.
+- **The guest cannot sign in.** It has no password or linked provider, and its
+  address is on the reserved `.invalid` domain.
+- **Nobody holds the off switch.** `canSwitch` is false and `POST
+  /api/ask/switch` answers 403. `ASK_DATA_ENABLED` turns Ask off.
+- **The boundary is the edge.** Anyone who reaches the dashboard can ask, read
+  every chat and spend the customer's monthly cap. Run it only behind an
+  address allowlist.
+- **Accounts later.** An `AUTH_MODE=enabled` boot removes the guest and revokes
+  its session before the first-run check, so it counts as no account, appears
+  as no member and runs nothing. Its chats stay with it until retention deletes
+  them. With accounts on, `ASK_DATA_GUEST` has no effect.
+
+The web reads `ASK_DATA_GUEST` too: it shows Ask without a session, sends no
+session with Ask's requests, and says the history is shared. The preflight
+passes with `AUTH_MODE` off when `ASK_DATA_GUEST=true`.
+[`ask-guest.test.ts`](../apps/api/src/__tests__/ask-guest.test.ts) pins the
+API side.
+
 `GET /api/ask/capabilities` requires a live session and the deployment gates. It
 returns contract version 1; `acceptingQuestions`, true only while this replica's
 worker runs with budget admission installed, a current rate card and the admins'
 switch on; `off`, true while an admin has Ask turned off; and `canSwitch`, true
 for an admin. Personal history/preferences routes are authenticated. Submission
 goes through budget admission and queues a run; only the worker calls MCP or
-Bedrock. Disabled/auth-off/self-hosted deployments cannot use these routes.
+Bedrock. Disabled, self-hosted and auth-off deployments without `ASK_DATA_GUEST` cannot use these routes.
 Existing session revocation and 2FA gates apply.
 
 ## Turning Ask off
@@ -341,8 +371,8 @@ rollout acceptance is tracked on MAG-4934.
 
 ## Chat UI
 
-The web and API both require managed authenticated deployment and
-`ASK_DATA_ENABLED=true`. The API's current capabilities/session gate remains the
+The web and API both require a managed deployment with accounts on, or with
+`ASK_DATA_GUEST=true`, and `ASK_DATA_ENABLED=true`. The API's current capabilities/session gate remains the
 source of authority; browser visibility never grants access. Customer roles all
 use the same customer-only read boundary.
 

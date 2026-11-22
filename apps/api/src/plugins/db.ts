@@ -2,6 +2,7 @@ import fp from "fastify-plugin";
 import type { FastifyInstance } from "fastify";
 import { createDb, migrate, seedAdmin, type Database, type DbHandle } from "@sr/db";
 import { config, readDbPoolOptions } from "../config.js";
+import { ensureAskGuest, retireAskGuest } from "../services/ask/guest.js";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -52,6 +53,14 @@ export async function maybeSeedAdmin(app: FastifyInstance, db: Database): Promis
   app.log.warn({ result, email }, "development-only admin seed applied (ignored in production)");
 }
 
+/** The guest's boot step in guest mode; in accounts mode, the guest retired
+ *  before the first-run check, then the development-only admin seed. */
+export async function afterMigrate(app: FastifyInstance, db: Database, askGuest: boolean): Promise<void> {
+  if (askGuest) return ensureAskGuest(db);
+  await retireAskGuest(db);
+  await maybeSeedAdmin(app, db);
+}
+
 /**
  * Why the database refused, for a log line. The ORM reports every failure as
  * `Failed query: <sql>` and keeps the driver's error on `cause`, so the message
@@ -76,18 +85,24 @@ const RETRY_DELAY_MS = 2_000;
 const RETRY_DELAY_MAX_MS = 30_000;
 
 /**
- * Registered ONLY when AUTH_MODE=enabled. Opens Postgres in the background
- * (retry loop), runs migrations and the development-only admin seed, then
+ * Registered when AUTH_MODE=enabled, and for Ask alone when `askGuest` is set
+ * (`ASK_DATA_GUEST=true` with accounts off). Opens Postgres in the background
+ * (retry loop), runs migrations, then either the guest's boot step or the
+ * accounts' (the guest retired, the development-only admin seed), then
  * flips `app.db` from null to the live handle. Routes that need the DB check
  * `app.db` and 503 while it's still null — the rest of the api (metrics,
  * health) never blocks on the database. The setup token is announced once
  * this settles, by `announceSetupToken` in `app.ts`.
  */
-export const dbPlugin = fp(async (app: FastifyInstance) => {
+export const dbPlugin = fp(async (app: FastifyInstance, opts: { askGuest?: boolean } = {}) => {
   // Live env first (config snapshots at module load, before tests set it).
   const url = process.env.DATABASE_URL ?? config.auth.databaseUrl;
   if (!url) {
-    throw new Error("AUTH_MODE=enabled requires DATABASE_URL (postgres://user:pass@host:5432/db).");
+    throw new Error(
+      opts.askGuest
+        ? "ASK_DATA_GUEST=true requires DATABASE_URL (postgres://user:pass@host:5432/db)."
+        : "AUTH_MODE=enabled requires DATABASE_URL (postgres://user:pass@host:5432/db).",
+    );
   }
 
   // Refused at register time, so a malformed DB_POOL_MAX fails the boot with
@@ -104,7 +119,7 @@ export const dbPlugin = fp(async (app: FastifyInstance) => {
       try {
         candidate = createDb(url, pool);
         await migrate(candidate.db);
-        await maybeSeedAdmin(app, candidate.db);
+        await afterMigrate(app, candidate.db, opts.askGuest === true);
         handle = candidate;
         app.db = candidate.db;
         app.log.info({ attempt, pool }, "database connected, migrations applied");

@@ -310,7 +310,7 @@ packages/shared/          @sr/shared — domain types, metric catalog, PromQL bu
                             redaction, (none)/(new)/(deleted), yes/no, lists
     types/domain.ts         DashboardData, HeroSummary, ChainSeries, DeploymentPulse,
                             ProviderDetail, ErrorsReport, RouterTopology, …
-packages/db/              @sr/db — Drizzle + Postgres (AUTH_MODE=enabled only)
+packages/db/              @sr/db — Drizzle + Postgres (AUTH_MODE=enabled, or Ask's ASK_DATA_GUEST)
   src/
     schema.ts           users · sessions
     schema-audit.ts     audit_events · audit_event_changes (append-only)
@@ -776,7 +776,7 @@ A Kubernetes deployment runs the api as the `…/backend` image and the web as
 
 | | Value |
 |---|---|
-| Backend liveness / readiness | `/health` · `/health/ready` (**not** `/api/health` — that's the retired v1 path). Readiness pings Prometheus, and under `AUTH_MODE=enabled` the database (3 s), so give it a timeout ≥5s and a failureThreshold >1, or a blip of either evicts the only replica |
+| Backend liveness / readiness | `/health` · `/health/ready` (**not** `/api/health` — that's the retired v1 path). Readiness pings Prometheus, and under `AUTH_MODE=enabled` or `ASK_DATA_GUEST=true` the database (3 s), so give it a timeout ≥5s and a failureThreshold >1, or a blip of either evicts the only replica |
 | Backend env | `PROMETHEUS_URL`, `CORS_ORIGINS` (comma list **or** JSON array), `HELM_VALUES_DIR` (default `/app/helm-values`, matching the values mount), `LOG_LEVEL`, `RATE_LIMIT_MAX`. Optional: `INCIDENTS_ENABLED` + `INCIDENT_WEBHOOK_URL` (a `secretKeyRef` — the URL is the credential). No basic auth: `AUTH_USERNAME` / `AUTH_PASSWORD` / `DEBUG` / `CORS_ALLOW_CREDENTIALS` / `AUTH_GATEWAY_*` are v1-only and unread here |
 | Frontend runtime env | `DASHBOARD_API_URL` (browser-facing api origin) and `DASHBOARD_GRAFANA_URL`, both read per-request by `GET /api/config` so one image serves any host. Optional: `INCIDENTS_ENABLED` (same as the backend's). `NEXT_PUBLIC_*` are build-time and can't vary per deployment |
 | Frontend liveness / readiness | `/api/config` (`/` also answers — it 307s to `/metrics`) |
@@ -999,7 +999,7 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 | `GET /api/account/me` | — | The caller from the live account row — id, email, name, avatar, role, the sign-in providers it is linked to (`linkedProviders`), its 2FA state. What the web's `useMe()` polls, so a role change reaches the sidebar badge and the Team page without a new sign-in |
 | `GET /api/account/sessions` · `DELETE …/:id` · `DELETE …` | — | Your live sessions · sign out one device · sign out everywhere |
 | `GET /health` | — | Liveness — `{ health: "ok" }` |
-| `GET /health/ready` | — | Readiness — runs `vector(1)` against the store (not `-/ready`, which Mimir and a query-only proxy don't serve) with the configured credential; 503 + `components.prometheus:"ping_failed"` on failure, including a 401. Under `AUTH_MODE=enabled` it also runs `select 1` on the database, within 3 s: `components.database` is `ok`, `not_connected` (the lazy connect has not succeeded — Postgres unreachable, the credential refused, or migrations still running), `query_failed` or `timeout`, and anything but `ok` is a 503, so a pod whose database does not answer never becomes Ready and a surge-first rollout keeps the old pods serving. Absent from the body with auth off |
+| `GET /health/ready` | — | Readiness — runs `vector(1)` against the store (not `-/ready`, which Mimir and a query-only proxy don't serve) with the configured credential; 503 + `components.prometheus:"ping_failed"` on failure, including a 401. Under `AUTH_MODE=enabled`, or with `ASK_DATA_GUEST=true`, it also runs `select 1` on the database, within 3 s: `components.database` is `ok`, `not_connected` (the lazy connect has not succeeded — Postgres unreachable, the credential refused, or migrations still running), `query_failed` or `timeout`, and anything but `ok` is a 503, so a pod whose database does not answer never becomes Ready and a surge-first rollout keeps the old pods serving. Absent from the body with auth off and no `ASK_DATA_GUEST` |
 | `GET /version` | — | Build provenance — `{ commit, version, env, startedAt, uptimeSec }` |
 | `GET /api/metrics/routers` | — | `{ label, routers: string[] }` — router deployments the metrics can be scoped to (distinct values of `ROUTER_SCOPE_LABEL`). `[]` when the collector can't tell routers apart. See "Router scope" |
 | `GET /api/metrics/specs` | `router?` | `{ specs: string[] }` — distinct chains present on the requests counter |
@@ -1141,7 +1141,8 @@ API (`apps/api/src/config.ts` is the source of truth):
 | `ROUTER_RELAY_MAX_BODY_BYTES` | `4194304` | router answers past this come back `truncated: true` |
 | `ROUTER_RELAY_RATE_LIMIT_MAX` | `60` | per caller per minute (the signed-in user, or the address with accounts off); the relay and the ws probe each count their own |
 | `ROUTER_RELAY_MAX_IN_FLIGHT` | `8` | relays in flight across all callers; one caller holds two at most |
-| `ASK_DATA_ENABLED` | off | exactly `true`, with `AUTH_MODE=enabled` and `DEPLOYMENT_MODE=managed`, turns on Ask your data. It also needs `ASK_DATA_CUSTOMER_ID`, `ASK_DATA_MCP_TOKEN`, `AWS_BEARER_TOKEN_BEDROCK`, `ASK_DATA_BEDROCK_MODEL`, `ASK_DATA_PRICING_JSON` and `ASK_DATA_TOKEN_COUNTER`; the full list, defaults and the admins' off switch are in [`docs/ASK-YOUR-DATA.md`](docs/ASK-YOUR-DATA.md) |
+| `ASK_DATA_ENABLED` | off | exactly `true`, with `DEPLOYMENT_MODE=managed` and either `AUTH_MODE=enabled` or `ASK_DATA_GUEST=true`, turns on Ask your data. It also needs `ASK_DATA_CUSTOMER_ID`, `ASK_DATA_MCP_TOKEN`, `AWS_BEARER_TOKEN_BEDROCK`, `ASK_DATA_BEDROCK_MODEL`, `ASK_DATA_PRICING_JSON` and `ASK_DATA_TOKEN_COUNTER`; the full list, defaults and the admins' off switch are in [`docs/ASK-YOUR-DATA.md`](docs/ASK-YOUR-DATA.md) |
+| `ASK_DATA_GUEST` | off | exactly `true`, with `AUTH_MODE` off, `ASK_DATA_ENABLED=true` and `DEPLOYMENT_MODE=managed`: Ask without accounts. The api opens Postgres (`DATABASE_URL`) for Ask alone, and every visitor asks as one shared guest with one shared history; nobody holds the admins' off switch. No sign-in, team or audit route exists. Ignored with `AUTH_MODE=enabled`. Both web and api read it. See [`docs/ASK-YOUR-DATA.md`](docs/ASK-YOUR-DATA.md#ask-without-accounts) |
 | `INCIDENTS_ENABLED` | off | exactly `true` turns on `POST /api/incidents`; anything else 404s it. With `AUTH_MODE=disabled` anyone who can reach the api may send a report, Critical included — opt-in per deployment. See [`docs/INCIDENTS.md`](docs/INCIDENTS.md) |
 | `INCIDENT_WEBHOOK_URL` | unset | the deployment's inbound webhook in our on-call system (Grafana IRM `formatted_webhook`). The URL is the credential — deliver it from a Secret, never a plain chart value. https only (http for a loopback mock). On with no usable URL logs an error at boot and every report answers 503; the boot is NOT refused |
 | `INCIDENT_WEBHOOK_TIMEOUT_MS` | `10000` | deadline on the api→IRM call |

@@ -90,6 +90,17 @@ describe("free operator preflight", () => {
     });
     expect(output).not.toContain("private-");
   });
+  it("passes with accounts off when the deployment asks as the shared guest", async () => {
+    vi.stubEnv("AUTH_MODE", "disabled");
+    vi.stubEnv("ASK_DATA_GUEST", "true");
+    const p = providers();
+    const out = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    await import("../ask-preflight.js");
+    expect(p.discover).toHaveBeenCalledOnce();
+    expect(p.converse).not.toHaveBeenCalled();
+    const output = out.mock.calls.map(([value]) => String(value)).join("");
+    expect(JSON.parse(output)).toMatchObject({ ok: true, customerId: "customer-a" });
+  });
   it("omits malformed build metadata rather than echoing arbitrary environment text", async () => {
     vi.stubEnv("APP_VERSION", "private-bedrock-fixture");
     vi.stubEnv("GIT_COMMIT", "private-mcp-fixture");

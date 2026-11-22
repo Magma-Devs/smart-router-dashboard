@@ -349,18 +349,20 @@ export function Shell({
   grafanaCustomerUsageDashboardUrl,
   incidentsEnabled = false,
   askEnabled = false,
+  askGuest = false,
 }: {
   children: React.ReactNode;
   grafanaDashboardUrl?: string | null;
   grafanaCustomerUsageDashboardUrl?: string | null;
   incidentsEnabled?: boolean;
   askEnabled?: boolean;
+  askGuest?: boolean;
 }) {
   // Unenrolled sessions never mount the chrome or personal chat state.
   return (
     <TwoFactorGate>
       <ChainDrawerProvider>
-        <AskProvider enabled={askEnabled}>
+        <AskProvider enabled={askEnabled} guest={askGuest}>
           <ShellChrome
             grafanaDashboardUrl={grafanaDashboardUrl}
             grafanaCustomerUsageDashboardUrl={grafanaCustomerUsageDashboardUrl}

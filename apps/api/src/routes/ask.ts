@@ -9,7 +9,8 @@ import {
   type AskCapabilities,
 } from "@sr/shared";
 import { readAskSettings, type AskSettings } from "../config.js";
-import { requireAuth, requireRole, type AuthUser } from "../plugins/auth.js";
+import { requireAuth, requireRole } from "../plugins/auth.js";
+import { askGuest, type AskPerson } from "../services/ask/guest.js";
 import { redactAskText } from "../services/ask/redact.js";
 import { AskFailure } from "../services/ask/errors.js";
 import { AskStore, type AskAdmission } from "../services/ask/store.js";
@@ -25,9 +26,13 @@ export interface AskRoutesOptions {
   switched?: (off: boolean) => void;
 }
 interface Context {
-  me: AuthUser;
+  me: AskPerson;
   settings: AskSettings;
   store: AskStore;
+}
+/** The person asking: the signed-in one, or the shared guest with accounts off. */
+function asker(settings: AskSettings, request: FastifyRequest, reply: FastifyReply): AskPerson | null {
+  return settings.guest ? askGuest : requireAuth(request, reply);
 }
 function uuid(value: unknown): string {
   const parsed = z.uuid().safeParse(value);
@@ -58,7 +63,7 @@ export async function askRoutes(app: FastifyInstance, opts: AskRoutesOptions = {
       try {
         const settings = settingsOf();
         if (!settings.enabled) throw new AskFailure("ASK_DISABLED", 404);
-        const me = requireAuth(request, reply);
+        const me = asker(settings, request, reply);
         if (!me) return reply;
         if (!app.db) throw new AskFailure("ASK_UNAVAILABLE");
         return await work(request, {
@@ -87,7 +92,7 @@ export async function askRoutes(app: FastifyInstance, opts: AskRoutesOptions = {
         .status(error.statusCode)
         .send({ code: error.code, message: error.message, statusCode: error.statusCode });
     }
-    const me = requireAuth(request, reply);
+    const me = asker(settings, request, reply);
     if (!me) return reply;
     let off = false;
     let switchKnown = Boolean(app.db);
@@ -120,6 +125,8 @@ export async function askRoutes(app: FastifyInstance, opts: AskRoutesOptions = {
         .send({ code: failure.code, message: failure.message, statusCode: failure.statusCode });
     const settings = settingsOf();
     if (!settings.enabled) return fail(new AskFailure("ASK_DISABLED", 404));
+    // With accounts off nobody is an admin; the deployment flag turns Ask off.
+    if (settings.guest) return fail(new AskFailure("ASK_DISABLED", 403));
     const admin = requireRole(request, reply, "admin");
     if (!admin) return reply;
     if (!app.db) return fail(new AskFailure("ASK_UNAVAILABLE"));

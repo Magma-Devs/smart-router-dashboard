@@ -2,7 +2,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
-import { config, readIncidentSettings, readUsageSettings } from "./config.js";
+import { askGuestMode, config, readIncidentSettings, readUsageSettings } from "./config.js";
 import { errorHandlerPlugin } from "./plugins/error-handler.js";
 import { swaggerPlugin } from "./plugins/swagger.js";
 import { prometheusPlugin } from "./plugins/prometheus.js";
@@ -133,6 +133,14 @@ export async function buildApp(): Promise<FastifyInstance> {
         if (closing) return;
         app.log.error({ err }, "could not resolve the first-run setup token");
       });
+  } else if (askGuestMode(process.env)) {
+    // Ask with accounts off (ASK_DATA_GUEST=true): Postgres for Ask alone, and
+    // every visitor is the one shared guest. No sign-in, team or audit route
+    // exists; anyone who reaches the api can ask and read every chat.
+    await app.register(dbPlugin, { askGuest: true });
+    const askRuntime = installAskRuntime(app);
+    await app.register(askRoutes, askRuntime);
+    await app.register(askInternalRoutes);
   }
 
   await app.register(healthRoutes);

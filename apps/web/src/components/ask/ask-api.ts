@@ -5,8 +5,9 @@ import { gatedPollMs } from "@/lib/poll";
 import { errorRetryDelayMs } from "@/lib/retry";
 
 /** The token is only a browser's existing dashboard session. This binding is
- * not authorization; the API still verifies the current session and ownership. */
-export function createAskApi(sessionToken: string) {
+ * not authorization; the API still verifies the current session and ownership.
+ * Undefined with accounts off, where no request carries a session. */
+export function createAskApi(sessionToken: string | undefined) {
   return {
     get: <T>(path: string) => apiGet<T>(path, sessionToken),
     post: <T>(path: string, body: unknown) => apiPost<T>(path, body, sessionToken),

@@ -605,6 +605,8 @@ export function readUsageSettings(source: NodeJS.ProcessEnv = process.env): Usag
 /** Server-only settings. Do not spread this object into runtime browser config. */
 export interface AskSettings {
   enabled: boolean;
+  /** Accounts off: every visitor asks as the one shared guest (`askGuestMode`). */
+  guest: boolean;
   customerId: string;
   mcpUrl: string;
   mcpToken: string;
@@ -627,13 +629,29 @@ export interface AskSettings {
   workerConcurrency: number;
 }
 
+/**
+ * Ask on a managed dashboard with accounts off (`ASK_DATA_GUEST=true`): the api
+ * opens Postgres for Ask alone and every visitor asks as one shared guest, with
+ * one shared history. With accounts on, `ASK_DATA_GUEST` changes nothing.
+ */
+export function askGuestMode(source: NodeJS.ProcessEnv = process.env): boolean {
+  return (
+    source.ASK_DATA_GUEST === "true" &&
+    source.AUTH_MODE !== "enabled" &&
+    source.ASK_DATA_ENABLED === "true" &&
+    source.DEPLOYMENT_MODE === "managed"
+  );
+}
+
 export function readAskSettings(source: NodeJS.ProcessEnv = process.env): AskSettings {
   const requestedRetentionDays = positiveInt(source.ASK_DATA_RETENTION_DAYS, 90);
+  const guest = askGuestMode(source);
   const settings: AskSettings = {
     enabled:
       source.ASK_DATA_ENABLED === "true" &&
-      source.AUTH_MODE === "enabled" &&
+      (source.AUTH_MODE === "enabled" || guest) &&
       source.DEPLOYMENT_MODE === "managed",
+    guest,
     customerId: source.ASK_DATA_CUSTOMER_ID?.trim() ?? "",
     mcpUrl: source.ASK_DATA_MCP_URL?.trim() || "https://mcp-staging.magmadevs.com/mcp",
     mcpToken: source.ASK_DATA_MCP_TOKEN?.trim() ?? "",

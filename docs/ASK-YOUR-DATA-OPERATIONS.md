@@ -28,15 +28,16 @@ on the pilot deployment or replace the deployed checks below.
 
 ## Runtime delivery
 
-Both web and API require `AUTH_MODE=enabled`, `DEPLOYMENT_MODE=managed` and the same
-`ASK_DATA_ENABLED` flag. API ownership and accounting are authoritative even if a
+Both web and API require `DEPLOYMENT_MODE=managed`, the same `ASK_DATA_ENABLED`
+flag, and either `AUTH_MODE=enabled` or `ASK_DATA_GUEST=true` with accounts off
+([Ask without accounts](ASK-YOUR-DATA.md#ask-without-accounts)). API ownership and accounting are authoritative even if a
 stale browser still shows the entry. All signed-in roles can ask; the current
 person's session and customer credential bound every read. A customer admin is
 not an internal staff identity.
 
 | Runtime | Configuration |
 | --- | --- |
-| Web | `ASK_DATA_ENABLED` only; no provider secrets, prices or budget |
+| Web | `ASK_DATA_ENABLED` and `ASK_DATA_GUEST`; no provider secrets, prices or budget |
 | API | Exact `ASK_DATA_CUSTOMER_ID`, fixed trusted `ASK_DATA_MCP_URL`, customer-only `ASK_DATA_MCP_TOKEN` |
 | API | Verified `ASK_DATA_BEDROCK_REGION`, `ASK_DATA_BEDROCK_MODEL`, `AWS_BEARER_TOKEN_BEDROCK` |
 | API | Verified `ASK_DATA_TOKEN_COUNTER`, `ASK_DATA_TOKEN_COUNTER_MODEL`, dated exact-model/region `ASK_DATA_PRICING_JSON` |

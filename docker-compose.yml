@@ -311,6 +311,7 @@ services:
       # Managed Ask: all secrets/pricing stay on the API. Keep the customer
       # ID and retention policy when disabling so cleanup continues.
       - ASK_DATA_ENABLED=${ASK_DATA_ENABLED:-false}
+      - ASK_DATA_GUEST=${ASK_DATA_GUEST:-false}
       - ASK_DATA_CUSTOMER_ID=${ASK_DATA_CUSTOMER_ID:-}
       - ASK_DATA_MCP_URL=${ASK_DATA_MCP_URL:-https://mcp-staging.magmadevs.com/mcp}
       - ASK_DATA_MCP_TOKEN=${ASK_DATA_MCP_TOKEN:-}
@@ -362,6 +363,7 @@ services:
       # /api/config and forks the invitation copy on it.
       - DEPLOYMENT_MODE=${DEPLOYMENT_MODE:-onprem}
       - ASK_DATA_ENABLED=${ASK_DATA_ENABLED:-false}
+      - ASK_DATA_GUEST=${ASK_DATA_GUEST:-false}
       - AUTH_MODE=${AUTH_MODE:-disabled}
       - AUTH_SECRET=${AUTH_SECRET:-}
       - AUTH_URL=${AUTH_URL:-http://localhost:3000}

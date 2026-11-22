@@ -10,7 +10,7 @@ let stage: "configuration" | "pricing" | "mcp" | "counter" = "configuration";
 try {
   if (
     process.env.ASK_DATA_PREFLIGHT !== "true" ||
-    process.env.AUTH_MODE !== "enabled" ||
+    (process.env.AUTH_MODE !== "enabled" && process.env.ASK_DATA_GUEST !== "true") ||
     process.env.DEPLOYMENT_MODE !== "managed"
   )
     throw new AskFailure("ASK_UNAVAILABLE");

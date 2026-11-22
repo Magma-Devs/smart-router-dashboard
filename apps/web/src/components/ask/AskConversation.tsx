@@ -220,7 +220,10 @@ export function AskConversation() {
           {!ask.available ? (
             <div className="ask-empty">
               <h2>Chat is temporarily unavailable</h2>
-              <p>Your conversations stay private. Try connecting again in a moment.</p>
+              <p>
+                {ask.shared ? "" : "Your conversations stay private. "}Try connecting again in a
+                moment.
+              </p>
               <button className="gw-btn" onClick={() => void ask.refresh()}>
                 Retry connection
               </button>
@@ -429,8 +432,11 @@ export function AskConversation() {
           </button>
         </div>
         <p className="ask-composer-note">
-          <AskIcon name="lock" size={12} />
-          Private to you. Answers can be incomplete, so check the sources.
+          {ask.shared ? null : <AskIcon name="lock" size={12} />}
+          {ask.shared
+            ? "Shared with everyone who opens this dashboard."
+            : "Private to you."}{" "}
+          Answers can be incomplete, so check the sources.
           {ask.draft.length > 3600 ? <span>{ask.draft.length}/4000</span> : null}
         </p>
       </form>

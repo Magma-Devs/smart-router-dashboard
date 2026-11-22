@@ -37,16 +37,17 @@ export function AskHistory({ onSelect }: { onSelect?: () => void }) {
     ).values(),
   ];
   const groups = groupHistory(chats);
+  const searchLabel = ask.shared ? "Search chats" : "Search your chats";
   return (
     <div className="ask-history ask-thread">
       <label className="ask-search">
         <AskIcon name="search" size={15} />
-        <span className="ask-sr">Search your chats</span>
+        <span className="ask-sr">{searchLabel}</span>
         <input
           type="search"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search your chats"
+          placeholder={searchLabel}
           maxLength={200}
         />
       </label>

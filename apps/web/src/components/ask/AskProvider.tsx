@@ -45,6 +45,8 @@ interface AskContextValue {
   off: boolean;
   /** This person may turn Ask off and on. */
   canSwitch: boolean;
+  /** Accounts off: every visitor reads and writes one shared history. */
+  shared: boolean;
   setOff: (off: boolean) => Promise<void>;
   scope: string;
   /** Where the menu entry leads: the chat with a question still running, else
@@ -84,16 +86,23 @@ function errorMessage(error: unknown): string {
 
 export function AskProvider({
   enabled,
+  guest = false,
   children,
 }: {
   enabled: boolean;
+  /** Accounts off: no session, and every visitor is the api's one shared guest. */
+  guest?: boolean;
   children: React.ReactNode;
 }) {
   useSyncExternalStore(subscribeAuth, getAuthVersion, () => 0);
-  const sessionToken = getAuthState().token ?? "";
+  const sessionToken = guest ? undefined : (getAuthState().token ?? "");
   const api = useMemo(() => createAskApi(sessionToken), [sessionToken]);
   const user = getAuthState().user;
-  const principal = user?.id && user.sessionId ? `${user.id}:${user.sessionId}` : null;
+  const principal = guest
+    ? "guest"
+    : user?.id && user.sessionId
+      ? `${user.id}:${user.sessionId}`
+      : null;
   const pathname = usePathname();
   const router = useRouter();
   const search = useSearchParams();
@@ -351,6 +360,7 @@ export function AskProvider({
       accepting: available && !caps.error && caps.data?.acceptingQuestions === true,
       off: available && caps.data?.off === true,
       canSwitch: available && caps.data?.canSwitch === true,
+      shared: guest,
       setOff,
       scope,
       href: resume ? `/ask?chat=${resume}` : "/ask",
@@ -382,6 +392,7 @@ export function AskProvider({
       caps.data?.acceptingQuestions,
       caps.data?.off,
       caps.data?.canSwitch,
+      guest,
       caps.error,
       available,
       setOff,

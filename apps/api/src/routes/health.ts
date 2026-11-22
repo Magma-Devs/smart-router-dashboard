@@ -32,8 +32,8 @@ export type DatabaseReadiness = "ok" | "not_connected" | "query_failed" | "timeo
 /**
  * The database's answer, or null when the api runs without one.
  *
- * Only `AUTH_MODE=enabled` registers the db plugin, and only then does the api
- * depend on Postgres at all: the gate resolves every session against it and
+ * Only `AUTH_MODE=enabled`, or Ask with accounts off (`ASK_DATA_GUEST=true`),
+ * registers the db plugin, and only then does the api depend on Postgres at all: the gate resolves every session against it and
  * fails closed (503) while it is unreachable. A backend in that state used to
  * be Ready — its probe pinged Prometheus alone — so a rollout happily replaced
  * a working pod with one that could serve nobody. Checking the database here

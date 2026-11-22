@@ -41,6 +41,12 @@ vi.mock("@sr/db", async (importOriginal) => {
   };
 });
 
+// The pool above is no database; the guest's boot steps have their own tests.
+vi.mock("../services/ask/guest.js", () => ({
+  ensureAskGuest: vi.fn(async () => undefined),
+  retireAskGuest: vi.fn(async () => undefined),
+}));
+
 const { dbPlugin, dbFailureReason } = await import("../plugins/db.js");
 
 const URL = "postgres://sr:x@192.0.2.1:5432/na";

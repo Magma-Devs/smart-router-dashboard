@@ -5,6 +5,17 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.75.0]
+
+### Added
+
+- Ask your data runs on a managed dashboard without accounts, behind
+  `ASK_DATA_GUEST=true`. The api opens Postgres for Ask alone, and every
+  visitor asks as one shared guest with one shared history; nobody holds the
+  admins' off switch. The Ask page says the history is shared. An
+  `AUTH_MODE=enabled` boot removes the guest before the first-run check. See
+  [Ask without accounts](docs/ASK-YOUR-DATA.md#ask-without-accounts).
+
 ## [0.74.5]
 
 ### Fixed

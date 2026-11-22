@@ -146,3 +146,32 @@ describe("personal chat requests stay bound to their initiating session", () => 
     },
   );
 });
+
+describe("chat requests with accounts off", () => {
+  const configured = () =>
+    vi.fn<typeof fetch>().mockImplementation(async (url) =>
+      Response.json(
+        String(url) === "/api/config"
+          ? { apiUrl: "https://synthetic-api.invalid", authMode: "disabled" }
+          : { chats: [] },
+      ),
+    );
+
+  it("the shared guest's requests carry no session and are sent", async () => {
+    const fetchImpl = configured();
+    vi.stubGlobal("fetch", fetchImpl);
+    const { createAskApi } = await import("../ask-api");
+    expect(await createAskApi(undefined).get("/api/ask/chats")).toEqual({ chats: [] });
+    const [url, init] = fetchImpl.mock.calls.at(-1)!;
+    expect(String(url)).toBe("https://synthetic-api.invalid/api/ask/chats");
+    expect((init?.headers as Record<string, string>).Authorization).toBeUndefined();
+  });
+
+  it("an empty session binding is refused, so the guest must pass none", async () => {
+    vi.stubGlobal("fetch", configured());
+    const { createAskApi } = await import("../ask-api");
+    await expect(createAskApi("").get("/api/ask/chats")).rejects.toMatchObject({
+      code: "SESSION_CHANGED",
+    });
+  });
+});
