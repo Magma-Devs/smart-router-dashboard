@@ -111,9 +111,12 @@ stays for reconciliation. Runs record the original session ID without a foreign
 key that would prevent normal expired-session cleanup.
 
 A replica that has not finished readiness checks pauses queue claims; only a
-confirmed feature/admin disable interrupts work. Queue waiting and execution
-share one deadline measured from submission. Expiration reports `ASK_TIMEOUT`,
-while lease loss, revocation and shutdown remain interruptions. Stop reaches
+confirmed feature/admin disable interrupts work. A stopping replica claims no
+more runs and leaves queued questions for another replica; its running answers
+get the API's drain window to finish and are interrupted at its end. Queue
+waiting and execution share one deadline measured from submission. Expiration
+reports `ASK_TIMEOUT`, while lease loss, revocation and a run still going when
+the drain window ends remain interruptions. Stop reaches
 free token counting as well as MCP/model requests. Heartbeats run independently;
 execution-boundary authorization no longer opens a heartbeat transaction for
 every tool. Fixed error codes and per-phase durations provide diagnostics without
@@ -196,7 +199,10 @@ prompt/answer values are also excluded from ordinary application logs; structure
 internal records retain their own authorization/retention boundary.
 
 `AskWorker` claims under SQL leases, renews them while active, observes stop,
-session/lease loss and feature disable, and aborts work at shutdown/deadline.
+session/lease loss and feature disable, and aborts work at the deadline. On
+shutdown it claims nothing more, a claim in flight being its last, waits for its
+running answers until the drain window ends, and then aborts the rest, whose
+terminal write ends their leases before the database pool closes.
 Renewal stops, and the check in flight finishes, before the run's terminal write
 (success or failure), so a run never reads its own completion as a lost lease.
 A check that finds the lease lost logs `ASK_LEASE_LOST` and aborts the run, and

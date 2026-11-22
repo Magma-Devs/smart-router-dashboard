@@ -55,6 +55,15 @@ because chart values are mounted as a ConfigMap. The frontend gets only the flag
 Keep customer identity, MCP URL and retention policy in the disabled configuration
 so scheduled cleanup/reconciliation and authorized staff access continue.
 
+A backend rollout stops each old API in order: it turns unready, claims no more
+Ask runs, finishes its requests and gives running answers the drain window
+(`SHUTDOWN_TIMEOUT_MS` less 8 s, 12 s by default) before interrupting the rest
+with `ASK_INTERRUPTED`, then ends its database pool and exits 0. Questions it
+never claimed stay queued for the new pod. The pod's database tunnel sidecar has
+to outlive the API container for this; the API's log ends with
+`shutdown: stopped in <n> ms`, and `shutdown: not stopped within` or an exit
+code other than 0 means the sequence did not finish.
+
 Use a released chart and dashboard images containing these changes. Prepare a
 reviewable fleet PR through its existing make targets; follow that repository's
 AGENTS.md and validate the exact pinned chart schema first. A merge is a fleet

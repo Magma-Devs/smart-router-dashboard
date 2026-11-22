@@ -7,6 +7,7 @@ import { AskRetention } from "./retention.js";
 import { AskStore, type AskAdmission } from "./store.js";
 import { AskSwitchState } from "./switch.js";
 import { AskWorker } from "./worker.js";
+import { drainRemainingMs } from "../../shutdown.js";
 
 /** Admission requires readiness. A replica awaiting its first switch read must
  * pause claims, never interrupt another replica's already admitted questions. */
@@ -73,8 +74,7 @@ export function installAskRuntime(app: FastifyInstance): {
         worker = new AskWorker(store, settings, {
           hooks: (run) => budget!.hooks(run),
           afterTerminal: (id) => budget!.reconcile(id),
-          enabled: () =>
-            !stopped && settings.enabled && readAskSettings().enabled && !turnedOff?.confirmedOff,
+          enabled: () => settings.enabled && readAskSettings().enabled && !turnedOff?.confirmedOff,
           canClaim: ready,
           onError: (code) => app.log.error({ code }, "Ask worker operation failed"),
           timing: (runId, phase, durationMs) =>
@@ -107,11 +107,19 @@ export function installAskRuntime(app: FastifyInstance): {
     .catch(() => {
       if (!stopped) app.log.error({ code: "ASK_START_FAILED" }, "Ask runtime failed to start");
     });
+  // Claims stop as the close begins, before in-flight requests finish. A
+  // stopping replica is not a disable: its running answers carry on, and the
+  // questions it never claimed stay queued for another replica.
+  app.addHook("preClose", async () => {
+    stopped = true;
+  });
   app.addHook("onClose", async () => {
     stopped = true;
     if (timer) clearInterval(timer);
     if (switchTimer) clearInterval(switchTimer);
-    await worker?.stop();
+    // Runs get what is left of a stop signal's drain, then are interrupted,
+    // which ends their leases. The database pool closes after this hook.
+    await worker?.stop(drainRemainingMs(app));
     await sweeping;
     // Do not wait for the database's indefinite startup retry loop.
     void start;

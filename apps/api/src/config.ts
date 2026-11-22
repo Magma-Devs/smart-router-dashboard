@@ -88,6 +88,12 @@ export const config = {
      * defence-in-depth and an audit-quality question.
      */
     trustProxy: envTrustProxy("TRUST_PROXY"),
+    /**
+     * From SIGTERM to a forced exit. Under the pod's grace period (30 s), with
+     * room for a preStop. The drain gets all but `SHUTDOWN_CLOSE_RESERVE_MS`
+     * of it — see `shutdown.ts`.
+     */
+    shutdownTimeoutMs: envInt("SHUTDOWN_TIMEOUT_MS", 20_000),
   },
 
   prometheus: {
