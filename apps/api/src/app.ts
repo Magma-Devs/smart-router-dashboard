@@ -63,6 +63,9 @@ export async function buildApp(): Promise<FastifyInstance> {
     },
   });
 
+  // Set by the stop sequence (`shutdown.ts`).
+  app.decorate("stopping", null);
+
   await app.register(helmet, { contentSecurityPolicy: false });
   // The browser calls the api cross-origin (web :3000, api :8000), and
   // @fastify/cors allows only GET/HEAD/POST unless told otherwise — so without

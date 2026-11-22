@@ -5,6 +5,21 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.74.8]
+
+### Fixed
+
+- The API stops on SIGTERM and SIGINT. It ran as PID 1 with no handler, so the
+  signal did nothing and the pod was killed at the end of its grace period,
+  logging database refusals once its tunnel sidecar had gone. Now the listener
+  closes at once, so readiness fails, the Ask worker claims no more runs,
+  in-flight requests finish, running answers get the drain window
+  (`SHUTDOWN_TIMEOUT_MS`, 20 s, less 8 s) and are then interrupted, the
+  database pool ends, and the process exits 0. A second signal or the full
+  timeout exits 1.
+- A stopping replica leaves the Ask questions it has not claimed queued for
+  another replica; only a confirmed disable interrupts them.
+
 ## [0.74.7]
 
 ### Changed

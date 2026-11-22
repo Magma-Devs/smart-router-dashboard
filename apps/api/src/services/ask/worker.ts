@@ -57,8 +57,8 @@ export class AskWorker {
         await this.options.afterTerminal();
         return;
       }
-      if (this.options.canClaim && !this.options.canClaim()) return;
-      while (!this.stopped && this.jobs.size < this.settings.workerConcurrency) {
+      const canClaim = () => !this.options.canClaim || this.options.canClaim();
+      while (!this.stopped && canClaim() && this.jobs.size < this.settings.workerConcurrency) {
         const run = await this.store.claim(this.settings.leaseMs);
         if (!run) break;
         if (this.stopped || !(this.options.enabled?.() ?? this.settings.enabled)) {
@@ -179,13 +179,26 @@ export class AskWorker {
     }
   }
 
-  async stop(): Promise<void> {
+  /** Claims nothing more, gives running answers up to `drainMs` to finish,
+   * then interrupts the rest, ending their leases. */
+  async stop(drainMs = 0): Promise<void> {
     this.stopped = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
-    for (const job of this.jobs.values()) job.controller.abort(new AskFailure("ASK_INTERRUPTED"));
     await this.idle;
-    await Promise.allSettled([...this.jobs.values()].map((job) => job.done));
+    const settled = () => Promise.allSettled([...this.jobs.values()].map((job) => job.done));
+    if (drainMs > 0 && this.jobs.size > 0) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([
+        settled(),
+        new Promise((resolve) => {
+          timer = setTimeout(resolve, drainMs);
+        }),
+      ]);
+      clearTimeout(timer);
+    }
+    for (const job of this.jobs.values()) job.controller.abort(new AskFailure("ASK_INTERRUPTED"));
+    await settled();
   }
 
   async drained(): Promise<void> {
