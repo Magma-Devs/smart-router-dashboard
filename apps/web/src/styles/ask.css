@@ -184,6 +184,9 @@
   flex-wrap: wrap;
   justify-content: space-between;
 }
+.ask-evidence-label {
+  color: var(--text-2);
+}
 .ask-evidence code {
   color: var(--text-3);
   font-size: 11px;

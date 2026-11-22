@@ -163,8 +163,30 @@ dispatch fencing and usage reconciliation. There is no question-word regex
 routing. Every turn receives the current server clock and precomputed query
 windows; the current UTC reference is explicit and never comes from an old answer or a browser identity override.
 
+Before the first model turn the server reads the recorded counts once
+(`prefetchRead` in `services/ask/prefetch.ts`): one `metrics.query_range` over
+the last 24 hours with a one-hour step, each selector one hour long, so it stays
+inside the read policy's 24-hour total lookback. It returns per chain the
+recorded requests (`smartrouter_final_requests:count1m`) and router failures
+(`smartrouter_final_failures:count1m`) of each hour, and the router's recorded
+log lines (`smartrouter_log_lines:count1m{component="router"}`) as the sign
+that the recording ran. `summarizePrefetch` totals them into the last hour and
+the last 24 hours per chain and `recordingLive`. The first turn receives them as
+the result of a `router_request_summary` call after the question, so they sit
+outside the static prompt prefix. A count question for those windows is then
+answered in one model turn. With the recording live, a chain absent from the
+counts had no requests: no failures and no requests mean no requests reached the
+routers, so nothing failed, never a coverage gap; with nothing recorded it is a
+gap and the model reads the logs. The read runs through the same policy,
+redaction, evidence and audit as every read; it does not count against the
+model's read limit, it counts toward the context bytes, and a failed,
+unavailable or ambiguous read leaves the run to its own reads. A cancelled run
+stops during it. It is a source of the answer only when the answer rests on it:
+a conversation reply drops it, and so does a data answer whose cited evidence
+leaves it out.
+
 Data tools have locally authored names and parameter schemas. The customer MCP
-connection opens only on the first requested read. Identity verification comes
+connection opens for that read, before the first turn. Identity verification comes
 first; independent catalog/tool-list requests then run concurrently. Every read
 rechecks identity and the immutable local policy: the identity check and the read
 go to the MCP server together, and the read's result is used only once the
@@ -278,6 +300,14 @@ The orchestration slice owns status policy support and unavailable-data answers.
 stable run states/error codes and response types. Model content is bounded to a
 summary and 1-8 sections, with optional points/stat. Server-authored evidence adds
 the actual source, operation, observation/query times, coverage and truncation.
+Each source's label is the progress list's name for its read (`readLabel` in
+`services/ask/progress.ts`, from the operation and the series or streams the
+query selects, such as "Failure counts" or "Request log lines"). The API names
+each source from its audited tool event's operation and query when it serves a
+run or a chat; no stored answer carries a label, and the store drops one from an
+answer before writing it, so every stored answer parses on every API version.
+An answer stored earlier gets its labels the same way while its tool events are
+kept, and renders without them otherwise.
 No model HTML is rendered. The server validates before persistence/display.
 
 Bedrock uses [Converse](https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_Converse.html),
@@ -438,7 +468,8 @@ ends now. The composer shows no scope line.
 Questions use right-aligned bubbles. Structured answers render as plain text,
 with a summary, quiet numbered headings and optional compact inline stats. Copy
 feedback, answer timestamps and expandable sources follow each answer; a source
-reads as Logs, Metrics or Data, with its window's day on both ends when they
+reads as Logs, Metrics or Data followed by its label ("Metrics · Failure
+counts"), with its window's day on both ends when they
 fall on different days. A source's tag says what its read returned: Cut short,
 Partial or Unavailable in the warning colour, No matches or Limited coverage in
 a muted one. A metrics source whose window ends less than two minutes before

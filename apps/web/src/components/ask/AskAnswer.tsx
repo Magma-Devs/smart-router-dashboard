@@ -105,6 +105,9 @@ export function AskAnswer({ answer, messageId }: { answer: Answer; messageId?: s
                 <div>
                   <span>
                     <strong>{evidenceSourceLabel(item.operationId)}</strong>
+                    {item.label ? (
+                      <span className="ask-evidence-label"> · {item.label}</span>
+                    ) : null}
                   </span>
                   <span className="ask-coverage-badges">
                     {evidenceBadges(item).map((badge) => (

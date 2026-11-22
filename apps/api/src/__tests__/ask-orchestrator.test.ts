@@ -85,6 +85,11 @@ function fixture(
     status?: boolean;
     question?: string;
     responses?: unknown[];
+    /** The metrics source also serves range reads, so the counts are read before the first turn. */
+    ranges?: boolean;
+    /** The result of the counts read before the first turn; other reads return `data`. */
+    counts?: unknown;
+    countsFail?: boolean;
   } = {},
 ) {
   const value = settings();
@@ -94,7 +99,11 @@ function fixture(
       id: "acme-metrics",
       name: "Metrics",
       kind: "mimir",
-      operationIds: ["metrics.query", "delete.everything"],
+      operationIds: [
+        "metrics.query",
+        ...(options.ranges ? ["metrics.query_range"] : []),
+        "delete.everything",
+      ],
     },
     { id: "acme-logs", name: "Logs", kind: "loki", operationIds: ["logs.query_range"] },
     ...(options.status
@@ -127,7 +136,16 @@ function fixture(
           })),
         })),
       };
-    else
+    else if (request.arguments?.operationId === "metrics.query_range" && options.counts) {
+      if (options.countsFail === true) throw new Error("connection reset");
+      result = {
+        tenantId: "acme",
+        sourceId: request.arguments?.sourceId,
+        operationId: request.arguments?.operationId,
+        ok: true,
+        data: options.counts,
+      };
+    } else
       result = {
         tenantId: "acme",
         sourceId: request.arguments?.sourceId,
@@ -200,7 +218,7 @@ function fixture(
 afterEach(() => vi.restoreAllMocks());
 
 describe("bounded customer tool orchestration", () => {
-  it("answers a conversational turn with one accounted model call and no MCP connection", async () => {
+  it("answers a conversational turn with one accounted model call and no evidence", async () => {
     const f = fixture({
       responses: [
         provider([
@@ -212,8 +230,11 @@ describe("bounded customer tool orchestration", () => {
         ]),
       ],
     });
-    expect((await f.answer()).summary).toContain("Hello");
-    expect(McpAdapter.prototype.open).not.toHaveBeenCalled();
+    const answer = await f.answer();
+    expect(answer.summary).toContain("Hello");
+    expect(answer.evidence).toEqual([]);
+    // Opened once, for the counts read before the first turn.
+    expect(McpAdapter.prototype.open).toHaveBeenCalledOnce();
     expect(f.fetchImpl).toHaveBeenCalledOnce();
     expect(f.hooks.beforeModelStep).toHaveBeenCalledOnce();
     expect(f.hooks.recordUsage).toHaveBeenCalledOnce();
@@ -827,7 +848,7 @@ describe("bounded customer tool orchestration", () => {
     const f = fixture();
     let checks = 0;
     vi.mocked(f.hooks.checkActive).mockImplementation(async () => {
-      if (++checks === 4) throw new AskFailure("ASK_INTERRUPTED");
+      if (++checks === 5) throw new AskFailure("ASK_INTERRUPTED");
     });
     await expect(f.answer()).rejects.toMatchObject({ code: "ASK_INTERRUPTED" });
     expect(f.fetchImpl).toHaveBeenCalledTimes(1);
@@ -911,25 +932,29 @@ describe("conversation, grounding and execution boundaries", () => {
       "RPC lets one system request work from another.",
     ],
     ["Can you make that explanation shorter?", "Yes — RPC is a request to another system."],
-  ])("delivers a brief %s turn without discovering data sources", async (question, summary) => {
-    const f = fixture({
-      responses: [provider([presentation({ kind: "conversation", summary, sections: [] })])],
-    });
-    const answer = await new AskOrchestrator(f.settings, f.fetchImpl).answer(
-      { ...run(), question },
-      [],
-      f.hooks,
-      new AbortController().signal,
-    );
-    expect(answer).toMatchObject({
-      summary,
-      sections: [{ title: "Reply", body: summary }],
-      evidence: [],
-    });
-    expect(McpAdapter.prototype.open).not.toHaveBeenCalled();
-    expect(f.hooks.beforeModelStep).toHaveBeenCalledOnce();
-    expect(f.hooks.recordUsage).toHaveBeenCalledOnce();
-  });
+  ])(
+    "delivers a brief %s turn with no evidence and no read of its own",
+    async (question, summary) => {
+      const f = fixture({
+        responses: [provider([presentation({ kind: "conversation", summary, sections: [] })])],
+      });
+      const answer = await new AskOrchestrator(f.settings, f.fetchImpl).answer(
+        { ...run(), question },
+        [],
+        f.hooks,
+        new AbortController().signal,
+      );
+      expect(answer).toMatchObject({
+        summary,
+        sections: [{ title: "Reply", body: summary }],
+        evidence: [],
+      });
+      expect(McpAdapter.prototype.open).toHaveBeenCalledOnce();
+      expect(f.call.mock.calls.some(([entry]) => entry.name === "execute_operation")).toBe(false);
+      expect(f.hooks.beforeModelStep).toHaveBeenCalledOnce();
+      expect(f.hooks.recordUsage).toHaveBeenCalledOnce();
+    },
+  );
 
   it.each([
     { kind: "data", ...content },
@@ -952,7 +977,7 @@ describe("conversation, grounding and execution boundaries", () => {
     const f = fixture({ responses: [provider([presentation(input)])] });
     await expect(f.answer()).rejects.toMatchObject({ code: "ASK_INVALID_ANSWER" });
     expect(f.hooks.recordUsage).toHaveBeenCalledOnce();
-    expect(McpAdapter.prototype.open).not.toHaveBeenCalled();
+    expect(McpAdapter.prototype.open).toHaveBeenCalledOnce();
   });
 
   it("does not invent evidence references after a legitimate data read", async () => {
@@ -1015,7 +1040,7 @@ describe("conversation, grounding and execution boundaries", () => {
       expect(f.fetchImpl).toHaveBeenCalledOnce();
       expect(f.hooks.modelDispatched).toHaveBeenCalledOnce();
       expect(f.hooks.recordUsage).toHaveBeenCalledOnce();
-      expect(McpAdapter.prototype.open).not.toHaveBeenCalled();
+      expect(McpAdapter.prototype.open).toHaveBeenCalledOnce();
     },
   );
 
@@ -1024,7 +1049,7 @@ describe("conversation, grounding and execution boundaries", () => {
     vi.mocked(f.hooks.beforeModelStep).mockRejectedValue(new AskFailure("ASK_BUDGET_LIMIT", 429));
     await expect(f.answer()).rejects.toMatchObject({ code: "ASK_BUDGET_LIMIT" });
     expect(f.fetchImpl).not.toHaveBeenCalled();
-    expect(McpAdapter.prototype.open).not.toHaveBeenCalled();
+    expect(f.call.mock.calls.some(([entry]) => entry.name === "execute_operation")).toBe(false);
   });
 
   it("passes Stop through the token counter/admission boundary", async () => {
@@ -1091,7 +1116,7 @@ describe("conversation, grounding and execution boundaries", () => {
     // prompt cache can keep them; the run's context follows in its own block.
     expect(body.system[0].text).not.toContain("Trusted server request context");
     expect(body.system.at(-1).text).toContain("Trusted server request context");
-    expect(McpAdapter.prototype.open).not.toHaveBeenCalled();
+    expect(McpAdapter.prototype.open).toHaveBeenCalledOnce();
     // Counts: the recorded series first, every family named, raw lines only as the fallback.
     const prompt = body.system[0].text as string;
     for (const family of [
@@ -1105,5 +1130,265 @@ describe("conversation, grounding and execution boundaries", () => {
     expect(prompt).toContain("Count raw log lines only as the fallback");
     expect(prompt).toContain("Say in the answer that a figure was counted from the logs");
     expect(prompt).toContain("measure=errors");
+  });
+});
+
+/** A range result as the fleet's Mimir returns it, one point an hour ending at `end`. */
+function hourly(
+  end: number,
+  series: { count: string; chain?: string; points: [number, number][] }[],
+) {
+  return {
+    status: "success",
+    data: {
+      resultType: "matrix",
+      result: series.map(({ count, chain, points }) => ({
+        metric: { count, ...(chain ? { chain } : {}) },
+        values: points.map(([hoursAgo, value]) => [end - hoursAgo * 3600, String(value)]),
+      })),
+    },
+  };
+}
+const nowSeconds = () => Math.floor(Date.now() / 1000);
+
+describe("recorded counts read before the first model turn", () => {
+  it("hands the first turn the per-chain counts, so a count question takes one model call", async () => {
+    const end = nowSeconds();
+    const f = fixture({
+      ranges: true,
+      counts: hourly(end, [
+        {
+          count: "requests",
+          chain: "eth1",
+          points: [
+            [0, 40],
+            [5, 60],
+          ],
+        },
+        { count: "failures", chain: "eth1", points: [[5, 2]] },
+        { count: "requests", chain: "sui", points: [[0, 7]] },
+        {
+          count: "router_lines",
+          points: [
+            [0, 900],
+            [1, 880],
+          ],
+        },
+      ]),
+      responses: [provider([presentation()])],
+    });
+    const answer = await f.answer();
+    expect(f.fetchImpl).toHaveBeenCalledOnce();
+    const executions = f.call.mock.calls.filter(([entry]) => entry.name === "execute_operation");
+    expect(executions).toHaveLength(1);
+    const read = executions[0]![0].arguments as {
+      operationId: string;
+      parameters: Record<string, unknown>;
+    };
+    expect(read.operationId).toBe("metrics.query_range");
+    expect(read.parameters.step).toBe(3600);
+    expect(Number(read.parameters.end) - Number(read.parameters.start)).toBe(23 * 3600);
+    expect(String(read.parameters.query)).toContain("smartrouter_final_requests:count1m");
+    expect(String(read.parameters.query)).toContain("smartrouter_final_failures:count1m");
+    expect(String(read.parameters.query)).toContain(
+      'smartrouter_log_lines:count1m{component="router"}',
+    );
+    // After the question, as that read's result: outside the static prompt prefix.
+    const body = JSON.parse(f.bodies[0]!);
+    expect(body.messages.map((message: { role: string }) => message.role)).toEqual([
+      "user",
+      "assistant",
+      "user",
+    ]);
+    expect(body.messages[1].content[0].toolUse.name).toBe("router_request_summary");
+    const result = JSON.parse(body.messages[2].content[0].toolResult.content[0].text);
+    expect(result.untrustedData).toEqual({
+      recordingLive: true,
+      hoursWithRouterLines: 2,
+      chains: [
+        {
+          chain: "eth1",
+          requestsLastHour: 40,
+          failuresLastHour: 0,
+          requestsLast24Hours: 100,
+          failuresLast24Hours: 2,
+        },
+        {
+          chain: "sui",
+          requestsLastHour: 7,
+          failuresLastHour: 0,
+          requestsLast24Hours: 7,
+          failuresLast24Hours: 0,
+        },
+      ],
+    });
+    expect(result.interpretation).toContain("never call it a coverage gap");
+    // Never in a system block: the shared, cached instructions or the run's own.
+    for (const block of body.system as { text?: string }[])
+      expect(block.text ?? "").not.toContain("requestsLast24Hours");
+    // One source row; the API names it when it serves the answer, never stored.
+    expect(answer.evidence).toHaveLength(1);
+    expect(answer.evidence[0]).toMatchObject({
+      operationId: "metrics.query_range",
+      from: new Date((end - 86_400) * 1000).toISOString(),
+      to: new Date(end * 1000).toISOString(),
+      coverage: "complete",
+    });
+    expect(answer.evidence[0]).not.toHaveProperty("label");
+    expect(f.hooks.recordTool).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operationId: "metrics.query_range",
+        evidence: answer.evidence[0],
+      }),
+    );
+  });
+
+  it("drops the counts' source from a conversation reply", async () => {
+    const end = nowSeconds();
+    const f = fixture({
+      ranges: true,
+      counts: hourly(end, [{ count: "router_lines", points: [[0, 10]] }]),
+      responses: [
+        provider([presentation({ kind: "conversation", summary: "Glad to help.", sections: [] })]),
+      ],
+    });
+    const answer = await f.answer();
+    expect(answer.evidence).toEqual([]);
+    expect(f.hooks.recordTool).toHaveBeenCalledOnce();
+  });
+
+  it("drops the counts' source from a data answer whose cited reads leave it out", async () => {
+    const end = nowSeconds();
+    const f = fixture({
+      ranges: true,
+      counts: hourly(end, [{ count: "router_lines", points: [[0, 10]] }]),
+      responses: [provider([tool()]), final()],
+    });
+    // The fixture model cannot know a run's evidence ids: cite the read it made.
+    vi.mocked(f.hooks.recordTool).mockImplementation(async (entry) => {
+      if (entry.operationId === "metrics.query")
+        f.fetchImpl.mockImplementationOnce(async (_url, init) => {
+          f.bodies.push(String(init?.body));
+          return Response.json(
+            provider([presentation({ ...content, evidenceIds: [entry.evidence.id] })]),
+            { headers: { "x-amzn-requestid": "fixture-request-2" } },
+          );
+        });
+    });
+    const answer = await f.answer();
+    expect(answer.evidence.map((item) => item.operationId)).toEqual(["metrics.query"]);
+  });
+
+  it("leaves the run to its own reads when the counts read fails", async () => {
+    const f = fixture({
+      ranges: true,
+      counts: {},
+      countsFail: true,
+      responses: [provider([tool()]), provider([presentation()])],
+    });
+    const answer = await f.answer();
+    expect(answer.evidence.map((item) => item.operationId)).toEqual(["metrics.query"]);
+    const first = JSON.parse(f.bodies[0]!);
+    expect(first.messages.map((message: { role: string }) => message.role)).toEqual(["user"]);
+    expect(f.hooks.recordTool).toHaveBeenCalledWith(
+      expect.objectContaining({ operationId: "metrics.query_range", ok: false }),
+    );
+  });
+
+  it("leaves the run to its own reads when the source answers unavailable", async () => {
+    const f = fixture({
+      ranges: true,
+      counts: {},
+      fail: true,
+      responses: [provider([presentation({ kind: "conversation", summary: "Hi.", sections: [] })])],
+    });
+    vi.mocked(f.call).mockImplementation(async (request) => {
+      const result =
+        request.name === "whoami"
+          ? { tenantId: "acme", subject: "fixture-customer", scopes: ["read"] }
+          : request.name === "list_sources"
+            ? [
+                {
+                  id: "acme-metrics",
+                  name: "Metrics",
+                  kind: "mimir",
+                  operationIds: ["metrics.query_range"],
+                },
+              ]
+            : request.name === "search_operations"
+              ? {
+                  version: "fixture-1",
+                  sources: [
+                    {
+                      sourceId: "acme-metrics",
+                      operations: [
+                        {
+                          id: "metrics.query_range",
+                          description: "",
+                          method: "GET",
+                          readOnly: true,
+                          inputSchema: { type: "object" },
+                        },
+                      ],
+                    },
+                  ],
+                }
+              : {
+                  tenantId: "acme",
+                  sourceId: "acme-metrics",
+                  operationId: "metrics.query_range",
+                  ok: false,
+                  error: "SOURCE_UNAVAILABLE",
+                };
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(result) }],
+        structuredContent: { result },
+      };
+    });
+    const answer = await f.answer();
+    expect(answer.evidence).toEqual([]);
+    const first = JSON.parse(f.bodies[0]!);
+    expect(first.messages).toHaveLength(1);
+  });
+
+  it("stops the run, not just the read, when it is cancelled during the counts read", async () => {
+    const f = fixture({ ranges: true, counts: hourly(nowSeconds(), []) });
+    let checks = 0;
+    vi.mocked(f.hooks.checkActive).mockImplementation(async () => {
+      // Once cancelled, a run stays cancelled.
+      if (++checks >= 2) throw new AskFailure("ASK_CANCELLED");
+    });
+    await expect(f.answer()).rejects.toMatchObject({ code: "ASK_CANCELLED" });
+    expect(f.fetchImpl).not.toHaveBeenCalled();
+    const connection = await vi.mocked(McpAdapter.prototype.open).mock.results[0]?.value;
+    if (connection) expect(connection.close).toHaveBeenCalledOnce();
+  });
+
+  it("does not spend the model's reads on the counts", async () => {
+    const value = readAskSettings({
+      AUTH_MODE: "enabled",
+      DEPLOYMENT_MODE: "managed",
+      ASK_DATA_ENABLED: "true",
+      ASK_DATA_CUSTOMER_ID: "acme",
+      ASK_DATA_MCP_TOKEN: "customer-secret-test",
+      AWS_BEARER_TOKEN_BEDROCK: "provider-secret-test",
+      ASK_DATA_BEDROCK_MODEL: "test-model",
+    });
+    const f = fixture({
+      ranges: true,
+      counts: hourly(nowSeconds(), [{ count: "router_lines", points: [[0, 1]] }]),
+      responses: [
+        provider([tool()]),
+        provider([tool(undefined, undefined, undefined, "read-2")]),
+        provider([presentation()]),
+      ],
+    });
+    const answer = await new AskOrchestrator({ ...value, maxToolCalls: 2 }, f.fetchImpl).answer(
+      run(),
+      [],
+      f.hooks,
+      new AbortController().signal,
+    );
+    expect(answer.evidence.filter((item) => item.operationId === "metrics.query")).toHaveLength(2);
   });
 });
