@@ -189,16 +189,24 @@
   font-size: 11px;
   overflow-wrap: anywhere;
 }
+.ask-coverage-badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
 .ask-coverage {
-  text-transform: capitalize;
   border: 1px solid var(--line-2);
   padding: 0 6px;
   border-radius: 5px;
   font-size: 11px;
+  white-space: nowrap;
 }
-.ask-coverage--partial,
-.ask-coverage--unavailable {
+.ask-coverage--warn {
   color: var(--warn);
+}
+.ask-coverage--muted {
+  color: var(--text-3);
 }
 .ask-coverage-warning {
   margin: 14px 0;

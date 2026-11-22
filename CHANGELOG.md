@@ -5,6 +5,17 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.74.5]
+
+### Fixed
+
+- An Ask answer whose only gap is the router's ~2-minute recording lag no
+  longer shows "Partial" or the "missing or cut short" line. Its sources carry
+  a muted "Last 2 min pending" tag, and the answer still states the gap. Cut
+  short, partial and unavailable sources keep the warning.
+- A source window that crosses midnight shows its day on both ends, so a
+  24-hour window no longer reads "Nov 21, 16:00 to 16:00".
+
 ## [0.74.4]
 
 ### Fixed

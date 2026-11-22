@@ -427,6 +427,50 @@ describe("bounded customer tool orchestration", () => {
     },
   );
 
+  it.each([
+    ["ends now", undefined, true],
+    ["ended an hour ago", Math.floor(Date.now() / 1000) - 3600, false],
+  ])(
+    "tells the model about the recording lag but keeps the read's coverage when the window %s",
+    async (_name, end, lagging) => {
+      const f = fixture({
+        data: { status: "success", data: { result: [{ metric: {}, value: [1, "576"] }] } },
+        responses: [
+          provider([
+            {
+              toolUse: {
+                toolUseId: "summary",
+                name: "router_request_summary",
+                input: end === undefined ? {} : { end },
+              },
+            },
+          ]),
+          final(),
+        ],
+      });
+      const evidence = (await f.answer()).evidence;
+      expect(evidence.map((item) => item.coverage)).toEqual(["complete", "complete"]);
+      // Stored answers keep the evidence shape an older api still parses.
+      for (const item of evidence)
+        expect(Object.keys(item).sort()).toEqual([
+          "coverage",
+          "from",
+          "id",
+          "observedAt",
+          "operationId",
+          "sourceId",
+          "to",
+          "truncated",
+        ]);
+      const body = JSON.parse(f.bodies[1]!);
+      const result = JSON.parse(body.messages.at(-1).content[0].toolResult.content[0].text);
+      expect(
+        result.counts.map((count: { result: { coverage: string } }) => count.result.coverage),
+      ).toEqual(lagging ? ["partial", "partial"] : ["complete", "complete"]);
+      expect(result.warning !== undefined).toBe(lagging);
+    },
+  );
+
   it("does not describe a current status observation as exhaustive incident history", async () => {
     const until = Math.floor(Date.now() / 1000);
     const f = fixture({
