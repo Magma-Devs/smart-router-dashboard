@@ -3,8 +3,10 @@ import { and, desc, eq, gt, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import {
   askChats,
   askMessages,
+  askModelSteps,
   askPreferences,
   askRuns,
+  askToolEvents,
   sessions,
   users,
   type AskChatRow,
@@ -26,6 +28,7 @@ import {
   type AskSubmit,
 } from "@sr/shared";
 import { AskFailure } from "./errors.js";
+import { runProgress } from "./progress.js";
 import { askTurnedOff } from "./switch.js";
 
 export type AskTransaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -251,7 +254,33 @@ export class AskStore {
       .from(askRuns)
       .where(and(this.runOwned(personId), inArray(askRuns.status, active)))
       .limit(1);
-    return run ? runWire(run) : null;
+    if (!run) return null;
+    const wire = runWire(run);
+    if (run.status !== "running") return wire;
+    // Read-only: the turns and reads the run records as it goes. Both lookups
+    // use the (customer, run) indexes and run side by side.
+    const [steps, reads] = await Promise.all([
+      this.db
+        .select({
+          state: askModelSteps.state,
+          createdAt: askModelSteps.createdAt,
+          completedAt: askModelSteps.completedAt,
+        })
+        .from(askModelSteps)
+        .where(and(eq(askModelSteps.customerId, this.customerId), eq(askModelSteps.runId, run.id)))
+        .orderBy(askModelSteps.createdAt),
+      this.db
+        .select({
+          operationId: askToolEvents.operationId,
+          parameters: askToolEvents.parameters,
+          ok: askToolEvents.ok,
+          createdAt: askToolEvents.createdAt,
+        })
+        .from(askToolEvents)
+        .where(and(eq(askToolEvents.customerId, this.customerId), eq(askToolEvents.runId, run.id)))
+        .orderBy(askToolEvents.createdAt),
+    ]);
+    return { ...wire, progress: runProgress(steps, reads) };
   }
 
   async submit(

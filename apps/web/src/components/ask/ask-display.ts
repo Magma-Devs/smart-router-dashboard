@@ -1,4 +1,4 @@
-import type { AskAnswer, AskChat } from "@sr/shared";
+import type { AskAnswer, AskChat, AskRun, AskRunStep } from "@sr/shared";
 
 export const HISTORY_GROUPS = [
   "Today",
@@ -108,4 +108,27 @@ export function validChatId(id: string | null | undefined): id is string {
     typeof id === "string" &&
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)
   );
+}
+
+const STEP_TEXT: Record<AskRunStep, string> = {
+  starting: "Starting",
+  planning: "Choosing what to read",
+  reading: "Reading data",
+  reviewing: "Reviewing what it read",
+  working: "Working",
+};
+
+/** What a pending answer's status line says. A run an API reports without
+ * progress (an older API, or one not yet started) reads as before. */
+export function processingText(run: Pick<AskRun, "status" | "progress"> | null): string {
+  if (run?.status === "cancelling") return "Stopping…";
+  if (run?.status === "running" && run.progress) return `${STEP_TEXT[run.progress.step]}…`;
+  return "Processing…";
+}
+
+/** The reads a running answer has finished, newest last, at most `limit`. */
+export function finishedReads(run: Pick<AskRun, "status" | "progress"> | null, limit = 5) {
+  if (run?.status !== "running" || !run.progress) return { shown: [], hidden: 0 };
+  const reads = run.progress.reads;
+  return { shown: reads.slice(-limit), hidden: Math.max(0, reads.length - limit) };
 }

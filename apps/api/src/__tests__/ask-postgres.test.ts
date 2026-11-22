@@ -8,6 +8,7 @@ import {
   askChats,
   askMessages,
   askRuns,
+  askToolEvents,
   createDb,
   migrate,
   users,
@@ -261,6 +262,76 @@ suite("Ask HTTP backed by independent PostgreSQL connections", () => {
     expect((await request(replica, alice, "/runs/active")).body.run!.id).toBe(
       results.find((r) => r.status === 200)!.body.id,
     );
+  });
+
+  it("reports a running answer's step and finished reads from any replica, this customer's only", async () => {
+    const id = await chat();
+    const run = await submit(a, alice, id);
+    expect((await request(a, alice, "/runs/active")).body.run!.progress).toBeUndefined();
+    expect((await aStore.claim(30_000))!.id).toBe(run.body.id);
+    const started = await request(replica, alice, "/runs/active");
+    expect(started.body.run!.progress).toEqual({ step: "starting", reads: [] });
+
+    const month = "2026-11";
+    for (const customerId of ["customer-a", "customer-b"])
+      await handles[0]!.db
+        .insert(askBudgetMonths)
+        .values({ customerId, month, limitMicroUsd: 1_000_000n });
+    const step = (customerId: string, state: "reserved" | "settled", at: string) => ({
+      runId: run.body.id,
+      customerId,
+      month,
+      feature: "ask" as const,
+      state,
+      inputTokenBound: 10,
+      outputTokenBound: 10,
+      reservedMicroUsd: 10n,
+      chargedMicroUsd: state === "settled" ? 5n : null,
+      pricing: {},
+      createdAt: new Date(at),
+      completedAt: state === "settled" ? new Date(at) : null,
+    });
+    await handles[0]!.db
+      .insert(askModelSteps)
+      .values(step("customer-a", "settled", "2026-11-22T20:00:00Z"));
+    // Another customer's turn with the same run id must not move this run's step.
+    await handles[0]!.db
+      .insert(askModelSteps)
+      .values(step("customer-b", "reserved", "2026-11-22T20:00:05Z"));
+    expect((await request(replica, alice, "/runs/active")).body.run!.progress).toEqual({
+      step: "working",
+      reads: [],
+    });
+
+    await handles[0]!.db.insert(askToolEvents).values({
+      runId: run.body.id,
+      customerId: "customer-a",
+      sourceId: "customer-a-metrics",
+      operationId: "metrics.query",
+      parameters: {
+        query:
+          'sum by (chain) (sum_over_time(smartrouter_final_failures:count1m{cluster="customer-a"}[24h]))',
+      },
+      evidence: {},
+      ok: "success",
+      latencyMs: 700,
+      createdAt: new Date("2026-11-22T20:00:01Z"),
+    });
+    expect((await request(a, alice, "/runs/active")).body.run!.progress).toEqual({
+      step: "reading",
+      reads: [{ label: "Failure counts", ok: true }],
+    });
+
+    await handles[0]!.db
+      .insert(askModelSteps)
+      .values(step("customer-a", "reserved", "2026-11-22T20:00:02Z"));
+    expect((await request(replica, alice, "/runs/active")).body.run!.progress).toEqual({
+      step: "reviewing",
+      reads: [{ label: "Failure counts", ok: true }],
+    });
+    // The person's chat view still lists the run without progress.
+    expect((await request(a, alice, `/runs/${run.body.id}`)).body.progress).toBeUndefined();
+    expect((await request(b, alice, "/runs/active")).body.run).toBeNull();
   });
 
   it("returns the same run/message on concurrent idempotent retry and rejects changed content", async () => {
