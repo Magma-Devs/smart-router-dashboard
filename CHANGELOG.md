@@ -5,6 +5,17 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.74.6]
+
+### Changed
+
+- Ask counts with the recorded series first. It reads the router's warn and
+  error log lines by chain, level and message from
+  `smartrouter_warn_error_lines:count1m` (`measure=errors`), so "what errors
+  did a chain have today" no longer scans a day of raw logs. A recorded count
+  with nothing for the window comes back with the same count over the raw log
+  lines, which Ask runs once when the question needs it and says it did.
+
 ## [0.74.5]
 
 ### Fixed

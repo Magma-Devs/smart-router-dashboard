@@ -428,6 +428,38 @@ describe("bounded customer tool orchestration", () => {
   );
 
   it.each([
+    ["errors", { measure: "errors" }, ["errors", "error_messages"]],
+    ["requests", {}, ["requests", "failures"]],
+  ])(
+    "hands the model a count's raw fallback only where the recorded series has none (%s)",
+    async (_name, input, names) => {
+      for (const empty of [true, false]) {
+        const f = fixture({
+          data: { status: "success", data: { result: empty ? [] : [{ metric: {}, value: [1, "5"] }] } },
+          responses: [
+            provider([{ toolUse: { toolUseId: "summary", name: "router_request_summary", input } }]),
+            final(),
+          ],
+        });
+        await f.answer();
+        const body = JSON.parse(f.bodies[1]!);
+        const result = JSON.parse(body.messages.at(-1).content[0].toolResult.content[0].text);
+        expect(result.counts.map((count: { name: string }) => count.name)).toEqual(names);
+        for (const count of result.counts as { fallback?: { tool: string; query: string; time: number } }[]) {
+          if (!empty) expect(count.fallback).toBeUndefined();
+          else {
+            expect(count.fallback?.tool).toBe("logs_query");
+            expect(count.fallback?.query).toContain('{service_name=~"acme-.*",component="router"}');
+            expect(count.fallback?.time).toBe(result.window.end);
+          }
+        }
+        // Only the recorded reads ran: the fallback is the model's to run, once, if needed.
+        expect(vi.mocked(f.hooks.recordTool).mock.calls.every(([read]) => read.operationId === "metrics.query")).toBe(true);
+      }
+    },
+  );
+
+  it.each([
     ["ends now", undefined, true],
     ["ended an hour ago", Math.floor(Date.now() / 1000) - 3600, false],
   ])(
@@ -1045,5 +1077,18 @@ describe("conversation, grounding and execution boundaries", () => {
     );
     expect(body.system[0].text).toContain("Trusted server request context");
     expect(McpAdapter.prototype.open).not.toHaveBeenCalled();
+    // Counts: the recorded series first, every family named, raw lines only as the fallback.
+    const prompt = body.system[0].text as string;
+    for (const family of [
+      "smartrouter_final_requests:count1m",
+      "smartrouter_final_failures:count1m",
+      "smartrouter_transactions:count1m",
+      "smartrouter_warn_error_lines:count1m",
+    ])
+      expect(prompt).toContain(family);
+    expect(prompt).toContain("Counts come from the recorded series first");
+    expect(prompt).toContain("Count raw log lines only as the fallback");
+    expect(prompt).toContain("Say in the answer that a figure was counted from the logs");
+    expect(prompt).toContain("measure=errors");
   });
 });

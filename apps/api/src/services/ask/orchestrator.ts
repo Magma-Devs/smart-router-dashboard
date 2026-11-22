@@ -15,13 +15,15 @@ import type { AskSettings } from "../../config.js";
 import { type BedrockInput, type BedrockReceipt, type BedrockUsage } from "./bedrock.js";
 import { McpAdapter, assertAskRead, askReadOperations, type McpReadResult } from "./mcp.js";
 import { askAgentModel, type AskHistoryTurn } from "./agent-model.js";
-import { requestSummaryInput, requestSummaryQueries } from "./request-summary.js";
+import { RECORDED_WARN_ERROR, requestSummaryInput, requestSummaryQueries } from "./request-summary.js";
 import { formatAskPresentation } from "./presentation.js";
 import { routerLogsInput, routerLogQuery } from "./router-logs.js";
 import { askQueryLookbackSeconds } from "./query-bounds.js";
 import { AskFailure, abortFailure } from "./errors.js";
 import { redactAskData, redactAskText } from "./redact.js";
 import { FAILED_OUTCOMES } from "../relay-end.js";
+import { RECORDED_OUTCOMES } from "../error-requests.js";
+import { RECORDED_TX } from "../transactions-over-time.js";
 import { TX_EVENT_FILTER, TX_METHODS } from "../transactions.js";
 
 export interface AskExecutionHooks {
@@ -84,10 +86,12 @@ const system = [
   "Use page chain/time context as the default unless the question explicitly asks otherwise; it never selects authorization. Queries are bounded to 24 hours, status event windows to 7 days. State the actual queried window and any partial/truncated result; narrow reads rather than claim full coverage. Old conversations are context, not fresh measurements.",
   "Use simple PromQL/LogQL with literal range selectors totaling at most 24 hours. Subqueries, duration arithmetic, offset and @ time modifiers are unavailable; select historical time with the operation's explicit start/end/time parameters instead.",
   "For status questions, use status_chain_events if present. It reports provider status, measured incidents and protocol changes only for this customer's own chains. Without an authorized status source, explicitly state that status evidence is unavailable. Timing overlap with an error is a hypothesis, not proof of cause.",
+  `Counts come from the recorded series first: one sample a minute, about two minutes behind, in the metrics source. ${RECORDED_OUTCOMES.requests} and ${RECORDED_OUTCOMES.failures} count requests and router failures, ${RECORDED_TX} transactions, and ${RECORDED_WARN_ERROR} the router's log lines at warn or error (labels chain in lower case, level, message). router_request_summary reads them. Count raw log lines only as the fallback: when a recorded count has no series for the window (the summary then returns that count's raw query as fallback; run it once with logs_query at the given time), for the newest two minutes, or when the question needs the lines themselves (router_recent_requests). Say in the answer that a figure was counted from the logs. Never scan raw logs for a count the recorded series answer.`,
   // The Transactions tab's own reading (services/transactions.ts): the same
   // lines, the same methods, the same results.
   `Transactions: a transaction is a write the router relayed (${TX_METHODS.join(", ")}, or any request the router marks stateful). Never search logs for the word "transaction". The router ends every request with one JSON log line containing "relay_end", with the fields chain, method, stateful, outcome, tx_hash, tx_status, tx_code, tx_error and customer; find transactions by putting exactly this line filter after the stream selector: ${TX_EVENT_FILTER} and add |= \`"chain":"<CHAIN>"\` for one chain. For counts, first try the metric smartrouter_transactions:count1m (labels chain in lower case, outcome, tx_status, tx_refused; one sample a minute, so sum sum_over_time over the window); count the log lines only when it has no series. Results: outcome ok is accepted, unless tx_refused is true or tx_code is not 0 (rejected by the node) or tx_status is failure (failed on chain), and over gRPC without a tx_status it is unknown; node_error is rejected by the node; rejected_before_dispatch is failed and was never sent; ${FAILED_OUTCOMES.filter((o) => o !== "rejected_before_dispatch").join(", ")} are unknown, because a copy may have reached a provider. Say "unknown" for those, never "failed".`,
   `Failed requests: requests the router could not serve are relay_end lines whose outcome is one of ${FAILED_OUTCOMES.join(", ")}; their per-minute counts are smartrouter_final_failures:count1m, out of smartrouter_final_requests:count1m.`,
+  "Errors and warnings the router logged: router_request_summary with measure=errors returns the warn and error line counts by chain and level, and the most frequent messages. A message reads its numbers as N and its hex values as HEX. These are log lines, not failed requests: one failed request can log several, and a warning can come from a request that succeeded.",
   "A node_error is a node's RPC error response, not one of those router failure outcomes. Distinguish RPC errors from requests the router could not serve. A log sample and an aggregate count in the same time window are not necessarily the same events; do not say a sampled node error is one of the counted router failures without evidence of that relationship.",
   "A recorded router failure is a known failure to serve the RPC request. An aggregate may lack the cause breakdown, but that does not make these unknown-outcome requests. Only an actual transaction write can have an unknown on-chain result; never apply that transaction classification to all request failures.",
   "For broad questions about which chains need attention, request totals, transaction counts or request failures, prefer router_request_summary. Set measure=transactions for transactions. It returns both recorded counts for all chains in one consistent window. Additional reads are warranted only for a missing value or a specific follow-up; do not repeat successful queries. After sufficient evidence, answer concisely. Failure counts alone do not establish health: never call a nonzero failure rate healthy or acceptable without an actual SLO or a threshold supplied by the user.",
@@ -502,29 +506,36 @@ export class AskOrchestrator {
         ) as ToolSet),
         router_request_summary: tool({
           description:
-            "Preferred for NEW live questions about chain attention, request/transaction counts or failures. Do not use for rewriting or explaining a historical answer. For transactions set measure=transactions; it uses the Transactions tab's recorded family and preserves outcome labels. Otherwise reads both request and failure counts. Omit times for the chat window and chain for all customer chains. Missing data is unknown, not zero. No health or cause inference.",
+            "Preferred for NEW live questions about chain attention, request/transaction counts, failures, or the errors and warnings the router logged. Do not use for rewriting or explaining a historical answer. For transactions set measure=transactions; it uses the Transactions tab's recorded family and preserves outcome labels. For logged errors and warnings set measure=errors: counts by chain and level, and the most frequent messages. Otherwise reads both request and failure counts. Omit times for the chat window and chain for all customer chains. Missing data is unknown, not zero; a count with no recorded series carries its raw fallback query. No health or cause inference.",
           inputSchema: requestSummaryInput,
           execute: async (input) => {
-            const queries = requestSummaryQueries(input, defaultWindow);
+            const queries = requestSummaryQueries(input, defaultWindow, this.settings.customerId);
             if (!queries) return fail(new AskFailure("ASK_TOOL_DENIED", 403));
             const partial = queries.end > serverUnixSeconds - 120;
             const counts = [];
-            for (const count of queries.counts)
+            for (const count of queries.counts) {
+              const result = await read(
+                {
+                  sourceId: input.sourceId,
+                  operationId: "metrics.query",
+                  parameters: { query: count.query, time: queries.end },
+                },
+                { ...queries, partial },
+              );
+              // No recorded series for the window: the same count over the raw lines, for the model to run once.
+              const empty = (result as { coverage?: string }).coverage === "empty";
               counts.push({
                 name: count.name,
-                result: await read(
-                  {
-                    sourceId: input.sourceId,
-                    operationId: "metrics.query",
-                    parameters: { query: count.query, time: queries.end },
-                  },
-                  { ...queries, partial },
-                ),
+                result,
+                ...(empty && count.raw
+                  ? { fallback: { tool: "logs_query", query: count.raw, time: queries.end } }
+                  : {}),
               });
+            }
             return {
               window: { start: queries.start, end: queries.end },
               counts,
-              note: `Recorded one-minute outcomes. The router failure count includes only ${FAILED_OUTCOMES.join(", ")}, not a served node_error response. Do not match sampled errors to this count without evidence. Missing series are unknown, never zero. Transaction results preserve their own outcome/status/interface labels; only transaction writes have an on-chain outcome. Counts unchanged between reads do not establish zero new activity. Do not sum replicated sources or infer an acceptable failure rate without an SLO.`,
+              note: `Recorded one-minute counts, read first. A count with no recorded series carries fallback: the same count over the raw log lines; run it once with logs_query only when the question needs that count, and say the figure was counted from the logs. The router failure count includes only ${FAILED_OUTCOMES.join(", ")}, not a served node_error response. Do not match sampled errors to this count without evidence. Missing series are unknown, never zero. Transaction results preserve their own outcome/status/interface labels; only transaction writes have an on-chain outcome. Counts unchanged between reads do not establish zero new activity. Do not sum replicated sources or infer an acceptable failure rate without an SLO.`,
               ...(partial
                 ? {
                     warning:

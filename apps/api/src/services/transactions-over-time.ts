@@ -69,7 +69,7 @@ const RULE_INTERVAL_SEC = 60;
 const BY = ["cluster", "service_name", "api_interface", "outcome", "tx_status", "tx_refused"] as const;
 
 /** The same labels from the logs: `tx_refused` when the reply named a `tx_code` other than 0. */
-const LOG_PIPELINE =
+export const LOG_PIPELINE =
   `| json outcome="outcome", tx_status="tx_status", tx_code="tx_code", api_interface="api_interface" | __error__=""` +
   ' | label_format tx_refused=`{{ if and .tx_code (ne .tx_code "0") }}true{{ end }}`';
 
