@@ -5,6 +5,16 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.74.9]
+
+### Fixed
+
+- `ASK_MAINTENANCE_FAILED`, `ASK_START_FAILED` and `ASK_LEASE_CHECK_FAILED` log
+  lines name their cause: `errorClass`, `causeClass` and `errorCode` (for example
+  `ECONNREFUSED` or a Postgres SQLSTATE). They never carry the error's message,
+  which can hold the query and the connection string. A retention failure keeps
+  the database error it wraps, so its maintenance line names that code too.
+
 ## [0.74.8]
 
 ### Fixed

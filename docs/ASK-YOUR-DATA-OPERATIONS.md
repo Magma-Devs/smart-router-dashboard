@@ -131,8 +131,13 @@ Health must show recent maintenance attempt and success (a sweep is scheduled ea
 minute), no unexplained stale/error state, and the expected customer's monthly
 limit/spent/reserved values. Monitor missing or stale `lastSuccessAt`,
 `ASK_MAINTENANCE_FAILED`, `ASK_RETENTION_FAILED`, `ASK_START_FAILED`, unresolved
-uncertain steps and held reservations. Two consecutive missed intervals require
-investigation; recovery must preserve the last success and retry automatically.
+uncertain steps and held reservations. An `ASK_MAINTENANCE_FAILED`,
+`ASK_START_FAILED` or `ASK_LEASE_CHECK_FAILED` log line names its cause in
+`errorClass`, `causeClass` (the deepest error the failure wraps) and `errorCode`
+(`ECONNREFUSED`, a Postgres SQLSTATE such as `57P01`); it never carries the error's
+message, which can hold the query and the connection string. Two consecutive
+missed intervals require investigation; recovery must preserve the last success
+and retry automatically.
 An invalid configured retention cannot stretch cleanup past 90 days; it blocks
 execution while maintenance uses the bounded policy.
 

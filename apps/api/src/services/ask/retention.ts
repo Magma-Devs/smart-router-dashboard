@@ -127,7 +127,7 @@ export class AskRetention {
           .where(eq(askMaintenance.customerId, this.customerId));
         return expired.length;
       });
-    } catch {
+    } catch (error) {
       await this.db
         .insert(askMaintenance)
         .values({
@@ -140,7 +140,7 @@ export class AskRetention {
           set: { lastAttemptAt: sql`clock_timestamp()`, errorCode: "ASK_RETENTION_FAILED" },
         })
         .catch(() => undefined);
-      throw new Error("ASK_RETENTION_FAILED");
+      throw new Error("ASK_RETENTION_FAILED", { cause: error });
     }
   }
 }

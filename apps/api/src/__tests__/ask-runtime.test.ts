@@ -1,5 +1,6 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DrizzleQueryError } from "drizzle-orm/errors";
 import { createTestDb, enrolledTwoFactor, type TestDb } from "@sr/db/testing";
 import { askBudgetMonths, askMaintenance, askModelSteps, users } from "@sr/db";
 import { SignJWT } from "jose";
@@ -10,6 +11,7 @@ import { AskOrchestrator } from "../services/ask/orchestrator.js";
 import { BedrockAdapter } from "../services/ask/bedrock.js";
 import { AskWorker } from "../services/ask/worker.js";
 import { McpAdapter } from "../services/ask/mcp.js";
+import { AskStore } from "../services/ask/store.js";
 import { askRoutes } from "../routes/ask.js";
 
 const secret = "runtime-ask-secret-with-at-least-32-characters";
@@ -80,8 +82,12 @@ const request = (url: string, payload?: unknown) =>
     headers: { authorization: `Bearer ${token}` },
     ...(payload === undefined ? {} : { payload }),
   });
-async function boot() {
-  app = Fastify();
+async function boot(lines?: string[]) {
+  app = Fastify(
+    lines
+      ? { logger: { level: "info", stream: { write: (line: string) => lines.push(line) } } }
+      : {},
+  );
   app.decorate("db", t.db);
   app.decorate("dbReady", Promise.resolve());
   await app.register(authPlugin);
@@ -90,6 +96,41 @@ async function boot() {
   await app.ready();
   return runtime;
 }
+const connectionString = "postgres://ask:synthetic-password@db.internal:5432/dashboard";
+class PostgresError extends Error {
+  constructor(
+    message: string,
+    public readonly code: string,
+  ) {
+    super(message);
+    this.name = "PostgresError";
+  }
+}
+/** A refused connection as the driver reports it: the address in the message. */
+const refusal = () =>
+  Object.assign(new Error(`connect ECONNREFUSED 127.0.0.1:5432 (${connectionString})`), {
+    code: "ECONNREFUSED",
+  });
+/** A query the database ended, wrapped the way the ORM wraps every failure. */
+const terminated = () =>
+  new DrizzleQueryError(
+    "update ask_runs set status = $1",
+    [connectionString],
+    new PostgresError(`terminating connection (${connectionString})`, "57P01"),
+  );
+/** The serialized log lines carrying one Ask code. */
+const logged = (lines: string[], code: string) =>
+  lines.map((line) => JSON.parse(line) as Record<string, unknown>).filter((l) => l.code === code);
+/** Every line names the failure by class and code only. */
+function expectNoSecrets(lines: string[]) {
+  const text = lines.join("");
+  expect(text).not.toContain("postgres://");
+  expect(text).not.toContain("synthetic-password");
+  expect(text).not.toContain("Failed query");
+  expect(text).not.toContain("terminating connection");
+  expect(text).not.toContain("127.0.0.1:5432");
+}
+
 describe("API runtime accounting/worker wiring", () => {
   it("persists a conversational reply through HTTP and the real worker, with model accounting and no MCP", async () => {
     const count = vi.spyOn(BedrockAdapter.prototype, "countTokens").mockResolvedValue(100);
@@ -253,5 +294,72 @@ describe("API runtime accounting/worker wiring", () => {
     await Promise.resolve();
     expect(start).not.toHaveBeenCalled();
     expect(runtime.ready()).toBe(false);
+  });
+});
+
+describe("Ask failures name their cause", () => {
+  it("a failed sweep logs its error's class and code, never its message", async () => {
+    vi.spyOn(AskStore.prototype, "recover").mockRejectedValue(terminated());
+    const lines: string[] = [];
+    await boot(lines);
+    await vi.waitFor(() => expect(logged(lines, "ASK_MAINTENANCE_FAILED")).toHaveLength(1));
+    expect(logged(lines, "ASK_MAINTENANCE_FAILED")[0]).toMatchObject({
+      msg: "Ask maintenance failed",
+      errorClass: "DrizzleQueryError",
+      causeClass: "PostgresError",
+      errorCode: "57P01",
+    });
+    expectNoSecrets(lines);
+  });
+
+  it("a failed start logs its error's class and code, never its message", async () => {
+    vi.spyOn(AskWorker.prototype, "start").mockImplementation(() => {
+      throw new DrizzleQueryError("select 1", [connectionString], refusal());
+    });
+    const lines: string[] = [];
+    await boot(lines);
+    await vi.waitFor(() => expect(logged(lines, "ASK_START_FAILED")).toHaveLength(1));
+    expect(logged(lines, "ASK_START_FAILED")[0]).toMatchObject({
+      msg: "Ask runtime failed to start",
+      errorClass: "DrizzleQueryError",
+      causeClass: "Error",
+      errorCode: "ECONNREFUSED",
+    });
+    expectNoSecrets(lines);
+  });
+
+  it("a failed lease check logs its error's class and code, never its message", async () => {
+    vi.spyOn(BedrockAdapter.prototype, "countTokens").mockResolvedValue(100);
+    vi.spyOn(AskOrchestrator.prototype, "answer").mockImplementation(
+      (_run, _history, _hooks, signal) =>
+        new Promise((_resolve, reject) => {
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        }),
+    );
+    vi.spyOn(AskStore.prototype, "leaseState").mockRejectedValue(terminated());
+    const lines: string[] = [];
+    const runtime = await boot(lines);
+    await vi.waitFor(() => expect(runtime.ready()).toBe(true));
+    const chat = (await request("/chats", {})).json() as { id: string };
+    const run = (
+      await request(`/chats/${chat.id}/runs`, {
+        idempotencyKey: crypto.randomUUID(),
+        question: "Synthetic question",
+      })
+    ).json() as { id: string };
+    await vi.waitFor(() => expect(logged(lines, "ASK_LEASE_CHECK_FAILED")).toHaveLength(1), {
+      timeout: 5000,
+    });
+    expect(logged(lines, "ASK_LEASE_CHECK_FAILED")[0]).toMatchObject({
+      msg: "Ask worker operation failed",
+      errorClass: "DrizzleQueryError",
+      causeClass: "PostgresError",
+      errorCode: "57P01",
+    });
+    await vi.waitFor(
+      async () => expect((await request(`/runs/${run.id}`)).json().status).toBe("interrupted"),
+      { timeout: 3000 },
+    );
+    expectNoSecrets(lines);
   });
 });

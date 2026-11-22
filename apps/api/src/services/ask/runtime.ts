@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { readAskSettings } from "../../config.js";
 import { AskBudget } from "./budget.js";
 import { AskFailure } from "./errors.js";
+import { askErrorFields } from "./log-fields.js";
 import { assertCurrentPricing, readAskBillingSettings } from "./pricing.js";
 import { AskRetention } from "./retention.js";
 import { AskStore, type AskAdmission } from "./store.js";
@@ -76,7 +77,11 @@ export function installAskRuntime(app: FastifyInstance): {
           afterTerminal: (id) => budget!.reconcile(id),
           enabled: () => settings.enabled && readAskSettings().enabled && !turnedOff?.confirmedOff,
           canClaim: ready,
-          onError: (code) => app.log.error({ code }, "Ask worker operation failed"),
+          onError: (code, error) =>
+            app.log.error(
+              { code, ...(error === undefined ? {} : askErrorFields(error)) },
+              "Ask worker operation failed",
+            ),
           timing: (runId, phase, durationMs) =>
             app.log.info(
               { runId, phase, durationMs: Math.round(durationMs) },
@@ -93,8 +98,11 @@ export function installAskRuntime(app: FastifyInstance): {
           await budget?.reconcile();
           await retention.sweep();
         })()
-          .catch(() => {
-            app.log.error({ code: "ASK_MAINTENANCE_FAILED" }, "Ask maintenance failed");
+          .catch((error: unknown) => {
+            app.log.error(
+              { code: "ASK_MAINTENANCE_FAILED", ...askErrorFields(error) },
+              "Ask maintenance failed",
+            );
           })
           .finally(() => {
             sweepBusy = false;
@@ -104,8 +112,12 @@ export function installAskRuntime(app: FastifyInstance): {
       timer.unref();
       sweep();
     })
-    .catch(() => {
-      if (!stopped) app.log.error({ code: "ASK_START_FAILED" }, "Ask runtime failed to start");
+    .catch((error: unknown) => {
+      if (!stopped)
+        app.log.error(
+          { code: "ASK_START_FAILED", ...askErrorFields(error) },
+          "Ask runtime failed to start",
+        );
     });
   // Claims stop as the close begins, before in-flight requests finish. A
   // stopping replica is not a disable: its running answers carry on, and the

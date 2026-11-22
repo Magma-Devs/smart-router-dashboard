@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestDb, enrolledTwoFactor, type TestDb } from "@sr/db/testing";
 import { askRuns, users, type AskRunRow } from "@sr/db";
 import { eq } from "drizzle-orm";
+import { DrizzleQueryError } from "drizzle-orm/errors";
 import type { AskAnswer } from "@sr/shared";
 import { readAskSettings } from "../config.js";
 import { AskStore } from "../services/ask/store.js";
@@ -79,7 +80,7 @@ function worker(
   options: {
     enabled?: () => boolean;
     canClaim?: () => boolean;
-    onError?: (code: string) => void;
+    onError?: (code: string, error?: unknown) => void;
   } = {},
 ) {
   const afterTerminal = vi.fn(async () => undefined);
@@ -328,6 +329,19 @@ describe("durable run worker scheduling and cancellation", () => {
     expect((await store.getRun(owner, run.id)).status).toBe("interrupted");
     expect((await store.chatDetail(owner, chatId)).messages).toHaveLength(1);
     expect(onError.mock.calls).toEqual([["ASK_LEASE_LOST"]]);
+  });
+
+  it("a failed lease check hands its error to the log and interrupts the run", async () => {
+    const run = await submit();
+    pendingAnswer();
+    const failure = new DrizzleQueryError("select status from ask_runs", [], new Error("refused"));
+    vi.spyOn(store, "leaseState").mockRejectedValue(failure);
+    const onError = vi.fn();
+    const { instance } = worker({ onError });
+    await instance.tick();
+    await instance.drained();
+    expect(onError.mock.calls).toEqual([["ASK_LEASE_CHECK_FAILED", failure]]);
+    expect((await store.getRun(owner, run.id)).status).toBe("interrupted");
   });
 
   it("a lost lease interrupts instead of replaying and recovery releases the person's slot", async () => {

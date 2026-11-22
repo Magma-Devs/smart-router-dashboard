@@ -17,6 +17,7 @@ import { readAskSettings } from "../config.js";
 import { AskBudget } from "../services/ask/budget.js";
 import { AskStore } from "../services/ask/store.js";
 import { AskRetention } from "../services/ask/retention.js";
+import { askErrorFields } from "../services/ask/log-fields.js";
 import { BedrockAdapter } from "../services/ask/bedrock.js";
 import { createSession } from "../services/sessions.js";
 import type { AskBillingSettings } from "../services/ask/pricing.js";
@@ -360,10 +361,15 @@ describe("physical content retention without financial reset", () => {
   });
   it("records a failed retention attempt safely and retries without losing the last success", async () => {
     const retention = new AskRetention(t.db, "customer-a", 30);
-    const failure = vi
-      .spyOn(t.db, "transaction")
-      .mockRejectedValueOnce(new Error("private-prompt-driver-error"));
-    await expect(retention.sweep(0)).rejects.toThrow("ASK_RETENTION_FAILED");
+    const driver = Object.assign(new Error("private-prompt-driver-error"), { code: "57P01" });
+    const failure = vi.spyOn(t.db, "transaction").mockRejectedValueOnce(driver);
+    const refused = await retention.sweep(0).catch((error: unknown) => error);
+    expect(refused).toMatchObject({ message: "ASK_RETENTION_FAILED", cause: driver });
+    expect(askErrorFields(refused)).toEqual({
+      errorClass: "Error",
+      causeClass: "Error",
+      errorCode: "57P01",
+    });
     expect((await t.db.select().from(askMaintenance))[0]).toMatchObject({
       errorCode: "ASK_RETENTION_FAILED",
       lastSuccessAt: null,

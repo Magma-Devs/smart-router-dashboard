@@ -13,7 +13,8 @@ export interface AskWorkerOptions {
   canClaim?: () => boolean;
   timing?: (runId: string, phase: string, durationMs: number) => void;
   fetchImpl?: typeof fetch;
-  onError?: (code: string) => void;
+  /** `error`, when given, is logged by its class and code only. */
+  onError?: (code: string, error?: unknown) => void;
 }
 
 /** PostgreSQL owns queue/leases. These process-local maps only bound this
@@ -97,8 +98,8 @@ export class AskWorker {
             this.options.onError?.("ASK_LEASE_LOST");
             controller.abort(new AskFailure("ASK_INTERRUPTED"));
           }
-        } catch {
-          this.options.onError?.("ASK_LEASE_CHECK_FAILED");
+        } catch (error) {
+          this.options.onError?.("ASK_LEASE_CHECK_FAILED", error);
           controller.abort(new AskFailure("ASK_INTERRUPTED"));
         } finally {
           checking = null;
