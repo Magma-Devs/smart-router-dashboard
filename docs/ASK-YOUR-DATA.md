@@ -141,8 +141,12 @@ choices and never sums replicas. Remote descriptions cannot grant tools.
 Metrics/log reads keep their 24-hour bounds; provider-status event reads keep
 their seven-day bounds.
 
-`router_request_summary` selects the dashboard's recorded request/failure or transaction families into two verified MCP reads over the same window. Missing series stay
-unknown, without a zero fallback. A window that ends within two minutes of the
+`router_request_summary` reads the ruler's recorded per-minute counts over one window: requests and failures, transactions (`measure=transactions`), or the router's warn and error log lines by chain and level with the 30 most frequent messages (`measure=errors`, `smartrouter_warn_error_lines:count1m`). Missing series stay
+unknown, without a zero fallback. A count whose recorded series has nothing for
+the window carries `fallback`: the same count over this customer's raw router
+lines in Loki, with the recorded rule's own filters (`requestSummaryQueries`'s
+`raw`). The tool never runs it; the model runs it once with `logs_query` when
+the question needs that count, and says the figure was counted from the logs. A window that ends within two minutes of the
 server's time reaches into the recording lag: the model reads it as partial
 coverage and states the gap, and the stored evidence keeps the read's own
 coverage. Counts do not establish an acceptable error rate or a cause without actual evidence and an SLO. `router_recent_requests` reads a small, customer-scoped backwards sample of the dashboard's `relay_end` events for request details. Sampling never proves the absence of errors. Effective status/instant-query times and literal lookback windows are returned explicitly; absence of a provider-status source is reported as unavailable.
@@ -163,7 +167,11 @@ in the Transactions tab's own terms: the `relay_end` line filter
 (`TX_EVENT_FILTER`), the recorded per-minute counts
 (`smartrouter_transactions:count1m`, `smartrouter_final_{requests,failures}:count1m`)
 and how an outcome reads as accepted, rejected, failed on chain, failed or
-unknown (`txResultOf`). It also sets how an answer is written: plain sentences,
+unknown (`txResultOf`). It sets the order for any count: the recorded series
+first, these four and `smartrouter_warn_error_lines:count1m`; raw log lines only
+as the fallback, when a series has nothing for the window, for the newest two
+minutes, or for the lines themselves (`router_recent_requests`). A warn or error
+line is a log line, not a failed request. It also sets how an answer is written: plain sentences,
 the covered time said once, no source IDs, label names or queries in the prose.
 
 At most 5 model steps and 8 data reads run; a step can request at most 4 tools.

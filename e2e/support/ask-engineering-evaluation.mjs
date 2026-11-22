@@ -104,6 +104,7 @@ const metricNames = [
   "smartrouter_final_requests:count1m",
   "smartrouter_final_failures:count1m",
   "smartrouter_transactions:count1m",
+  "smartrouter_warn_error_lines:count1m",
 ];
 const receipts = [];
 const answers = [];
