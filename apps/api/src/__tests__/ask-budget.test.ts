@@ -20,7 +20,11 @@ import { AskRetention } from "../services/ask/retention.js";
 import { askErrorFields } from "../services/ask/log-fields.js";
 import { BedrockAdapter } from "../services/ask/bedrock.js";
 import { createSession } from "../services/sessions.js";
-import type { AskBillingSettings } from "../services/ask/pricing.js";
+import {
+  ASK_INPUT_TOKEN_OVERHEAD,
+  maximumStepCost,
+  type AskBillingSettings,
+} from "../services/ask/pricing.js";
 
 const settings = readAskSettings({
   AUTH_MODE: "enabled",
@@ -55,9 +59,9 @@ let t: TestDb;
 let budget: AskBudget;
 let store: AskStore;
 
-async function running(customer = "customer-a"): Promise<AskRunRow> {
+async function running(customer = "customer-a", limit = 1000n): Promise<AskRunRow> {
   const scoped = new AskStore(t.db, customer, 90);
-  const accounting = new AskBudget(t.db, { ...settings, customerId: customer }, billing());
+  const accounting = new AskBudget(t.db, { ...settings, customerId: customer }, billing(limit));
   const [person] = await t.db
     .insert(users)
     .values({ email: `${crypto.randomUUID()}@example.test`, ...enrolledTwoFactor() })
@@ -92,28 +96,18 @@ const pool = async () =>
   )[0]!;
 
 describe("durable shared customer spending", () => {
-  it("passes durable Stop to a pending free token counter before any reservation or paid dispatch", async () => {
+  it("refuses an admission whose run was already stopped, reserving nothing", async () => {
     const run = await running();
     const controller = new AbortController();
-    const counter = vi
-      .spyOn(BedrockAdapter.prototype, "countTokens")
-      .mockImplementation(async (_input, _mapping, signal) => {
-        expect(signal).toBe(controller.signal);
-        return new Promise<number>((_resolve, reject) =>
-          signal!.addEventListener("abort", () => reject(signal!.reason), { once: true }),
-        );
-      });
-    const pending = budget
-      .hooks(run)
-      .beforeModelStep({
+    controller.abort(new Error("Stopped fixture"));
+    await expect(
+      budget.hooks(run).beforeModelStep({
         input: { system: "Fixture", messages: [] },
         inputBytes: 10,
         outputTokens: 10,
         signal: controller.signal,
-      });
-    await vi.waitFor(() => expect(counter).toHaveBeenCalledOnce());
-    controller.abort(new Error("Stopped fixture"));
-    await expect(pending).rejects.toThrow("Stopped fixture");
+      }),
+    ).rejects.toThrow("Stopped fixture");
     expect(await t.db.select().from(askModelSteps)).toHaveLength(0);
     expect((await pool()).reservedMicroUsd).toBe(0n);
   });
@@ -268,34 +262,65 @@ describe("durable shared customer spending", () => {
       (await t.db.select().from(askBudgetMonths)).every((p) => p.reservedMicroUsd === 0n),
     ).toBe(true);
   });
-  it("requires a successful free count and reservation before dispatch", async () => {
-    const run = await running();
-    const counter = vi
-      .spyOn(BedrockAdapter.prototype, "countTokens")
-      .mockRejectedValueOnce(new Error("denied"));
-    const hooks = budget.hooks(run);
-    await expect(
-      hooks.beforeModelStep({
-        input: { system: "Fixture", messages: [] },
-        inputBytes: 100,
-        outputTokens: 10,
-      }),
-    ).rejects.toThrow();
-    expect(await t.db.select().from(askModelSteps)).toHaveLength(0);
-    counter.mockResolvedValue(100);
-    const id = await hooks.beforeModelStep({
-      input: { system: "Fixture", messages: [] },
-      inputBytes: 100,
-      outputTokens: 10,
-    });
+  it("reserves the request's byte bound before dispatch, with no network call", async () => {
+    const run = await running("customer-a", 1_000_000n);
+    const counter = vi.spyOn(BedrockAdapter.prototype, "countTokens");
+    const network = vi.spyOn(globalThis, "fetch");
+    const hooks = new AskBudget(t.db, settings, billing(1_000_000n)).hooks(run);
+    const input = {
+      system: "Fixture",
+      messages: [{ role: "user" as const, content: [{ text: "x".repeat(30_000) }] }],
+    };
+    const id = await hooks.beforeModelStep({ input, inputBytes: 0, outputTokens: 10 });
+    const bound = Buffer.byteLength(JSON.stringify(input)) + ASK_INPUT_TOKEN_OVERHEAD;
+    expect(counter).not.toHaveBeenCalled();
+    expect(network).not.toHaveBeenCalled();
     expect((await t.db.select().from(askModelSteps))[0]).toMatchObject({
       id,
       state: "reserved",
-      inputTokenBound: 228,
+      inputTokenBound: bound,
+      reservedMicroUsd: maximumStepCost(pricing, bound, 10),
     });
     await hooks.modelDispatched(id);
     expect((await t.db.select().from(askModelSteps))[0]?.state).toBe("dispatched");
     await expect(hooks.modelDispatched(id)).rejects.toMatchObject({ code: "ASK_INTERRUPTED" });
+  });
+  it("settles a real cost below the byte bound and frees the whole reservation", async () => {
+    const run = await running("customer-a", 1_000_000n);
+    const accounting = new AskBudget(t.db, settings, billing(1_000_000n));
+    const hooks = accounting.hooks(run);
+    const input = {
+      system: "Fixture",
+      messages: [{ role: "user" as const, content: [{ text: "x".repeat(30_000) }] }],
+    };
+    const id = await hooks.beforeModelStep({ input, inputBytes: 0, outputTokens: 2048 });
+    const reserved = (await pool()).reservedMicroUsd;
+    expect(reserved).toBeGreaterThan(9000n);
+    await hooks.modelDispatched(id);
+    await hooks.recordUsage(
+      id,
+      { inputTokens: 8000, outputTokens: 500, totalTokens: 8500 },
+      receipt,
+    );
+    // 8000 x 1 + 500 x 2 microUSD at the fixture rates.
+    expect(await pool()).toMatchObject({ reservedMicroUsd: 0n, spentMicroUsd: 9000n });
+    expect((await t.db.select().from(askModelSteps))[0]).toMatchObject({
+      state: "settled",
+      chargedMicroUsd: 9000n,
+    });
+  });
+  it("refuses a turn whose byte bound would pass the monthly limit, reserving nothing", async () => {
+    const run = await running();
+    const input = {
+      system: "Fixture",
+      messages: [{ role: "user" as const, content: [{ text: "x".repeat(30_000) }] }],
+    };
+    await expect(
+      budget.hooks(run).beforeModelStep({ input, inputBytes: 0, outputTokens: 10 }),
+    ).rejects.toMatchObject({ code: "ASK_BUDGET_LIMIT" });
+    expect(await t.db.select().from(askModelSteps)).toHaveLength(0);
+    const after = await pool();
+    expect(after.spentMicroUsd + after.reservedMicroUsd).toBeLessThanOrEqual(after.limitMicroUsd);
   });
 });
 

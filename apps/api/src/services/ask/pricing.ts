@@ -73,6 +73,16 @@ export function assertCurrentPricing(pricing: AskPricing, now = new Date()): voi
   )
     throw new AskFailure("ASK_UNAVAILABLE");
 }
+/** Input tokens Bedrock adds beyond the request's own text: Anthropic's tool-use
+ * system prompt and the role and block framing of each message. */
+export const ASK_INPUT_TOKEN_OVERHEAD = 2048;
+
+/** A token covers at least one byte of the text it encodes, so the UTF-8 length
+ * of the serialized request bounds its own tokens; JSON quoting only adds bytes. */
+export function inputTokenBound(input: unknown): number {
+  return Buffer.byteLength(JSON.stringify(input)) + ASK_INPUT_TOKEN_OVERHEAD;
+}
+
 const ceilMillion = (n: bigint) => (n + 999_999n) / 1_000_000n;
 export function maximumStepCost(pricing: AskPricing, input: number, output: number): bigint {
   if (

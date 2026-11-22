@@ -133,7 +133,7 @@ function expectNoSecrets(lines: string[]) {
 
 describe("API runtime accounting/worker wiring", () => {
   it("persists a conversational reply through HTTP and the real worker, with model accounting and no MCP", async () => {
-    const count = vi.spyOn(BedrockAdapter.prototype, "countTokens").mockResolvedValue(100);
+    const count = vi.spyOn(BedrockAdapter.prototype, "countTokens");
     vi.spyOn(BedrockAdapter.prototype, "converse").mockImplementation(async (_input, options) => {
       await options.onDispatch();
       const usage = { inputTokens: 10, outputTokens: 5, totalTokens: 15 };
@@ -183,7 +183,7 @@ describe("API runtime accounting/worker wiring", () => {
     expect(Date.parse(answer.answeredAt)).toBeGreaterThanOrEqual(started);
     expect(Date.parse(answer.answeredAt)).toBeLessThanOrEqual(Date.now());
     expect(answer.evidence).toEqual([]);
-    expect(count).toHaveBeenCalledOnce();
+    expect(count).not.toHaveBeenCalled();
     expect(connect).not.toHaveBeenCalled();
     expect(await t.db.select().from(askModelSteps)).toEqual([
       expect.objectContaining({ state: "settled", chargedMicroUsd: 20n }),
@@ -203,7 +203,6 @@ describe("API runtime accounting/worker wiring", () => {
     ).toBe(404);
   });
   it("connects HTTP admission, free count, durable dispatch/usage, answer persistence and maintenance", async () => {
-    vi.spyOn(BedrockAdapter.prototype, "countTokens").mockResolvedValue(100);
     vi.spyOn(AskOrchestrator.prototype, "answer").mockImplementation(
       async (_run, _history, hooks) => {
         await hooks.checkActive();
@@ -329,7 +328,6 @@ describe("Ask failures name their cause", () => {
   });
 
   it("a failed lease check logs its error's class and code, never its message", async () => {
-    vi.spyOn(BedrockAdapter.prototype, "countTokens").mockResolvedValue(100);
     vi.spyOn(AskOrchestrator.prototype, "answer").mockImplementation(
       (_run, _history, _hooks, signal) =>
         new Promise((_resolve, reject) => {

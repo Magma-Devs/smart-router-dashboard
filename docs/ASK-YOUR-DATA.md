@@ -269,9 +269,13 @@ dispatch and a consistent replica rollout, followed by verification of the saved
 pool before resuming (see the operator runbook).
 
 Queue admission checks available capacity in the submission transaction. Before
-each paid step, the free Bedrock token counter includes the system, messages and
-tool schema. A bounded input margin and maximum output are priced at the highest
-configured input/cache rate, then reserved atomically. A second transaction proves
+each paid step, Ask reserves a bound with no network call. A token covers at
+least one byte of the text it encodes, so the input bound is the UTF-8 byte length
+of the serialized request (system, messages and tool schemas) plus 2,048 tokens
+for the provider's tool-use prompt and message framing. That bound and the maximum
+output are priced at the highest configured input/cache rate, then reserved
+atomically. Settlement charges the usage Bedrock reports and frees the rest of
+the reservation. A second transaction proves
 the run/session/lease is current and marks dispatch before the network call.
 Both use PostgreSQL UTC time; a reservation cannot cross a month boundary at
 dispatch. A new step after rollover reserves against the new month.
@@ -288,8 +292,10 @@ blocks paid execution, while retention and accounting recovery continue.
 
 Set `ASK_DATA_TOKEN_COUNTER` to `runtime` or `mantle` and
 `ASK_DATA_TOKEN_COUNTER_MODEL` to the corresponding supported identifier of the
-same Anthropic model. Runtime CountTokens is not available for every CRIS-only
-model. Mantle requires the explicit base model ID and the appropriate project
+same Anthropic model. The readiness preflight (`ask-preflight`) counts a
+synthetic tool-enabled input with it, which proves model access without paid
+inference; answers never call it. Runtime CountTokens is not available for every
+CRIS-only model. Mantle requires the explicit base model ID and the appropriate project
 permission. An unsupported/denied counter fails closed; it never falls back to
 paid inference. The API needs the applicable `bedrock:CountTokens` or
 `bedrock-mantle:CountTokens` grant in addition to inference permission. See
