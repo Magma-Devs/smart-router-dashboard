@@ -3,7 +3,6 @@ import type { AskSettings } from "../../config.js";
 import { AskFailure } from "./errors.js";
 import { EventStreamDecoder, type StreamMessage } from "./event-stream.js";
 import { boundedFetch, boundedStream } from "./http.js";
-import { summaryPrefix } from "./draft.js";
 
 export interface BedrockTool {
   name: string;
@@ -319,8 +318,10 @@ export class BedrockAdapter {
       /** The durable accounting layer marks potential spend before dispatch. */
       onDispatch: () => Promise<void>;
       /** Given, the step streams (ConverseStream) and this receives the
-       * `present_answer` summary as it arrives, unvalidated. Without it the
-       * step is one buffered Converse call. */
+       * step's text as it arrives, unvalidated: the answer, written before
+       * its closing `present_answer` call. A step that calls a read tool
+       * withdraws it (empty text). Without it the step is one buffered
+       * Converse call. */
       onDraft?: (summary: { text: string; complete: boolean }) => void;
     },
   ): Promise<BedrockStep> {
@@ -481,6 +482,10 @@ class ConverseStreamAssembler {
           },
           json: "",
         });
+        // Text before a read is not the answer: withdraw it. Text before the
+        // closing call is the answer, whole.
+        if (tool.name === "present_answer") this.draft(true);
+        else this.withdraw();
         return;
       }
       case "contentBlockDelta": {
@@ -494,7 +499,10 @@ class ConverseStreamAssembler {
           if (index === this.blocks.length) this.blocks.push({ text: "" });
           const block = this.blocks[index];
           if (!block || !("text" in block)) this.invalid = true;
-          else block.text += delta.text;
+          else {
+            block.text += delta.text;
+            this.draft(false);
+          }
           return;
         }
         const toolDelta = delta.toolUse as Record<string, unknown> | undefined;
@@ -509,13 +517,14 @@ class ConverseStreamAssembler {
           return;
         }
         block.json += toolDelta.input;
-        if (block.toolUse.name === "present_answer" && this.onDraft) this.draft(block.json);
         return;
       }
       case "contentBlockStop":
         return;
       case "messageStop":
         this.stopReason = event.stopReason;
+        // A step that ends on its text alone is a whole answer.
+        if (event.stopReason === "end_turn") this.draft(true);
         return;
       case "metadata":
         this.usage = event.usage;
@@ -527,14 +536,28 @@ class ConverseStreamAssembler {
     }
   }
 
-  private draft(json: string): void {
-    const summary = summaryPrefix(json);
-    if (!summary) return;
-    const key = `${summary.complete ? 1 : 0}${summary.text}`;
+  private reading = false;
+
+  /** The step's text so far, unless the step already called a read. */
+  private draft(complete: boolean): void {
+    if (this.reading || !this.onDraft) return;
+    const text = this.blocks.map((block) => ("text" in block ? block.text : "")).join("");
+    this.publish({ text, complete });
+  }
+
+  private withdraw(): void {
+    if (this.reading) return;
+    this.reading = true;
+    this.publish({ text: "", complete: true });
+  }
+
+  private publish(answer: { text: string; complete: boolean }): void {
+    if (!this.onDraft) return;
+    const key = `${answer.complete ? 1 : 0}${answer.text}`;
     if (key === this.shown) return;
     this.shown = key;
     try {
-      this.onDraft!(summary);
+      this.onDraft(answer);
     } catch {
       // A draft is a preview: its consumer never ends the step.
     }

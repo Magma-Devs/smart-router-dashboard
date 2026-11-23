@@ -14,6 +14,7 @@ import {
   type Database,
 } from "@sr/db";
 import {
+  ASK_LIMITS,
   askAnswerSchema,
   askHistoryQuerySchema,
   askPreferencesSchema,
@@ -26,6 +27,7 @@ import {
   type AskMessage,
   type AskPreferences,
   type AskRun,
+  type AskRunDraft,
   type AskSubmit,
 } from "@sr/shared";
 import { AskFailure } from "./errors.js";
@@ -54,7 +56,7 @@ export function runWire(row: AskRunRow): AskRun {
     status: row.status,
     createdAt: row.createdAt.toISOString(),
     completedAt: row.completedAt?.toISOString() ?? null,
-    answer: row.answer ? askAnswerSchema.parse(row.answer) : null,
+    answer: row.answer ? withMarkdown(askAnswerSchema.parse(row.answer), row.answerMarkdown) : null,
     error: row.errorCode
       ? { code: row.errorCode, message: new AskFailure(row.errorCode).message }
       : null,
@@ -67,8 +69,12 @@ function messageWire(row: typeof askMessages.$inferSelect): AskMessage {
     role: row.role,
     createdAt: row.createdAt.toISOString(),
     question: row.question,
-    answer: row.answer ? askAnswerSchema.parse(row.answer) : null,
+    answer: row.answer ? withMarkdown(askAnswerSchema.parse(row.answer), row.answerMarkdown) : null,
   };
+}
+/** The Markdown text a row keeps beside its stored answer, served on it. */
+function withMarkdown(answer: AskAnswer, markdown: string | null): AskAnswer {
+  return markdown ? { ...answer, markdown } : answer;
 }
 /** Awaits statements a transaction sent together and settles them in the order
  * they were sent. PostgreSQL runs them in that order and a failure aborts the
@@ -85,7 +91,7 @@ export async function inOrder<T extends readonly unknown[]>(
 }
 /** A stored answer never carries the reads' labels, so an earlier API version
  * still parses it; they are attached from the audited tool events on the way out. */
-function storedAnswer(answer: AskAnswer): AskAnswer {
+function storedAnswer({ markdown: _markdown, ...answer }: AskAnswer): AskAnswer {
   return { ...answer, evidence: answer.evidence.map(({ label: _label, ...item }) => item) };
 }
 function labelled(answer: AskAnswer | null, labels: Map<string, string>): AskAnswer | null {
@@ -309,6 +315,18 @@ export class AskStore {
       .limit(1);
     if (!run) throw new AskFailure("ASK_NOT_FOUND", 404);
     return this.labelledRun(runWire(run), await this.evidenceLabels([run.id]));
+  }
+
+  /** A person's run's status and draft, in one indexed read: the page polls
+   * it often while the answer streams. */
+  async runDraft(personId: string, runId: string): Promise<AskRunDraft> {
+    const [run] = await this.db
+      .select({ status: askRuns.status, draft: askRuns.draft })
+      .from(askRuns)
+      .where(this.runOwned(personId, runId))
+      .limit(1);
+    if (!run) throw new AskFailure("ASK_NOT_FOUND", 404);
+    return { status: run.status, draft: run.status === "running" ? run.draft : null };
   }
 
   async activeRun(personId: string): Promise<AskRun | null> {
@@ -691,6 +709,7 @@ export class AskStore {
         .set({
           status: "succeeded",
           answer,
+          answerMarkdown: parsed.data.markdown ?? null,
           completedAt: sql`clock_timestamp()`,
           leaseToken: null,
           leaseUntil: null,
@@ -716,7 +735,7 @@ export class AskStore {
         first,
         second,
         tx.execute(
-          sql`insert into ask_messages (run_id, chat_id, customer_id, owner_id, role, answer) select ${runId}::uuid, ${run.chatId}::uuid, ${run.customerId}, ${run.ownerId}::uuid, 'assistant', ${JSON.stringify(answer)}::jsonb where ${took}`,
+          sql`insert into ask_messages (run_id, chat_id, customer_id, owner_id, role, answer, answer_markdown) select ${runId}::uuid, ${run.chatId}::uuid, ${run.customerId}, ${run.ownerId}::uuid, 'assistant', ${JSON.stringify(answer)}::jsonb, ${parsed.data.markdown ?? null} where ${took}`,
         ),
         tx
           .update(askChats)
@@ -778,7 +797,7 @@ export class AskStore {
   async saveDraft(runId: string, token: string, draft: string): Promise<boolean> {
     const rows = await this.db
       .update(askRuns)
-      .set({ draft: draft.slice(0, 2000) })
+      .set({ draft: draft ? draft.slice(0, ASK_LIMITS.markdown) : null })
       .where(and(this.lease(runId, token), eq(askRuns.status, "running")))
       .returning({ id: askRuns.id });
     return rows.length === 1;

@@ -5,6 +5,26 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.81.0]
+
+### Changed
+
+- Ask streams its answer as the model writes it, word by word, and renders it
+  as Markdown in a chat layout. The model writes the answer as reply text and
+  closes it with `present_answer`, which now carries only `kind` and
+  `evidenceIds`; tool choice is `auto`. Each text delta updates the draft, which
+  the page reads from `GET /api/ask/runs/:id/draft` every 500 ms from the moment
+  the run is queued and reveals a few characters a frame, with a caret;
+  half-written Markdown is held back or closed. When the run ends the transcript
+  reloads at once and the saved answer replaces the draft.
+- Answers render as chat prose: paragraphs, lists, tables and bold figures, with
+  no HTML, links or images; sources sit in one pill under the answer, and copy
+  and the time stay quiet until the answer is hovered. Copy gives the Markdown.
+- The answer's Markdown is kept in `answer_markdown` on `ask_runs` and
+  `ask_messages` (migration `0015_ask_markdown`). The stored answer keeps its
+  summary-and-sections shape, derived from the Markdown as plain text, so every
+  earlier API and web version still reads and shows it.
+
 ## [0.80.0]
 
 ### Added

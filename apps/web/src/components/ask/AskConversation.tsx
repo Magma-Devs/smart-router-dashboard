@@ -315,47 +315,51 @@ export function AskConversation() {
             </div>
           ) : null}
           {ask.submitting || optimistic || ask.active ? (
-            <div className="ask-processing" role="status">
-              <span className="ask-spinner" aria-hidden="true" />
-              <div>
-                {ask.submitting && !pending?.run
-                  ? "Sending…"
-                  : ask.connectionLost
-                    ? "Reconnecting…"
-                    : processingText(ask.active)}
-                {ask.active && ask.active.chatId !== ask.chatId ? (
-                  <button
-                    className="gw-btn gw-btn--ghost"
-                    onClick={() => ask.select(ask.active!.chatId)}
-                  >
-                    View processing question
-                  </button>
-                ) : (
-                  <small>
+            <>
+              <div className="ask-processing" role="status">
+                <span className="ask-spinner" aria-hidden="true" />
+                <div>
+                  <span className="ask-status-text">
                     {ask.submitting && !pending?.run
-                      ? "You can keep this page open while it sends."
+                      ? "Sending…"
                       : ask.connectionLost
-                        ? "Your question is saved. Reconnecting won’t send it again."
-                        : "You can leave this page. The answer will be here."}
-                  </small>
-                )}
-                {!ask.connectionLost && ask.active?.chatId === ask.chatId ? (
-                  <>
+                        ? "Reconnecting…"
+                        : processingText(ask.active)}
+                  </span>
+                  {ask.active && ask.active.chatId !== ask.chatId ? (
+                    <button
+                      className="gw-btn gw-btn--ghost"
+                      onClick={() => ask.select(ask.active!.chatId)}
+                    >
+                      View processing question
+                    </button>
+                  ) : (
+                    <small>
+                      {ask.submitting && !pending?.run
+                        ? "You can keep this page open while it sends."
+                        : ask.connectionLost
+                          ? "Your question is saved. Reconnecting won’t send it again."
+                          : "You can leave this page. The answer will be here."}
+                    </small>
+                  )}
+                  {!ask.connectionLost && ask.active?.chatId === ask.chatId ? (
                     <AskReads run={ask.active} />
-                    <AskDraft run={ask.active} />
-                  </>
+                  ) : null}
+                </div>
+                {ask.active ? (
+                  <button
+                    className="gw-btn"
+                    disabled={ask.active.status === "cancelling"}
+                    onClick={() => void ask.stop()}
+                  >
+                    Stop
+                  </button>
                 ) : null}
               </div>
-              {ask.active ? (
-                <button
-                  className="gw-btn"
-                  disabled={ask.active.status === "cancelling"}
-                  onClick={() => void ask.stop()}
-                >
-                  Stop
-                </button>
+              {!ask.connectionLost && ask.active?.chatId === ask.chatId ? (
+                <AskDraft run={ask.active} />
               ) : null}
-            </div>
+            </>
           ) : null}
         </div>
       </div>

@@ -23,16 +23,16 @@ test("a conversational date question persists a short model reply and accounted 
   await page.getByRole("button", { name: "Send", exact: true }).click();
   const run = (await (await submitted).json()) as { id: string };
   const answer = page.getByRole("article", { name: "Answer" });
-  await expect(answer.locator(".ask-summary")).toContainText(/^Today is .+ \(UTC\)\.$/);
+  await expect(answer.locator(".ask-md")).toContainText(/^Today is .+ \(UTC\)\.$/);
   const elapsedMs = Date.now() - started;
   expect(elapsedMs).toBeLessThan(10_000);
   testInfo.annotations.push({
     type: "synthetic-conversation-response-ms",
     description: String(elapsedMs),
   });
-  await expect(answer.locator(".ask-sections li")).toHaveCount(0);
+  await expect(answer.locator(".ask-md :is(h3, table, ul)")).toHaveCount(0);
   await expect(answer.locator(".ask-evidence")).toHaveCount(0);
-  const summary = await answer.locator(".ask-summary").textContent();
+  const summary = await answer.locator(".ask-md").textContent();
   await page.screenshot({
     path: testInfo.outputPath("ask-clock-desktop.png"),
     animations: "disabled",
@@ -55,7 +55,7 @@ test("a conversational date question persists a short model reply and accounted 
   }
   await page.waitForURL(/\/ask\?chat=/);
   await page.reload();
-  await expect(page.getByRole("article", { name: "Answer" }).locator(".ask-summary")).toHaveText(
+  await expect(page.getByRole("article", { name: "Answer" }).locator(".ask-md")).toHaveText(
     summary!,
   );
   await page.setViewportSize({ width: 390, height: 844 });

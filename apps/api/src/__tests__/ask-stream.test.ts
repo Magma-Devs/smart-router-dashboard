@@ -7,7 +7,7 @@ import {
   EventStreamError,
   encodeEventStreamMessage,
 } from "../services/ask/event-stream.js";
-import { draftText, summaryPrefix } from "../services/ask/draft.js";
+import { draftText } from "../services/ask/draft.js";
 import { DraftWriter } from "../services/ask/worker.js";
 import { runProgress } from "../services/ask/progress.js";
 // @ts-expect-error The browser tests' provider helper is plain JavaScript.
@@ -39,16 +39,17 @@ const event = (type: string, payload: unknown) =>
     { ":event-type": type, ":content-type": "application/json", ":message-type": "event" },
     JSON.stringify({ ...(payload as object), p: "abcdefgh" }),
   );
-const answer = { summary: 'Two chains "failed" today.', sections: [], kind: "data" };
+const answer = { kind: "data" };
 const answerJson = JSON.stringify(answer);
+const ANSWER_TEXT = "Two chains **failed** today.";
 /** A ConverseStream reply: a preface text block, then present_answer whose
  * input arrives in three pieces, then the stop reason and usage. */
 function replyEvents(json = answerJson): Buffer[] {
   const cut = [0, 12, 30, json.length];
   return [
     event("messageStart", { role: "assistant" }),
-    event("contentBlockDelta", { contentBlockIndex: 0, delta: { text: "Let me " } }),
-    event("contentBlockDelta", { contentBlockIndex: 0, delta: { text: "answer." } }),
+    event("contentBlockDelta", { contentBlockIndex: 0, delta: { text: "Two chains " } }),
+    event("contentBlockDelta", { contentBlockIndex: 0, delta: { text: "**failed** today." } }),
     event("contentBlockStop", { contentBlockIndex: 0 }),
     event("contentBlockStart", {
       contentBlockIndex: 1,
@@ -121,41 +122,14 @@ describe("the event stream decoder", () => {
   });
 });
 
-describe("the summary of an answer still being written", () => {
-  it("reads the top-level summary as far as it has arrived", () => {
-    expect(summaryPrefix("")).toBeNull();
-    expect(summaryPrefix('{"summ')).toBeNull();
-    expect(summaryPrefix('{"summary":')).toBeNull();
-    expect(summaryPrefix('{"summary":"Two ch')).toEqual({ text: "Two ch", complete: false });
-    expect(summaryPrefix('{"summary":"a \\"b\\" \\u00e9')).toEqual({
-      text: 'a "b" é',
-      complete: false,
-    });
-    // An escape cut off at the end is left out until it is whole.
-    expect(summaryPrefix('{"summary":"a\\u00')).toEqual({ text: "a", complete: false });
-    expect(summaryPrefix('{"summary":"a\\')).toEqual({ text: "a", complete: false });
-    expect(summaryPrefix(answerJson)).toEqual({ text: answer.summary, complete: true });
-  });
-  it("finds it after other keys, and never inside a nested value", () => {
-    expect(
-      summaryPrefix('{"kind":"data","sections":[{"summary":"no","title":"x"}],"summary":"yes"}'),
-    ).toEqual({ text: "yes", complete: true });
-    expect(summaryPrefix('{"sections":[{"summary":"nested only')).toBeNull();
-    expect(summaryPrefix('{"n":12,"ok":true,"summary":"after"')).toEqual({
-      text: "after",
-      complete: true,
-    });
-    expect(summaryPrefix('["summary","x"]')).toBeNull();
-  });
-  it("shows whole words only, at most the summary limit, redacted", () => {
+describe("the answer text still being written", () => {
+  it("shows whole words only, at most the answer limit, redacted", () => {
     expect(draftText({ text: "Two chains fai", complete: false }, [])).toBe("Two chains");
     expect(draftText({ text: "Two chains failed.", complete: true }, [])).toBe(
       "Two chains failed.",
     );
     expect(draftText({ text: "Partial", complete: false }, [])).toBe("");
-    expect(draftText({ text: `${"word ".repeat(150)}`, complete: true }, []).length).toBeLessThan(
-      500,
-    );
+    expect(draftText({ text: "word ".repeat(2000), complete: true }, []).length).toBeLessThan(8000);
     // A credential is never shown, whole or while it is still arriving.
     const secret = "bedrock-test-token-0123456789";
     expect(draftText({ text: `Key ${secret} leaked`, complete: true }, [secret])).toBe(
@@ -179,34 +153,38 @@ describe("a streamed model step", () => {
     );
     expect(step.stopReason).toBe("tool_use");
     expect(step.message.content).toEqual([
-      { text: "Let me answer." },
+      { text: ANSWER_TEXT },
       { toolUse: { toolUseId: "tool-1", name: "present_answer", input: answer } },
     ]);
     expect(step.receipt).toEqual({ requestId: "req-1", providerStatus: 200 });
     expect(onUsage).toHaveBeenCalledExactlyOnceWith(usage, step.receipt);
-    // Only present_answer's summary is drafted, never the preface text.
-    const drafts = onDraft.mock.calls.map(([summary]) => summary);
-    expect(drafts.at(-1)).toEqual({ text: answer.summary, complete: true });
-    expect(drafts.some((d) => d.text.includes("Let me"))).toBe(false);
-    expect(drafts.length).toBeGreaterThanOrEqual(2);
+    // The answer text is drafted as it arrives, then whole once the closing call starts.
+    const drafts = onDraft.mock.calls.map(([draft]) => draft);
+    expect(drafts[0]).toEqual({ text: "Two chains ", complete: false });
+    expect(drafts.at(-1)).toEqual({ text: ANSWER_TEXT, complete: true });
   });
-  it("drafts nothing for a step that only reads", async () => {
+  it("withdraws text written before a read", async () => {
     const frames = [
       event("messageStart", { role: "assistant" }),
+      event("contentBlockDelta", { contentBlockIndex: 0, delta: { text: "Let me check." } }),
       event("contentBlockStart", {
-        contentBlockIndex: 0,
+        contentBlockIndex: 1,
         start: { toolUse: { toolUseId: "t", name: "router_request_summary" } },
       }),
       event("contentBlockDelta", {
-        contentBlockIndex: 0,
-        delta: { toolUse: { input: '{"summary":"not an answer"}' } },
+        contentBlockIndex: 1,
+        delta: { toolUse: { input: "{}" } },
       }),
+      event("contentBlockDelta", { contentBlockIndex: 2, delta: { text: "More text." } }),
       event("messageStop", { stopReason: "tool_use" }),
       event("metadata", { usage }),
     ];
     const { call, onDraft } = await converse(frames);
     await call;
-    expect(onDraft).not.toHaveBeenCalled();
+    expect(onDraft.mock.calls.map(([draft]) => draft)).toEqual([
+      { text: "Let me check.", complete: false },
+      { text: "", complete: true },
+    ]);
   });
   it("keeps a buffered Converse call for a caller with no draft consumer", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
@@ -336,7 +314,7 @@ describe("the browser tests' synthetic stream", () => {
       { toolUse: { toolUseId: "t1", name: "present_answer", input: answer } },
     ]);
     expect(step.receipt.requestId).toBe("fixture");
-    expect(onDraft).toHaveBeenLastCalledWith({ text: answer.summary, complete: true });
+    expect(onDraft).toHaveBeenLastCalledWith({ text: "Preface", complete: true });
   });
 });
 

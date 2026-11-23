@@ -61,8 +61,10 @@ export const askRuns = pgTable(
     leaseUntil: time("lease_until"),
     attempts: integer("attempts").notNull().default(0),
     answer: jsonb("answer").$type<AskAnswer | null>(),
-    /** The answer's summary while the model writes the rest; null otherwise. */
+    /** The answer's Markdown text while the model writes it; null otherwise. */
     draft: text("draft"),
+    /** The answer's Markdown text, served beside `answer`. */
+    answerMarkdown: text("answer_markdown"),
     errorCode: text("error_code").$type<AskErrorCode | null>(),
     createdAt: time("created_at").notNull().defaultNow(),
     startedAt: time("started_at"),
@@ -84,7 +86,11 @@ export const askRuns = pgTable(
     index("ask_runs_queue").on(t.customerId, t.status, t.createdAt),
     index("ask_runs_expired_lease").on(t.customerId, t.leaseUntil),
     check("ask_runs_question", sql`length(${t.question}) between 1 and 4000`),
-    check("ask_runs_draft", sql`${t.draft} is null or length(${t.draft}) <= 2000`),
+    check("ask_runs_draft", sql`${t.draft} is null or length(${t.draft}) <= 8000`),
+    check(
+      "ask_runs_answer_markdown",
+      sql`${t.answerMarkdown} is null or length(${t.answerMarkdown}) <= 8000`,
+    ),
     check(
       "ask_runs_state",
       sql`${t.status} in ('queued','running','cancelling','succeeded','failed','cancelled','interrupted')`,
@@ -113,6 +119,7 @@ export const askMessages = pgTable(
     role: text("role").$type<"user" | "assistant">().notNull(),
     question: text("question"),
     answer: jsonb("answer").$type<AskAnswer | null>(),
+    answerMarkdown: text("answer_markdown"),
     createdAt: time("created_at").notNull().defaultNow(),
   },
   (t) => [
@@ -123,6 +130,10 @@ export const askMessages = pgTable(
     }).onDelete("cascade"),
     uniqueIndex("ask_messages_turn").on(t.runId, t.role),
     index("ask_messages_chat").on(t.customerId, t.ownerId, t.chatId, t.seq),
+    check(
+      "ask_messages_answer_markdown",
+      sql`${t.answerMarkdown} is null or length(${t.answerMarkdown}) <= 8000`,
+    ),
     check(
       "ask_messages_content",
       sql`(${t.role}='user' and ${t.question} is not null and ${t.answer} is null) or (${t.role}='assistant' and ${t.answer} is not null and ${t.question} is null)`,

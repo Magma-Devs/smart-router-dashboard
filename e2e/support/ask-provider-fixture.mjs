@@ -172,7 +172,32 @@ globalThis.fetch = async (input, init) => {
             },
           },
         ];
-    if (presentation) {
+    if (presentation && toolResult && question.includes("failed requests")) {
+      content.splice(
+        0,
+        content.length,
+        {
+          text: [
+            "Two chains had failed requests in the last 24 hours: **Ethereum** and **Solana**. Every other chain served all of its requests.",
+            "",
+            "| Chain | Requests | Failed | Rate |",
+            "| --- | ---: | ---: | ---: |",
+            "| Ethereum | 182,400 | **14** | 0.008% |",
+            "| Solana | 96,210 | **3** | 0.003% |",
+            "",
+            "- Most of Ethereum's failures came between **14:10 and 14:25 UTC**.",
+            "- The newest two minutes are not recorded yet.",
+          ].join("\n"),
+        },
+        {
+          toolUse: {
+            toolUseId: "synthetic-answer-1",
+            name: "present_answer",
+            input: { kind: "data" },
+          },
+        },
+      );
+    } else if (presentation) {
       if (!toolResult) content[0].toolUse.input.query = "sum(up)";
       else
         content[0].toolUse.input = question.includes("every RPC")
@@ -214,8 +239,43 @@ globalThis.fetch = async (input, init) => {
           },
         },
       });
+    // The answer is Markdown text the model writes before a closing call that
+    // carries only kind and evidenceIds.
+    content.splice(
+      0,
+      content.length,
+      ...content.flatMap((block) => {
+        const input = block.toolUse?.name === "present_answer" ? block.toolUse.input : null;
+        if (!input || typeof input.summary !== "string") return [block];
+        const { kind, evidenceIds, summary, sections = [] } = input;
+        const markdown = [
+          summary,
+          ...sections.map((section) =>
+            [
+              `### ${section.title}`,
+              section.body,
+              ...(section.points ?? []).map((point) => `- ${point}`),
+              section.stat ? `**${section.stat.value}** ${section.stat.label}` : "",
+            ]
+              .filter(Boolean)
+              .join("\n\n"),
+          ),
+        ].join("\n\n");
+        return [
+          { text: markdown },
+          {
+            toolUse: {
+              ...block.toolUse,
+              input: { kind, ...(evidenceIds ? { evidenceIds } : {}) },
+            },
+          },
+        ];
+      }),
+    );
     const reply = (json, init) =>
-      streamed ? converseStreamResponse(json, init.headers) : Response.json(json, init);
+      streamed
+        ? converseStreamResponse(json, init.headers, presentation ? 60 : 0)
+        : Response.json(json, init);
     return reply(
       {
         output: { message: { role: "assistant", content } },

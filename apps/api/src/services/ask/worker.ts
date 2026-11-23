@@ -19,14 +19,14 @@ export interface AskWorkerOptions {
 }
 
 /** The fewest milliseconds between two draft writes of one run. */
-const DRAFT_INTERVAL_MS = 500;
+const DRAFT_INTERVAL_MS = 250;
 
 /** Writes a run's newest draft, at most once per interval and never two at
  * once; text published meanwhile replaces the text waiting. After `stop`
  * no write starts. */
 export class DraftWriter {
   private latest: string | null = null;
-  private written: string | null = null;
+  private written = "";
   private flight: Promise<void> | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private last = Number.NEGATIVE_INFINITY;

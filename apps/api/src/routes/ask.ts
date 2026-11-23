@@ -207,6 +207,15 @@ export async function askRoutes(app: FastifyInstance, opts: AskRoutesOptions = {
       store.getRun(me.id, uuid((request.params as { id: unknown }).id)),
     ),
   );
+  // Polled twice a second while an answer streams: its own per-person budget,
+  // so a streaming answer never spends the dashboard's general one.
+  app.get(
+    "/api/ask/runs/:id/draft",
+    { config: { rateLimit: { max: 240, timeWindow: "1 minute" } } },
+    personal((request, { me, store }) =>
+      store.runDraft(me.id, uuid((request.params as { id: unknown }).id)),
+    ),
+  );
   app.post(
     "/api/ask/runs/:id/cancel",
     personal((request, { me, store }) =>
