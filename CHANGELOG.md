@@ -5,6 +5,18 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.87.1]
+
+### Changed
+
+- **pnpm 12.21.0 → 12.23.0** (#451): the Dockerfiles' pnpm image and
+  `packageManager`. The lockfile's first document records 12.23.0's binaries,
+  which add linux-loong64; no other package in the lockfile changes.
+- **Dependency updates:** `@fastify/jwt` 10.2.8 (#421), `@fastify/swagger`
+  9.9.5 (#427), `@aws-sdk/client-sesv2` 3.1173.0 (#422), `vite` 8.3.8 (#423),
+  `wrangler` 4.165.0 (#425), the compose files' `grafana/loki` 3.7.10 (#426)
+  and the `pnpm/setup` action 3.2.0 (#420).
+
 ## [0.87.0]
 
 ### Added
