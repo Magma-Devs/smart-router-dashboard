@@ -5,6 +5,17 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.89.0]
+
+### Fixed
+
+- Ask's provider-status read no longer reaches the model as a cut-off preview
+  on a tenant with many chains. It is summarized first: chains with every
+  provider operational by name, every other chain with only its
+  non-operational providers and a count of the rest, and the events newest
+  first with long text shortened. The source reads Partial only when old
+  events had to be left out, not on every status answer.
+
 ## [0.88.0]
 
 ### Added
