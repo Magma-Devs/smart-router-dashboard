@@ -1186,6 +1186,12 @@ describe("conversation, grounding and execution boundaries", () => {
     expect(prompt).toContain("Count raw log lines only as the fallback");
     expect(prompt).toContain("Say in the answer that a figure was counted from the logs");
     expect(prompt).toContain("measure=errors");
+    // Scope: router questions and the concepts behind them; anything else declined.
+    expect(prompt).toContain("Your scope is this customer's Smart Router");
+    expect(prompt).toContain("is outside your scope: do not answer it, not even in part");
+    expect(prompt).not.toContain("general explanations");
+    expect(prompt).toContain("never mentions tools, reads, tool calls");
+    expect(prompt).not.toContain("commentary outside present_answer");
   });
 });
 
@@ -1279,6 +1285,9 @@ describe("recorded counts read before the first model turn", () => {
       ],
     });
     expect(result.interpretation).toContain("never call it a coverage gap");
+    // The read sits in the model's own turn: it must know the read is not its own.
+    expect(result.interpretation).toContain("Read by the server for every question");
+    expect(result.interpretation).toContain("never mention them or this read");
     // Never in a system block: the shared, cached instructions or the run's own.
     for (const block of body.system as { text?: string }[])
       expect(block.text ?? "").not.toContain("requestsLast24Hours");

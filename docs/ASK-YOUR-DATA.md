@@ -174,7 +174,18 @@ Markdown reply text, then one `present_answer` call carrying only `kind`
 is available from the first step: ordinary conversation, clarifications and
 explanations of earlier answers need no data read. An answer written without its
 closing call is a data answer when the run tried a read of its own, and a
-conversation reply otherwise. Every paid conversational reply still has normal atomic reservation,
+conversation reply otherwise.
+
+Ask's scope is the customer's Smart Router - its chains, providers, requests,
+errors, transactions and status - and the RPC, blockchain, monitoring and
+dashboard concepts behind it, plus greetings, thanks and the current date and
+time. A question outside it (general knowledge, history, geography, people,
+news, market prices, writing or code unrelated to the router) is declined in
+one sentence in the question's language, with one example of a question Ask
+answers, as a conversation reply; the question itself is not answered. No answer
+mentions tools, reads, tool calls or the model's own steps.
+
+Every paid conversational reply still has normal atomic reservation,
 dispatch fencing and usage reconciliation. There is no question-word regex
 routing. Every turn receives the current server clock and precomputed query
 windows; the current UTC reference is explicit and never comes from an old answer or a browser identity override.
@@ -199,7 +210,9 @@ model's read limit, it counts toward the context bytes, and a failed,
 unavailable or ambiguous read leaves the run to its own reads. A cancelled run
 stops during it. It is a source of the answer only when the answer rests on it:
 a conversation reply drops it, and so does a data answer whose cited evidence
-leaves it out.
+leaves it out. It runs for every question and sits in the model's own turn, so
+its note (`PREFETCH_NOTE`) says the server read it, not the model, and that a
+reply which does not need it ignores it and never mentions it.
 
 Data tools have locally authored names and parameter schemas. The customer MCP
 connection opens for that read, before the first turn. Identity verification comes
@@ -573,7 +586,7 @@ delivery, free preflight, staff/retention checks, controlled activation and roll
 
 ## Engineering evaluation
 
-`e2e/support/ask-engineering-evaluation.mjs` is an explicit opt-in, 100-scenario
+`e2e/support/ask-engineering-evaluation.mjs` is an explicit opt-in, 106-scenario
 real-provider evaluation. It uses engineering AWS SSO, an isolated local
 `ask_test_evaluation*` PostgreSQL database and synthetic MCP data. Every paid
 call passes the actual atomic reservation/dispatch/usage ledger, with no SDK or
@@ -587,6 +600,15 @@ conservative; this harness does not establish live Mantle or tenant-MCP
 availability, PromQL correctness, customer authentication or provider billing.
 Browser tests and the independent HTTP/PostgreSQL suite cover the other
 boundaries; tenant deployment still needs its actual readiness/serving checks.
+
+A scenario passes when the run reads exactly when it should and the answer holds
+what it should. No answer names the run's machinery (a tool call, `present_answer`,
+the server's read). The six `offtopic-*` questions (general knowledge, in English
+and Hebrew) are declined in at most 400 characters and never carry the answer
+itself. The in-scope explanations and date and time questions carry the
+explanation or the date, so a scope rule that declines them fails.
+`ASK_EVALUATION_CASES` picks scenarios by id and `ASK_EVALUATION_REPEAT` (1 to 5)
+runs each of them that many times.
 
 `ASK_EVALUATION_LONG_HISTORY=true` seeds twelve local fixture discussions and
 extends the measured question within the product's size limit. Fixture history

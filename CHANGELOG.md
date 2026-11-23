@@ -5,6 +5,22 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.83.0]
+
+### Fixed
+
+- Ask declines a question outside its scope in one sentence, in the question's
+  language, with one example of a question it answers, and does not answer it.
+  Its scope is the customer's router (chains, providers, requests, errors,
+  transactions, status), the RPC, blockchain, monitoring and dashboard concepts
+  behind it, greetings, thanks and the current date and time.
+- No Ask answer mentions tools, reads or tool calls. The counts the server reads
+  before every question say they are the server's read, which a reply that does
+  not need them ignores.
+- The engineering evaluation has six off-topic scenarios (106 in all), checks
+  what each answer says as well as whether the run read, and repeats scenarios
+  with `ASK_EVALUATION_REPEAT`.
+
 ## [0.82.0]
 
 ### Added

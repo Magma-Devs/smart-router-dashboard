@@ -495,6 +495,39 @@ const followups = [
   ["Check current chain status evidence", "Now check provider status again", true],
   ["Check the request total", "Thanks for checking", false],
 ];
+// Questions outside Ask's scope, each with the answer it must not give: the
+// reply declines in one sentence instead.
+const offTopic = [
+  ["What is the capital of France?", /paris/i],
+  ["When was Israel founded?", /1948/],
+  ["מה בירת צרפת?", /פריז|paris/i],
+  ["מתי הוקמה מדינת ישראל?", /1948|תש"ח/],
+  ["Who won the 2022 FIFA World Cup?", /argentin|ארגנטינה/i],
+  ["What is 17 times 23?", /391/],
+];
+// In-scope conversation that must be answered, not declined: what each answer holds.
+const answered = new Map([
+  ["What is an RPC request, generally?", /remote procedure|call/i],
+  ["Explain latency in plain language; don't check my environment", /time|delay|wait/i],
+  ["What does a provider mean in an RPC router?", /node|endpoint|service/i],
+  ["What is a retry, generally?", /again/i],
+  ["What does a 429 error usually mean?", /too many|rate/i],
+  ["Explain the difference between a timeout and a refusal", /wait|time/i],
+  ["What is Prometheus, generally?", /metric/i],
+  ["Explain logs versus metrics without reading my data", /metric/i],
+  ["What does a percentile mean?", /percent|%/i],
+  ["What is an upstream provider?", /node|endpoint|service/i],
+  ["What does partial data mean?", /missing|incomplete|some/i],
+  ["What is the date today?", /\d/],
+  ["What time is it now?", /\d/],
+  ["מה התאריך היום?", /\d/],
+  ["מה השעה עכשיו?", /\d/],
+  ["What is today's date in UTC?", /\d/],
+  ["Tell me the current date and time", /\d/],
+]);
+// Words that name the run's own machinery, which no answer says.
+const machinery =
+  /tool call|tool use|router_request_summary|present_answer|prefetch|the server (read|fetched)|wasn'?t necessary/i;
 const cases = [
   ...conversation.map((question, i) => ({ id: `conversation-${i + 1}`, question, reads: false })),
   ...operational.map((question, i) => ({ id: `data-${i + 1}`, question, reads: i !== 34 })),
@@ -505,11 +538,22 @@ const cases = [
     question,
     reads,
   })),
+  ...offTopic.map(([question, gives], i) => ({
+    id: `offtopic-${i + 1}`,
+    question,
+    reads: false,
+    gives,
+  })),
 ];
-if (cases.length !== 100) throw new Error("Expected 100 distinct acceptance scenarios");
-const selected = process.env.ASK_EVALUATION_CASES
-  ? cases.filter((entry) => process.env.ASK_EVALUATION_CASES.split(",").includes(entry.id))
-  : cases;
+if (cases.length !== 106) throw new Error("Expected 106 distinct acceptance scenarios");
+const repeat = Number(process.env.ASK_EVALUATION_REPEAT ?? 1);
+if (!Number.isInteger(repeat) || repeat < 1 || repeat > 5)
+  throw new Error("ASK_EVALUATION_REPEAT is a whole number from 1 to 5");
+const selected = (
+  process.env.ASK_EVALUATION_CASES
+    ? cases.filter((entry) => process.env.ASK_EVALUATION_CASES.split(",").includes(entry.id))
+    : cases
+).flatMap((entry) => Array.from({ length: repeat }, () => entry));
 const db = createDb(databaseUrl.toString(), { max: 5 });
 await migrate(db.db);
 const store = new AskStore(db.db, settings.customerId, 90);
@@ -642,13 +686,20 @@ try {
     const receiptMatches = receipts
       .slice(before)
       .every((receipt) => receipt.requestId && receipt.retryAttempts === 0 && receipt.usage);
-    const ok = result.ok && routeMatches && receiptMatches;
+    const markdown = result.answer?.markdown ?? "";
+    const contentMatches =
+      !result.ok ||
+      (!machinery.test(markdown) &&
+        (!entry.gives || (!entry.gives.test(markdown) && markdown.length <= 400)) &&
+        (answered.get(entry.question)?.test(markdown) ?? true));
+    const ok = result.ok && routeMatches && receiptMatches && contentMatches;
     const record = {
       ...result,
       id: entry.id,
       ok,
       routeMatches,
       receiptMatches,
+      contentMatches,
       modelCalls: receipts.length - before,
       readCount: currentReads.length,
       question,
@@ -665,7 +716,9 @@ try {
         wallMs: result.wallMs,
         modelCalls: record.modelCalls,
         reads: currentReads.length,
+        content: contentMatches,
         code: result.code,
+        answer: markdown.slice(0, 200),
       }),
     );
     if (!ok && process.env.ASK_EVALUATION_FAIL_FAST !== "false") break;
