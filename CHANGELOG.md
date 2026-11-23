@@ -5,6 +5,27 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.88.0]
+
+### Added
+
+- Ask answers which provider returned errors: `router_request_summary` with
+  `measure=providers` reads, per chain and provider, relays, failed relays and
+  node-error replies. Which provider answered one request reads from its
+  `relay_end` line's `served_by` and `attempts`.
+- Ask reads a window the question names by date and time, at any time the
+  stores hold (logs 45 days, metrics 90 days): the tools take `from`/`to` in
+  ISO 8601 and the server converts them.
+- Counts cover up to 30 days in one read. Log reads and per-customer counts
+  stay at 24 hours.
+
+### Changed
+
+- The model gets every summary as rows and totals the server added up, never
+  the samples. Transactions arrive as accepted, rejected, failed (never sent),
+  failed on chain and unknown per chain, and the answer copies the figures.
+- The answer text holds the answer only, with no working shown.
+
 ## [0.87.1]
 
 ### Changed

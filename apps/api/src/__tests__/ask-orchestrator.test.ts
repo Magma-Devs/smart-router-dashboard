@@ -636,6 +636,122 @@ describe("bounded customer tool orchestration", () => {
     },
   );
 
+  it("hands the model the transactions the server added up by result, never the samples", async () => {
+    const f = fixture({
+      data: {
+        status: "success",
+        data: {
+          resultType: "vector",
+          result: [
+            { metric: { chain: "eth1", outcome: "ok" }, value: [1, "11"] },
+            { metric: { chain: "eth1", outcome: "node_error" }, value: [1, "332"] },
+            { metric: { chain: "cosmoshub", outcome: "ok", tx_refused: "true" }, value: [1, "48"] },
+          ],
+        },
+      },
+      responses: [
+        provider([
+          {
+            toolUse: {
+              toolUseId: "summary",
+              name: "router_request_summary",
+              input: { measure: "transactions" },
+            },
+          },
+        ]),
+        final(),
+      ],
+    });
+    await f.answer();
+    const body = JSON.parse(f.bodies[1]!);
+    const result = JSON.parse(body.messages.at(-1).content[0].toolResult.content[0].text);
+    expect(result.table.rows).toEqual([
+      {
+        chain: "eth1",
+        accepted: 11,
+        rejected: 332,
+        failedNeverSent: 0,
+        failedOnChain: 0,
+        unknown: 0,
+        total: 343,
+      },
+      {
+        chain: "cosmoshub",
+        accepted: 0,
+        rejected: 48,
+        failedNeverSent: 0,
+        failedOnChain: 0,
+        unknown: 0,
+        total: 48,
+      },
+    ]);
+    expect(result.table.totals).toMatchObject({ accepted: 11, rejected: 380, total: 391 });
+    expect(result.counts[0].result.untrustedData).toEqual({ samples: 3, shownIn: "table" });
+  });
+
+  it.each([true, false])(
+    "reads each provider's relays, failed relays and node-error replies over a named week (recorded: %s)",
+    async (recorded) => {
+      const to = new Date(Math.floor(Date.now() / 1000) * 1000 - 3 * 86_400_000);
+      const from = new Date(to.getTime() - 7 * 86_400_000);
+      const f = fixture({
+        data: {
+          status: "success",
+          data: {
+            resultType: "vector",
+            result: recorded
+              ? [{ metric: { spec: "ETH1", provider_address: "tatum" }, value: [1, "100"] }]
+              : [],
+          },
+        },
+        responses: [
+          provider([
+            {
+              toolUse: {
+                toolUseId: "summary",
+                name: "router_request_summary",
+                input: { measure: "providers", from: from.toISOString(), to: to.toISOString() },
+              },
+            },
+          ]),
+          final(),
+        ],
+      });
+      await f.answer();
+      const body = JSON.parse(f.bodies[1]!);
+      const result = JSON.parse(body.messages.at(-1).content[0].toolResult.content[0].text);
+      const start = from.getTime() / 1000;
+      expect(result.window).toEqual({ start, end: to.getTime() / 1000 });
+      expect(result.counts.map((count: { name: string }) => count.name)).toEqual([
+        "provider_relays",
+        "provider_successes",
+        "provider_node_errors",
+      ]);
+      // A week has no raw fallback, and the newest minutes are not in it.
+      for (const count of result.counts) expect(count.fallback).toBeUndefined();
+      expect(result.warning).toBeUndefined();
+      const reads = vi.mocked(f.hooks.recordTool).mock.calls.map(([read]) => read);
+      expect(reads.map((read) => read.parameters.query)).toEqual([
+        expect.stringContaining("spec_router_provider:smartrouter_requests_total:rate2m15s"),
+        expect.stringContaining(
+          "spec_router_provider:smartrouter_requests_success_total:rate2m15s",
+        ),
+        expect.stringContaining("increase(smartrouter_node_errors_total"),
+        "sum(count_over_time(spec_router:smartrouter_requests_total:rate2m15s[1d]))",
+      ]);
+      expect(reads[3]!.parameters.time).toBe(start + 86_400);
+      if (recorded) {
+        expect(result.table.rows).toEqual([
+          { chain: "ETH1", provider: "tatum", relays: 100, failedRelays: 0, nodeErrorReplies: 100 },
+        ]);
+        expect(result.recordingWarning).toBeUndefined();
+      } else {
+        expect(result.table.rows).toEqual([]);
+        expect(result.recordingWarning).toContain("first day");
+      }
+    },
+  );
+
   it("does not describe a current status observation as exhaustive incident history", async () => {
     const until = Math.floor(Date.now() / 1000);
     const f = fixture({

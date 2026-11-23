@@ -1,9 +1,18 @@
+/** The longest total lookback a metrics query may carry: the recorded series
+ * hold one sample a minute, so a 30-day sum reads 43,200 samples a series. */
+export const METRICS_LOOKBACK_SECONDS = 30 * 86_400;
+/** The longest total lookback a log query may carry: raw lines are scanned. */
+export const LOGS_LOOKBACK_SECONDS = 86_400;
+
 /** A deliberately limited query dialect, not a PromQL/LogQL parser. Only
  * literal range selectors are admitted. Subqueries, duration expressions and
  * time relocation require a separately audited execution policy. The source
  * must still enforce cardinality, sample, memory and query-time limits.
  * https://prometheus.io/docs/prometheus/latest/querying/basics/ */
-export function askQueryLookbackSeconds(value: string): number | null {
+export function askQueryLookbackSeconds(
+  value: string,
+  maxSeconds: number = LOGS_LOOKBACK_SECONDS,
+): number | null {
   const code = [...value];
   let quote = "";
   let comment = false;
@@ -57,11 +66,14 @@ export function askQueryLookbackSeconds(value: string): number | null {
     } else return null;
     lookback += seconds;
     maximum = Math.max(maximum, seconds);
-    if (!Number.isFinite(lookback) || seconds <= 0 || lookback > 86400) return null;
+    if (!Number.isFinite(lookback) || seconds <= 0 || lookback > maxSeconds) return null;
   }
   return maximum;
 }
 
-export function hasBoundedAskQuery(value: string): boolean {
-  return askQueryLookbackSeconds(value) !== null;
+export function hasBoundedAskQuery(
+  value: string,
+  maxSeconds: number = LOGS_LOOKBACK_SECONDS,
+): boolean {
+  return askQueryLookbackSeconds(value, maxSeconds) !== null;
 }

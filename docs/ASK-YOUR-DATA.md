@@ -234,12 +234,27 @@ or at shutdown. A source added to or removed from the credential's grant reaches
 Ask within five minutes; the MCP server refuses a removed source's reads at once. A source is selected implicitly
 only if exactly one authorized source supports the operation; ambiguity returns
 choices and never sums replicas. Remote descriptions cannot grant tools.
-Metrics/log reads keep their 24-hour bounds; provider-status event reads keep
-their seven-day bounds.
+A read may start at any time the stores hold: log lines 45 days back, metrics
+90 days. How long one read may be depends on what it reads. A log query's range
+selectors total at most 24 hours. A metrics query's total at most 30 days: the
+recorded series hold one sample a minute. Range reads (`query_range`, `labels`,
+`label_values`, `series`) span at most 24 hours, the MCP server's own bound.
+Provider-status event reads keep their seven-day bounds. The model gives a
+named date or time as `from`/`to` in ISO 8601 with its zone, and the server
+converts it; the request context precomputes the last 5 minutes, hour, 24 hours,
+7 days and 30 days.
 
-`router_request_summary` reads the ruler's recorded per-minute counts over one window: requests and failures, transactions (`measure=transactions`), or the router's warn and error log lines by chain and level with the 30 most frequent messages (`measure=errors`, `smartrouter_warn_error_lines:count1m`). Missing series stay
-unknown, without a zero fallback. A count whose recorded series has nothing for
-the window carries `fallback`: the same count over this customer's raw router
+`router_request_summary` reads the ruler's recorded per-minute counts over one window of up to 30 days: requests and failures, transactions (`measure=transactions`), or the router's warn and error log lines by chain and level with the 30 most frequent messages (`measure=errors`, `smartrouter_warn_error_lines:count1m`). Missing series stay
+unknown, without a zero fallback. The model never sees the samples: the server
+adds them up into `table` (`summary-tables.ts`), rows and totals per chain, and
+each count's result carries only how many samples went into it. A
+transactions row reads `accepted`, `rejected`, `failedNeverSent`,
+`failedOnChain`, `unknown` and `total`, by `txResultOf`, the Transactions tab's
+own mapping. A window longer than a day also reads whether the recorded series
+hold anything in its first day; when they do not, the result carries
+`recordingWarning` and the answer says the totals may cover only part of it. A
+count whose recorded series has nothing for a window of a day or less carries
+`fallback`: the same count over this customer's raw router
 lines in Loki, with the recorded rule's own filters (`requestSummaryQueries`'s
 `raw`). The tool never runs it; the model runs it once with `logs_query` when
 the question needs that count, and says the figure was counted from the logs. A window that ends within two minutes of the
@@ -264,7 +279,18 @@ fallback and no recording lag, and a customer missing from the result is unknown
 A customer id is named in the answer as returned; the prompt tells the model a
 long hex id is the caller's choice, not a credential, and redaction leaves it.
 
-Counts do not establish an acceptable error rate or a cause without actual evidence and an SLO. `router_recent_requests` reads a small, customer-scoped backwards sample of the dashboard's `relay_end` events for request details. Sampling never proves the absence of errors. Effective status/instant-query times and literal lookback windows are returned explicitly; absence of a provider-status source is reported as unavailable.
+`measure=providers` answers which provider (upstream node) sent or failed what.
+Per chain and provider it reads relays and successful relays from the recorded
+pair `spec_router_provider:smartrouter_requests_total:rate2m15s` and
+`…_success_total:rate2m15s` (a window's total is the sum times 60), and
+node-error replies raw from `smartrouter_node_errors_total`. The table gives
+`relays`, `failedRelays` (relays minus successes) and `nodeErrorReplies`, most
+errors first. A node-error reply is an answered relay, so it is not among the
+failed ones. Relays include the router's retries, hedges and health probes, and
+the router's cache (`Cached`) is left out. A count whose read failed is named
+in `table.unavailable` and its column is left out.
+
+Counts do not establish an acceptable error rate or a cause without actual evidence and an SLO. `router_recent_requests` reads a small, customer-scoped backwards sample of the dashboard's `relay_end` events for request details, over up to 24 hours at any time the logs hold. Each event's `served_by` names the provider whose reply reached the client and `attempts` every provider tried. Sampling never proves the absence of errors. Effective status/instant-query times and literal lookback windows are returned explicitly; absence of a provider-status source is reported as unavailable.
 
 Model dispatch guards live inside the model execution boundary, not SDK
 notification callbacks. Automatic model retries and tool repair are disabled.
@@ -562,8 +588,7 @@ Earlier messages load without losing the reading position. Completed
 errors/cancellations are included with retained messages, so reload does not
 erase the outcome.
 
-A new chat's questions default to the last 24 hours, the most one read may
-cover. A follow-up keeps the chain and router its chat started with (chats from
+A new chat's questions default to the last 24 hours. A follow-up keeps the chain and router its chat started with (chats from
 before Ask became one page may carry them) over a time of the same length that
 ends now. The composer shows no scope line.
 

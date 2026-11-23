@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { RELAY_END } from "../relay-end.js";
-import { requestSummaryInput, requestSummaryQueries } from "./request-summary.js";
+import { MAX_RAW_SECONDS, requestSummaryInput, requestSummaryQueries } from "./request-summary.js";
 
 export const routerLogsInput = z
   .object({
@@ -8,6 +8,8 @@ export const routerLogsInput = z
     chain: requestSummaryInput.shape.chain,
     start: requestSummaryInput.shape.start,
     end: requestSummaryInput.shape.end,
+    from: requestSummaryInput.shape.from,
+    to: requestSummaryInput.shape.to,
     limit: z.number().int().min(1).max(100).optional(),
   })
   .strict();
@@ -21,7 +23,13 @@ export function routerLogQuery(
   defaults: { start: number; end: number },
 ) {
   const window = requestSummaryQueries(input, defaults);
-  if (!window || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(customerId)) return null;
+  // Raw lines are scanned, so a sample reads at most a day of them.
+  if (
+    !window ||
+    window.end - window.start > MAX_RAW_SECONDS ||
+    !/^[a-z0-9][a-z0-9-]{0,63}$/.test(customerId)
+  )
+    return null;
   const matchers = [`service_name=~${JSON.stringify(`${customerId}-.*`)}`];
   if (input.chain) matchers.push(`chain=${JSON.stringify(input.chain.toLowerCase())}`);
   return {

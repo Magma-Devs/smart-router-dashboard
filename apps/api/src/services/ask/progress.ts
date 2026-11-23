@@ -1,6 +1,6 @@
 import type { AskRunProgress, AskRunRead, AskRunStep } from "@sr/shared";
 
-/** The fleet's recorded series and the per-customer counters, in the words a person reads them by. */
+/** The fleet's recorded series and the per-customer and per-provider counters, in the words a person reads them by. */
 const RECORDED: Record<string, string> = {
   "smartrouter_final_requests:count1m": "request counts",
   "smartrouter_final_failures:count1m": "failure counts",
@@ -12,6 +12,10 @@ const RECORDED: Record<string, string> = {
   "smartrouter_envoy_responses:count1m": "gateway response codes",
   smartrouter_customer_requests_total: "requests per customer",
   smartrouter_customer_requests_failed_total: "failures per customer",
+  "spec_router_provider:smartrouter_requests_total:rate2m15s": "requests per provider",
+  "spec_router_provider:smartrouter_requests_success_total:rate2m15s": "answers per provider",
+  smartrouter_node_errors_total: "node errors per provider",
+  "spec_router:smartrouter_requests_total:rate2m15s": "recorded request history",
 };
 
 const METRIC = /[A-Za-z_:][A-Za-z0-9_:]*/g;
