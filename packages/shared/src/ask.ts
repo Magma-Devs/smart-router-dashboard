@@ -175,6 +175,10 @@ export interface AskRunProgress {
   step: AskRunStep;
   /** Every read the run has finished, oldest first. */
   reads: AskRunRead[];
+  /** The answer's summary while the model writes the rest: credential-redacted
+   * but not yet validated. The validated answer replaces it; a run that fails
+   * drops it. Plain text. */
+  draft?: string;
 }
 export interface AskChatDetail {
   chat: AskChat;

@@ -38,7 +38,7 @@ not an internal staff identity.
 | --- | --- |
 | Web | `ASK_DATA_ENABLED` only; no provider secrets, prices or budget |
 | API | Exact `ASK_DATA_CUSTOMER_ID`, fixed trusted `ASK_DATA_MCP_URL`, customer-only `ASK_DATA_MCP_TOKEN` |
-| API | Verified `ASK_DATA_BEDROCK_REGION`, `ASK_DATA_BEDROCK_MODEL`, `AWS_BEARER_TOKEN_BEDROCK` |
+| API | Verified `ASK_DATA_BEDROCK_REGION`, `ASK_DATA_BEDROCK_MODEL`, `AWS_BEARER_TOKEN_BEDROCK`; the key's policy allows `bedrock:InvokeModelWithResponseStream` on the model (every answer streams) |
 | API | Verified `ASK_DATA_TOKEN_COUNTER`, `ASK_DATA_TOKEN_COUNTER_MODEL` (read by the readiness preflight), dated exact-model/region `ASK_DATA_PRICING_JSON` |
 | API | `ASK_DATA_MONTHLY_LIMIT_MICRO_USD=10000000` ($10 shared/customer/UTC month), `ASK_DATA_RETENTION_DAYS` (1–90) |
 

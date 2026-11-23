@@ -378,6 +378,54 @@ suite("Ask HTTP backed by independent PostgreSQL connections", () => {
     expect((await submit(replica, alice, aChat)).status).toBe(200);
   });
 
+  it("serves a running answer's draft from any replica, written only under its lease and cleared at the end", async () => {
+    const id = await chat();
+    const run = await submit(a, alice, id);
+    const lease = (await aStore.claim(30_000))!;
+    expect(await aStore.saveDraft(lease.id, lease.leaseToken!, "Two chains failed.")).toBe(true);
+    expect((await request(replica, alice, "/runs/active")).body.run!.progress).toEqual({
+      step: "starting",
+      reads: [],
+      draft: "Two chains failed.",
+    });
+    // Another customer's store and a stale lease token write nothing.
+    expect(
+      await new AskStore(handles[0]!.db, "customer-b", 90).saveDraft(
+        lease.id,
+        lease.leaseToken!,
+        "other",
+      ),
+    ).toBe(false);
+    expect(await aStore.saveDraft(lease.id, crypto.randomUUID(), "stale")).toBe(false);
+    expect((await request(a, alice, "/runs/active")).body.run!.progress!.draft).toBe(
+      "Two chains failed.",
+    );
+    // The person's own run and chat reads never carry it.
+    expect(JSON.stringify((await request(a, alice, `/runs/${run.body.id}`)).body)).not.toContain(
+      "Two chains",
+    );
+    expect(await aStore.succeed(lease.id, lease.leaseToken!, answer)).toBe(true);
+    expect(await aStore.saveDraft(lease.id, lease.leaseToken!, "late")).toBe(false);
+    const [row] = await handles[0]!.db
+      .select({ draft: askRuns.draft })
+      .from(askRuns)
+      .where(eq(askRuns.id, lease.id));
+    expect(row!.draft).toBeNull();
+  });
+
+  it("clears a failed run's draft", async () => {
+    const id = await chat();
+    await submit(a, alice, id);
+    const lease = (await aStore.claim(30_000))!;
+    expect(await aStore.saveDraft(lease.id, lease.leaseToken!, "Partial")).toBe(true);
+    expect(await aStore.fail(lease.id, lease.leaseToken!, "ASK_INVALID_ANSWER")).toBe(true);
+    const [row] = await handles[0]!.db
+      .select({ draft: askRuns.draft })
+      .from(askRuns)
+      .where(eq(askRuns.id, lease.id));
+    expect(row!.draft).toBeNull();
+  });
+
   it("claims each queued run once with independent workers and fences late completion after cancellation", async () => {
     const id = await chat();
     const run = await submit(a, alice, id);

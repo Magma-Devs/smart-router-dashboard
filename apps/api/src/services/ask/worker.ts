@@ -18,6 +18,65 @@ export interface AskWorkerOptions {
   onError?: (code: string, error?: unknown) => void;
 }
 
+/** The fewest milliseconds between two draft writes of one run. */
+const DRAFT_INTERVAL_MS = 500;
+
+/** Writes a run's newest draft, at most once per interval and never two at
+ * once; text published meanwhile replaces the text waiting. After `close`
+ * nothing more is written, so no draft lands after the run's terminal write. */
+export class DraftWriter {
+  private latest: string | null = null;
+  private written: string | null = null;
+  private flight: Promise<void> | null = null;
+  private timer: ReturnType<typeof setTimeout> | null = null;
+  private last = Number.NEGATIVE_INFINITY;
+  private closed = false;
+
+  constructor(
+    private readonly write: (text: string) => Promise<void>,
+    private readonly intervalMs: number,
+  ) {}
+
+  publish(text: string): void {
+    if (this.closed) return;
+    this.latest = text;
+    this.schedule();
+  }
+
+  private schedule(): void {
+    if (this.closed || this.flight || this.timer || this.latest === this.written) return;
+    this.timer = setTimeout(
+      () => {
+        this.timer = null;
+        this.flush();
+      },
+      Math.max(0, this.last + this.intervalMs - Date.now()),
+    );
+    this.timer.unref();
+  }
+
+  private flush(): void {
+    if (this.closed || this.latest === null || this.latest === this.written) return;
+    const text = this.latest;
+    this.last = Date.now();
+    this.flight = this.write(text)
+      .then(() => {
+        this.written = text;
+      })
+      .finally(() => {
+        this.flight = null;
+        this.schedule();
+      });
+  }
+
+  async close(): Promise<void> {
+    this.closed = true;
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
+    await this.flight;
+  }
+}
+
 /** PostgreSQL owns queue/leases. These process-local maps only bound this
  * replica's concurrency and propagate cancellation to its own requests. */
 export class AskWorker {
@@ -125,6 +184,15 @@ export class AskWorker {
       })();
       return checking;
     };
+    let draftFailed = false;
+    const drafts = new DraftWriter(async (text) => {
+      try {
+        await this.store.saveDraft(run.id, run.leaseToken!, text);
+      } catch (error) {
+        if (!draftFailed) this.options.onError?.("ASK_DRAFT_WRITE_FAILED", error);
+        draftFailed = true;
+      }
+    }, DRAFT_INTERVAL_MS);
     const heartbeat = setInterval(() => {
       void check();
     }, this.settings.heartbeatMs);
@@ -134,6 +202,7 @@ export class AskWorker {
     // the check in flight and starts no other.
     const quiesce = async (): Promise<void> => {
       clearInterval(heartbeat);
+      await drafts.close();
       await checking;
     };
     const deadline = setTimeout(
@@ -153,6 +222,7 @@ export class AskWorker {
       const hooks: AskExecutionHooks = {
         ...supplied,
         timing: (phase, durationMs) => this.options.timing?.(run.id, phase, durationMs),
+        draft: (text) => drafts.publish(text),
         checkActive: async () => {
           if (controller.signal.aborted) throw controller.signal.reason;
           if (!(this.options.enabled?.() ?? this.settings.enabled))
@@ -201,6 +271,7 @@ export class AskWorker {
     } finally {
       clearInterval(heartbeat);
       clearTimeout(deadline);
+      await drafts.close();
       await this.options
         .afterTerminal(run.id)
         .catch(() => this.options.onError?.("ASK_USAGE_RECONCILIATION_FAILED"));

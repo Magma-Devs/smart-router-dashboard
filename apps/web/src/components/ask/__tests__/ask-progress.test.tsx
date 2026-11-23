@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { AskRun } from "@sr/shared";
 import { finishedReads, processingText } from "../ask-display";
 import { AskReads } from "../AskReads";
+import { AskDraft } from "../AskDraft";
 
 type Run = Pick<AskRun, "status" | "progress">;
 const running = (progress: AskRun["progress"]): Run => ({ status: "running", progress });
@@ -60,5 +61,26 @@ describe("the reads under it", () => {
     expect(
       finishedReads({ status: "succeeded", progress: { step: "reading", reads } }).shown,
     ).toEqual([]);
+  });
+});
+
+describe("the draft under it", () => {
+  const draft = (run: Run | null) => renderToStaticMarkup(createElement(AskDraft, { run }));
+
+  it("shows the summary as plain text, marked as a draft", () => {
+    const html = draft(running({ step: "reviewing", reads: [], draft: "Two <b>chains</b> failed." }));
+    expect(html).toContain("Two &lt;b&gt;chains&lt;/b&gt; failed.");
+    expect(html).toContain("Draft.");
+    expect(html).toContain('aria-busy="true"');
+  });
+
+  it("shows nothing without a draft, or once the run is not running", () => {
+    expect(draft(running({ step: "reviewing", reads: [] }))).toBe("");
+    expect(draft(running({ step: "reviewing", reads: [], draft: "  " }))).toBe("");
+    expect(draft({ status: "running" })).toBe("");
+    expect(draft(null)).toBe("");
+    expect(
+      draft({ status: "cancelling", progress: { step: "reviewing", reads: [], draft: "x y" } }),
+    ).toBe("");
   });
 });

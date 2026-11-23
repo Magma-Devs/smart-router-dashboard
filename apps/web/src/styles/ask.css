@@ -371,6 +371,21 @@
 .ask-reads-more {
   color: var(--text-3);
 }
+.ask-draft {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border-left: 2px solid var(--line-2);
+  color: var(--text);
+}
+.ask-draft p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+.ask-draft small {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-3);
+}
 .ask-spinner {
   width: 14px;
   height: 14px;

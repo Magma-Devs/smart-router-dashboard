@@ -158,8 +158,13 @@ export interface ProgressRead {
   createdAt: Date;
 }
 
-/** The step a running run is on, from its model turns and reads, oldest first. */
-export function runProgress(steps: ProgressStep[], reads: ProgressRead[]): AskRunProgress {
+/** The step a running run is on, from its model turns and reads, oldest first,
+ * and the answer's summary while the model writes the rest. */
+export function runProgress(
+  steps: ProgressStep[],
+  reads: ProgressRead[],
+  draft?: string | null,
+): AskRunProgress {
   const wire: AskRunRead[] = reads.map((read) => ({
     label: readLabel(read.operationId, read.parameters),
     ok: read.ok === "success",
@@ -173,5 +178,5 @@ export function runProgress(steps: ProgressStep[], reads: ProgressRead[]): AskRu
     const ended = last.completedAt ?? last.createdAt;
     step = reads.some((read) => read.createdAt >= ended) ? "reading" : "working";
   }
-  return { step, reads: wire };
+  return { step, reads: wire, ...(draft ? { draft } : {}) };
 }

@@ -344,7 +344,7 @@ export class AskStore {
         .where(and(eq(askToolEvents.customerId, this.customerId), eq(askToolEvents.runId, run.id)))
         .orderBy(askToolEvents.createdAt),
     ]);
-    return { ...wire, progress: runProgress(steps, reads) };
+    return { ...wire, progress: runProgress(steps, reads, run.draft) };
   }
 
   /** Each read's label, by evidence id: named from the operation and the query
@@ -694,6 +694,7 @@ export class AskStore {
           completedAt: sql`clock_timestamp()`,
           leaseToken: null,
           leaseUntil: null,
+          draft: null,
         })
         .where(and(this.lease(runId, token), eq(askRuns.status, "running"), this.sessionActive()))
         .returning();
@@ -737,6 +738,7 @@ export class AskStore {
           completedAt: sql`now()`,
           leaseToken: null,
           leaseUntil: null,
+          draft: null,
         })
         .where(this.lease(runId, token))
         .returning({ id: askRuns.id });
@@ -758,6 +760,7 @@ export class AskStore {
         completedAt: sql`now()`,
         leaseToken: null,
         leaseUntil: null,
+        draft: null,
       })
       .where(
         and(
@@ -768,6 +771,17 @@ export class AskStore {
       )
       .returning({ id: askRuns.id });
     return rows.length;
+  }
+
+  /** The answer's summary so far, written only under the run's current lease
+   * while it runs. Every terminal write clears it. */
+  async saveDraft(runId: string, token: string, draft: string): Promise<boolean> {
+    const rows = await this.db
+      .update(askRuns)
+      .set({ draft: draft.slice(0, 2000) })
+      .where(and(this.lease(runId, token), eq(askRuns.status, "running")))
+      .returning({ id: askRuns.id });
+    return rows.length === 1;
   }
 
   async leaseState(runId: string, token: string): Promise<"running" | "cancelling" | "lost"> {
@@ -782,7 +796,12 @@ export class AskStore {
   async interruptQueued(): Promise<void> {
     await this.db
       .update(askRuns)
-      .set({ status: "interrupted", errorCode: "ASK_INTERRUPTED", completedAt: sql`now()` })
+      .set({
+        status: "interrupted",
+        errorCode: "ASK_INTERRUPTED",
+        completedAt: sql`now()`,
+        draft: null,
+      })
       .where(and(eq(askRuns.customerId, this.customerId), eq(askRuns.status, "queued")));
   }
 }

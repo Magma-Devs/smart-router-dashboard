@@ -26,6 +26,7 @@ import { askQueryLookbackSeconds } from "./query-bounds.js";
 import { PREFETCH_NOTE, prefetchRead, summarizePrefetch } from "./prefetch.js";
 import { AskFailure, abortFailure } from "./errors.js";
 import { redactAskData, redactAskText } from "./redact.js";
+import { draftText } from "./draft.js";
 import { FAILED_OUTCOMES } from "../relay-end.js";
 import { RECORDED_OUTCOMES } from "../error-requests.js";
 import { RECORDED_TX } from "../transactions-over-time.js";
@@ -46,6 +47,9 @@ export interface AskExecutionHooks {
     receipt: BedrockReceipt,
   ) => Promise<void>;
   timing?: (phase: "model" | "admission" | "discovery" | "read", durationMs: number) => void;
+  /** The answer's summary while the model writes the rest: redacted, not yet
+   * validated, and only ever replaced by the validated answer or dropped. */
+  draft?: (text: string) => void;
   recordTool: (tool: {
     sourceId: string;
     operationId: string;
@@ -418,6 +422,14 @@ export class AskOrchestrator {
           pendingBytes = 0;
         },
         timing: hooks.timing,
+        ...(hooks.draft
+          ? {
+              draft: (summary: { text: string; complete: boolean }) => {
+                const text = draftText(summary, secrets);
+                if (text) hooks.draft!(text);
+              },
+            }
+          : {}),
         validateStep: (step) => {
           const uses = step.message.content.flatMap((part) =>
             "toolUse" in part ? [part.toolUse] : [],
