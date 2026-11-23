@@ -26,7 +26,7 @@ const answer = (items: Answer["evidence"]): Answer => ({
 const rows = (html: string) =>
   [
     ...html.matchAll(
-      /<li><div><span><strong>([^<]*)<\/strong>(?:<span class="ask-evidence-label"> · ([^<]*)<\/span>)?<\/span>/g,
+      /<li><div><span><strong>([^<]*)<\/strong>(?:<span class="ask-evidence-label"> ([^<]*)<\/span>)?<\/span>/g,
     ),
   ].map(([, source = "", label]) => (label ? `${source} · ${label}` : source));
 

@@ -5,6 +5,22 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.86.0]
+
+### Changed
+
+- The Ask page reads as a log of findings, in the dashboard's own tokens: each
+  question is its turn's heading in a left-aligned column, and a hairline opens
+  every turn after the first. An answer's sources, copy and time share one row
+  under it, and an answered question shows its time once.
+- A new chat opens at the top of the column with what Ask answers and four
+  suggested questions; a click on one sends it.
+- While a question runs, one line under it shows the brand's ember mark, the
+  step and Stop, with the reads so far under it. The composer says the answer
+  will be there after leaving the page.
+- A failed answer states what happened, with Ask again (sends the same question
+  at once) and Edit question (puts it in the composer).
+
 ## [0.85.0]
 
 ### Fixed

@@ -63,7 +63,8 @@ interface AskContextValue {
   notice: string | null;
   select: (id: string | null) => void;
   setDraft: (value: string) => void;
-  submit: (context?: AskPageContext | null) => Promise<void>;
+  /** Sends the composer's draft, or `question` (a suggestion, a retry) leaving the draft as it is. */
+  submit: (context?: AskPageContext | null, question?: string) => Promise<void>;
   stop: () => Promise<void>;
   /** What a question is sent with: the chat's chain and router, over a time that ends now. */
   context: (previous?: AskPageContext | null) => AskPageContext;
@@ -194,8 +195,8 @@ export function AskProvider({
     [patch],
   );
   const submit = useCallback(
-    async (previous?: AskPageContext | null) => {
-      const question = (local.drafts[chatId ?? "new"] ?? "").trim();
+    async (previous?: AskPageContext | null, given?: string) => {
+      const question = (given ?? local.drafts[chatId ?? "new"] ?? "").trim();
       if (
         submittingRef.current ||
         active ||
@@ -219,7 +220,7 @@ export function AskProvider({
       };
       patch((old) => ({
         pending: optimistic,
-        drafts: { ...old.drafts, [chatId ?? "new"]: "" },
+        drafts: given === undefined ? { ...old.drafts, [chatId ?? "new"]: "" } : old.drafts,
       }));
       let id = chatId;
       try {
@@ -255,7 +256,8 @@ export function AskProvider({
           new_chat: newChat,
           chain: Boolean(pending.context.chain),
         });
-        patch((old) => ({ drafts: { ...old.drafts, [id!]: "", new: "" } }));
+        if (given === undefined)
+          patch((old) => ({ drafts: { ...old.drafts, [id!]: "", new: "" } }));
         void activity.mutate({ run }, false);
         // Delivery is confirmed. A failed transcript refresh must not restore
         // the draft or turn the next Send into a second paid question.

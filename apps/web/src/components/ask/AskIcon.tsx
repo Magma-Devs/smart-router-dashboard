@@ -1,7 +1,18 @@
 import type { ReactNode } from "react";
 
 type IconName =
-  "send" | "copy" | "check" | "search" | "plus" | "history" | "back" | "lock" | "sources";
+  | "send"
+  | "copy"
+  | "check"
+  | "search"
+  | "plus"
+  | "history"
+  | "back"
+  | "lock"
+  | "sources"
+  | "alert"
+  | "retry"
+  | "edit";
 
 const paths: Record<IconName, ReactNode> = {
   send: <path d="M12 19V5m-6 6 6-6 6 6" />,
@@ -12,6 +23,14 @@ const paths: Record<IconName, ReactNode> = {
     </>
   ),
   check: <path d="m5 12 4 4L19 6" />,
+  alert: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7.5v5.5m0 3.2v.3" />
+    </>
+  ),
+  retry: <path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7" />,
+  edit: <path d="M4 20h4L19 9l-4-4L4 16v4Zm9-13 4 4" />,
   search: (
     <>
       <circle cx="10.5" cy="10.5" r="6.5" />
