@@ -17,6 +17,14 @@ function finished(run: Pick<AskRun, "status"> | undefined): boolean {
   return !!run && !["queued", "running", "cancelling"].includes(run.status);
 }
 
+/** Questions a new chat offers; a click sends one. */
+const SUGGESTIONS = [
+  "Which chains had failed requests today?",
+  "Which provider returned the most errors?",
+  "Is any provider behind on blocks?",
+  "How many transactions were sent in the last hour?",
+];
+
 function fitComposer(field: HTMLTextAreaElement) {
   field.style.height = "auto";
   field.style.height = `${Math.min(field.scrollHeight, 180)}px`;
@@ -197,6 +205,13 @@ export function AskConversation() {
       composer.current?.focus({ preventScroll: true });
   }, [blocked]);
   const empty = ask.available && !feed.isLoading && !feed.error && !messages.length && !optimistic;
+  /** Sends `question` as it stands: a suggestion, or a failed question asked again. */
+  const send = (question: string) => {
+    if (blocked) return;
+    focusAfterReply.current = true;
+    nearBottom.current = true;
+    void ask.submit(data?.context, question);
+  };
   useEffect(() => {
     const field = composer.current;
     if (!field) return;
@@ -272,27 +287,22 @@ export function AskConversation() {
             </div>
           ) : null}
           {empty ? (
-            <div className="ask-empty">
+            <div className="ask-empty ask-welcome">
               <h2>What’s happening with your router?</h2>
-              <p>Answers use your chains, your providers and your Grafana metrics and logs.</p>
-              <div className="ask-suggestions">
-                {[
-                  "Which chains had failed requests?",
-                  "Which provider had the most errors?",
-                  "Is any provider behind on blocks?",
-                ].map((question) => (
-                  <button
-                    className="gw-btn gw-btn--ghost"
-                    key={question}
-                    onClick={() => {
-                      ask.setDraft(question);
-                      composer.current?.focus();
-                    }}
-                  >
-                    {question}
-                  </button>
+              <p>
+                Ask in plain words. Answers come from your router’s requests, failures, logs and
+                provider status, and name the sources they read.
+              </p>
+              <ul className="ask-suggestions" aria-label="Suggested questions">
+                {SUGGESTIONS.map((question) => (
+                  <li key={question}>
+                    <button type="button" disabled={blocked} onClick={() => send(question)}>
+                      <span>{question}</span>
+                      <AskIcon name="send" size={14} />
+                    </button>
+                  </li>
                 ))}
-              </div>
+              </ul>
             </div>
           ) : null}
           {messages.map((message) =>
@@ -309,16 +319,32 @@ export function AskConversation() {
                 </div>
                 {outcomes.get(message.runId)?.error ? (
                   <div className="ask-turn-error" role="status">
-                    <p>{outcomes.get(message.runId)!.error!.message}</p>
-                    <button
-                      className="gw-btn gw-btn--ghost"
-                      onClick={() => {
-                        ask.setDraft(message.question ?? "");
-                        composer.current?.focus();
-                      }}
-                    >
-                      Edit and retry
-                    </button>
+                    <AskIcon name="alert" size={16} />
+                    <div>
+                      <p>{outcomes.get(message.runId)!.error!.message}</p>
+                      <div className="ask-turn-error-actions">
+                        <button
+                          type="button"
+                          className="gw-btn"
+                          disabled={blocked || !message.question}
+                          onClick={() => send(message.question ?? "")}
+                        >
+                          <AskIcon name="retry" size={14} />
+                          Ask again
+                        </button>
+                        <button
+                          type="button"
+                          className="gw-btn gw-btn--ghost"
+                          onClick={() => {
+                            ask.setDraft(message.question ?? "");
+                            composer.current?.focus();
+                          }}
+                        >
+                          <AskIcon name="edit" size={14} />
+                          Edit question
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 ) : null}
               </div>
@@ -338,8 +364,8 @@ export function AskConversation() {
           {ask.submitting || optimistic || ask.active ? (
             <>
               <div className="ask-processing" role="status">
-                <span className="ask-spinner" aria-hidden="true" />
-                <div>
+                <div className="ask-processing-line">
+                  <span className="ask-ember" aria-hidden="true" />
                   <span className="ask-status-text">
                     {ask.submitting && !pending?.run
                       ? "Sending…"
@@ -349,32 +375,29 @@ export function AskConversation() {
                   </span>
                   {ask.active && ask.active.chatId !== ask.chatId ? (
                     <button
-                      className="gw-btn gw-btn--ghost"
+                      type="button"
+                      className="ask-text-btn"
                       onClick={() => ask.select(ask.active!.chatId)}
                     >
                       View processing question
                     </button>
-                  ) : (
-                    <small>
-                      {ask.submitting && !pending?.run
-                        ? "You can keep this page open while it sends."
-                        : ask.connectionLost
-                          ? "Your question is saved. Reconnecting won’t send it again."
-                          : "You can leave this page. The answer will be here."}
-                    </small>
-                  )}
-                  {!ask.connectionLost && ask.active?.chatId === ask.chatId ? (
-                    <AskReads run={ask.active} />
+                  ) : null}
+                  {ask.active ? (
+                    <button
+                      type="button"
+                      className="ask-text-btn"
+                      disabled={ask.active.status === "cancelling"}
+                      onClick={() => void ask.stop()}
+                    >
+                      Stop
+                    </button>
                   ) : null}
                 </div>
-                {ask.active ? (
-                  <button
-                    className="gw-btn"
-                    disabled={ask.active.status === "cancelling"}
-                    onClick={() => void ask.stop()}
-                  >
-                    Stop
-                  </button>
+                {ask.connectionLost ? (
+                  <small>Your question is saved. Reconnecting won’t send it again.</small>
+                ) : null}
+                {!ask.connectionLost && ask.active?.chatId === ask.chatId ? (
+                  <AskReads run={ask.active} />
                 ) : null}
               </div>
             </>
@@ -430,7 +453,7 @@ export function AskConversation() {
             rows={1}
             placeholder={
               ask.active
-                ? "Wait for the answer or stop the current question"
+                ? "You can leave this page. The answer will be here."
                 : messages.length
                   ? "Ask a follow-up…"
                   : "Ask about your router…"

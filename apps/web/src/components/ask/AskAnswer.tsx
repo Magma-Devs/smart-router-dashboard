@@ -106,73 +106,78 @@ export function AskAnswer({ answer, messageId }: { answer: Answer; messageId?: s
           Some of the data behind this answer was missing or cut short. The sources say which.
         </p>
       ) : null}
-      {sources ? (
-        <details className="ask-evidence">
-          <summary>
-            <AskIcon name="sources" size={13} />
-            <span>
-              {sources} {sources === 1 ? "source" : "sources"}
-            </span>
-            <span className="ask-evidence-names" aria-hidden="true">
-              {[
-                ...new Set(
-                  answer.evidence.map(
-                    (item) => item.label ?? evidenceSourceLabel(item.operationId),
+      <div className="ask-answer-foot">
+        {sources ? (
+          <details className="ask-evidence">
+            <summary>
+              <AskIcon name="sources" size={13} />
+              <span>
+                {sources} {sources === 1 ? "source" : "sources"}
+              </span>
+              <span className="ask-evidence-names" aria-hidden="true">
+                {[
+                  ...new Set(
+                    answer.evidence.map(
+                      (item) => item.label ?? evidenceSourceLabel(item.operationId),
+                    ),
                   ),
-                ),
-              ]
-                .slice(0, 3)
-                .join(" · ")}
-            </span>
-          </summary>
-          <ul>
-            {answer.evidence.map((item) => (
-              <li key={item.id}>
-                <div>
-                  <span>
-                    <strong>{evidenceSourceLabel(item.operationId)}</strong>
-                    {item.label ? (
-                      <span className="ask-evidence-label"> · {item.label}</span>
-                    ) : null}
-                  </span>
-                  <span className="ask-coverage-badges">
-                    {evidenceBadges(item).map((badge) => (
-                      <span
-                        key={badge.label}
-                        className={`ask-coverage ask-coverage--${badge.tone}`}
-                        title={badge.title}
-                      >
-                        {badge.label}
-                      </span>
-                    ))}
-                  </span>
-                </div>
-                <div>
-                  {item.from ? (
-                    <>
-                      <AskTime value={item.from} withDay={windowSpansDays(item.from, item.to)} />
-                      {item.to ? (
-                        <>
-                          {" "}
-                          to{" "}
-                          <AskTime value={item.to} withDay={windowSpansDays(item.from, item.to)} />
-                        </>
+                ]
+                  .slice(0, 3)
+                  .join(", ")}
+              </span>
+            </summary>
+            <ul>
+              {answer.evidence.map((item) => (
+                <li key={item.id}>
+                  <div>
+                    <span>
+                      <strong>{evidenceSourceLabel(item.operationId)}</strong>
+                      {item.label ? (
+                        <span className="ask-evidence-label"> {item.label}</span>
                       ) : null}
-                    </>
-                  ) : (
-                    <>
-                      Observed <AskTime value={item.observedAt} />
-                    </>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-        </details>
-      ) : null}
-      <div className="ask-answer-actions">
-        <CopyAnswer answer={answer} />
-        <AskTime value={answer.answeredAt} />
+                    </span>
+                    <span className="ask-coverage-badges">
+                      {evidenceBadges(item).map((badge) => (
+                        <span
+                          key={badge.label}
+                          className={`ask-coverage ask-coverage--${badge.tone}`}
+                          title={badge.title}
+                        >
+                          {badge.label}
+                        </span>
+                      ))}
+                    </span>
+                  </div>
+                  <div>
+                    {item.from ? (
+                      <>
+                        <AskTime value={item.from} withDay={windowSpansDays(item.from, item.to)} />
+                        {item.to ? (
+                          <>
+                            {" "}
+                            to{" "}
+                            <AskTime
+                              value={item.to}
+                              withDay={windowSpansDays(item.from, item.to)}
+                            />
+                          </>
+                        ) : null}
+                      </>
+                    ) : (
+                      <>
+                        Observed <AskTime value={item.observedAt} />
+                      </>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </details>
+        ) : null}
+        <div className="ask-answer-actions">
+          <CopyAnswer answer={answer} />
+          <AskTime value={answer.answeredAt} />
+        </div>
       </div>
     </article>
   );

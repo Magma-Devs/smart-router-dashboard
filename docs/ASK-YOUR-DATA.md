@@ -534,8 +534,10 @@ running, else to the chat last open in the tab, else to a new one, and shows a
 spinner while a question runs, so the rest of the dashboard stays in use while
 waiting. A draft survives leaving the page and coming back.
 
-The page is the conversation in a centered reading column, with **History** and
-**New chat** above it. History replaces the conversation with the person's
+The page is the conversation in a centered, left-aligned reading column, with
+**History** and **New chat** above it. A new chat opens at the top of the column
+with what Ask answers and four suggested questions as a list; a click on one
+sends it as it stands, and leaves the composer's draft alone. History replaces the conversation with the person's
 chats: searched by POST body, grouped by local calendar days and paginated.
 Earlier messages load without losing the reading position. Completed
 errors/cancellations are included with retained messages, so reload does not
@@ -546,16 +548,24 @@ cover. A follow-up keeps the chain and router its chat started with (chats from
 before Ask became one page may carry them) over a time of the same length that
 ends now. The composer shows no scope line.
 
-Questions use right-aligned bubbles. Answers read as chat prose with no bubble:
-paragraphs, lists, tables (scrolling inside their frame on a narrow screen) and
-bold key figures. An answer stored without Markdown renders its summary and
-numbered sections. Under an answer, its sources sit in one pill ("2 sources ·
-Failure counts · Request counts") that opens their list; copy and the time are
-quiet until the answer is hovered or focused. Copy gives the Markdown and its
-sources. The status line shimmers while the run works. A source
-reads as Logs, Metrics or Data followed by its label ("Metrics · Failure
-counts"), with its window's day on both ends when they
-fall on different days. A source's tag says what its read returned: Cut short,
+The conversation reads as a log of findings. Each question is its turn's
+heading, and every turn after the first opens under a hairline. An unanswered
+question shows its time beside it; an answered one shows it once, under the
+answer. Answers read as prose under their question: paragraphs, lists, tables
+(scrolling inside their frame on a narrow screen) and bold key figures. An
+answer stored without Markdown renders its summary and numbered sections. One
+row under an answer holds its sources on the left ("2 sources Failure counts,
+Request counts"), which open their list across the column, and copy and the
+time on the right, quiet until the answer is hovered or focused. Copy gives the
+Markdown and its sources. While a question runs, one line under it shows the
+brand's ember mark (the page's only moving mark, still under reduced motion),
+the step, and Stop beside it, with the reads so far under that line; the
+composer says the answer will be there after leaving the page. A failed turn
+states what happened, with **Ask again**, which sends the same question at once
+and leaves the composer's draft alone, and **Edit question**, which puts it in
+the composer. A source reads as Logs, Metrics or Data followed by its label
+("Metrics Failure counts"), with its window's day on both ends when they fall
+on different days. A source's tag says what its read returned: Cut short,
 Partial or Unavailable in the warning colour, No matches or Limited coverage in
 a muted one. A metrics source whose window ends less than two minutes before
 its read also carries a muted "Last 2 min pending" (`recentGap` in

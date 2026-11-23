@@ -153,7 +153,7 @@ test("one active question spans tabs, Stop persists, and failed answers remain r
   page,
   context,
   operator,
-}) => {
+}, testInfo) => {
   await signInThroughUi(page, operator);
   await page.goto("/ask");
   await page.getByLabel("Ask a question").fill("SLOW_FIXTURE keep this question running");
@@ -183,10 +183,20 @@ test("one active question spans tabs, Stop persists, and failed answers remain r
       exact: true,
     }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Edit and retry" }).click();
+  await page.getByRole("button", { name: "Edit question" }).click();
   await expect(page.getByLabel("Ask a question")).toHaveValue(
     "INVALID_FIXTURE invalid answer case",
   );
+  // Ask again sends the failed question as it was, and leaves the composer alone.
+  await page.getByLabel("Ask a question").fill("a draft of the next question");
+  await page.getByRole("button", { name: "Ask again" }).click();
+  await expect(
+    page.locator(".ask-question").filter({ hasText: "INVALID_FIXTURE invalid answer case" }),
+  ).toHaveCount(2);
+  await expect(page.getByRole("button", { name: "Ask again" })).toHaveCount(2);
+  await expect(page.getByLabel("Ask a question")).toHaveValue("a draft of the next question");
+  await page.mouse.move(10, 10);
+  await page.screenshot({ path: testInfo.outputPath("ask-failed.png"), animations: "disabled" });
   await second.close();
 });
 
