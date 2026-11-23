@@ -431,14 +431,15 @@ export class AskOrchestrator {
             "toolUse" in part ? [part.toolUse] : [],
           );
           if (uses.length > 4 || new Set(uses.map((use) => use.toolUseId)).size !== uses.length)
-            throw new AskFailure("ASK_INVALID_ANSWER", 502);
+            throw new AskFailure("ASK_INVALID_ANSWER", 502, "too_many_tool_calls");
           const text = step.message.content
             .map((part) => ("text" in part ? part.text : ""))
             .join("")
             .trim();
           const presentations = uses.filter((use) => use.name === "present_answer");
           if (presentations.length) {
-            if (uses.length !== 1) throw new AskFailure("ASK_INVALID_ANSWER", 502);
+            if (uses.length !== 1)
+              throw new AskFailure("ASK_INVALID_ANSWER", 502, "closing_call_not_alone");
             final = this.finalAnswer(
               text,
               presentations[0]!.input,
@@ -702,7 +703,7 @@ export class AskOrchestrator {
     prefetchedId?: string,
   ): AskAnswer {
     const parsed = presentationInput.safeParse(raw);
-    if (!parsed.success) throw new AskFailure("ASK_INVALID_ANSWER", 502);
+    if (!parsed.success) throw new AskFailure("ASK_INVALID_ANSWER", 502, "invalid_closing_call");
     const { kind, evidenceIds } = parsed.data;
     // The server's own read before the first turn is a source only of an answer
     // that rests on it: never of a conversation reply, nor of a data answer whose
@@ -715,18 +716,23 @@ export class AskOrchestrator {
       successfulReads -= 1;
     }
     if (kind === "conversation") {
-      if (evidence.length || evidenceIds?.length) throw new AskFailure("ASK_INVALID_ANSWER", 502);
+      if (evidence.length || evidenceIds?.length)
+        throw new AskFailure("ASK_INVALID_ANSWER", 502, "conversation_with_sources");
     } else if (!successfulReads) {
-      throw new AskFailure(evidence.length ? "ASK_MCP_UNAVAILABLE" : "ASK_INVALID_ANSWER", 502);
+      throw evidence.length
+        ? new AskFailure("ASK_MCP_UNAVAILABLE", 502)
+        : new AskFailure("ASK_INVALID_ANSWER", 502, "data_without_reads");
     }
     if (
       evidenceIds &&
       (new Set(evidenceIds).size !== evidenceIds.length ||
         evidenceIds.some((id) => !evidence.some((item) => item.id === id)))
     )
-      throw new AskFailure("ASK_INVALID_ANSWER", 502);
+      throw new AskFailure("ASK_INVALID_ANSWER", 502, "unknown_evidence");
     const text = redactAskText(markdown, secrets).trim();
-    if (!text || text.length > ASK_LIMITS.markdown) throw new AskFailure("ASK_INVALID_ANSWER", 502);
+    if (!text) throw new AskFailure("ASK_INVALID_ANSWER", 502, "empty_answer");
+    if (text.length > ASK_LIMITS.markdown)
+      throw new AskFailure("ASK_INVALID_ANSWER", 502, "answer_too_long");
     const answer = askAnswerSchema.safeParse({
       ...markdownFallback(text),
       contractVersion: ASK_CONTRACT_VERSION,
@@ -734,7 +740,7 @@ export class AskOrchestrator {
       evidence,
       markdown: text,
     });
-    if (!answer.success) throw new AskFailure("ASK_INVALID_ANSWER", 502);
+    if (!answer.success) throw new AskFailure("ASK_INVALID_ANSWER", 502, "answer_contract");
     return answer.data;
   }
 }

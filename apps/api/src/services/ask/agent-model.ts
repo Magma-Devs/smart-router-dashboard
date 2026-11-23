@@ -76,10 +76,9 @@ export function askAgentModel(options: {
       options.timing?.("model", performance.now() - started);
       for (const block of step.message.content) {
         if ("toolUse" in block && !input.tools?.some((tool) => tool.name === block.toolUse.name))
-          throw new AskFailure(
-            block.toolUse.name === "present_answer" ? "ASK_INVALID_ANSWER" : "ASK_TOOL_DENIED",
-            422,
-          );
+          throw block.toolUse.name === "present_answer"
+            ? new AskFailure("ASK_INVALID_ANSWER", 422, "answer_tool_unavailable")
+            : new AskFailure("ASK_TOOL_DENIED", 422);
       }
       // Usage has been durably observed even if content is invalid. Reject
       // unsafe calls before the SDK can execute or repair any tool input.
@@ -96,7 +95,7 @@ export function askAgentModel(options: {
                   input: JSON.stringify(part.toolUse.input),
                 }
               : (() => {
-                  throw new AskFailure("ASK_INVALID_ANSWER", 502);
+                  throw new AskFailure("ASK_INVALID_ANSWER", 502, "unknown_content");
                 })(),
         ),
         finishReason: {
@@ -141,7 +140,7 @@ function boundHistory(input: BedrockInput, history: readonly AskHistoryTurn[], l
   };
   const shift = (value: BedrockInput) => {
     const first = value.messages[0];
-    if (!first?.content.length) throw new AskFailure("ASK_INVALID_ANSWER", 502);
+    if (!first?.content.length) throw new AskFailure("ASK_INVALID_ANSWER", 502, "history_mismatch");
     first.content.shift();
     if (!first.content.length) value.messages.shift();
   };
@@ -155,7 +154,7 @@ function boundHistory(input: BedrockInput, history: readonly AskHistoryTurn[], l
       !("text" in block) ||
       block.text !== expected.content
     )
-      throw new AskFailure("ASK_INVALID_ANSWER", 502);
+      throw new AskFailure("ASK_INVALID_ANSWER", 502, "history_mismatch");
     shift(protectedInput);
   }
   const protectedBytes = Buffer.byteLength(JSON.stringify(protectedInput));

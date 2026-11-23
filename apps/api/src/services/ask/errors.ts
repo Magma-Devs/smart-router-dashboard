@@ -24,10 +24,34 @@ const messages: Record<AskErrorCode, string> = {
   ASK_LIMIT_REACHED: "The question exceeded its processing limit. Please try a narrower question.",
 };
 
+/**
+ * Which check refused an answer, for the run's log line: fixed names, never the
+ * answer's text, a tool input or an evidence id. The table in
+ * docs/ASK-YOUR-DATA.md says what each one means.
+ */
+export type AskRejectReason =
+  | "bad_usage"
+  | "malformed_response"
+  | "unexpected_stop"
+  | "answer_tool_unavailable"
+  | "unknown_content"
+  | "history_mismatch"
+  | "too_many_tool_calls"
+  | "closing_call_not_alone"
+  | "invalid_closing_call"
+  | "conversation_with_sources"
+  | "data_without_reads"
+  | "unknown_evidence"
+  | "empty_answer"
+  | "answer_too_long"
+  | "answer_contract"
+  | "stored_contract";
+
 export class AskFailure extends Error {
   constructor(
     public readonly code: AskErrorCode,
     public readonly statusCode = 503,
+    public readonly reason?: AskRejectReason,
   ) {
     super(messages[code]);
     this.name = "AskFailure";

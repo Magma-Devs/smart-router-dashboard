@@ -10,6 +10,9 @@ import { AskSwitchState } from "./switch.js";
 import { AskWorker } from "./worker.js";
 import { drainRemainingMs } from "../../shutdown.js";
 
+/** Failures a person chose or a restart caused, logged at info. */
+const QUIET_FAILURES = new Set(["ASK_CANCELLED", "ASK_INTERRUPTED"]);
+
 /** Admission requires readiness. A replica awaiting its first switch read must
  * pause claims, never interrupt another replica's already admitted questions. */
 export function installAskRuntime(app: FastifyInstance): {
@@ -82,6 +85,18 @@ export function installAskRuntime(app: FastifyInstance): {
             app.log.error(
               { code, ...(error === undefined ? {} : askErrorFields(error)) },
               "Ask worker operation failed",
+            ),
+          // One line per failed run: its code, the check that refused an answer,
+          // and the class and code of what was thrown otherwise. No text.
+          failed: (runId, failure, cause) =>
+            app.log[QUIET_FAILURES.has(failure.code) ? "info" : "warn"](
+              {
+                runId,
+                code: failure.code,
+                ...(failure.reason ? { reason: failure.reason } : {}),
+                ...(cause === undefined ? {} : askErrorFields(cause)),
+              },
+              "Ask run failed",
             ),
           timing: (runId, phase, durationMs) =>
             app.log.info(

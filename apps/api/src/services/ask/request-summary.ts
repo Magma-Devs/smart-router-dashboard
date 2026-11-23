@@ -90,7 +90,10 @@ export function requestSummaryQueries(
             {
               name: "errors",
               query: `sum by (chain, level) (sum_over_time(${RECORDED_WARN_ERROR}${selector}${range}))`,
-              ...raw((s) => `sum by (chain, level) (count_over_time(${s} | level=~"warn|error" ${range}))`),
+              ...raw(
+                (s) =>
+                  `sum by (chain, level) (count_over_time(${s} | level=~"warn|error" ${range}))`,
+              ),
             },
             {
               name: "error_messages",

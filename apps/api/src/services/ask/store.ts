@@ -699,7 +699,7 @@ export class AskStore {
     run?: Pick<AskRunRow, "chatId" | "customerId" | "ownerId">,
   ): Promise<boolean> {
     const parsed = askAnswerSchema.safeParse(raw);
-    if (!parsed.success) throw new AskFailure("ASK_INVALID_ANSWER", 502);
+    if (!parsed.success) throw new AskFailure("ASK_INVALID_ANSWER", 502, "stored_contract");
     const answer = storedAnswer(parsed.data);
     return this.db.transaction(async (tx) => {
       const lock = this.lockLease(tx, runId, token);
