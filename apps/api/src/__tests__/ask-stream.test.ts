@@ -283,6 +283,12 @@ describe("a streamed model step", () => {
     ).rejects.toMatchObject({ code: "ASK_BEDROCK_UNAVAILABLE" });
     expect(onUsage).toHaveBeenCalledExactlyOnceWith(null, { requestId: null, providerStatus: 403 });
   });
+  it("skips an event type it does not know", async () => {
+    const frames = replyEvents();
+    frames.splice(1, 0, event("serviceNotice", { note: "new" }));
+    const { call } = await converse(frames);
+    await expect(call).resolves.toMatchObject({ stopReason: "tool_use" });
+  });
   it("keeps going when the draft consumer throws", async () => {
     const { call } = await converse(
       replyEvents(),

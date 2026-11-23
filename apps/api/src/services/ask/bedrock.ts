@@ -419,15 +419,15 @@ export class BedrockAdapter {
 }
 
 type StreamBlock =
-  | { text: string }
-  | { toolUse: { toolUseId: string; name: string; type?: unknown }; json: string };
+  { text: string } | { toolUse: { toolUseId: string; name: string; type?: unknown }; json: string };
 
 /**
  * Rebuilds a Converse response from ConverseStream's events, so the stream
  * and the buffered call share every check that follows. Usage arrives in the
  * last event (`metadata`); a stream cut before it leaves the step's usage
- * unknown. A content event this reader does not know marks the response
- * invalid, and the stream is still read to its end so its usage is recorded.
+ * unknown. A content delta this reader does not know marks the response
+ * invalid, and the stream is still read to its end so its usage is recorded;
+ * an event type it does not know is skipped.
  * An exception event ends the step as a provider failure.
  */
 class ConverseStreamAssembler {
@@ -438,9 +438,7 @@ class ConverseStreamAssembler {
   private readonly blocks: StreamBlock[] = [];
   private shown: string | null = null;
 
-  constructor(
-    private readonly onDraft?: (summary: { text: string; complete: boolean }) => void,
-  ) {}
+  constructor(private readonly onDraft?: (summary: { text: string; complete: boolean }) => void) {}
 
   message(message: StreamMessage): void {
     const kind = message.headers[":message-type"];
@@ -448,8 +446,7 @@ class ConverseStreamAssembler {
     let event: Record<string, unknown>;
     try {
       const parsed = JSON.parse(message.payload.toString("utf8")) as unknown;
-      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))
-        throw new Error();
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error();
       event = parsed as Record<string, unknown>;
     } catch {
       this.invalid = true;
@@ -524,7 +521,9 @@ class ConverseStreamAssembler {
         this.usage = event.usage;
         return;
       default:
-        this.invalid = true;
+        // An event type added after this reader carries no content block of
+        // its own; content always arrives in a contentBlockDelta.
+        return;
     }
   }
 

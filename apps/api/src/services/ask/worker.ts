@@ -22,8 +22,8 @@ export interface AskWorkerOptions {
 const DRAFT_INTERVAL_MS = 500;
 
 /** Writes a run's newest draft, at most once per interval and never two at
- * once; text published meanwhile replaces the text waiting. After `close`
- * nothing more is written, so no draft lands after the run's terminal write. */
+ * once; text published meanwhile replaces the text waiting. After `stop`
+ * no write starts. */
 export class DraftWriter {
   private latest: string | null = null;
   private written: string | null = null;
@@ -69,10 +69,16 @@ export class DraftWriter {
       });
   }
 
-  async close(): Promise<void> {
+  /** No write starts after this. A write in flight may still land: the
+   * lease fence refuses it once the run's terminal write has committed. */
+  stop(): void {
     this.closed = true;
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
+  }
+
+  async close(): Promise<void> {
+    this.stop();
     await this.flight;
   }
 }
@@ -202,7 +208,7 @@ export class AskWorker {
     // the check in flight and starts no other.
     const quiesce = async (): Promise<void> => {
       clearInterval(heartbeat);
-      await drafts.close();
+      drafts.stop();
       await checking;
     };
     const deadline = setTimeout(

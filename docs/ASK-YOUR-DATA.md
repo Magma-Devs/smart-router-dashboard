@@ -328,8 +328,9 @@ and runs the same checks on it a buffered
 [Converse](https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_Converse.html)
 response gets; a caller with no draft consumer makes the buffered call. While a
 `present_answer` call's input arrives, `draft.ts` reads its top-level `summary`
-as far as it has arrived. Claude writes tool input one whole field at a time, so
-the summary arrives whole and shows before the sections finish. The worker
+as far as it has arrived. Claude sends tool input one whole field at a time, so
+the summary is expected to show in one piece, before the sections finish when
+the model writes it first; an answer with no sections shows it only at the end. The worker
 writes the newest draft to `ask_runs.draft` (migration `0014_ask_draft`) at most
 every 500 ms, only under the run's current lease while it runs; every terminal
 write clears it. An exception event ends the step as a provider failure, a

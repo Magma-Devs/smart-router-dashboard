@@ -11,7 +11,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 - Ask shows the answer's summary while the model writes the rest. Each model
   step calls Bedrock's ConverseStream; as soon as the `present_answer` summary
-  has arrived it shows under the run's reads as a draft, plain text, whole words
+  has arrived (Claude sends a tool-input field whole, so it is expected in one
+  piece) it shows under the run's reads as a draft, plain text, whole words
   only, credential-redacted. The validated answer replaces it; a run that fails
   or stops drops it. The draft lives in `ask_runs.draft` (migration
   `0014_ask_draft`), written at most every 500 ms under the run's lease and
