@@ -1,6 +1,7 @@
 /** Deterministic provider boundary for browser tests only. Never imported by
  * product code or shipped in the API image. The browser, API, auth, worker,
  * accounting and PostgreSQL are real; MCP/Bedrock responses are synthetic. */
+import { converseStreamResponse } from "./converse-stream.mjs";
 if (
   process.env.NODE_ENV === "production" ||
   process.env.ASK_DATA_CUSTOMER_ID !== "e2e-customer" ||
@@ -124,7 +125,8 @@ globalThis.fetch = async (input, init) => {
     url.pathname.startsWith("/model/anthropic.fixture/")
   ) {
     if (url.pathname.endsWith("/count-tokens")) return Response.json({ inputTokens: 500 });
-    if (!url.pathname.endsWith("/converse"))
+    const streamed = url.pathname.endsWith("/converse-stream");
+    if (!streamed && !url.pathname.endsWith("/converse"))
       throw new Error("Unexpected synthetic model operation");
     const body = JSON.parse(String(init.body));
     const question =
@@ -212,7 +214,9 @@ globalThis.fetch = async (input, init) => {
           },
         },
       });
-    return Response.json(
+    const reply = (json, init) =>
+      streamed ? converseStreamResponse(json, init.headers) : Response.json(json, init);
+    return reply(
       {
         output: { message: { role: "assistant", content } },
         stopReason: toolResult && text.includes("INVALID_FIXTURE") ? "max_tokens" : "tool_use",

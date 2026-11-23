@@ -10,6 +10,11 @@ import {
 import { draftText, summaryPrefix } from "../services/ask/draft.js";
 import { DraftWriter } from "../services/ask/worker.js";
 import { runProgress } from "../services/ask/progress.js";
+// @ts-expect-error The browser tests' provider helper is plain JavaScript.
+import {
+  converseFromStream,
+  converseStreamResponse,
+} from "../../../../e2e/support/converse-stream.mjs";
 
 const settings = () =>
   readAskSettings({
@@ -297,6 +302,41 @@ describe("a streamed model step", () => {
       }),
     );
     await expect(call).resolves.toMatchObject({ stopReason: "tool_use" });
+  });
+});
+
+describe("the browser tests' synthetic stream", () => {
+  it("is read by the adapter as the Converse response it replays", async () => {
+    const converse = {
+      output: {
+        message: {
+          role: "assistant",
+          content: [
+            { text: "Preface" },
+            {
+              toolUse: { toolUseId: "t1", name: "present_answer", type: "tool_use", input: answer },
+            },
+          ],
+        },
+      },
+      stopReason: "tool_use",
+      usage,
+    };
+    const response = converseStreamResponse(converse, { "x-amzn-requestid": "fixture" });
+    const bytes = Buffer.from(await response.clone().arrayBuffer());
+    expect(converseFromStream(bytes)).toEqual(converse);
+    const onDraft = vi.fn();
+    const step = await new BedrockAdapter(
+      settings(),
+      vi.fn<typeof fetch>().mockResolvedValue(response),
+    ).converse(input, { onUsage: vi.fn(), onDispatch: async () => undefined, onDraft });
+    // The response schema drops the tool call's `type`, as it does for Converse.
+    expect(step.message.content).toEqual([
+      { text: "Preface" },
+      { toolUse: { toolUseId: "t1", name: "present_answer", input: answer } },
+    ]);
+    expect(step.receipt.requestId).toBe("fixture");
+    expect(onDraft).toHaveBeenLastCalledWith({ text: answer.summary, complete: true });
   });
 });
 

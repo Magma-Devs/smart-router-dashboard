@@ -19,6 +19,7 @@ import { AskBudget } from "../../apps/api/dist/services/ask/budget.js";
 import { AskOrchestrator } from "../../apps/api/dist/services/ask/orchestrator.js";
 import { readAskBillingSettings } from "../../apps/api/dist/services/ask/pricing.js";
 import { createSession } from "../../apps/api/dist/services/sessions.js";
+import { converseStreamResponse } from "./converse-stream.mjs";
 
 if (process.env.ASK_ENGINEERING_EVALUATION !== "true")
   throw new Error("Explicit ASK_ENGINEERING_EVALUATION=true required");
@@ -373,8 +374,17 @@ const fetchImpl = async (input, init) => {
     throw new Error("Evaluation egress denied");
   if (url.pathname.endsWith("/count-tokens"))
     return Response.json({ inputTokens: Buffer.byteLength(String(init?.body)) + 128 });
-  if (!url.pathname.endsWith("/converse")) throw new Error("Evaluation provider operation denied");
-  return invoke(JSON.parse(String(init?.body)), init?.signal);
+  const streamed = url.pathname.endsWith("/converse-stream");
+  if (!streamed && !url.pathname.endsWith("/converse"))
+    throw new Error("Evaluation provider operation denied");
+  const response = await invoke(JSON.parse(String(init?.body)), init?.signal);
+  if (!streamed || !response.ok) return response;
+  // The evaluation calls the buffered operation and replays it as the stream.
+  const { output, stopReason, usage } = await response.json();
+  return converseStreamResponse(
+    { output, stopReason, usage },
+    Object.fromEntries(response.headers),
+  );
 };
 
 const conversation = [
