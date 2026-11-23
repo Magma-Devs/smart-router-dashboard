@@ -1,8 +1,7 @@
 /**
- * The request in focus on a tab that shows one - the Transactions tab, the
- * Errors tab's request list or the Find a request tab - in the page's URL:
- * `?request=<id>`. A link with it
- * opens the tab's look-up on that request, so it survives a reload and can be
+ * The request in focus on a tab that shows one - the Transactions tab or the
+ * Errors tab's request list - in the page's URL: `?request=<id>`. A link with
+ * it opens the tab's look-up on that request, so it survives a reload and can be
  * shared. Opening a row, or finding a request by ID, writes it; closing them
  * clears it. It rewrites the entry it is on, as a change of tab does: opening
  * rows is not a history of its own. Picking another tab clears it.

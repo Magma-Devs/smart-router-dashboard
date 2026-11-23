@@ -1,6 +1,6 @@
 "use client";
 
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { useEffect, useState, useSyncExternalStore, type ComponentType } from "react";
 import { signOut } from "next-auth/react";
@@ -8,7 +8,7 @@ import { buildChainMetaByIndex, isRole } from "@sr/shared";
 import { ASK_NAV_ITEM, NAV_SECTIONS, visibleNavSections } from "./nav";
 import { useAuthMode } from "./auth-mode";
 import { CHAIN_DRAWER_PATH, ChainDrawer, ChainDrawerProvider, useChainDrawer } from "./ChainDrawer";
-import { IconMenuCollapse, IconMenuExpand, IconMoon, IconSearch, IconSun, type IconProps } from "./icons";
+import { IconMenuCollapse, IconMenuExpand, IconMoon, IconSun, type IconProps } from "./icons";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 import { DeploymentHealthBadge, useDeploymentPulse } from "./DeploymentHealth";
 import { topbarFigures } from "@/lib/upstream-presentation";
@@ -18,8 +18,7 @@ import { TwoFactorCountdown, TwoFactorGate } from "@/components/auth/two-factor-
 import { AskProvider, useAsk } from "@/components/ask/AskProvider";
 import dynamic from "next/dynamic";
 import { ReportIncidentButton } from "@/components/incidents/ReportIncident";
-import { openRequestSearch } from "@/lib/request-search";
-import { noteSearchFrom, pageOf, startUsage, tabOf, usageSignOut, viewOpened } from "@/lib/usage";
+import { pageOf, startUsage, tabOf, usageSignOut, viewOpened } from "@/lib/usage";
 import { UsageConsentBar } from "./UsageConsent";
 import { roleBadgeLabel } from "./role-badge";
 import { roleChipStyle } from "@/components/team/bits";
@@ -266,30 +265,6 @@ export function SidebarUser() {
   );
 }
 
-/** Find a request from any page: an ID, a transaction hash or the caller's
- *  own request ID opens the Metrics page's look-up on it, in the chain and
- *  router in view (`lib/request-search.ts`). */
-function RequestSearch() {
-  const router = useRouter();
-  const pathname = usePathname();
-  const { chain, routerId } = useFilters();
-  const [draft, setDraft] = useState("");
-  const id = draft.trim();
-  return (
-    <form className="gw-top__search" role="search" onSubmit={(e) => {
-      e.preventDefault();
-      if (!id) return;
-      noteSearchFrom("top-bar");
-      openRequestSearch(id, { chain, router: routerId }, pathname, (url) => router.push(url));
-      setDraft("");
-    }} title="Find a request by its ID, its transaction hash or your own request ID - any request, answered or not">
-      {/* On a narrow header the box folds to its icon; the icon is the input's label, so clicking it opens the box. */}
-      <label htmlFor="gw-request-search" style={{ display: "flex", cursor: "text" }}><IconSearch size={14} /></label>
-      <input id="gw-request-search" aria-label="Find a request" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Find a request" className="gw-mono" />
-    </form>
-  );
-}
-
 function Topbar({ here, sub, incidentsEnabled }: { here: string; sub: string | null; incidentsEnabled: boolean }) {
   // The router's status describes the selected router across every chain it
   // serves; on a chain's page the provider counts and the list follow the
@@ -335,7 +310,6 @@ function Topbar({ here, sub, incidentsEnabled }: { here: string; sub: string | n
         {/* Shows only for the one account that may still defer 2FA. Not
             dismissible: what it counts down to is the dashboard closing. */}
         <TwoFactorCountdown />
-        <RequestSearch />
         <ReportIncidentButton enabled={incidentsEnabled} />
         <ThemeToggle />
       </div>

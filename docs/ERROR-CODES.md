@@ -19,7 +19,7 @@ fall back to the raw code. `ERROR_SOURCE_LABELS` is the one word each source is 
 
 ## Where it shows
 
-The Errors tab's request list, the Transactions tab and the Find a request tab draw it
+The Errors tab's request list and the Transactions tab draw it
 (`apps/web/src/components/metrics/request-breakdown.tsx`). An opened row is a breakdown in
 three parts:
 

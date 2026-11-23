@@ -10,8 +10,8 @@ per signed-in person, and sends the dashboard's own events beside them
 
 | Goal | Read it from |
 |---|---|
-| **Time to answer** - how fast someone gets what they came for | `view_ready.seconds`; `search.seconds` and `result`; a session's time from its first page view to the first `row_open`, `search: found` or `panel_open` |
-| **Self-serve** - the answer without messaging Magma | sessions that end after a found search or an opened row, against sessions that end after `not-found`, or a click on the Grafana or Report incident links |
+| **Time to answer** - how fast someone gets what they came for | `view_ready.seconds`; a session's time from its first page view to the first `row_open` or `panel_open` |
+| **Self-serve** - the answer without messaging Magma | sessions that end after an opened row, against sessions that end after a click on the Grafana or Report incident links |
 | **A screen you can trust** | `view_problem` by `view`; `view_ready.failed` |
 | **Low effort** | events per answer; `$mp_rage_click` and `$mp_dead_click`; `help_open` (the words weren't enough); session replays of the sessions that stalled |
 | **Only what is used** | `$mp_click` and heatmaps per page, `panel_open` and `filter_use` per value per tenant: what is never used is a candidate to remove |
@@ -250,11 +250,10 @@ above; these are the dashboard's own:
 | `view_ready` | `page`, `tab`, `seconds`, `reads`, `failed` | a page or tab has all its data: from opening it (the first page of a load: from when the browser started loading) until its reads settled, once per view; 0 reads = from the cache |
 | `help_open` | `page`, `tab` | a "More about this" note held open past a glance (0.8 s) |
 | `idle_paused` | `page`, `tab` | polling paused after an hour with nobody at the page |
-| `tab_change` | `from`, `to` | the Metrics tab changes, whatever changed it (the tab bar, a bar or line, the top bar's search, Back) |
+| `tab_change` | `from`, `to` | the Metrics tab changes, whatever changed it (the tab bar, a bar or line, Back) |
 | `chain_pick` | `chain`, `from` (list / router-row / cleared) | a chain is picked in the chains list or a router row |
 | `router_pick` | `from` | a router is picked under its chain |
 | `time_range_change` | `from`, `to` | the time range is changed |
-| `search` | `kind` (request-id / old-request-id / hash / other), `from` (top-bar / request-tab / link), `result` (found / not-found / stopped-early / error / unavailable), `seconds`, `older` | a look-up answers |
 | `row_open` | `list` (errors / transactions), `result` | a request row is opened |
 | `panel_open` | `panel` (router-row / chart-tile / provider / see-requests / errors-bar / timeline-line / grouped-error) | a panel is opened |
 | `filter_use` | `list`, `filter` (view / result / retryable / error-type / customer / method / provider / time) | a list filter is changed |
@@ -267,11 +266,8 @@ above; these are the dashboard's own:
 
 - **Does a session stay in one tab?** The order of `tab_change` events in a
   session (Mixpanel Flows on `distinct_id`).
-- **Chain first or ID first?** The first of `chain_pick` and `search` in a
-  session; `search.from = link` for shared request links.
-- **Where people get stuck:** `search.result`, `view_problem` by `view`, rage
-  and dead clicks by page, and the replays of sessions whose last event is a
-  `not-found` search.
+- **Where people get stuck:** `view_problem` by `view`, rage and dead clicks
+  by page, and the replays of sessions that stalled.
 - **What is never used:** clicks and heatmaps per page, `panel_open` and
   `filter_use` counts per value, per tenant.
 - **Does Ask answer?** `ask_answer.result` and `error` per tenant, and

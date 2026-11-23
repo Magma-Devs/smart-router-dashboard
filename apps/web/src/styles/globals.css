@@ -199,18 +199,6 @@ a.gw-side__brand:hover { opacity: 0.82; }
 .gw-top__right { display: flex; align-items: center; gap: 10px; }
 .gw-top__right .pill { display: flex; align-items: center; gap: 6px; padding: 5px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 12px; color: var(--text-2); }
 .gw-attn-row:hover { background: var(--hover); }
-.gw-top__search { display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--text-4); }
-.gw-top__search:focus-within { border-color: var(--line-2); color: var(--text-3); }
-.gw-top__search input { width: 150px; border: none; background: none; outline: none; color: var(--text); font-size: 12px; font-family: inherit; }
-.gw-top__search input::placeholder { color: var(--text-4); font-family: var(--font-ui); }
-.gw-top__search input:focus { width: 230px; }
-/* A narrow header (the chains drawer beside the sidebar, a laptop): the box is its icon until focused. */
-@media (max-width: 1280px) {
-  .gw-top__search { gap: 0; }
-  .gw-top__search input { width: 0; transition: width 0.15s; }
-  .gw-top__search:focus-within { gap: 6px; }
-  .gw-top__search:focus-within input { width: 200px; }
-}
 .gw-top__right .dot-ok { width: 6px; height: 6px; border-radius: 999px; background: var(--ok); box-shadow: 0 0 6px var(--ok); flex-shrink: 0; }
 /* The top bar keeps to one line at any width. The crumbs and the status pill
    give way, each cut with an ellipsis; the other pills and the buttons keep

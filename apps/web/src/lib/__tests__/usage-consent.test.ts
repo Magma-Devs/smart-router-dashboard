@@ -121,7 +121,7 @@ async function load(config: unknown, stored?: string, databases: string[] = [], 
   pageFetch = async () => new Response("1");
   vi.stubGlobal("window", {
     fetch: pageFetch,
-    location: { pathname: "/metrics", search: "?tab=request&request=0xabc", origin: "https://dash.example" },
+    location: { pathname: "/metrics", search: "?tab=errors&request=0xabc", origin: "https://dash.example" },
     addEventListener: (type: string, fn: (e: unknown) => void) => listeners.set(type, [...(listeners.get(type) ?? []), fn]),
   });
   apiGet.mockReset().mockResolvedValue(config);
@@ -159,7 +159,6 @@ describe("before an answer", () => {
     const usage = await load(ON);
     expect(usage.getUsageState()).toEqual({ available: true, consent: null });
     usage.track("tab_change", { from: "metrics", to: "errors" });
-    usage.noteSearchFrom("top-bar");
     await settle();
     expect(h.imports.count).toBe(0);
     expect(h.sdk.init).not.toHaveBeenCalled();
@@ -379,11 +378,11 @@ describe("the SDK's hooks", () => {
     const { hooks } = usage.sdkOptions(ON as Parameters<typeof usage.sdkOptions>[0], "https://dash.example") as {
       hooks: Record<string, (...a: unknown[]) => unknown>;
     };
-    const props = { $current_url: "https://dash.example/metrics?tab=request&request=0xabc", tenant: "tenant-a" };
-    expect(hooks.on_track!("$mp_click", props)).toEqual(["$mp_click", { $current_url: "https://dash.example/metrics?tab=request&request=:id", tenant: "tenant-a" }]);
+    const props = { $current_url: "https://dash.example/metrics?tab=errors&request=0xabc", tenant: "tenant-a" };
+    expect(hooks.on_track!("$mp_click", props)).toEqual(["$mp_click", { $current_url: "https://dash.example/metrics?tab=errors&request=:id", tenant: "tenant-a" }]);
     expect(hooks.before_send_events!({ event: "$mp_click", properties: props })).toEqual({
       event: "$mp_click",
-      properties: { $current_url: "https://dash.example/metrics?tab=request&request=:id", tenant: "tenant-a" },
+      properties: { $current_url: "https://dash.example/metrics?tab=errors&request=:id", tenant: "tenant-a" },
     });
     expect(JSON.stringify(hooks.before_send_people!({ $set: { $initial_referrer: props.$current_url } }))).not.toContain("0xabc");
   });

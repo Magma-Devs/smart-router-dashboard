@@ -392,7 +392,7 @@ export function RequestLogsLink({ id, startMs, tookMs }: { id: string; startMs: 
   );
 }
 
-/** "Find a request" - the box both log lists carry: by Smart Router's ID for it, or its transaction hash. */
+/** The look-up box both log lists carry: by Smart Router's ID for it, or its transaction hash. */
 export function IdSearch({ onFind }: { onFind: (id: string) => void }) {
   const [draft, setDraft] = useState("");
   const id = draft.trim();

@@ -67,7 +67,7 @@ function withHashLink(): unknown[] {
         texts: [],
         removes: [],
         adds: [{ parentId: 1, nextId: null, node: hashLink() }],
-        attributes: [{ id: 99, attributes: { title: `Customer - the project-id header the caller sent: ${ADDRESS}`, href: `/metrics?tab=request&request=${TYPED}`, "data-x": null } }],
+        attributes: [{ id: 99, attributes: { title: `Customer - the project-id header the caller sent: ${ADDRESS}`, href: `/metrics?tab=errors&request=${TYPED}`, "data-x": null } }],
       },
     },
   ];
@@ -87,7 +87,7 @@ describe("a replay's events", () => {
     const after = elements(scrubbed);
     expect(after.map((n) => n.tagName)).toEqual(before.map((n) => n.tagName));
     const meta = (scrubbed as { type: number; data: { href?: string } }[]).find((e) => e.type === 4)!;
-    expect(meta.data.href).toBe(`${ORIGIN}/metrics?request=:id&tab=request&window=30m`);
+    expect(meta.data.href).toBe(`${ORIGIN}/metrics?request=:id&tab=:id&window=30m`);
     const attrs = after.flatMap((n) => Object.keys(n.attributes ?? {}));
     for (const gone of ["title", "aria-label", "placeholder", "value"]) expect(attrs, gone).not.toContain(gone);
     expect(after.find((n) => n.attributes?.id === "gw-request-search")).toBeTruthy();
@@ -99,7 +99,7 @@ describe("a replay's events", () => {
     const events = scrubReplayEvents(withHashLink(), ORIGIN) as { type: number; data: Record<string, unknown> }[];
     const mutation = events.at(-1)!.data as { adds: { node: Node }[]; attributes: { attributes: Record<string, unknown> }[] };
     expect(mutation.adds[0]!.node.attributes).toEqual({ class: "gw-mono", href: "https://etherscan.io" });
-    expect(mutation.attributes[0]!.attributes).toEqual({ href: "/metrics?tab=request&request=:id", "data-x": null });
+    expect(mutation.attributes[0]!.attributes).toEqual({ href: "/metrics?tab=errors&request=:id", "data-x": null });
   });
 });
 
@@ -116,7 +116,7 @@ describe("an element's attributes", () => {
       "aria-hidden": "true", "aria-expanded": "false", "data-theme": "light",
       class: "gw-btn", style: "width: 40%", d: "M0 0L1 1", role: "button", type: "submit", name: "email",
     });
-    expect(scrubAttributes({ id: "gw-request-search", for: "gw-request-search", title: null }, ORIGIN)).toEqual({ id: "gw-request-search", for: "gw-request-search", title: null });
+    expect(scrubAttributes({ id: "gw-consent-title", for: "gw-consent-title", title: null }, ORIGIN)).toEqual({ id: "gw-consent-title", for: "gw-consent-title", title: null });
   });
 });
 
@@ -125,14 +125,14 @@ describe("an attribute the scrubber has no rule for", () => {
     const out = scrubAttributes({
       d: "M1 1.5h7m3 0h1",
       viewBox: "0 0 24 24",
-      content: `${ORIGIN}/metrics?tab=request&request=${TYPED}`,
+      content: `${ORIGIN}/metrics?tab=errors&request=${TYPED}`,
       "data-theme": "dark",
       itemid: ` https://etherscan.io/tx/${HASH}`,
     }, ORIGIN);
     expect(out).toEqual({
       d: "M1 1.5h7m3 0h1",
       viewBox: "0 0 24 24",
-      content: `${ORIGIN}/metrics?tab=request&request=:id`,
+      content: `${ORIGIN}/metrics?tab=errors&request=:id`,
       "data-theme": "dark",
       itemid: "https://etherscan.io",
     });
@@ -145,7 +145,7 @@ describe("an upload's URL", () => {
     const out = new URL(scrubRecordUrl(fixture.url, ORIGIN));
     const before = new URL(fixture.url);
     expect(out.toString()).not.toContain(TYPED);
-    expect(out.searchParams.get("$current_url")).toBe(`${ORIGIN}/metrics?request=:id&tab=request&window=30m`);
+    expect(out.searchParams.get("$current_url")).toBe(`${ORIGIN}/metrics?request=:id&tab=:id&window=30m`);
     expect(out.searchParams.get("replay_start_url")).toBe(`${ORIGIN}/metrics?window=30m`);
     for (const k of ["replay_id", "seq", "distinct_id", "format", "batch_start_time"]) expect(out.searchParams.get(k), k).toBe(before.searchParams.get(k));
   });

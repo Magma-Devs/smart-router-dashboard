@@ -26,7 +26,6 @@
 import type { AutocaptureConfig, Config, Mixpanel } from "mixpanel-browser";
 import {
   cleanUsageProps,
-  guidMintedSecond,
   USAGE_ASK_ERRORS,
   type AskRun,
   type Role,
@@ -129,15 +128,6 @@ export function askAnswerProps(run: Pick<AskRun, "status" | "createdAt" | "compl
     props.evidence = run.answer.evidence.length;
   }
   return props;
-}
-
-/** What kind of value a look-up was for - never the value itself. */
-export function searchKind(value: string, nowSec = Date.now() / 1000): "request-id" | "old-request-id" | "hash" | "other" {
-  const v = value.trim();
-  if (guidMintedSecond(v, nowSec) !== null) return "request-id";
-  if (/^\d{6,25}$/.test(v)) return "old-request-id";
-  if (/^(0x)?[0-9a-fA-F]{40,}$/.test(v) || /^[1-9A-HJ-NP-Za-km-z]{43,90}$/.test(v)) return "hash";
-  return "other";
 }
 
 /**
@@ -265,8 +255,6 @@ let pending: [UsageEventName, Record<string, string | number | boolean>][] = [];
 const PENDING_MAX = 50;
 /** Set as the page unloads: reads cut short by leaving are not problems. */
 let leaving = false;
-/** Where the next look-up was typed. A look-up with none came from a link. */
-let searchFrom: "top-bar" | "request-tab" | null = null;
 /** Views already reported as failed or slow on this page. */
 const problemsSeen = new Set<string>();
 
@@ -282,20 +270,6 @@ export function track(name: UsageEventName, props: UsageProps = {}): void {
   }
   const waiting = state.available === null || (state.available && state.consent === "accepted");
   if (waiting && pending.length < PENDING_MAX) pending.push([name, clean]);
-}
-
-/** Whether the page is unloading: a read it cut short says nothing about the read. */
-export const isLeaving = () => leaving;
-
-/** Where the next look-up was typed: the top bar or the Find a request box. */
-export function noteSearchFrom(from: "top-bar" | "request-tab"): void {
-  searchFrom = from;
-}
-
-export function takeSearchFrom(): "top-bar" | "request-tab" | "link" {
-  const from = searchFrom ?? "link";
-  searchFrom = null;
-  return from;
 }
 
 function readSdkViewer(): string | null {
@@ -492,7 +466,6 @@ export function holdReplay(): () => void {
  */
 export function usageSignOut(): void {
   pending = [];
-  searchFrom = null;
   recording = false;
   const mp = sdk;
   if (mp) {
@@ -514,7 +487,6 @@ export function usageSignOut(): void {
 /** Stops usage data: the recording stops, the SDK opts out and forgets the viewer, and what it kept is removed. */
 function stop() {
   pending = [];
-  searchFrom = null;
   const mp = sdk;
   const was = recording;
   recording = false;
