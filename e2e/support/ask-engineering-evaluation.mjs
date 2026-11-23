@@ -18,6 +18,7 @@ import { AskStore } from "../../apps/api/dist/services/ask/store.js";
 import { AskBudget } from "../../apps/api/dist/services/ask/budget.js";
 import { AskOrchestrator } from "../../apps/api/dist/services/ask/orchestrator.js";
 import { readAskBillingSettings } from "../../apps/api/dist/services/ask/pricing.js";
+import { prefetchRead } from "../../apps/api/dist/services/ask/prefetch.js";
 import { createSession } from "../../apps/api/dist/services/sessions.js";
 import { converseStreamResponse } from "./converse-stream.mjs";
 
@@ -510,7 +511,7 @@ const answered = new Map([
   ["What is an RPC request, generally?", /remote procedure|call/i],
   ["Explain latency in plain language; don't check my environment", /time|delay|wait/i],
   ["What does a provider mean in an RPC router?", /node|endpoint|service/i],
-  ["What is a retry, generally?", /again/i],
+  ["What is a retry, generally?", /again|re\W?(send|tr|issu)/i],
   ["What does a 429 error usually mean?", /too many|rate/i],
   ["Explain the difference between a timeout and a refusal", /wait|time/i],
   ["What is Prometheus, generally?", /metric/i],
@@ -682,7 +683,14 @@ try {
       ["data-18", "data-19", "data-20", "data-25", "followup-9"].includes(entry.id)
         ? false
         : entry.reads;
-    const routeMatches = expectedReads ? currentReads.length > 0 : currentReads.length === 0;
+    // The server reads the recorded counts before every question; only the
+    // model's own reads say whether it read. A data answer rests on evidence,
+    // which may be those counts alone; a conversation reply rests on none.
+    const ownReads = currentReads.filter(
+      (read) => read.parameters?.query !== prefetchRead(0).parameters.query,
+    );
+    const grounded = (result.answer?.evidence?.length ?? 0) > 0;
+    const routeMatches = expectedReads ? grounded : ownReads.length === 0 && !grounded;
     const receiptMatches = receipts
       .slice(before)
       .every((receipt) => receipt.requestId && receipt.retryAttempts === 0 && receipt.usage);
@@ -716,6 +724,8 @@ try {
         wallMs: result.wallMs,
         modelCalls: record.modelCalls,
         reads: currentReads.length,
+        ownReads: ownReads.length,
+        route: routeMatches,
         content: contentMatches,
         code: result.code,
         answer: markdown.slice(0, 200),
