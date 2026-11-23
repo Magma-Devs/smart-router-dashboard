@@ -39,6 +39,7 @@ import {
   METRICS_LOOKBACK_SECONDS,
 } from "./query-bounds.js";
 import { PREFETCH_NOTE, prefetchRead, summarizePrefetch } from "./prefetch.js";
+import { STATUS_SUMMARY_NOTE, summarizeChainEvents } from "./status-summary.js";
 import { AskFailure, abortFailure } from "./errors.js";
 import { redactAskData, redactAskText } from "./redact.js";
 import { draftText } from "./draft.js";
@@ -323,13 +324,23 @@ export class AskOrchestrator {
         hooks.timing?.("read", performance.now() - started);
         const result = { ...raw, ok: raw.ok && record(raw.data)?.status !== "error" };
         const observedAt = new Date().toISOString();
+        // A provider-status read of many chains reaches the model summarized,
+        // not cut to a preview; dropped events make it partial.
+        const status =
+          result.ok && operationId === "status.chain_events" && !options?.summarize
+            ? summarizeChainEvents(result.data, this.settings.maxToolResultBytes - 2048)
+            : null;
         let payload = JSON.stringify({
           sourceId,
           operationId,
           observedAt,
           untrustedData: result.ok
-            ? redactAskData(options?.summarize?.(result.data) ?? result.data, secrets)
+            ? redactAskData(
+                status?.summary ?? options?.summarize?.(result.data) ?? result.data,
+                secrets,
+              )
             : undefined,
+          ...(status ? { note: STATUS_SUMMARY_NOTE } : {}),
           error: result.ok ? undefined : "Source unavailable",
         });
         // Reserve space for server-authored provenance and interpretation.
@@ -346,7 +357,8 @@ export class AskOrchestrator {
           throw new AskFailure("ASK_LIMIT_REACHED", 422);
         const sourceTruncated =
           record(result.data)?.truncated === true ||
-          record(record(result.data)?.data)?.truncated === true;
+          record(record(result.data)?.data)?.truncated === true ||
+          (status?.omitted ?? 0) > 0;
         const observedCoverage = coverage(result, parameters);
         const item: AskEvidence = {
           id: randomUUID(),

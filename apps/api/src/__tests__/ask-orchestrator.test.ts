@@ -854,6 +854,60 @@ describe("bounded customer tool orchestration", () => {
     );
   });
 
+  it.each([
+    [30, "unknown", false],
+    [600, "partial", true],
+  ])(
+    "hands a large provider-status read to the model summarized, not cut (%i events)",
+    async (events, coverage, cut) => {
+      const until = Math.floor(Date.now() / 1000);
+      const f = fixture({
+        status: true,
+        data: {
+          unmapped: [],
+          chains: Array.from({ length: 40 }, (_, i) => ({
+            requested_as: `CHAIN${i}`,
+            slug: `chain-${i}`,
+            current: {
+              measured: "up",
+              providers: Array.from({ length: 6 }, (_, p) => ({
+                name: `provider-${p}`,
+                status: i === 7 && p === 1 ? "major" : "operational",
+              })),
+            },
+          })),
+          events: Array.from({ length: events }, (_, e) => ({
+            kind: "provider_status_change",
+            slug: `chain-${e % 40}`,
+            time: until - e * 60,
+            title: "Elevated error rates ".repeat(12),
+          })),
+        },
+        responses: [
+          provider([tool("acme-status", "status.chain_events", { since: until - 86_400, until })]),
+          final(),
+        ],
+      });
+      const answer = await f.answer();
+      expect(answer.evidence[0]).toMatchObject({ coverage, truncated: cut });
+      const body = JSON.parse(f.bodies[1]!);
+      const result = JSON.parse(body.messages.at(-1).content[0].toolResult.content[0].text);
+      expect(result).not.toHaveProperty("untrustedPreview");
+      expect(result.note).toContain("summarized");
+      expect(result.untrustedData.chainsAllOperational).toHaveLength(39);
+      expect(result.untrustedData.chains).toEqual([
+        expect.objectContaining({
+          requested_as: "CHAIN7",
+          current: expect.objectContaining({
+            providers: [{ name: "provider-1", status: "major" }],
+            operationalProviders: 5,
+          }),
+        }),
+      ]);
+      expect((result.untrustedData.eventsOmitted ?? 0) > 0).toBe(cut);
+    },
+  );
+
   it("does not describe a current status observation as exhaustive incident history", async () => {
     const until = Math.floor(Date.now() / 1000);
     const f = fixture({
