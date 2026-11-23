@@ -70,6 +70,18 @@ describe("Ask credential redaction across untrusted inputs", () => {
     expect(result).toMatchObject({ "[redacted]": "public-value", child: { value: "[redacted]" } });
   });
 
+  it("keeps a caller's hex customer-id in metric results and answer text", () => {
+    const customer = "0123456789abcdef".repeat(4);
+    const result = {
+      data: {
+        result: [{ metric: { customer, method: "debug_traceTransaction" }, value: [1, "42"] }],
+      },
+    };
+    expect(redactAskData(result)).toEqual(result);
+    const answer = `Customer **${customer}** sent the most debug requests.`;
+    expect(redactAskText(answer)).toBe(answer);
+  });
+
   it("preserves unrelated field types and quoted non-credential metadata", () => {
     const value = {
       inputTokens: 10,

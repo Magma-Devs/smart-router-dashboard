@@ -179,8 +179,8 @@ explanations of earlier answers need no data read. An answer written without its
 closing call is a data answer when the run tried a read of its own, and a
 conversation reply otherwise.
 
-Ask's scope is the customer's Smart Router - its chains, providers, requests,
-errors, transactions and status - and the RPC, blockchain, monitoring and
+Ask's scope is the customer's Smart Router - its chains, providers, requests
+and the customers that sent them, errors, transactions and status - and the RPC, blockchain, monitoring and
 dashboard concepts behind it, plus greetings, thanks and the current date and
 time. A question outside it (general knowledge, history, geography, people,
 news, market prices, writing or code unrelated to the router) is declined in
@@ -245,7 +245,26 @@ lines in Loki, with the recorded rule's own filters (`requestSummaryQueries`'s
 the question needs that count, and says the figure was counted from the logs. A window that ends within two minutes of the
 server's time reaches into the recording lag: the model reads it as partial
 coverage and states the gap, and the stored evidence keeps the read's own
-coverage. Counts do not establish an acceptable error rate or a cause without actual evidence and an SLO. `router_recent_requests` reads a small, customer-scoped backwards sample of the dashboard's `relay_end` events for request details. Sampling never proves the absence of errors. Effective status/instant-query times and literal lookback windows are returned explicitly; absence of a provider-status source is reported as unavailable.
+coverage.
+
+`measure=customers` answers questions about the reader's own customers: the
+values of the `customer-id` header their callers send, which each router counts
+in `smartrouter_customer_requests_total` and
+`smartrouter_customer_requests_failed_total` (one count per client request, with
+its final outcome). It reads requests and failures per customer (the top 50) and
+requests per customer and method (the top 30), with
+`increase()` over the window. `chain` selects the counters' `spec`, the chain id
+upper-cased; `customer` selects one customer; `methodPrefixes` (up to eight,
+letters, digits, `_` and `/` only) selects methods that start with them, so
+`["debug_", "trace_"]` is the debug requests. The hub's serving probe
+(`magma-serving-probe`) is left out of every count. `DefaultDappID` is the requests
+that named no customer, and `other` the requests past a router's 512-customer
+cap. These are Prometheus counters, not recorded series: they carry no log
+fallback and no recording lag, and a customer missing from the result is unknown.
+A customer id is named in the answer as returned; the prompt tells the model a
+long hex id is the caller's choice, not a credential, and redaction leaves it.
+
+Counts do not establish an acceptable error rate or a cause without actual evidence and an SLO. `router_recent_requests` reads a small, customer-scoped backwards sample of the dashboard's `relay_end` events for request details. Sampling never proves the absence of errors. Effective status/instant-query times and literal lookback windows are returned explicitly; absence of a provider-status source is reported as unavailable.
 
 Model dispatch guards live inside the model execution boundary, not SDK
 notification callbacks. Automatic model retries and tool repair are disabled.
