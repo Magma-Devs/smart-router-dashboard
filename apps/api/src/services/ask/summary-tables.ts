@@ -51,6 +51,11 @@ const TX_COLUMNS: Record<TxOutcome, string> = {
   unknown: "unknown",
 };
 
+/** The named labels a sample carries; one it does not carry is left out, never "". */
+function pick(labels: Record<string, string>, names: string[]): TableRow {
+  return Object.fromEntries(names.flatMap((name) => (labels[name] ? [[name, labels[name]]] : [])));
+}
+
 /** Sums `value` into `row[column]`, creating both on first use. */
 function add(
   rows: Map<string, TableRow>,
@@ -106,8 +111,8 @@ export function summaryTable(
           ...(labels.tx_status ? { txStatus: labels.tx_status } : {}),
         });
         const chain = labels.chain ?? "";
-        add(by, chain, { chain }, TX_COLUMNS[result], value);
-        add(by, chain, { chain }, "total", value);
+        add(by, chain, pick(labels, ["chain"]), TX_COLUMNS[result], value);
+        add(by, chain, pick(labels, ["chain"]), "total", value);
       }
     }
     order = (a, b) => Number(b.total) - Number(a.total);
@@ -116,15 +121,12 @@ export function summaryTable(
     if (rows) {
       columns = ["lines"];
       for (const { labels, value } of rows) {
-        const chain = labels.chain ?? "";
-        const level = labels.level ?? "";
-        add(by, `${chain}\u0000${level}`, { chain, level }, "lines", value);
+        const seed = pick(labels, ["chain", "level"]);
+        add(by, `${labels.chain ?? ""}\u0000${labels.level ?? ""}`, seed, "lines", value);
       }
     }
     detail = read("error_messages")?.map(({ labels, value }) => ({
-      chain: labels.chain ?? "",
-      level: labels.level ?? "",
-      message: labels.message ?? "",
+      ...pick(labels, ["chain", "level", "message"]),
       lines: value,
     }));
     order = (a, b) => Number(b.lines) - Number(a.lines);
@@ -137,13 +139,11 @@ export function summaryTable(
       if (!rows) continue;
       columns.push(column);
       for (const { labels, value } of rows) {
-        const customer = labels.customer ?? "";
-        add(by, customer, { customer }, column, value);
+        add(by, labels.customer ?? "", pick(labels, ["customer"]), column, value);
       }
     }
     detail = read("customer_methods")?.map(({ labels, value }) => ({
-      customer: labels.customer ?? "",
-      method: labels.method ?? "",
+      ...pick(labels, ["customer", "method"]),
       requests: value,
     }));
     order = (a, b) => Number(b.requests ?? 0) - Number(a.requests ?? 0);
@@ -185,8 +185,7 @@ export function summaryTable(
       if (!rows) continue;
       columns.push(column);
       for (const { labels, value } of rows) {
-        const chain = labels.chain ?? "";
-        add(by, chain, { chain }, column, value);
+        add(by, labels.chain ?? "", pick(labels, ["chain"]), column, value);
       }
     }
     order = (a, b) =>

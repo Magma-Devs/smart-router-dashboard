@@ -121,6 +121,14 @@ describe("summary tables", () => {
       { chain: "ETH1", provider: "node-a", relays: 10, nodeErrorReplies: 0 },
     ]);
   });
+  it("leaves out a label a sample does not carry, never an empty value", () => {
+    const table = summaryTable("errors", [
+      { name: "errors", rows: [row({ chain: "eth1" }, 3)] },
+      { name: "error_messages", rows: [row({ chain: "eth1" }, 3)] },
+    ]);
+    expect(table.rows).toEqual([{ chain: "eth1", lines: 3 }]);
+    expect(table.detail).toEqual([{ chain: "eth1", lines: 3 }]);
+  });
   it("keeps the most frequent messages and the per-method customer counts as detail", () => {
     const errors = summaryTable("errors", [
       { name: "errors", rows: [row({ chain: "eth1", level: "warn" }, 8)] },
