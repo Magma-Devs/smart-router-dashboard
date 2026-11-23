@@ -40,6 +40,7 @@ import {
 } from "./query-bounds.js";
 import { PREFETCH_NOTE, prefetchRead, summarizePrefetch } from "./prefetch.js";
 import { STATUS_SUMMARY_NOTE, summarizeChainEvents } from "./status-summary.js";
+import { failedRead, narrowedRead } from "./read-notes.js";
 import { AskFailure, abortFailure } from "./errors.js";
 import { redactAskData, redactAskText } from "./redact.js";
 import { draftText } from "./draft.js";
@@ -330,6 +331,7 @@ export class AskOrchestrator {
           result.ok && operationId === "status.chain_events" && !options?.summarize
             ? summarizeChainEvents(result.data, this.settings.maxToolResultBytes - 2048)
             : null;
+        const narrowed = narrowedRead(result);
         let payload = JSON.stringify({
           sourceId,
           operationId,
@@ -341,7 +343,11 @@ export class AskOrchestrator {
               )
             : undefined,
           ...(status ? { note: STATUS_SUMMARY_NOTE } : {}),
-          error: result.ok ? undefined : "Source unavailable",
+          // The source's own account of a read it narrowed or did not answer.
+          ...(redactAskData(narrowed?.fields ?? {}, secrets) as Record<string, unknown>),
+          ...(result.ok
+            ? {}
+            : (redactAskData(failedRead(result), secrets) as Record<string, unknown>)),
         });
         // Reserve space for server-authored provenance and interpretation.
         const truncated = Buffer.byteLength(payload) > this.settings.maxToolResultBytes - 1024;
@@ -365,16 +371,31 @@ export class AskOrchestrator {
           sourceId,
           operationId,
           observedAt,
+          // A narrowed read's times are the window the source read.
           from: iso(
-            observedWindow?.start ?? parameters.start ?? parameters.since ?? parameters.time,
+            narrowed?.window?.start ??
+              observedWindow?.start ??
+              parameters.start ??
+              parameters.since ??
+              parameters.time,
           ),
-          to: iso(observedWindow?.end ?? parameters.end ?? parameters.until ?? parameters.time),
+          to: iso(
+            narrowed?.window?.end ??
+              observedWindow?.end ??
+              parameters.end ??
+              parameters.until ??
+              parameters.time,
+          ),
           coverage:
-            observedCoverage === "unavailable" || observedCoverage === "empty"
+            observedCoverage === "unavailable"
               ? observedCoverage
-              : truncated || sourceTruncated
+              : narrowed?.partial
                 ? "partial"
-                : observedCoverage,
+                : observedCoverage === "empty"
+                  ? observedCoverage
+                  : truncated || sourceTruncated
+                    ? "partial"
+                    : observedCoverage,
           truncated: truncated || sourceTruncated,
         };
         if (result.ok || !options?.soft) evidence.push(item);

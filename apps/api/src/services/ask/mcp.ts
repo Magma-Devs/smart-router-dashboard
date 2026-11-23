@@ -236,12 +236,91 @@ export interface McpSnapshot {
     inputSchema: Record<string, unknown>;
   }>;
 }
+/** A window in Unix seconds. */
+export interface McpWindow {
+  start: number;
+  end: number;
+}
 export interface McpReadResult {
   sourceId: string;
   operationId: string;
   ok: boolean;
   data?: unknown;
+  /** The MCP server's code for a read it did not answer. */
   error?: string;
+  /** The MCP server's own words on what it read instead, or what to change. */
+  guidance?: string;
+  /** The read covers part of what was asked: the server narrowed it. */
+  partial?: boolean;
+  /** What was asked for and what the narrowed read covers. */
+  window?: { requested: McpWindow; read: McpWindow };
+  /** What the server ran in place of what was sent. */
+  adjusted?: { step?: number; query?: string };
+}
+
+/** The longest guidance kept from the MCP server, in characters. */
+export const MCP_GUIDANCE_MAX = 1200;
+const errorCode = z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/);
+const windowSchema = z.object({ start: timestamp, end: timestamp });
+/** What a read says it did differently. Each part is read on its own, so a
+ * part this version does not understand is dropped, never the read. */
+const readNotes = {
+  guidance: z.string().min(1).max(8000),
+  partial: z.literal(true),
+  window: z.object({ requested: windowSchema, read: windowSchema }),
+  adjusted: z.object({
+    step: z.number().positive().optional(),
+    query: z.string().min(1).max(16_000).optional(),
+  }),
+};
+function notesOf(envelope: Record<string, unknown>) {
+  const guidance = readNotes.guidance.safeParse(envelope.guidance);
+  const partial = readNotes.partial.safeParse(envelope.partial);
+  const window = readNotes.window.safeParse(envelope.window);
+  const adjusted = readNotes.adjusted.safeParse(envelope.adjusted);
+  return {
+    ...(guidance.success
+      ? // Printable text only, and no longer than a tool result can spare.
+        {
+          guidance: guidance.data
+            .replace(/[^\x20-\x7E]+/g, " ")
+            .replace(/ {2,}/g, " ")
+            .slice(0, MCP_GUIDANCE_MAX),
+        }
+      : {}),
+    ...(partial.success ? { partial: true } : {}),
+    ...(window.success ? { window: window.data } : {}),
+    ...(adjusted.success && (adjusted.data.step !== undefined || adjusted.data.query !== undefined)
+      ? { adjusted: adjusted.data }
+      : {}),
+  };
+}
+
+/** A read the MCP server refused as a tool error for what it asked, not for
+ * who asked: the read failed, the connection and the identity did not. */
+class RefusedRead {
+  constructor(
+    readonly error: string,
+    readonly guidance?: string,
+  ) {}
+}
+const REFUSED_AS_TOOL_ERROR = new Set(["INVALID_PARAMETERS"]);
+function refusedRead(result: CallToolResult): RefusedRead | null {
+  if (!result.isError) return null;
+  const [first] = result.content;
+  if (result.content.length !== 1 || first?.type !== "text") return null;
+  let body: unknown;
+  try {
+    body = JSON.parse(first.text);
+  } catch {
+    return null;
+  }
+  const refusal = z
+    .object({ error: errorCode, guidance: z.unknown().optional() })
+    .passthrough()
+    .safeParse(body);
+  if (!refusal.success || !REFUSED_AS_TOOL_ERROR.has(refusal.data.error)) return null;
+  return new RefusedRead(refusal.data.error, notesOf(refusal.data).guidance);
 }
 
 function unwrap(result: CallToolResult): unknown {
@@ -281,14 +360,19 @@ export class McpConnection {
     private readonly shared?: SharedDiscovery,
   ) {}
 
-  private async call(name: string, args: Record<string, unknown> = {}): Promise<unknown> {
+  /** `refusals`: a tool error that refuses what was asked comes back as a
+   * RefusedRead instead of ending the connection. */
+  private async call(
+    name: string,
+    args: Record<string, unknown> = {},
+    refusals = false,
+  ): Promise<unknown> {
     try {
-      return unwrap(
-        await this.client.callTool(
-          { name, arguments: args },
-          { signal: this.signal, timeout: this.settings.requestTimeoutMs },
-        ),
-      );
+      const result = (await this.client.callTool(
+        { name, arguments: args },
+        { signal: this.signal, timeout: this.settings.requestTimeoutMs },
+      )) as CallToolResult;
+      return (refusals ? refusedRead(result) : null) ?? unwrap(result);
     } catch (error) {
       if (this.signal?.aborted) throw abortFailure(this.signal);
       this.shared?.retire();
@@ -414,10 +498,18 @@ export class McpConnection {
     // result is used only once the identity check has passed.
     const [identity, executed] = await Promise.allSettled([
       this.verifyIdentity(),
-      this.call("execute_operation", { sourceId, operationId, parameters: parsed.data }),
+      this.call("execute_operation", { sourceId, operationId, parameters: parsed.data }, true),
     ]);
     if (identity.status === "rejected") throw identity.reason;
     if (executed.status === "rejected") throw executed.reason;
+    if (executed.value instanceof RefusedRead)
+      return {
+        sourceId,
+        operationId,
+        ok: false,
+        error: executed.value.error,
+        ...(executed.value.guidance ? { guidance: executed.value.guidance } : {}),
+      };
     const result = z
       .object({
         // The MCP server picks the tenant from this credential; an envelope
@@ -444,6 +536,7 @@ export class McpConnection {
       ok: result.data.ok,
       data: result.data.data,
       error: result.data.error,
+      ...notesOf(result.data),
     };
   }
 }

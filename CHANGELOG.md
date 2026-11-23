@@ -5,6 +5,21 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.91.0]
+
+### Changed
+
+- **Ask tells the model why a read came back short or unanswered (MAG-5719).**
+  A read the MCP server narrowed (the newest part of a window too large for
+  one read) reaches the model with the window it covers, what ran in its
+  place and the server's own guidance on reading the rest; its source reads
+  Partial, with the times of the window read. A read the server did not
+  answer reaches the model with the server's code and guidance, not as
+  "Source unavailable", so the model can change the read and try again.
+  Parameters the server refuses as a tool error no longer end the run. Works
+  with an MCP server that sends none of this: its reads are handled as before,
+  with the code of a failed one.
+
 ## [0.90.0]
 
 ### Added

@@ -269,6 +269,20 @@ server's time reaches into the recording lag: the model reads it as partial
 coverage and states the gap, and the stored evidence keeps the read's own
 coverage.
 
+The MCP server may answer a read in part: a window, range or log scan larger
+than one read covers comes back as its newest part, with `partial`, the window
+asked for and read, what ran in its place (`adjusted`) and a `guidance` text.
+`mcp.ts` reads each of those on its own, so a part it does not understand is
+dropped and never the read. The model is handed them beside the data
+(`narrowed`, `ranAs`, `guidance` and a note to state the window covered); the
+evidence is Partial and carries the times of the window read. A read the
+server did not answer (`ok: false`, or parameters it refuses as a tool error)
+is handed over as `Read not answered: CODE` with the server's guidance when it
+gives one: the run goes on, and the model can read again. The guidance is
+printable text of at most 1,200 characters and is redacted like any tool
+result. Any other tool error still ends the run as `ASK_MCP_UNAVAILABLE`. An
+MCP server that sends none of these fields is read as before.
+
 `measure=customers` answers questions about the reader's own customers: the
 values of the `customer-id` header their callers send, which each router counts
 in `smartrouter_customer_requests_total` and
