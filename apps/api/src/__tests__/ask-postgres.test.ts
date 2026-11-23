@@ -379,11 +379,11 @@ suite("Ask HTTP backed by independent PostgreSQL connections", () => {
   });
 
   it("serves a running answer's draft from any replica, written only under its lease and cleared at the end", async () => {
-    const id = await chat();
-    const run = await submit(a, alice, id);
+    const id = await chat(a, bob);
+    const run = await submit(a, bob, id);
     const lease = (await aStore.claim(30_000))!;
     expect(await aStore.saveDraft(lease.id, lease.leaseToken!, "Two chains failed.")).toBe(true);
-    expect((await request(replica, alice, "/runs/active")).body.run!.progress).toEqual({
+    expect((await request(replica, bob, "/runs/active")).body.run!.progress).toEqual({
       step: "starting",
       reads: [],
       draft: "Two chains failed.",
@@ -397,20 +397,54 @@ suite("Ask HTTP backed by independent PostgreSQL connections", () => {
       ),
     ).toBe(false);
     expect(await aStore.saveDraft(lease.id, crypto.randomUUID(), "stale")).toBe(false);
-    expect((await request(a, alice, "/runs/active")).body.run!.progress!.draft).toBe(
+    expect((await request(a, bob, "/runs/active")).body.run!.progress!.draft).toBe(
       "Two chains failed.",
     );
+    // The draft endpoint serves it to its owner alone, from any replica.
+    expect((await request(replica, bob, `/runs/${run.body.id}/draft`)).body).toEqual({
+      status: "running",
+      draft: "Two chains failed.",
+    });
+    expect((await request(a, alice, `/runs/${run.body.id}/draft`)).status).toBe(404);
+    expect((await request(b, bob, `/runs/${run.body.id}/draft`)).status).toBe(404);
     // The person's own run and chat reads never carry it.
-    expect(JSON.stringify((await request(a, alice, `/runs/${run.body.id}`)).body)).not.toContain(
+    expect(JSON.stringify((await request(a, bob, `/runs/${run.body.id}`)).body)).not.toContain(
       "Two chains",
     );
-    expect(await aStore.succeed(lease.id, lease.leaseToken!, answer)).toBe(true);
+    const markdown = "Two chains **failed**.\n\n| chain | failures |\n| --- | --- |\n| eth1 | 14 |";
+    expect(await aStore.succeed(lease.id, lease.leaseToken!, { ...answer, markdown })).toBe(true);
+    expect(await aStore.runDraft(bob.id, run.body.id)).toEqual({
+      status: "succeeded",
+      draft: null,
+    });
+    // The Markdown is served on the run and the message from its own column;
+    // the stored answer keeps the shape every earlier API version parses.
+    expect((await replicaStore.getRun(bob.id, run.body.id)).answer!.markdown).toBe(markdown);
+    expect((await aStore.chatDetail(bob.id, id)).messages[1]!.answer!.markdown).toBe(markdown);
+    const [stored] = await handles[0]!.db
+      .select({ answer: askRuns.answer, markdown: askRuns.answerMarkdown })
+      .from(askRuns)
+      .where(eq(askRuns.id, lease.id));
+    expect(stored!.answer).not.toHaveProperty("markdown");
+    expect(stored!.markdown).toBe(markdown);
     expect(await aStore.saveDraft(lease.id, lease.leaseToken!, "late")).toBe(false);
     const [row] = await handles[0]!.db
       .select({ draft: askRuns.draft })
       .from(askRuns)
       .where(eq(askRuns.id, lease.id));
     expect(row!.draft).toBeNull();
+  });
+
+  it("serves no draft for a run being stopped", async () => {
+    const id = await chat(a, bob);
+    const run = await submit(a, bob, id);
+    const lease = (await aStore.claim(30_000))!;
+    expect(await aStore.saveDraft(lease.id, lease.leaseToken!, "Partial answer")).toBe(true);
+    await aStore.cancel(bob.id, run.body.id);
+    expect(await aStore.runDraft(bob.id, run.body.id)).toEqual({
+      status: "cancelling",
+      draft: null,
+    });
   });
 
   it("clears a failed run's draft", async () => {

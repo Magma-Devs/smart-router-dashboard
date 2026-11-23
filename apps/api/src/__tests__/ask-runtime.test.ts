@@ -2,7 +2,16 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DrizzleQueryError } from "drizzle-orm/errors";
 import { createTestDb, enrolledTwoFactor, type TestDb } from "@sr/db/testing";
-import { askBudgetMonths, askMaintenance, askModelSteps, askRuns, users } from "@sr/db";
+import {
+  askBudgetMonths,
+  askMaintenance,
+  askMessages,
+  askModelSteps,
+  askRuns,
+  users,
+} from "@sr/db";
+import { askAnswerSchema } from "@sr/shared";
+import { eq } from "drizzle-orm";
 import { SignJWT } from "jose";
 import { authPlugin, SESSION_JWT_AUDIENCE, SESSION_JWT_ISSUER } from "../plugins/auth.js";
 import { createSession } from "../services/sessions.js";
@@ -133,7 +142,7 @@ function expectNoSecrets(lines: string[]) {
 }
 
 describe("API runtime accounting/worker wiring", () => {
-  it("shows the summary while the model writes, then only the validated answer", async () => {
+  it("shows the answer text while the model writes, then only the validated answer", async () => {
     let release!: () => void;
     const held = new Promise<void>((resolve) => (release = resolve));
     vi.spyOn(BedrockAdapter.prototype, "converse").mockImplementation(async (_input, options) => {
@@ -148,11 +157,12 @@ describe("API runtime accounting/worker wiring", () => {
         message: {
           role: "assistant",
           content: [
+            { text: "Hello! The answer." },
             {
               toolUse: {
                 toolUseId: "reply",
                 name: "present_answer",
-                input: { kind: "conversation", summary: "Hello! The answer.", sections: [] },
+                input: { kind: "conversation" },
               },
             },
           ],
@@ -190,7 +200,6 @@ describe("API runtime accounting/worker wiring", () => {
     expect((await request("/runs/active")).json().run).toBeNull();
   });
 
-
   it("persists a conversational reply through HTTP and the real worker, with model accounting, while the MCP is down", async () => {
     const count = vi.spyOn(BedrockAdapter.prototype, "countTokens");
     vi.spyOn(BedrockAdapter.prototype, "converse").mockImplementation(async (_input, options) => {
@@ -202,11 +211,12 @@ describe("API runtime accounting/worker wiring", () => {
         message: {
           role: "assistant",
           content: [
+            { text: "Hello! How can I help?" },
             {
               toolUse: {
                 toolUseId: "reply",
                 name: "present_answer",
-                input: { kind: "conversation", summary: "Hello! How can I help?", sections: [] },
+                input: { kind: "conversation" },
               },
             },
           ],
@@ -242,6 +252,16 @@ describe("API runtime accounting/worker wiring", () => {
     expect(detail.messages).toHaveLength(2);
     const answer = detail.messages[1].answer;
     expect(answer.summary).toContain("Hello");
+    expect(answer.markdown).toBe("Hello! How can I help?");
+    // The stored answer keeps the shape every earlier API version parses; its
+    // Markdown lives in its own column.
+    const [stored] = await t.db
+      .select({ answer: askMessages.answer, markdown: askMessages.answerMarkdown })
+      .from(askMessages)
+      .where(eq(askMessages.role, "assistant"));
+    expect(stored!.answer).not.toHaveProperty("markdown");
+    expect(stored!.markdown).toBe("Hello! How can I help?");
+    expect(askAnswerSchema.safeParse(stored!.answer).success).toBe(true);
     expect(Date.parse(answer.answeredAt)).toBeGreaterThanOrEqual(started);
     expect(Date.parse(answer.answeredAt)).toBeLessThanOrEqual(Date.now());
     expect(answer.evidence).toEqual([]);

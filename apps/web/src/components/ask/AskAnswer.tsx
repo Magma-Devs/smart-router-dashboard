@@ -10,6 +10,7 @@ import {
   windowSpansDays,
 } from "./ask-display";
 import { AskIcon } from "./AskIcon";
+import { AskMarkdown } from "./AskMarkdown";
 import { LocalTime } from "@/components/gateway/LocalTime";
 
 /** A time in the dashboard's one format: today's as a time, an older one with
@@ -58,11 +59,11 @@ function CopyAnswer({ answer }: { answer: Answer }) {
     </div>
   );
 }
-export function AskAnswer({ answer, messageId }: { answer: Answer; messageId?: string }) {
+/** An answer stored before answers were Markdown: its summary and sections. */
+function LegacyAnswer({ answer }: { answer: Answer }) {
   const sections = answerSections(answer);
-  const partial = answerHasGap(answer);
   return (
-    <article className="ask-answer" aria-label="Answer" data-ask-message={messageId}>
+    <>
       <p className="ask-summary" dir="auto">
         {answer.summary}
       </p>
@@ -91,14 +92,39 @@ export function AskAnswer({ answer, messageId }: { answer: Answer; messageId?: s
           ))}
         </ol>
       ) : null}
+    </>
+  );
+}
+export function AskAnswer({ answer, messageId }: { answer: Answer; messageId?: string }) {
+  const partial = answerHasGap(answer);
+  const sources = answer.evidence.length;
+  return (
+    <article className="ask-answer" aria-label="Answer" data-ask-message={messageId}>
+      {answer.markdown ? <AskMarkdown text={answer.markdown} /> : <LegacyAnswer answer={answer} />}
       {partial ? (
         <p className="ask-coverage-warning">
-          Some of the data behind this answer was missing or cut short. Check the sources below.
+          Some of the data behind this answer was missing or cut short. The sources say which.
         </p>
       ) : null}
-      {answer.evidence.length ? (
+      {sources ? (
         <details className="ask-evidence">
-          <summary>Sources and time window · {answer.evidence.length}</summary>
+          <summary>
+            <AskIcon name="sources" size={13} />
+            <span>
+              {sources} {sources === 1 ? "source" : "sources"}
+            </span>
+            <span className="ask-evidence-names" aria-hidden="true">
+              {[
+                ...new Set(
+                  answer.evidence.map(
+                    (item) => item.label ?? evidenceSourceLabel(item.operationId),
+                  ),
+                ),
+              ]
+                .slice(0, 3)
+                .join(" · ")}
+            </span>
+          </summary>
           <ul>
             {answer.evidence.map((item) => (
               <li key={item.id}>

@@ -66,10 +66,44 @@ function tool(
     },
   };
 }
-function provider(blocks: unknown[], stopReason = "tool_use") {
-  return { output: { message: { role: "assistant", content: blocks } }, stopReason, usage };
+/** An answer's Markdown, as the model writes it before its closing call. */
+function markdownOf(value: Record<string, unknown>): string {
+  const sections = Array.isArray(value.sections)
+    ? (value.sections as Array<Record<string, unknown>>).map((section) =>
+        [
+          `### ${String(section.title)}`,
+          String(section.body),
+          ...(Array.isArray(section.points) ? section.points.map((point) => `- ${point}`) : []),
+        ].join("\n\n"),
+      )
+    : [];
+  return [String(value.summary), ...sections].join("\n\n");
 }
-const final = (value: unknown = content) => provider([{ text: JSON.stringify(value) }], "end_turn");
+/** A step's blocks: a presentation given in the answer's old shape becomes the
+ * answer's text and a closing call that carries only kind and evidenceIds. */
+function provider(blocks: unknown[], stopReason = "tool_use") {
+  const content = blocks.flatMap((block) => {
+    const use = (block as { toolUse?: { name: string; input: unknown } }).toolUse;
+    const input = use?.input as Record<string, unknown> | undefined;
+    if (use?.name !== "present_answer" || typeof input?.summary !== "string") return [block];
+    const { kind, evidenceIds } = input;
+    return [
+      { text: markdownOf(input) },
+      {
+        toolUse: {
+          ...use,
+          input: { kind, ...(evidenceIds === undefined ? {} : { evidenceIds }) },
+        },
+      },
+    ];
+  });
+  return { output: { message: { role: "assistant", content } }, stopReason, usage };
+}
+const final = (value: unknown = content) => provider([presentation(value)]);
+/** The closing call alone, with exactly the input given. */
+const closing = (input: unknown) => ({
+  toolUse: { toolUseId: "answer-1", name: "present_answer", input },
+});
 const presentation = (value: unknown = content) => ({
   toolUse: {
     toolUseId: "answer-1",
@@ -239,9 +273,11 @@ describe("bounded customer tool orchestration", () => {
     expect(f.hooks.beforeModelStep).toHaveBeenCalledOnce();
     expect(f.hooks.recordUsage).toHaveBeenCalledOnce();
   });
-  it("presents a validated local answer after a successful read using forced tools", async () => {
+  it("answers in text closed by present_answer after a successful read, with tool choice auto", async () => {
     const f = fixture({ responses: [provider([tool()]), provider([presentation()])] });
-    expect((await f.answer()).summary).toBe(content.summary);
+    const answer = await f.answer();
+    expect(answer.markdown).toBe(markdownOf(content));
+    expect(answer.summary).toBe(content.summary);
     const requests = f.bodies.map((body) => JSON.parse(body));
     expect(
       requests[0].toolConfig.tools.map((t: { toolSpec: { name: string } }) => t.toolSpec.name),
@@ -249,18 +285,17 @@ describe("bounded customer tool orchestration", () => {
     expect(
       requests[1].toolConfig.tools.map((t: { toolSpec: { name: string } }) => t.toolSpec.name),
     ).toEqual(expect.arrayContaining(["metrics_query", "present_answer"]));
-    expect(requests[1].toolConfig.toolChoice).toEqual({ any: {} });
+    // Forced tool use would suppress the answer text before the closing call.
+    expect(requests[1].toolConfig.toolChoice).toEqual({ auto: {} });
     const format = requests[1].toolConfig.tools.find(
       (entry: { toolSpec: { name: string } }) => entry.toolSpec.name === "present_answer",
     ).toolSpec;
     expect(format.strict).toBe(true);
     expect(format.inputSchema.json).toMatchObject({
       additionalProperties: false,
-      properties: {
-        summary: { type: "string" },
-        sections: { type: "array" },
-      },
+      properties: { kind: { enum: ["conversation", "data"] }, evidenceIds: { type: "array" } },
     });
+    expect(Object.keys(format.inputSchema.json.properties)).toEqual(["kind", "evidenceIds"]);
     expect(f.call.mock.calls.filter(([call]) => call.name === "execute_operation")).toHaveLength(1);
     expect(f.hooks.recordUsage).toHaveBeenCalledTimes(2);
   });
@@ -274,6 +309,7 @@ describe("bounded customer tool orchestration", () => {
       contractVersion: 1,
       summary,
       sections: [{ title: "Reply", body: summary }],
+      markdown: summary,
     });
     expect(answer.evidence).toHaveLength(1);
     expect(f.hooks.recordUsage).toHaveBeenCalledTimes(2);
@@ -282,8 +318,10 @@ describe("bounded customer tool orchestration", () => {
   it.each([
     [presentation(), tool()],
     [presentation(), presentation()],
-    [presentation({ ...content, evidence: [] })],
-    [presentation({ ...content, summary: "x".repeat(501) })],
+    [{ text: "Three targets." }, closing({ kind: "data", note: "extra" })],
+    [{ text: "Three targets." }, closing({ kind: "report" })],
+    [closing({ kind: "data" })],
+    [{ text: "x".repeat(8001) }, closing({ kind: "data" })],
   ])(
     "rejects mixed presentation or invalid arguments without another MCP or model call",
     async (...blocks) => {
@@ -300,34 +338,45 @@ describe("bounded customer tool orchestration", () => {
     await expect(f.answer()).rejects.toMatchObject({ code: "ASK_INVALID_ANSWER" });
     expect(f.call.mock.calls.some(([call]) => call.name === "execute_operation")).toBe(false);
   });
-  it.each(["json", ""])(
-    "accepts one complete %s JSON fence without another paid step",
-    async (language) => {
-      const f = fixture({
-        responses: [
-          provider([tool()]),
-          provider(
-            [{ text: `\x60\x60\x60${language}\n${JSON.stringify(content)}\n\x60\x60\x60` }],
-            "end_turn",
-          ),
-        ],
-      });
-      expect((await f.answer()).summary).toBe(content.summary);
-      expect(f.fetchImpl).toHaveBeenCalledTimes(2);
-      expect(f.hooks.recordUsage).toHaveBeenCalledTimes(2);
-    },
-  );
-  it.each([
-    `Explanation\n\x60\x60\x60json\n${JSON.stringify(content)}\n\x60\x60\x60`,
-    `\x60\x60\x60json\n${JSON.stringify(content)}\n\x60\x60\x60\nExtra prose`,
-    `\x60\x60\x60javascript\n${JSON.stringify(content)}\n\x60\x60\x60`,
-    `\x60\x60\x60json\n${JSON.stringify({ ...content, evidence: [] })}\n\x60\x60\x60`,
-    `\x60\x60\x60json\n${JSON.stringify({ ...content, summary: "x".repeat(501) })}\n\x60\x60\x60`,
-  ])("rejects prose, other languages and invalid contracts inside a fence", async (text) => {
-    const f = fixture({ responses: [provider([tool()]), provider([{ text }], "end_turn")] });
-    await expect(f.answer()).rejects.toMatchObject({ code: "ASK_INVALID_ANSWER" });
-    expect(f.hooks.recordUsage).toHaveBeenCalledTimes(2);
+  it("takes an answer written without its closing call after a read as a data answer citing it", async () => {
+    const f = fixture({
+      responses: [
+        provider([tool()]),
+        provider([{ text: "**Three** targets are up." }], "end_turn"),
+      ],
+    });
+    const answer = await f.answer();
+    expect(answer).toMatchObject({
+      markdown: "**Three** targets are up.",
+      summary: "Three targets are up.",
+    });
+    expect(answer.evidence).toHaveLength(1);
     expect(f.fetchImpl).toHaveBeenCalledTimes(2);
+  });
+  it("takes an answer written without its closing call and without a read as a reply with no source", async () => {
+    const f = fixture({
+      responses: [provider([{ text: "Hello! Ask me about your routers." }], "end_turn")],
+    });
+    const answer = await f.answer();
+    expect(answer.markdown).toBe("Hello! Ask me about your routers.");
+    expect(answer.evidence).toEqual([]);
+  });
+  it("redacts a credential in the answer text and keeps the plain-text sections whole", async () => {
+    const markdown = [
+      "Two chains failed: see `https://node.example/key/abc`.",
+      "",
+      "| chain | failures |",
+      "| --- | --- |",
+      "| eth1 | **14** |",
+    ].join("\n");
+    const f = fixture({
+      responses: [provider([tool()]), provider([{ text: markdown }, closing({ kind: "data" })])],
+    });
+    const answer = await f.answer();
+    expect(answer.markdown).toContain("https://node.example/[redacted]");
+    expect(answer.markdown).not.toContain("key/abc");
+    expect(answer.summary).toContain("Two chains failed: see https://node.example/[redacted]");
+    expect(answer.sections.map((section) => section.body).join("\n")).toContain("eth1 · 14");
   });
   it("reserves/accounts every model step, reads actual authorized data and authors provenance", async () => {
     const f = fixture();
@@ -387,7 +436,7 @@ describe("bounded customer tool orchestration", () => {
       providerStatus: 200,
     });
     const first = JSON.parse(f.bodies[0]!);
-    expect(first.toolConfig.toolChoice).toEqual({ any: {} });
+    expect(first.toolConfig.toolChoice).toEqual({ auto: {} });
     expect(first.requestMetadata).toMatchObject({
       run_id: expect.any(String),
       step_id: expect.any(String),
@@ -957,24 +1006,15 @@ describe("conversation, grounding and execution boundaries", () => {
   );
 
   it.each([
-    { kind: "data", ...content },
-    { kind: "conversation", ...content, evidenceIds: [crypto.randomUUID()] },
-    {
-      kind: "conversation",
-      ...content,
-      sections: [
-        {
-          title: "Invented",
-          body: "Unbacked",
-          stat: { value: "100%", label: "Health", tone: "good" },
-        },
-      ],
-    },
-    { kind: "conversation", ...content, html: "<script>" },
-    { kind: "conversation", summary: "x".repeat(501), sections: [] },
-    { kind: "other", ...content },
+    { kind: "data" },
+    { kind: "conversation", evidenceIds: [crypto.randomUUID()] },
+    { kind: "conversation", stat: { value: "100%", label: "Health", tone: "good" } },
+    { kind: "conversation", html: "<script>" },
+    { kind: "other" },
   ])("refuses ungrounded facts or malformed conversational presentation %#", async (input) => {
-    const f = fixture({ responses: [provider([presentation(input)])] });
+    const f = fixture({
+      responses: [provider([{ text: "Everything is healthy." }, closing(input)])],
+    });
     await expect(f.answer()).rejects.toMatchObject({ code: "ASK_INVALID_ANSWER" });
     expect(f.hooks.recordUsage).toHaveBeenCalledOnce();
     expect(McpAdapter.prototype.open).toHaveBeenCalledOnce();
@@ -1017,7 +1057,11 @@ describe("conversation, grounding and execution boundaries", () => {
       const f = fixture({
         responses: [
           provider([tool()]),
-          provider([presentation(bad ? { ...content, unknown: true } : content)]),
+          provider(
+            bad
+              ? [{ text: "Three targets." }, closing({ kind: "data", unknown: true })]
+              : [presentation()],
+          ),
         ],
       });
       const opened = await vi.mocked(McpAdapter.prototype.open).mock.results[0]?.value;

@@ -84,7 +84,11 @@ test("the chat page keeps history, drafts, evidence, search and copy, away and b
   await openAsk(page);
   await page.waitForURL(chatUrl);
   await expect(page.getByText("Three authorized fixture targets were returned.")).toBeVisible();
-  await page.locator("summary").filter({ hasText: "Sources and time window" }).click();
+  await page
+    .locator(".ask-evidence summary")
+    .filter({ hasText: /\d+ sources?/ })
+    .first()
+    .click();
   await expect(page.locator(".ask-evidence").getByText("Metrics", { exact: true })).toBeVisible();
   await expect(page.locator(".ask-evidence")).not.toContainText("e2e-metrics");
   await expect(page.getByText("<script>window.__askUnsafe=true</script>")).toBeVisible();

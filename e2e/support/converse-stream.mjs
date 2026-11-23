@@ -41,12 +41,18 @@ const event = (type, payload) =>
 /** The events Bedrock streams for one Converse response: a text block opens on
  * its first delta, a tool call has a start event and its input in two pieces. */
 export function converseStreamBody(response) {
+  return Buffer.concat(converseStreamFrames(response));
+}
+
+function converseStreamFrames(response) {
   const frames = [event("messageStart", { role: "assistant" })];
   response.output.message.content.forEach((block, index) => {
     if (typeof block.text === "string") {
-      frames.push(
-        event("contentBlockDelta", { contentBlockIndex: index, delta: { text: block.text } }),
-      );
+      // A few words a delta, as the model sends them.
+      for (const piece of block.text.match(/(?:\S+\s*){1,3}|\s+/g) ?? [""])
+        frames.push(
+          event("contentBlockDelta", { contentBlockIndex: index, delta: { text: piece } }),
+        );
     } else {
       const { input, ...start } = block.toolUse;
       const json = JSON.stringify(input);
@@ -66,13 +72,24 @@ export function converseStreamBody(response) {
   });
   frames.push(event("messageStop", { stopReason: response.stopReason }));
   if (response.usage) frames.push(event("metadata", { usage: response.usage }));
-  return Buffer.concat(frames);
+  return frames;
 }
 
-export function converseStreamResponse(response, headers = {}) {
-  return new Response(converseStreamBody(response), {
-    headers: { "content-type": "application/vnd.amazon.eventstream", ...headers },
+/** The stream as a response; `delayMs` between frames lets a browser test
+ * watch the answer arrive as it does from Bedrock. */
+export function converseStreamResponse(response, headers = {}, delayMs = 0) {
+  const init = { headers: { "content-type": "application/vnd.amazon.eventstream", ...headers } };
+  if (!delayMs) return new Response(converseStreamBody(response), init);
+  const frames = converseStreamFrames(response);
+  let index = 0;
+  const body = new ReadableStream({
+    async pull(controller) {
+      if (index >= frames.length) return controller.close();
+      if (index) await new Promise((resolve) => setTimeout(resolve, delayMs));
+      controller.enqueue(new Uint8Array(frames[index++]));
+    },
   });
+  return new Response(body, init);
 }
 
 /** A ConverseStream body read back into the Converse response it carries. */

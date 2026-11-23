@@ -81,13 +81,18 @@ server-written label (`Failure counts`, `Request log lines`, `Metric <name>`)
 and a cross when its source was unavailable. An API that reports no progress
 shows `Processing…`. The step comes from the model turns and reads the run
 already records, read on each poll of `GET /api/ask/runs/active` (every 1.5 s
-while a question runs); the run writes nothing extra for it. Under the reads,
-once the model has written the answer's summary and while it writes the
-sections, the summary shows as a draft ("Draft. The full answer replaces it
-once it is checked."): the validated answer replaces it, and a run that fails
-or stops drops it. The draft is plain text, at most the summary's 500
-characters, whole words only, credential-redacted as a stored answer is; it is
-not yet checked against the reads. Identical questions
+while a question runs); the run writes nothing extra for it. Below the status
+line the answer appears as the model writes it, with a caret, rendered as the
+saved answer is: the page reads `GET /api/ask/runs/:id/draft` every 500 ms from
+the moment the run is queued until its status is final, and reveals new text a
+few characters a frame (at once under reduced motion). A final status reloads
+the transcript at once, and the saved answer replaces the draft; a run that
+fails or stops drops it. The draft is whole words only, credential-redacted as a
+stored answer is, and not yet checked against the reads. While it streams,
+half-written Markdown is held back or closed (a table row without its closing
+`|`, a table without its separator line, an open `**` or code span), so raw
+syntax never flickers. The draft endpoint has its own limit of 240 reads a
+minute per person, apart from the dashboard's. Identical questions
 remain distinct turns. Failed delivery restores the draft; an uncertain retry
 uses the same idempotency key and context. Refreshing accepted state only reads
 the server and never resubmits the question.
@@ -162,9 +167,14 @@ below installed, on a managed deployment with Ask enabled and a valid rate card.
 ## Bounded tool execution
 
 The API runs a bounded AI SDK `ToolLoopAgent` against the existing native
-Bedrock adapter. `present_answer` is available from the first step: ordinary
-conversation, clarifications and explanations of earlier answers need no data
-read. Every paid conversational reply still has normal atomic reservation,
+Bedrock adapter, with tool choice `auto`: forced tool use would suppress the
+answer text. A step either reads (tool calls only) or answers: the answer as
+Markdown reply text, then one `present_answer` call carrying only `kind`
+(`conversation` or `data`) and the `evidenceIds` it rests on. `present_answer`
+is available from the first step: ordinary conversation, clarifications and
+explanations of earlier answers need no data read. An answer written without its
+closing call is a data answer when the run tried a read of its own, and a
+conversation reply otherwise. Every paid conversational reply still has normal atomic reservation,
 dispatch fencing and usage reconciliation. There is no question-word regex
 routing. Every turn receives the current server clock and precomputed query
 windows; the current UTC reference is explicit and never comes from an old answer or a browser identity override.
@@ -224,15 +234,13 @@ coverage. Counts do not establish an acceptable error rate or a cause without ac
 Model dispatch guards live inside the model execution boundary, not SDK
 notification callbacks. Automatic model retries and tool repair are disabled.
 A provider's complete response is locally validated before persistence and before
-it replaces the draft; only the `summary` of a `present_answer` call reaches the
-page before that, as the draft. Text preceding a valid presentation is discarded
-and never drafted. A blank heading receives a neutral label; a long summary flows into body text without dropping words, changing facts or paying for another formatting request. The model may return a concise summary alone; it is persisted as a v1-compatible reply section that the UI shows once, so rolling back keeps history readable. Data replies still require actual successful reads.
-Invented evidence references, unbacked stats, mixed final/read calls and unknown
-fields are rejected after usage is recorded. The native presentation schema
-constrains structure; the full local schema enforces size and grounding limits.
-Existing complete-JSON replies remain accepted only after full validation, with
-no second paid formatting call. Empty, partial and unavailable data remain
-distinguishable.
+it replaces the draft; the step's answer text reaches the page before that, as
+the draft. Text a step writes before a read call is withdrawn from the draft and
+is never an answer. Data replies still require actual successful reads.
+Invented evidence references, a conversation reply with sources, a closing call
+beside another call, an empty answer, one over 8,000 characters and unknown
+fields are rejected after usage is recorded. Empty, partial and unavailable data
+remain distinguishable.
 
 The system prompt tells the model where transactions and failed requests live,
 in the Transactions tab's own terms: the `relay_end` line filter
@@ -305,8 +313,15 @@ The orchestration slice owns status policy support and unavailable-data answers.
 ## Answer and execution contracts
 
 `@sr/shared` owns validated question/context/preferences/history and answer shapes,
-stable run states/error codes and response types. Model content is bounded to a
-summary and 1-8 sections, with optional points/stat. Server-authored evidence adds
+stable run states/error codes and response types. The model's answer is
+GitHub-flavored Markdown of at most 8,000 characters, kept in its own column
+(`answer_markdown` on `ask_runs` and `ask_messages`, migration
+`0015_ask_markdown`) and served as the answer's `markdown`. The stored answer
+JSON keeps the summary-and-sections shape: the server derives a plain-text
+summary (the first paragraph, at most 500 characters) and sections holding the
+whole answer (`services/ask/markdown.ts`), and never stores `markdown` in it, so
+every stored answer parses on every API version and a web without Markdown
+rendering, or a rolled-back one, still shows the whole answer as text. Server-authored evidence adds
 the actual source, operation, observation/query times, coverage and truncation.
 Each source's label is the progress list's name for its read (`readLabel` in
 `services/ask/progress.ts`, from the operation and the series or streams the
@@ -316,8 +331,10 @@ run or a chat; no stored answer carries a label, and the store drops one from an
 answer before writing it, so every stored answer parses on every API version.
 An answer stored earlier gets its labels the same way while its tool events are
 kept, and renders without them otherwise.
-No model HTML is rendered. The server validates before persistence; the draft
-summary is the one model text shown before validation, as plain text.
+The web renders the Markdown with `react-markdown` and `remark-gfm`: raw HTML
+shows as the text it is (no `rehype-raw`), and links and images render as their
+text, so no URL the model wrote is followed or fetched. The server validates
+before persistence; the draft is the one model text shown before validation.
 
 Bedrock uses [ConverseStream](https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ConverseStream.html)
 for every model step of a run (IAM action `bedrock:InvokeModelWithResponseStream`),
@@ -326,14 +343,12 @@ with a fixed server-selected region/model and explicit maxTokens. The adapter
 both CRC32 checksums verified), rebuilds the Converse response from its events
 and runs the same checks on it a buffered
 [Converse](https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_Converse.html)
-response gets; a caller with no draft consumer makes the buffered call. While a
-`present_answer` call's input arrives, `draft.ts` reads its top-level `summary`
-as far as it has arrived. Claude sends tool input one whole field at a time, so
-the summary is expected to show in one piece, before the sections finish when
-the model writes it first; an answer with no sections shows it only at the end. The worker
-writes the newest draft to `ask_runs.draft` (migration `0014_ask_draft`) at most
-every 500 ms, only under the run's current lease while it runs; every terminal
-write clears it. An exception event ends the step as a provider failure, a
+response gets; a caller with no draft consumer makes the buffered call. Each
+text delta of a step updates the draft with the step's text so far; a tool call
+other than `present_answer` withdraws it. The worker writes the newest draft to
+`ask_runs.draft` (migration `0014_ask_draft`; 8,000 characters since
+`0015_ask_markdown`) at most every 250 ms, only under the run's current lease
+while it runs; every terminal write clears it. An exception event ends the step as a provider failure, a
 stream cut before its `metadata` event leaves the step's usage uncertain, and a
 content event the adapter does not know rejects the step after its usage is
 recorded. The byte ceiling and deadline cover the whole stream. No temperature
@@ -490,9 +505,13 @@ cover. A follow-up keeps the chain and router its chat started with (chats from
 before Ask became one page may carry them) over a time of the same length that
 ends now. The composer shows no scope line.
 
-Questions use right-aligned bubbles. Structured answers render as plain text,
-with a summary, quiet numbered headings and optional compact inline stats. Copy
-feedback, answer timestamps and expandable sources follow each answer; a source
+Questions use right-aligned bubbles. Answers read as chat prose with no bubble:
+paragraphs, lists, tables (scrolling inside their frame on a narrow screen) and
+bold key figures. An answer stored without Markdown renders its summary and
+numbered sections. Under an answer, its sources sit in one pill ("2 sources ·
+Failure counts · Request counts") that opens their list; copy and the time are
+quiet until the answer is hovered or focused. Copy gives the Markdown and its
+sources. The status line shimmers while the run works. A source
 reads as Logs, Metrics or Data followed by its label ("Metrics · Failure
 counts"), with its window's day on both ends when they
 fall on different days. A source's tag says what its read returned: Cut short,

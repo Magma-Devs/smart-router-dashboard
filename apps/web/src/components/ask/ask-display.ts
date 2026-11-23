@@ -28,17 +28,21 @@ export function groupHistory(chats: AskChat[], now = new Date()) {
 }
 export function answerText(answer: AskAnswer): string {
   return [
-    answer.summary,
-    ...answerSections(answer).map((section, i) =>
-      [
-        `${i + 1}. ${section.title}`,
-        section.stat ? `${section.stat.value} — ${section.stat.label}` : "",
-        section.body,
-        ...(section.points ?? []).map((point) => `• ${point}`),
-      ]
-        .filter(Boolean)
-        .join("\n"),
-    ),
+    ...(answer.markdown
+      ? [answer.markdown]
+      : [
+          answer.summary,
+          ...answerSections(answer).map((section, i) =>
+            [
+              `${i + 1}. ${section.title}`,
+              section.stat ? `${section.stat.value} — ${section.stat.label}` : "",
+              section.body,
+              ...(section.points ?? []).map((point) => `• ${point}`),
+            ]
+              .filter(Boolean)
+              .join("\n"),
+          ),
+        ]),
     `Answered ${answer.answeredAt}`,
     ...answer.evidence.map(
       (item) =>

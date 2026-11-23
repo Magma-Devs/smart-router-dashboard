@@ -12,6 +12,8 @@ export const ASK_LIMITS = Object.freeze({
   point: 500,
   evidence: 32,
   pageSize: 50,
+  /** An answer's Markdown text, and its draft while the model writes it. */
+  markdown: 8000,
 });
 
 const text = (max: number) => z.string().trim().min(1).max(max);
@@ -93,6 +95,11 @@ export const askAnswerSchema = askAnswerContentSchema
     contractVersion: z.literal(ASK_CONTRACT_VERSION),
     answeredAt: instant,
     evidence: z.array(askEvidenceSchema).max(ASK_LIMITS.evidence),
+    /** The answer as the model wrote it, Markdown rendered as text: no HTML,
+     * images or links. The API serves it from its own column; a stored answer
+     * never carries it, so every API version parses every stored answer, and
+     * `summary` and `sections` hold the same text for a web without it. */
+    markdown: z.string().trim().min(1).max(ASK_LIMITS.markdown).optional(),
   })
   .strict();
 export type AskAnswer = z.infer<typeof askAnswerSchema>;
@@ -171,13 +178,18 @@ export interface AskRunRead {
   label: string;
   ok: boolean;
 }
+/** `GET /api/ask/runs/:id/draft`: one indexed read, polled while a run runs. */
+export interface AskRunDraft {
+  status: AskRunStatus;
+  draft: string | null;
+}
 export interface AskRunProgress {
   step: AskRunStep;
   /** Every read the run has finished, oldest first. */
   reads: AskRunRead[];
-  /** The answer's summary while the model writes the rest: credential-redacted
+  /** The answer's Markdown text as the model writes it: credential-redacted
    * but not yet validated. The validated answer replaces it; a run that fails
-   * drops it. Plain text. */
+   * drops it. */
   draft?: string;
 }
 export interface AskChatDetail {
