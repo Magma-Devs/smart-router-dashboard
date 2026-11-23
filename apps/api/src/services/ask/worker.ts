@@ -16,6 +16,9 @@ export interface AskWorkerOptions {
   fetchImpl?: typeof fetch;
   /** `error`, when given, is logged by its class and code only. */
   onError?: (code: string, error?: unknown) => void;
+  /** A run ended in `failure`; `cause` is what was thrown, when that was not
+   * the failure itself. Called once per failed run, before its terminal write. */
+  failed?: (runId: string, failure: AskFailure, cause?: unknown) => void;
 }
 
 /** The fewest milliseconds between two draft writes of one run. */
@@ -270,6 +273,7 @@ export class AskWorker {
           : error instanceof AskFailure
             ? error
             : new AskFailure("ASK_UNAVAILABLE");
+      this.options.failed?.(run.id, failure, error === failure ? undefined : error);
       await quiesce();
       await this.store
         .fail(run.id, run.leaseToken!, failure.code)

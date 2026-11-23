@@ -142,6 +142,62 @@ function expectNoSecrets(lines: string[]) {
 }
 
 describe("API runtime accounting/worker wiring", () => {
+  it("logs a failed run once, with its code and the check that refused the answer, and no text", async () => {
+    vi.spyOn(BedrockAdapter.prototype, "converse").mockImplementation(async (_input, options) => {
+      await options.onDispatch();
+      const usage = { inputTokens: 10, outputTokens: 5, totalTokens: 15 };
+      const receipt = { requestId: "rejected-receipt", providerStatus: 200 };
+      await options.onUsage(usage, receipt);
+      return {
+        message: {
+          role: "assistant",
+          content: [
+            { text: "SECRET-ANSWER-TEXT everything is healthy" },
+            {
+              toolUse: {
+                toolUseId: "reply",
+                name: "present_answer",
+                input: { kind: "conversation", evidenceIds: [crypto.randomUUID()] },
+              },
+            },
+          ],
+        },
+        stopReason: "tool_use",
+        usage,
+        receipt,
+        model: "anthropic.fixture",
+        region: "us-east-1",
+      };
+    });
+    vi.spyOn(McpPool.prototype, "open").mockRejectedValue(new AskFailure("ASK_MCP_UNAVAILABLE"));
+    const lines: string[] = [];
+    const runtime = await boot(lines);
+    await vi.waitFor(() => expect(runtime.ready()).toBe(true));
+    const chat = (await request("/chats", {})).json() as { id: string };
+    const run = (
+      await request(`/chats/${chat.id}/runs`, {
+        idempotencyKey: crypto.randomUUID(),
+        question: "hi",
+      })
+    ).json() as { id: string };
+    await vi.waitFor(
+      async () => expect((await request(`/runs/${run.id}`)).json().status).toBe("failed"),
+      { timeout: 3000 },
+    );
+    const failed = lines
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .filter((line) => line.msg === "Ask run failed");
+    expect(failed).toEqual([
+      expect.objectContaining({
+        level: 40,
+        runId: run.id,
+        code: "ASK_INVALID_ANSWER",
+        reason: "conversation_with_sources",
+      }),
+    ]);
+    expect(lines.join("")).not.toContain("SECRET-ANSWER-TEXT");
+  });
+
   it("shows the answer text while the model writes, then only the validated answer", async () => {
     let release!: () => void;
     const held = new Promise<void>((resolve) => (release = resolve));

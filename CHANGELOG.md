@@ -5,6 +5,16 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.82.0]
+
+### Added
+
+- Every failed Ask run logs one line, `Ask run failed`, with its run id and
+  code; an answer the server refused names the check that refused it
+  (`reason`, a fixed list in docs/ASK-YOUR-DATA.md), and any other failure
+  names the class and code of what was thrown. No answer text, tool input or
+  evidence id is logged. A failed run was not logged before.
+
 ## [0.81.0]
 
 ### Changed

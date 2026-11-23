@@ -398,16 +398,16 @@ export class BedrockAdapter {
       .safeParse(typeof raw === "object" && raw !== null && "usage" in raw ? raw.usage : undefined);
     await options.onUsage(usage.success ? usage.data : null, receipt);
     if (!usage.success && typeof raw === "object" && raw !== null && "usage" in raw)
-      throw new AskFailure("ASK_INVALID_ANSWER", 502);
+      throw new AskFailure("ASK_INVALID_ANSWER", 502, "bad_usage");
     const parsed = responseSchema.safeParse(raw);
-    if (!parsed.success) throw new AskFailure("ASK_INVALID_ANSWER", 502);
+    if (!parsed.success) throw new AskFailure("ASK_INVALID_ANSWER", 502, "malformed_response");
     if (
       parsed.data.stopReason === "max_tokens" ||
       parsed.data.stopReason === "model_context_window_exceeded"
     )
       throw new AskFailure("ASK_TRUNCATED", 502);
     if (parsed.data.stopReason !== "end_turn" && parsed.data.stopReason !== "tool_use")
-      throw new AskFailure("ASK_INVALID_ANSWER", 502);
+      throw new AskFailure("ASK_INVALID_ANSWER", 502, "unexpected_stop");
     return {
       message: parsed.data.output.message,
       stopReason: parsed.data.stopReason,

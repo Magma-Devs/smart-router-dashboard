@@ -316,17 +316,20 @@ describe("bounded customer tool orchestration", () => {
     expect(f.fetchImpl).toHaveBeenCalledTimes(2);
   });
   it.each([
-    [presentation(), tool()],
-    [presentation(), presentation()],
-    [{ text: "Three targets." }, closing({ kind: "data", note: "extra" })],
-    [{ text: "Three targets." }, closing({ kind: "report" })],
-    [closing({ kind: "data" })],
-    [{ text: "x".repeat(8001) }, closing({ kind: "data" })],
-  ])(
-    "rejects mixed presentation or invalid arguments without another MCP or model call",
-    async (...blocks) => {
-      const f = fixture({ responses: [provider([tool()]), provider(blocks)] });
-      await expect(f.answer()).rejects.toMatchObject({ code: "ASK_INVALID_ANSWER" });
+    [[presentation(), tool()], "closing_call_not_alone"],
+    [[presentation(), presentation()], "too_many_tool_calls"],
+    [
+      [{ text: "Three targets." }, closing({ kind: "data", note: "extra" })],
+      "invalid_closing_call",
+    ],
+    [[{ text: "Three targets." }, closing({ kind: "report" })], "invalid_closing_call"],
+    [[closing({ kind: "data" })], "empty_answer"],
+    [[{ text: "x".repeat(8001) }, closing({ kind: "data" })], "answer_too_long"],
+  ] as const)(
+    "rejects mixed presentation or invalid arguments (%#: %s) without another MCP or model call",
+    async (blocks, reason) => {
+      const f = fixture({ responses: [provider([tool()]), provider([...blocks])] });
+      await expect(f.answer()).rejects.toMatchObject({ code: "ASK_INVALID_ANSWER", reason });
       expect(f.call.mock.calls.filter(([call]) => call.name === "execute_operation")).toHaveLength(
         1,
       );
@@ -1006,19 +1009,25 @@ describe("conversation, grounding and execution boundaries", () => {
   );
 
   it.each([
-    { kind: "data" },
-    { kind: "conversation", evidenceIds: [crypto.randomUUID()] },
-    { kind: "conversation", stat: { value: "100%", label: "Health", tone: "good" } },
-    { kind: "conversation", html: "<script>" },
-    { kind: "other" },
-  ])("refuses ungrounded facts or malformed conversational presentation %#", async (input) => {
-    const f = fixture({
-      responses: [provider([{ text: "Everything is healthy." }, closing(input)])],
-    });
-    await expect(f.answer()).rejects.toMatchObject({ code: "ASK_INVALID_ANSWER" });
-    expect(f.hooks.recordUsage).toHaveBeenCalledOnce();
-    expect(McpAdapter.prototype.open).toHaveBeenCalledOnce();
-  });
+    [{ kind: "data" }, "data_without_reads"],
+    [{ kind: "conversation", evidenceIds: [crypto.randomUUID()] }, "conversation_with_sources"],
+    [
+      { kind: "conversation", stat: { value: "100%", label: "Health", tone: "good" } },
+      "invalid_closing_call",
+    ],
+    [{ kind: "conversation", html: "<script>" }, "invalid_closing_call"],
+    [{ kind: "other" }, "invalid_closing_call"],
+  ] as const)(
+    "refuses ungrounded facts or malformed conversational presentation %#",
+    async (input, reason) => {
+      const f = fixture({
+        responses: [provider([{ text: "Everything is healthy." }, closing(input)])],
+      });
+      await expect(f.answer()).rejects.toMatchObject({ code: "ASK_INVALID_ANSWER", reason });
+      expect(f.hooks.recordUsage).toHaveBeenCalledOnce();
+      expect(McpAdapter.prototype.open).toHaveBeenCalledOnce();
+    },
+  );
 
   it("does not invent evidence references after a legitimate data read", async () => {
     const f = fixture({
@@ -1027,7 +1036,10 @@ describe("conversation, grounding and execution boundaries", () => {
         provider([presentation({ kind: "data", ...content, evidenceIds: [crypto.randomUUID()] })]),
       ],
     });
-    await expect(f.answer()).rejects.toMatchObject({ code: "ASK_INVALID_ANSWER" });
+    await expect(f.answer()).rejects.toMatchObject({
+      code: "ASK_INVALID_ANSWER",
+      reason: "unknown_evidence",
+    });
     expect(f.hooks.recordTool).toHaveBeenCalledOnce();
     expect(f.hooks.recordUsage).toHaveBeenCalledTimes(2);
   });

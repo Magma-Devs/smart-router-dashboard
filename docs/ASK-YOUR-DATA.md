@@ -242,6 +242,31 @@ beside another call, an empty answer, one over 8,000 characters and unknown
 fields are rejected after usage is recorded. Empty, partial and unavailable data
 remain distinguishable.
 
+Every failed run logs one line, `Ask run failed`, with its `runId` and `code`
+(info for `ASK_CANCELLED` and `ASK_INTERRUPTED`, warn otherwise). An answer the
+server refused adds `reason`, the check that refused it; a failure that was not
+an Ask failure adds the thrown error's class and code. No answer text, tool
+input or evidence id is logged.
+
+| `reason` | The check that refused the answer |
+| --- | --- |
+| `bad_usage` | the provider's usage block does not parse |
+| `malformed_response` | the response is not a Converse message, or its stream carried content the adapter does not know |
+| `unexpected_stop` | a stop reason other than `end_turn` or `tool_use` |
+| `answer_tool_unavailable` | `present_answer` was called on a step that did not offer it |
+| `unknown_content` | a content block that is neither text nor a tool call |
+| `history_mismatch` | the earlier turns sent do not match the chat's history |
+| `too_many_tool_calls` | more than four tool calls in one step, or a repeated call id |
+| `closing_call_not_alone` | `present_answer` beside another tool call |
+| `invalid_closing_call` | `present_answer` input other than `kind` and `evidenceIds` |
+| `conversation_with_sources` | a conversation reply that cites or carries a source |
+| `data_without_reads` | a data answer with no read behind it |
+| `unknown_evidence` | an evidence id that no read of the run returned, or one cited twice |
+| `empty_answer` | no answer text |
+| `answer_too_long` | answer text over 8,000 characters |
+| `answer_contract` | the stored-answer shape derived from the text fails its schema |
+| `stored_contract` | an answer handed to the store fails its schema |
+
 The system prompt tells the model where transactions and failed requests live,
 in the Transactions tab's own terms: the `relay_end` line filter
 (`TX_EVENT_FILTER`), the recorded per-minute counts
