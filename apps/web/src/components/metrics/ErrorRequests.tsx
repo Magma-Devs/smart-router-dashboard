@@ -185,7 +185,7 @@ export function statusOf(r: ErrorRequestRow): BreakdownProps["status"] {
 }
 
 /** An opened row: the request, every try, and the response to the client, in plain words. */
-/** An opened row: the request, every try, and the response - the Find a request tab shows it too. */
+/** An opened row: the request, every try, and the response. */
 export function Details({ row }: { row: ErrorRequestRow }) {
   const replied = row.attempts.find((a) => a.replied);
   const final: FinalAnswer =

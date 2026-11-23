@@ -5,6 +5,17 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.84.0]
+
+### Removed
+
+- The top bar's "Find a request" search box and the Metrics page's "Find a
+  request" tab. The Metrics page has four tabs: Overview, Upstreams, Errors and
+  Transactions. The Errors and Transactions tabs keep their own request look-up
+  box and their `?request=<id>` links; a link with `tab=request` opens the
+  Overview.
+- The `search` usage event and the `request` value of a usage event's `tab`.
+
 ## [0.83.0]
 
 ### Fixed

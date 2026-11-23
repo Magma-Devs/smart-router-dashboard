@@ -34,7 +34,7 @@ const MIXPANEL = CONFIG.apiHost;
 /** Where the signed-in person's answer is kept: per account, per consent version. */
 const KEY = `sr:usage-consent:2:${CONFIG.viewer.id}`;
 const answer = (page: Page, key = KEY) => page.evaluate((k) => localStorage.getItem(k), key);
-/** Typed into the top bar's look-up: it must never reach Mixpanel's events. */
+/** A caller's own request ID in a look-up link: it must never reach Mixpanel's events. */
 const TYPED = "john-smith-order-42";
 
 interface Sent {
@@ -181,15 +181,15 @@ test("nothing reaches Mixpanel until Accept; then it records, redacted and repla
   expect(first.$current_url).toMatch(/^http:\/\/localhost:3000\/account$/);
   expect((await sdkTraces(page)).chunks.length, "the SDK is its own chunk, loaded now").toBeGreaterThan(0);
 
-  // A look-up typed in the top bar: its URL carries what was typed, the events carry :id.
-  await page.getByLabel("Find a request").fill(TYPED);
-  await page.getByLabel("Find a request").press("Enter");
-  await page.waitForURL(new RegExp(`request=${TYPED}`));
-  await expect.poll(() => named(sent, "search").length, { timeout: 15_000 }).toBeGreaterThan(0);
-  const search = named(sent, "search")[0]!.properties;
-  expect(search).toMatchObject({ kind: "other", from: "top-bar", tenant: "e2e-tenant" });
-  expect(search.$current_url).toMatch(/[?&]request=:id(&|$)/);
-  expect(search.$current_url).toMatch(/[?&]tab=request(&|$)/);
+  // A shared look-up link: its URL carries the request, the events carry :id.
+  await page.goto(`/metrics?tab=errors&request=${TYPED}`);
+  const metricsViews = () => named(sent, "$mp_web_page_view").filter((e) => e.properties.current_url_path === "/metrics");
+  await expect.poll(() => metricsViews().length, { timeout: 15_000 }).toBeGreaterThan(0);
+  const looked = metricsViews()[0]!.properties;
+  expect(looked).toMatchObject({ tenant: "e2e-tenant" });
+  expect(looked.$current_url).toMatch(/[?&]request=:id(&|$)/);
+  expect(looked.$current_url).toMatch(/[?&]tab=errors(&|$)/);
+  expect(JSON.stringify(sent), "an event carried the request").not.toContain(TYPED);
 
   // A client-side navigation is a page view of its own, without a page load.
   await page.evaluate(() => { (window as unknown as { __samePage: boolean }).__samePage = true; });
@@ -267,7 +267,7 @@ test("a replay upload is scrubbed before it leaves the browser: no typed value, 
   const { sent } = await withUsageOn(page);
   await signInThroughUi(page, operator);
   // A shared look-up link, and an explorer link of the kind the request tables render.
-  await page.goto(`/metrics?tab=request&request=${TYPED}`);
+  await page.goto(`/metrics?tab=errors&request=${TYPED}`);
   await expect(page.getByRole("region", { name: "Cookies & analytics" })).toBeVisible();
   await page.evaluate(({ hash, guid, title }) => {
     const a = document.createElement("a");

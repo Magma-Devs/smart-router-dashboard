@@ -3,19 +3,23 @@ import { cleanUsageProps, isUsageEventName, USAGE_EVENT_NAMES, USAGE_VIEWS, usag
 
 describe("cleanUsageProps", () => {
   it("keeps the fields the catalog allows, in their form", () => {
-    expect(cleanUsageProps("search", { kind: "hash", from: "top-bar", result: "found", seconds: 4.26, older: false }))
-      .toEqual({ kind: "hash", from: "top-bar", result: "found", seconds: 4.3, older: false });
+    expect(cleanUsageProps("view_ready", { page: "metrics", tab: "errors", seconds: 4.26, reads: 3, failed: 0 }))
+      .toEqual({ page: "metrics", tab: "errors", seconds: 4.3, reads: 3, failed: 0 });
+    expect(cleanUsageProps("ask_question", { view: "panel", page: "metrics", new_chat: false, chain: true }))
+      .toEqual({ view: "panel", page: "metrics", new_chat: false, chain: true });
     expect(cleanUsageProps("chain_pick", { chain: "ETH1", from: "list" })).toEqual({ chain: "ETH1", from: "list" });
     expect(cleanUsageProps("time_range_change", { from: "30m", to: "1d" })).toEqual({ from: "30m", to: "1d" });
   });
 
   it("drops a field the catalog doesn't list - an ID, typed text, a user", () => {
-    expect(cleanUsageProps("search", { kind: "hash", value: "0xabc", email: "a@b.c", request: "7708800000000000042" }))
-      .toEqual({ kind: "hash" });
+    expect(cleanUsageProps("row_open", { list: "errors", value: "0xabc", email: "a@b.c", request: "7708800000000000042" }))
+      .toEqual({ list: "errors" });
   });
 
   it("drops a value not in its field's form", () => {
-    expect(cleanUsageProps("search", { kind: "0xabc", seconds: -1, older: "yes" })).toEqual({});
+    expect(cleanUsageProps("view_ready", { page: "0xabc", seconds: -1, reads: "3" })).toEqual({});
+    expect(cleanUsageProps("ask_question", { new_chat: "yes" })).toEqual({});
+    expect(cleanUsageProps("tab_change", { from: "metrics", to: "request" })).toEqual({ from: "metrics" });
     expect(cleanUsageProps("chain_pick", { chain: "eth1; drop", from: "somewhere" })).toEqual({});
     expect(cleanUsageProps("time_range_change", { from: "2h", to: "1d" })).toEqual({ to: "1d" });
     expect(cleanUsageProps("view_ready", { seconds: 1e9, reads: 3.6 })).toEqual({ seconds: 86_400, reads: 4 });
@@ -41,7 +45,7 @@ describe("cleanUsageProps", () => {
     expect([...USAGE_EVENT_NAMES].sort()).toEqual([
       "ask_answer", "ask_question",
       "chain_pick", "filter_use", "help_open", "idle_paused", "load_older", "panel_open", "router_pick",
-      "row_open", "search", "tab_change", "time_range_change", "view_problem", "view_ready",
+      "row_open", "tab_change", "time_range_change", "view_problem", "view_ready",
     ]);
   });
 

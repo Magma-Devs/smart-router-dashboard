@@ -110,7 +110,7 @@ api checks. Without them everything works, only slower on long windows.
 ## Pages
 
 - **Upstreams** - the mounted config joined with live per-endpoint stats, carved three ways: **by chain** (who serves it - the default), by router (the endpoints each router publishes), or by upstream (what it serves)
-- **Metrics** - five tabs: Overview, Upstreams, Errors, Transactions, Find a request (one request by its ID, its transaction hash or your own request ID - answered or not; the top bar's search box opens it from any page). The look-up, the Transactions tab and the Errors tab's request list read the router's logs from Loki (`LOKI_URL`; the `logs` profile runs one)
+- **Metrics** - four tabs: Overview, Upstreams, Errors, Transactions. The Transactions tab and the Errors tab's request list, and the request look-up box each carries, read the router's logs from Loki (`LOKI_URL`; the `logs` profile runs one)
 - **Live test** — POST to the router from the dashboard's server, or from the browser with `ROUTER_RELAY_ENABLED=false` ([`docs/ROUTER-RELAY.md`](docs/ROUTER-RELAY.md)); full per-chain method catalog with archive/debug/trace/blockbook tiers
 - **/standalone** — the Metrics page without the shell, for sharing or embedding
 

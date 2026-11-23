@@ -1,7 +1,7 @@
 /**
  * The dashboard's own usage events (MAG-5373): what Mixpanel's autocapture
- * cannot see - a chain or a time range picked, what kind of value a look-up
- * was for and what it found, how long a view took to have its data. The web
+ * cannot see - a chain or a time range picked, a row opened, how long a view
+ * took to have its data. The web
  * sends them through Mixpanel's browser SDK beside the clicks, page views and
  * session replays the SDK records itself, every one cleaned here first.
  *
@@ -14,7 +14,7 @@
 import { WINDOWS } from "./windows.js";
 
 export const USAGE_PAGES = ["metrics", "upstreams", "team", "audit", "account", "standalone", "ask", "other"] as const;
-export const USAGE_TABS = ["metrics", "upstreams", "errors", "transactions", "request", "none"] as const;
+export const USAGE_TABS = ["metrics", "upstreams", "errors", "transactions", "none"] as const;
 const LISTS = ["errors", "transactions"] as const;
 /** The page an Ask question was asked about (`AskPageContext.page`). */
 const ASK_PAGES = ["overview", "dashboard", "metrics", "upstreams", "ask"] as const;
@@ -52,14 +52,6 @@ export const USAGE_EVENTS = {
   chain_pick: { chain: "chain", from: ["list", "router-row", "cleared"] },
   router_pick: { from: ["list"] },
   time_range_change: { from: "window", to: "window" },
-  /** A look-up answered: what kind of value, where it was typed, what came back. */
-  search: {
-    kind: ["request-id", "old-request-id", "hash", "other"],
-    from: ["top-bar", "request-tab", "link"],
-    result: ["found", "not-found", "stopped-early", "error", "unavailable"],
-    seconds: "seconds",
-    older: "bool",
-  },
   row_open: {
     list: LISTS,
     result: ["recovered", "error-reply", "failed", "write-unknown", "unknown", "ok", "accepted", "rejected", "failed-on-chain"],

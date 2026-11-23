@@ -4,7 +4,6 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { auditLocationSearch } from "@/components/audit/audit-location";
 import { REQUEST_PARAM } from "../request-in-url";
-import { requestSearchUrl } from "../request-search";
 import {
   redactPath,
   redactProfileUpdate,
@@ -71,8 +70,8 @@ describe("an Ask address", () => {
 
 describe("a query", () => {
   it("keeps a value only when it is from a fixed set, names the rest :id, and drops unknown keys", () => {
-    expect(redactSearch("?tab=request&request=0xabc&window=1d&chain=ETH1&router=r-1&upstream=node-a&foo=bar"))
-      .toBe("?tab=request&request=:id&window=1d&chain=ETH1&router=:id&upstream=:id");
+    expect(redactSearch("?tab=errors&request=0xabc&window=1d&chain=ETH1&router=r-1&upstream=node-a&foo=bar"))
+      .toBe("?tab=errors&request=:id&window=1d&chain=ETH1&router=:id&upstream=:id");
     expect(redactSearch("?tab=john-smith&window=7y&chain=NOT_A_CHAIN&upstreamChain=ETH1")).toBe("?tab=:id&window=:id&chain=:id&upstreamChain=ETH1");
     expect(redactSearch("?window=24h")).toBe("?window=24h");
     expect(redactSearch("group=accounts&actor=ops%40client.example&target=ep_8143&size=100&older=eyJjdXJzb3IiOiIxMjMifQ&page=3"))
@@ -85,8 +84,6 @@ describe("a query", () => {
   it("lists every key the dashboard writes into its URLs", () => {
     const listed = new Set([...Object.keys(USAGE_FIXED_PARAMS), ...USAGE_OPAQUE_PARAMS]);
     const written = new Set<string>([...VIEW_KEYS, REQUEST_PARAM, "chain", "router", "tab"]);
-    const metrics = new URL(requestSearchUrl("0xabc", { chain: "ETH1", router: "r-1" }), ORIGIN);
-    for (const k of metrics.searchParams.keys()) written.add(k);
     const audit = auditLocationSearch({
       filters: { group: "accounts", actor: "a@b.c", targetId: "ep_1", from: "2026-11-01", to: "2026-11-02" },
       size: 100,
@@ -99,8 +96,8 @@ describe("a query", () => {
 
 describe("a URL", () => {
   it("of the dashboard keeps its route and fixed-set values, absolute or relative, without the fragment", () => {
-    expect(redactUrl(`${ORIGIN}${requestSearchUrl("john-smith-order-42", { chain: "ETH1", router: "r-1" })}`, ORIGIN))
-      .toBe(`${ORIGIN}/metrics?chain=ETH1&router=:id&tab=request&request=:id`);
+    expect(redactUrl(`${ORIGIN}/metrics?chain=ETH1&router=r-1&tab=errors&request=john-smith-order-42`, ORIGIN))
+      .toBe(`${ORIGIN}/metrics?chain=ETH1&router=:id&tab=errors&request=:id`);
     expect(redactUrl("/metrics?chain=ETH1&tab=upstreams&upstream=node-a.provider.example", ORIGIN)).toBe("/metrics?chain=ETH1&tab=upstreams&upstream=:id");
     expect(redactUrl(`${ORIGIN}/invite/invite-token-9f8e7d#0xabc`, ORIGIN)).toBe(`${ORIGIN}/invite/:id`);
   });
@@ -124,7 +121,7 @@ function clickOnHashLink(secret: string): Record<string, unknown> {
   return {
     token: "project-token",
     distinct_id: "6f1e0c2a9b8d7e6f5a4b3c2d1e0f9a8b",
-    $current_url: `${ORIGIN}/metrics?tab=request&request=${encodeURIComponent(secret)}#${encodeURIComponent(secret)}`,
+    $current_url: `${ORIGIN}/metrics?tab=errors&request=${encodeURIComponent(secret)}#${encodeURIComponent(secret)}`,
     $referrer: `${ORIGIN}/audit?actor=${encodeURIComponent(secret)}`,
     $initial_referrer: `https://mail.example/inbox/${encodeURIComponent(secret)}`,
     $pathname: `/invite/${encodeURIComponent(secret)}`,
@@ -145,7 +142,7 @@ function clickOnHashLink(secret: string): Record<string, unknown> {
         "$attr-title": `${secret} - on the chain's explorer`,
         "$attr-aria-label": `Copy ${secret}`,
       },
-      { $tag_name: "div", $classes: ["gw-app"], $id: "gw-request-search", $nth_child: 2, $nth_of_type: 1, "$attr-role": "row" },
+      { $tag_name: "div", $classes: ["gw-app"], $id: "gw-consent-title", $nth_child: 2, $nth_of_type: 1, "$attr-role": "row" },
     ],
     // mixpanel-browser 2.86.0 (src/autocapture/utils.js) repeats the clicked
     // element as `$target` and lifts its id to `$el_id`.
@@ -181,7 +178,7 @@ describe("an event's properties", () => {
     expect(out).toMatchObject({
       token: "project-token",
       distinct_id: "6f1e0c2a9b8d7e6f5a4b3c2d1e0f9a8b",
-      $current_url: `${ORIGIN}/metrics?tab=request&request=:id`,
+      $current_url: `${ORIGIN}/metrics?tab=errors&request=:id`,
       $referrer: `${ORIGIN}/audit?actor=:id`,
       $initial_referrer: "https://mail.example",
       $pathname: "/invite/:id",
@@ -196,7 +193,7 @@ describe("an event's properties", () => {
     expect(out).not.toHaveProperty("$el_attr__data_id");
     expect(out.$elements).toEqual([
       { $tag_name: "a", $classes: ["gw-mono"], $nth_child: 1, $nth_of_type: 1, "$attr-href": "https://etherscan.io" },
-      { $tag_name: "div", $classes: ["gw-app"], $id: "gw-request-search", $nth_child: 2, $nth_of_type: 1, "$attr-role": "row" },
+      { $tag_name: "div", $classes: ["gw-app"], $id: "gw-consent-title", $nth_child: 2, $nth_of_type: 1, "$attr-role": "row" },
     ]);
     expect(out.$target).toEqual({ $tag_name: "a", $classes: ["gw-mono"], $nth_child: 1, $nth_of_type: 1, "$attr-href": "/metrics?request=:id" });
     expect(out).not.toHaveProperty("$el_id");
@@ -204,15 +201,15 @@ describe("an event's properties", () => {
   });
 
   it("keep a clicked element's id only when it is one of our own static ids", () => {
-    const own = redactUsageProps({ $el_id: "gw-request-search", $target: { $tag_name: "button", $id: "gw-request-search" } }, ORIGIN);
-    expect(own).toEqual({ $el_id: "gw-request-search", $target: { $tag_name: "button", $id: "gw-request-search" } });
+    const own = redactUsageProps({ $el_id: "gw-consent-title", $target: { $tag_name: "button", $id: "gw-consent-title" } }, ORIGIN);
+    expect(own).toEqual({ $el_id: "gw-consent-title", $target: { $tag_name: "button", $id: "gw-consent-title" } });
     expect(redactUsageProps({ $el_id: "row-7708800000000000042", $target: null }, ORIGIN)).toEqual({ $target: null });
   });
 
   it("are redacted the same way through the send hook's payload", () => {
     const sent = redactUsageEvent({ event: "$mp_click", properties: clickOnHashLink("0xabc") }, ORIGIN);
     expect(sent.event).toBe("$mp_click");
-    expect(sent.properties.$current_url).toBe(`${ORIGIN}/metrics?tab=request&request=:id`);
+    expect(sent.properties.$current_url).toBe(`${ORIGIN}/metrics?tab=errors&request=:id`);
   });
 });
 
