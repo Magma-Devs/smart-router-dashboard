@@ -8,10 +8,23 @@ import { z } from "zod";
 import type { AskSettings } from "../../config.js";
 import { AskFailure, abortFailure } from "./errors.js";
 import { boundedFetch } from "./http.js";
-import { hasBoundedAskQuery } from "./query-bounds.js";
+import {
+  hasBoundedAskQuery,
+  LOGS_LOOKBACK_SECONDS,
+  METRICS_LOOKBACK_SECONDS,
+} from "./query-bounds.js";
 
 const identifier = z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/);
-const query = z.string().min(1).max(16_000).refine(hasBoundedAskQuery);
+const metricsQuery = z
+  .string()
+  .min(1)
+  .max(16_000)
+  .refine((q) => hasBoundedAskQuery(q, METRICS_LOOKBACK_SECONDS));
+const logsQuery = z
+  .string()
+  .min(1)
+  .max(16_000)
+  .refine((q) => hasBoundedAskQuery(q, LOGS_LOOKBACK_SECONDS));
 const timestamp = z.number().finite().nonnegative();
 const windowShape = { start: timestamp, end: timestamp };
 const rangeValid = (p: { start: number; end: number }) =>
@@ -25,12 +38,12 @@ const limit = z.number().int().min(1).max(1000).optional();
 const readPolicy: Record<string, { kinds: string[]; parameters: z.ZodType }> = {
   "metrics.query": {
     kinds: ["mimir", "prometheus"],
-    parameters: z.object({ query, time: timestamp.optional() }).strict(),
+    parameters: z.object({ query: metricsQuery, time: timestamp.optional() }).strict(),
   },
   "metrics.query_range": {
     kinds: ["mimir", "prometheus"],
     parameters: z
-      .object({ query, ...windowShape, step: z.number().min(1).max(86_400) })
+      .object({ query: metricsQuery, ...windowShape, step: z.number().min(1).max(86_400) })
       .strict()
       .refine((p) => rangeValid(p) && (p.end - p.start) / p.step <= 11_000),
   },
@@ -45,7 +58,7 @@ const readPolicy: Record<string, { kinds: string[]; parameters: z.ZodType }> = {
   "metrics.series": {
     kinds: ["mimir", "prometheus"],
     parameters: z
-      .object({ match: z.array(query).min(1).max(10), ...windowShape })
+      .object({ match: z.array(metricsQuery).min(1).max(10), ...windowShape })
       .strict()
       .refine(rangeValid),
   },
@@ -55,13 +68,13 @@ const readPolicy: Record<string, { kinds: string[]; parameters: z.ZodType }> = {
   },
   "logs.query": {
     kinds: ["loki"],
-    parameters: z.object({ query, time: timestamp.optional(), limit }).strict(),
+    parameters: z.object({ query: logsQuery, time: timestamp.optional(), limit }).strict(),
   },
   "logs.query_range": {
     kinds: ["loki"],
     parameters: z
       .object({
-        query,
+        query: logsQuery,
         ...windowShape,
         limit,
         direction: z.enum(["forward", "backward"]).optional(),
@@ -81,7 +94,7 @@ const readPolicy: Record<string, { kinds: string[]; parameters: z.ZodType }> = {
   "logs.series": {
     kinds: ["loki"],
     parameters: z
-      .object({ match: z.array(query).min(1).max(10), ...windowShape })
+      .object({ match: z.array(logsQuery).min(1).max(10), ...windowShape })
       .strict()
       .refine(rangeValid),
   },

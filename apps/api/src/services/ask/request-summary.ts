@@ -3,6 +3,24 @@ import { RECORDED_OUTCOMES } from "../error-requests.js";
 import { FAILED_PIPELINE, PARSED_PIPELINE, RELAY_END } from "../relay-end.js";
 import { TX_EVENT_FILTER } from "../transactions.js";
 import { LOG_PIPELINE, RECORDED_TX } from "../transactions-over-time.js";
+import { RECORDED, RECORDED_INTERVAL_SECONDS } from "@sr/shared";
+
+/** The longest window a count from the recorded series or the provider counters may cover. */
+export const MAX_COUNT_SECONDS = 30 * 86_400;
+/** The longest window a raw read may cover: log lines, and the per-customer counters. */
+export const MAX_RAW_SECONDS = 86_400;
+/** What a refused window tells the model, which then reads again. */
+export const WINDOW_REFUSED = `The window must be ordered, end at most 5 minutes from now and span at most ${MAX_COUNT_SECONDS / 86_400} days for counts, ${MAX_RAW_SECONDS / 3600} hours for per-customer counts and request samples. Read again with a shorter window, or several consecutive ones.`;
+/** How far back the fleet's stores answer (devops-magmadevs: smart-router-fleet-loki
+ * `retention_period`, smart-router-fleet-mimir's query contract). */
+export const LOG_RETENTION_DAYS = 45;
+export const METRICS_RETENTION_DAYS = 90;
+
+/** The per-provider counter of node-error replies: an answered relay whose reply is an RPC error. */
+export const PROVIDER_NODE_ERRORS = "smartrouter_node_errors_total";
+
+/** An ISO 8601 time, which the server turns into Unix seconds; one without a zone is UTC. */
+const isoTime = z.iso.datetime({ offset: true, local: true });
 
 /** The router's log lines at warn or error, counted once a minute by the fleet's Loki ruler. */
 export const RECORDED_WARN_ERROR = "smartrouter_warn_error_lines:count1m";
@@ -34,7 +52,7 @@ const METHOD_PREFIX = /^[A-Za-z0-9_/]{1,64}$/;
 
 export const requestSummaryInput = z
   .object({
-    measure: z.enum(["requests", "transactions", "errors", "customers"]).optional(),
+    measure: z.enum(["requests", "transactions", "errors", "customers", "providers"]).optional(),
     sourceId: z
       .string()
       .regex(/^[a-z0-9][a-z0-9_-]{0,63}$/)
@@ -47,17 +65,38 @@ export const requestSummaryInput = z
     methodPrefixes: z.array(z.string().regex(METHOD_PREFIX)).min(1).max(8).optional(),
     start: z.number().int().nonnegative().optional(),
     end: z.number().int().nonnegative().optional(),
+    from: isoTime.optional(),
+    to: isoTime.optional(),
   })
   .strict()
-  .refine(
-    (input) => input.start === undefined || input.end === undefined || input.start < input.end,
-  )
+  .refine((input) => !(input.start !== undefined && input.from !== undefined), {
+    message: "give start or from, not both",
+  })
+  .refine((input) => !(input.end !== undefined && input.to !== undefined), {
+    message: "give end or to, not both",
+  })
+  .refine((input) => {
+    const { start, end } = windowInput(input);
+    return start === undefined || end === undefined || start < end;
+  })
   .refine(
     (input) =>
       input.measure === "customers" ||
       (input.customer === undefined && input.methodPrefixes === undefined),
     { message: "customer and methodPrefixes narrow measure=customers only" },
   );
+
+/** The window a tool input names, in Unix seconds: `start`/`end`, or `from`/`to` converted. */
+export function windowInput(input: { start?: number; end?: number; from?: string; to?: string }): {
+  start?: number;
+  end?: number;
+} {
+  const seconds = (iso?: string) =>
+    iso === undefined
+      ? undefined
+      : Math.floor(Date.parse(/(?:[zZ]|[+-]\d\d:?\d\d)$/.test(iso) ? iso : `${iso}Z`) / 1000);
+  return { start: input.start ?? seconds(input.from), end: input.end ?? seconds(input.to) };
+}
 
 /** One recorded count, and the same count over the raw log lines for when the series has nothing. */
 export interface SummaryCount {
@@ -78,15 +117,16 @@ export function requestSummaryQueries(
   defaults: { start: number; end: number },
   customerId?: string,
 ) {
-  const end = input.end ?? defaults.end;
+  const named = windowInput(input);
+  const end = named.end ?? defaults.end;
   const start =
-    input.start ??
-    (input.end === undefined ? defaults.start : end - (defaults.end - defaults.start));
+    named.start ??
+    (named.end === undefined ? defaults.start : end - (defaults.end - defaults.start));
   const seconds = end - start;
   if (
     !Number.isInteger(seconds) ||
     seconds < 1 ||
-    seconds > 86400 ||
+    seconds > (input.measure === "customers" ? MAX_RAW_SECONDS : MAX_COUNT_SECONDS) ||
     end > Math.floor(Date.now() / 1000) + 300
   )
     return null;
@@ -101,9 +141,12 @@ export function requestSummaryQueries(
           ...(chain ? [`chain=${JSON.stringify(chain)}`] : []),
         ].join(",")}}`
       : null;
-  const raw = (query: (lines: string) => string) => (lines ? { raw: query(lines) } : {});
+  // A raw fallback scans log lines, so a window past a day offers none.
+  const raw = (query: (lines: string) => string) =>
+    lines && seconds <= MAX_RAW_SECONDS ? { raw: query(lines) } : {};
   const range = `[${seconds}s]`;
   if (input.measure === "customers") return { start, end, counts: customerCounts(input, range) };
+  if (input.measure === "providers") return { start, end, counts: providerCounts(input, range) };
   const counts: SummaryCount[] =
     input.measure === "transactions"
       ? [
@@ -151,6 +194,31 @@ export function requestSummaryQueries(
             },
           ];
   return { start, end, counts };
+}
+
+/**
+ * Relays, successful relays and node-error replies per chain and provider. The
+ * relay pair is the store's recorded series, one sample a minute (a window's
+ * total is its sum times the interval), so a 30-day read stays small; the
+ * node-error counter has no recorded series and is read raw. `Cached` is the
+ * router's cache, not a provider.
+ */
+function providerCounts(input: z.infer<typeof requestSummaryInput>, range: string): SummaryCount[] {
+  const matchers = [
+    'provider_address!="Cached"',
+    ...(input.chain ? [`spec=${JSON.stringify(input.chain.toUpperCase())}`] : []),
+  ];
+  const selector = `{${matchers.join(",")}}`;
+  const recorded = (series: string) =>
+    `round(sum by (spec, provider_address) (sum_over_time(${series}${selector}${range})) * ${RECORDED_INTERVAL_SECONDS})`;
+  return [
+    { name: "provider_relays", query: recorded(RECORDED.requestsByProvider) },
+    { name: "provider_successes", query: recorded(RECORDED.successByProvider) },
+    {
+      name: "provider_node_errors",
+      query: `round(sum by (spec, provider_address) (increase(${PROVIDER_NODE_ERRORS}${selector}${range})))`,
+    },
+  ];
 }
 
 /**

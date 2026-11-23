@@ -29,6 +29,20 @@ describe("readLabel", () => {
       }),
     ).toBe("Failure counts and request counts");
   });
+  it("names the per-provider counts", () => {
+    expect(
+      readLabel("metrics.query", {
+        query:
+          'round(sum by (spec, provider_address) (sum_over_time(spec_router_provider:smartrouter_requests_total:rate2m15s{provider_address!="Cached"}[3600s])) * 60)',
+      }),
+    ).toBe("Requests per provider");
+    expect(
+      readLabel("metrics.query", {
+        query:
+          'round(sum by (spec, provider_address) (increase(smartrouter_node_errors_total{provider_address!="Cached"}[3600s])))',
+      }),
+    ).toBe("Node errors per provider");
+  });
   it("names the per-customer counters", () => {
     expect(
       readLabel("metrics.query", {

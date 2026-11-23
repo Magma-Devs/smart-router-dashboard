@@ -636,6 +636,224 @@ describe("bounded customer tool orchestration", () => {
     },
   );
 
+  it("hands the model the transactions the server added up by result, never the samples", async () => {
+    const f = fixture({
+      data: {
+        status: "success",
+        data: {
+          resultType: "vector",
+          result: [
+            { metric: { chain: "eth1", outcome: "ok" }, value: [1, "11"] },
+            { metric: { chain: "eth1", outcome: "node_error" }, value: [1, "332"] },
+            { metric: { chain: "cosmoshub", outcome: "ok", tx_refused: "true" }, value: [1, "48"] },
+          ],
+        },
+      },
+      responses: [
+        provider([
+          {
+            toolUse: {
+              toolUseId: "summary",
+              name: "router_request_summary",
+              input: { measure: "transactions" },
+            },
+          },
+        ]),
+        final(),
+      ],
+    });
+    await f.answer();
+    const body = JSON.parse(f.bodies[1]!);
+    const result = JSON.parse(body.messages.at(-1).content[0].toolResult.content[0].text);
+    expect(result.table.rows).toEqual([
+      {
+        chain: "eth1",
+        accepted: 11,
+        rejected: 332,
+        failedNeverSent: 0,
+        failedOnChain: 0,
+        unknown: 0,
+        total: 343,
+      },
+      {
+        chain: "cosmoshub",
+        accepted: 0,
+        rejected: 48,
+        failedNeverSent: 0,
+        failedOnChain: 0,
+        unknown: 0,
+        total: 48,
+      },
+    ]);
+    expect(result.table.totals).toMatchObject({ accepted: 11, rejected: 380, total: 391 });
+    expect(result.counts[0].result.untrustedData).toEqual({ samples: 3, shownIn: "table" });
+  });
+
+  it.each([true, false])(
+    "reads each provider's relays, failed relays and node-error replies over a named week (recorded: %s)",
+    async (recorded) => {
+      const to = new Date(Math.floor(Date.now() / 1000) * 1000 - 3 * 86_400_000);
+      const from = new Date(to.getTime() - 7 * 86_400_000);
+      const f = fixture({
+        data: {
+          status: "success",
+          data: {
+            resultType: "vector",
+            result: recorded
+              ? [{ metric: { spec: "ETH1", provider_address: "node-a" }, value: [1, "100"] }]
+              : [],
+          },
+        },
+        responses: [
+          provider([
+            {
+              toolUse: {
+                toolUseId: "summary",
+                name: "router_request_summary",
+                input: { measure: "providers", from: from.toISOString(), to: to.toISOString() },
+              },
+            },
+          ]),
+          final(),
+        ],
+      });
+      await f.answer();
+      const body = JSON.parse(f.bodies[1]!);
+      const result = JSON.parse(body.messages.at(-1).content[0].toolResult.content[0].text);
+      const start = from.getTime() / 1000;
+      expect(result.window).toEqual({ start, end: to.getTime() / 1000 });
+      expect(result.counts.map((count: { name: string }) => count.name)).toEqual([
+        "provider_relays",
+        "provider_successes",
+        "provider_node_errors",
+      ]);
+      // A week has no raw fallback, and the newest minutes are not in it.
+      for (const count of result.counts) expect(count.fallback).toBeUndefined();
+      expect(result.warning).toBeUndefined();
+      const reads = vi.mocked(f.hooks.recordTool).mock.calls.map(([read]) => read);
+      expect(reads.map((read) => read.parameters.query)).toEqual([
+        expect.stringContaining("spec_router_provider:smartrouter_requests_total:rate2m15s"),
+        expect.stringContaining(
+          "spec_router_provider:smartrouter_requests_success_total:rate2m15s",
+        ),
+        expect.stringContaining("increase(smartrouter_node_errors_total"),
+        "sum(count_over_time(spec_router:smartrouter_requests_total:rate2m15s[1d]))",
+      ]);
+      expect(reads[3]!.parameters.time).toBe(start + 86_400);
+      // The prompt says where one request names its provider and its block.
+      for (const field of ["served_by", "attempts", "requested_block", "request_id"])
+        expect(f.bodies[0]).toContain(field);
+      if (recorded) {
+        expect(result.table.rows).toEqual([
+          {
+            chain: "ETH1",
+            provider: "node-a",
+            relays: 100,
+            failedRelays: 0,
+            nodeErrorReplies: 100,
+          },
+        ]);
+        expect(result.recordingWarning).toBeUndefined();
+      } else {
+        expect(result.table.rows).toEqual([]);
+        expect(result.recordingWarning).toContain("first day");
+      }
+    },
+  );
+
+  it.each([
+    ["router_request_summary", { measure: "customers", start: 1, end: 86_402 }],
+    ["router_recent_requests", { start: 1, end: 7 * 86_400 }],
+  ])(
+    "answers a window it refuses with an error the model reads again from (%s)",
+    async (name, input) => {
+      const f = fixture({
+        responses: [
+          provider([{ toolUse: { toolUseId: "wide", name, input } }]),
+          provider([{ toolUse: { toolUseId: "again", name, input: {} } }]),
+          final(),
+        ],
+      });
+      expect((await f.answer()).summary).toBe(content.summary);
+      const body = JSON.parse(f.bodies[1]!);
+      const result = JSON.parse(body.messages.at(-1).content[0].toolResult.content[0].text);
+      expect(result.error).toContain("Read again with a shorter window");
+      // Nothing was read for the refused window; the second, narrower call read.
+      const reads = vi.mocked(f.hooks.recordTool).mock.calls.map(([read]) => read);
+      expect(reads.length).toBeGreaterThan(0);
+      for (const read of reads)
+        expect(Number(read.parameters.end ?? read.parameters.time) - 86_400).toBeLessThanOrEqual(
+          Number(read.parameters.start ?? read.parameters.time),
+        );
+    },
+  );
+
+  it.each([
+    [undefined, "smartrouter_final_requests:count1m"],
+    ["transactions", "smartrouter_final_requests:count1m"],
+    ["errors", "smartrouter_warn_error_lines:count1m"],
+  ])(
+    "checks a week's first day in the family it sums, or for transactions its requests (%s)",
+    async (measure, family) => {
+      const end = Math.floor(Date.now() / 1000) - 3600;
+      const f = fixture({
+        responses: [
+          provider([
+            {
+              toolUse: {
+                toolUseId: "summary",
+                name: "router_request_summary",
+                input: { ...(measure ? { measure } : {}), start: end - 7 * 86_400, end },
+              },
+            },
+          ]),
+          final(),
+        ],
+      });
+      await f.answer();
+      const reads = vi.mocked(f.hooks.recordTool).mock.calls.map(([read]) => read);
+      expect(reads.at(-1)!.parameters).toEqual({
+        query: `sum(count_over_time(${family}[1d]))`,
+        time: end - 6 * 86_400,
+      });
+    },
+  );
+
+  it("caps a provider table to fit one tool result", async () => {
+    const f = fixture({
+      data: {
+        status: "success",
+        data: {
+          resultType: "vector",
+          result: Array.from({ length: 130 }, (_, i) => ({
+            metric: { spec: `CHAIN${i}`, provider_address: `provider-with-a-long-name-${i}` },
+            value: [1, String(i + 1)],
+          })),
+        },
+      },
+      responses: [
+        provider([
+          {
+            toolUse: {
+              toolUseId: "summary",
+              name: "router_request_summary",
+              input: { measure: "providers" },
+            },
+          },
+        ]),
+        final(),
+      ],
+    });
+    await f.answer();
+    const body = JSON.parse(f.bodies[1]!);
+    const result = JSON.parse(body.messages.at(-1).content[0].toolResult.content[0].text);
+    expect(result.table.omittedRows).toBe(130 - result.table.rows.length);
+    expect(result.table.totals.relays).toBe((130 * 131) / 2);
+    expect(Buffer.byteLength(JSON.stringify(result.table))).toBeLessThanOrEqual(
+      f.settings.maxToolResultBytes / 2,
+    );
+  });
+
   it("does not describe a current status observation as exhaustive incident history", async () => {
     const until = Math.floor(Date.now() / 1000);
     const f = fixture({
