@@ -152,8 +152,12 @@ describe("curated request evidence", () => {
     )!;
     expect(queries).toMatchObject({ start: 1794610560, end: 1794615900 });
   });
+  it("reads a time without a zone as UTC", () => {
+    expect(
+      requestSummaryQueries({ from: "2026-11-13T22:56:00", to: "2026-11-14T00:25" }, defaults),
+    ).toMatchObject({ start: 1794610560, end: 1794615900 });
+  });
   it.each([
-    { from: "2026-11-13T22:56:00" },
     { from: "13.11 22:56" },
     { from: "2026-11-13T22:56:00Z", start: 1 },
     { to: "2026-11-13T22:56:00Z", end: 1 },

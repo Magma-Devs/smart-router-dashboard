@@ -35,6 +35,8 @@ export type TableRow = Record<string, string | number>;
  */
 export interface SummaryTable {
   rows: TableRow[];
+  /** Rows past the cap; `totals` still add up every row. */
+  omittedRows?: number;
   totals: Record<string, number>;
   /** measure=errors: the most frequent messages. measure=customers: requests per customer and method. */
   detail?: TableRow[];
@@ -77,9 +79,13 @@ function fill(rows: TableRow[], columns: string[]): TableRow[] {
   });
 }
 
+/** Rows one table holds at most; the largest come first. */
+export const MAX_TABLE_ROWS = 40;
+
 export function summaryTable(
   measure: SummaryMeasure,
   counts: { name: string; rows: CountRow[] | null }[],
+  maxRows: number = MAX_TABLE_ROWS,
 ): SummaryTable {
   const unavailable = counts.filter((count) => count.rows === null).map((count) => count.name);
   const read = (name: string) => counts.find((count) => count.name === name)?.rows ?? null;
@@ -192,9 +198,10 @@ export function summaryTable(
     (a, b) => order(a, b) || JSON.stringify(a).localeCompare(JSON.stringify(b)),
   );
   return {
-    rows,
+    rows: rows.slice(0, maxRows),
+    ...(rows.length > maxRows ? { omittedRows: rows.length - maxRows } : {}),
     totals: totalsOf(rows, columns),
-    ...(detail ? { detail } : {}),
+    ...(detail ? { detail: detail.slice(0, maxRows) } : {}),
     ...(unavailable.length ? { unavailable } : {}),
   };
 }

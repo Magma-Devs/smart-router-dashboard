@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { countRows, summaryTable, type CountRow } from "../services/ask/summary-tables.js";
+import {
+  countRows,
+  MAX_TABLE_ROWS,
+  summaryTable,
+  type CountRow,
+} from "../services/ask/summary-tables.js";
 
 const vector = (result: { metric: Record<string, string>; value: [number, string] }[]) => ({
   status: "success",
@@ -83,34 +88,37 @@ describe("summary tables", () => {
       {
         name: "provider_relays",
         rows: [
-          row({ spec: "XRP", provider_address: "tatum" }, 1000),
-          row({ spec: "XRP", provider_address: "blockdaemon" }, 500),
+          row({ spec: "ETH1", provider_address: "node-a" }, 1000),
+          row({ spec: "ETH1", provider_address: "node-b" }, 500),
         ],
       },
       {
         name: "provider_successes",
         rows: [
-          row({ spec: "XRP", provider_address: "tatum" }, 1000),
-          row({ spec: "XRP", provider_address: "blockdaemon" }, 480),
+          row({ spec: "ETH1", provider_address: "node-a" }, 1000),
+          row({ spec: "ETH1", provider_address: "node-b" }, 480),
         ],
       },
-      { name: "provider_node_errors", rows: [row({ spec: "XRP", provider_address: "tatum" }, 40)] },
+      {
+        name: "provider_node_errors",
+        rows: [row({ spec: "ETH1", provider_address: "node-a" }, 40)],
+      },
     ]);
     expect(table.rows).toEqual([
-      { chain: "XRP", provider: "tatum", relays: 1000, failedRelays: 0, nodeErrorReplies: 40 },
-      { chain: "XRP", provider: "blockdaemon", relays: 500, failedRelays: 20, nodeErrorReplies: 0 },
+      { chain: "ETH1", provider: "node-a", relays: 1000, failedRelays: 0, nodeErrorReplies: 40 },
+      { chain: "ETH1", provider: "node-b", relays: 500, failedRelays: 20, nodeErrorReplies: 0 },
     ]);
     expect(table.totals).toEqual({ relays: 1500, failedRelays: 20, nodeErrorReplies: 40 });
   });
   it("names a count it could not read and leaves its column out", () => {
     const table = summaryTable("providers", [
-      { name: "provider_relays", rows: [row({ spec: "XRP", provider_address: "tatum" }, 10)] },
+      { name: "provider_relays", rows: [row({ spec: "ETH1", provider_address: "node-a" }, 10)] },
       { name: "provider_successes", rows: null },
       { name: "provider_node_errors", rows: [] },
     ]);
     expect(table.unavailable).toEqual(["provider_successes"]);
     expect(table.rows).toEqual([
-      { chain: "XRP", provider: "tatum", relays: 10, nodeErrorReplies: 0 },
+      { chain: "ETH1", provider: "node-a", relays: 10, nodeErrorReplies: 0 },
     ]);
   });
   it("keeps the most frequent messages and the per-method customer counts as detail", () => {
@@ -130,5 +138,19 @@ describe("summary tables", () => {
     ]);
     expect(customers.rows).toEqual([{ customer: "a", requests: 9, failures: 0 }]);
     expect(customers.detail).toEqual([{ customer: "a", method: "eth_call", requests: 9 }]);
+  });
+  it("caps the rows, largest first, and still totals every row", () => {
+    const relays = Array.from({ length: 130 }, (_, i) =>
+      row({ spec: "ETH1", provider_address: `node-${i}` }, i + 1),
+    );
+    const table = summaryTable("providers", [
+      { name: "provider_relays", rows: relays },
+      { name: "provider_successes", rows: [] },
+      { name: "provider_node_errors", rows: [] },
+    ]);
+    expect(table.rows).toHaveLength(MAX_TABLE_ROWS);
+    expect(table.omittedRows).toBe(130 - MAX_TABLE_ROWS);
+    expect(table.rows[0]).toMatchObject({ provider: "node-129", failedRelays: 130 });
+    expect(table.totals.relays).toBe((130 * 131) / 2);
   });
 });

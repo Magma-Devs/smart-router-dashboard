@@ -700,7 +700,7 @@ describe("bounded customer tool orchestration", () => {
           data: {
             resultType: "vector",
             result: recorded
-              ? [{ metric: { spec: "ETH1", provider_address: "tatum" }, value: [1, "100"] }]
+              ? [{ metric: { spec: "ETH1", provider_address: "node-a" }, value: [1, "100"] }]
               : [],
           },
         },
@@ -740,9 +740,18 @@ describe("bounded customer tool orchestration", () => {
         "sum(count_over_time(spec_router:smartrouter_requests_total:rate2m15s[1d]))",
       ]);
       expect(reads[3]!.parameters.time).toBe(start + 86_400);
+      // The prompt says where one request names its provider and its block.
+      for (const field of ["served_by", "attempts", "requested_block", "request_id"])
+        expect(f.bodies[0]).toContain(field);
       if (recorded) {
         expect(result.table.rows).toEqual([
-          { chain: "ETH1", provider: "tatum", relays: 100, failedRelays: 0, nodeErrorReplies: 100 },
+          {
+            chain: "ETH1",
+            provider: "node-a",
+            relays: 100,
+            failedRelays: 0,
+            nodeErrorReplies: 100,
+          },
         ]);
         expect(result.recordingWarning).toBeUndefined();
       } else {
@@ -751,6 +760,99 @@ describe("bounded customer tool orchestration", () => {
       }
     },
   );
+
+  it.each([
+    ["router_request_summary", { measure: "customers", start: 1, end: 86_402 }],
+    ["router_recent_requests", { start: 1, end: 7 * 86_400 }],
+  ])(
+    "answers a window it refuses with an error the model reads again from (%s)",
+    async (name, input) => {
+      const f = fixture({
+        responses: [
+          provider([{ toolUse: { toolUseId: "wide", name, input } }]),
+          provider([{ toolUse: { toolUseId: "again", name, input: {} } }]),
+          final(),
+        ],
+      });
+      expect((await f.answer()).summary).toBe(content.summary);
+      const body = JSON.parse(f.bodies[1]!);
+      const result = JSON.parse(body.messages.at(-1).content[0].toolResult.content[0].text);
+      expect(result.error).toContain("Read again with a shorter window");
+      // Nothing was read for the refused window; the second, narrower call read.
+      const reads = vi.mocked(f.hooks.recordTool).mock.calls.map(([read]) => read);
+      expect(reads.length).toBeGreaterThan(0);
+      for (const read of reads)
+        expect(Number(read.parameters.end ?? read.parameters.time) - 86_400).toBeLessThanOrEqual(
+          Number(read.parameters.start ?? read.parameters.time),
+        );
+    },
+  );
+
+  it.each([
+    [undefined, "smartrouter_final_requests:count1m"],
+    ["transactions", "smartrouter_final_requests:count1m"],
+    ["errors", "smartrouter_warn_error_lines:count1m"],
+  ])(
+    "checks a week's first day in the family it sums, or for transactions its requests (%s)",
+    async (measure, family) => {
+      const end = Math.floor(Date.now() / 1000) - 3600;
+      const f = fixture({
+        responses: [
+          provider([
+            {
+              toolUse: {
+                toolUseId: "summary",
+                name: "router_request_summary",
+                input: { ...(measure ? { measure } : {}), start: end - 7 * 86_400, end },
+              },
+            },
+          ]),
+          final(),
+        ],
+      });
+      await f.answer();
+      const reads = vi.mocked(f.hooks.recordTool).mock.calls.map(([read]) => read);
+      expect(reads.at(-1)!.parameters).toEqual({
+        query: `sum(count_over_time(${family}[1d]))`,
+        time: end - 6 * 86_400,
+      });
+    },
+  );
+
+  it("caps a provider table to fit one tool result", async () => {
+    const f = fixture({
+      data: {
+        status: "success",
+        data: {
+          resultType: "vector",
+          result: Array.from({ length: 130 }, (_, i) => ({
+            metric: { spec: `CHAIN${i}`, provider_address: `provider-with-a-long-name-${i}` },
+            value: [1, String(i + 1)],
+          })),
+        },
+      },
+      responses: [
+        provider([
+          {
+            toolUse: {
+              toolUseId: "summary",
+              name: "router_request_summary",
+              input: { measure: "providers" },
+            },
+          },
+        ]),
+        final(),
+      ],
+    });
+    await f.answer();
+    const body = JSON.parse(f.bodies[1]!);
+    const result = JSON.parse(body.messages.at(-1).content[0].toolResult.content[0].text);
+    expect(result.table.omittedRows).toBe(130 - result.table.rows.length);
+    expect(result.table.totals.relays).toBe((130 * 131) / 2);
+    expect(Buffer.byteLength(JSON.stringify(result.table))).toBeLessThanOrEqual(
+      f.settings.maxToolResultBytes / 2,
+    );
+  });
 
   it("does not describe a current status observation as exhaustive incident history", async () => {
     const until = Math.floor(Date.now() / 1000);

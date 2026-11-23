@@ -260,10 +260,10 @@ function sourceData(operationId, parameters) {
                   method: "eth_blockNumber",
                   outcome: "node_error",
                   error_name: "NODE_RATE_LIMITED",
-                  served_by: "tatum",
+                  served_by: "node-a",
                   attempts: [
                     {
-                      upstream: "tatum",
+                      upstream: "node-a",
                       outcome: "node_error",
                       error_code: "NODE_RATE_LIMITED",
                       returned_to_client: true,
@@ -281,13 +281,13 @@ function sourceData(operationId, parameters) {
       },
     };
   const query = String(parameters.query ?? "");
-  // Per-provider counts: blockdaemon fails relays, tatum answers with node errors.
+  // Per-provider counts: node-b fails relays, node-a answers with node errors.
   if (query.includes("provider_address") && !operationId.endsWith("query_range")) {
     const counts = query.includes("node_errors")
-      ? { tatum: "40", blockdaemon: "0" }
+      ? { "node-a": "40", "node-b": "0" }
       : query.includes("success")
-        ? { tatum: "1000", blockdaemon: "450" }
-        : { tatum: "1000", blockdaemon: "500" };
+        ? { "node-a": "1000", "node-b": "450" }
+        : { "node-a": "1000", "node-b": "500" };
     return {
       status: "success",
       data: {
@@ -568,19 +568,31 @@ const answered = new Map([
 ]);
 // The three question shapes that once came back as a refusal or as working
 // shown: which provider, a named historical window, and a total to add up.
-const day = (offset) => new Date(Date.now() - offset * 86_400_000).toISOString().slice(0, 10);
+const dayStart = (offset) => {
+  const day = new Date(Date.now() - offset * 86_400_000);
+  return Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate()) / 1000;
+};
+// "13.11", the way the reader wrote it, with no year and no zone.
+const dm = (offset) => {
+  const day = new Date(dayStart(offset) * 1000);
+  return `${String(day.getUTCDate()).padStart(2, "0")}.${String(day.getUTCMonth() + 1).padStart(2, "0")}`;
+};
 const regressions = [
   [
     "Which provider returned the most errors?",
-    /blockdaemon/i,
+    /node-b/i,
     /no .*provider breakdown|can'?t attribute/i,
   ],
   [
-    `Between ${day(4)} 22:56 and ${day(3)} 00:25 UTC, which provider answered our ETH1 requests?`,
-    /tatum/i,
+    `Between ${dm(4)} 22:56:00 and ${dm(3)} 00:25:00 we got an unfinalized block on ETH1. Can you tell which provider was answering us?`,
+    /node-a/i,
     /24[- ]hours?|rolled out|can'?t (query|read|inspect)/i,
+    // The read covers the named window, give or take a time zone.
+    dayStart(4) + 22 * 3600 + 56 * 60,
   ],
   ["How many transactions were sent in the last hour?", /391/, null],
+  ["Which of our customers sent the most requests in the last 7 days?", null, null],
+  ["Show me failed requests from the last week", null, null],
 ];
 // Working shown in an answer, which the answer text never holds.
 const workingShown =
@@ -604,15 +616,16 @@ const cases = [
     reads: false,
     gives,
   })),
-  ...regressions.map(([question, says, avoids], i) => ({
+  ...regressions.map(([question, says, avoids, startsNear], i) => ({
     id: `regression-${i + 1}`,
     question,
     reads: true,
     says,
     avoids,
+    startsNear,
   })),
 ];
-if (cases.length !== 109) throw new Error("Expected 109 distinct acceptance scenarios");
+if (cases.length !== 111) throw new Error("Expected 111 distinct acceptance scenarios");
 const repeat = Number(process.env.ASK_EVALUATION_REPEAT ?? 1);
 if (!Number.isInteger(repeat) || repeat < 1 || repeat > 5)
   throw new Error("ASK_EVALUATION_REPEAT is a whole number from 1 to 5");
@@ -767,6 +780,10 @@ try {
         !workingShown.test(markdown) &&
         (!entry.says || entry.says.test(markdown)) &&
         (!entry.avoids || !entry.avoids.test(markdown)) &&
+        (!entry.startsNear ||
+          currentReads.some(
+            (read) => Math.abs(Number(read.parameters?.start) - entry.startsNear) <= 3 * 3600,
+          )) &&
         (!entry.gives || (!entry.gives.test(markdown) && markdown.length <= 400)) &&
         (answered.get(entry.question)?.test(markdown) ?? true));
     const ok = result.ok && routeMatches && receiptMatches && contentMatches;

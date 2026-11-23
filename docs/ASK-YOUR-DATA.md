@@ -240,18 +240,25 @@ selectors total at most 24 hours. A metrics query's total at most 30 days: the
 recorded series hold one sample a minute. Range reads (`query_range`, `labels`,
 `label_values`, `series`) span at most 24 hours, the MCP server's own bound.
 Provider-status event reads keep their seven-day bounds. The model gives a
-named date or time as `from`/`to` in ISO 8601 with its zone, and the server
-converts it; the request context precomputes the last 5 minutes, hour, 24 hours,
-7 days and 30 days.
+named date or time as `from`/`to` in ISO 8601, and the server converts it; a
+time without a zone is UTC. The request context precomputes the last 5 minutes,
+hour, 24 hours, 7 days and 30 days. A window the server refuses (too long for
+what it reads, out of order, or ending more than 5 minutes ahead) does not end
+the run: the tool answers it with an error, and the model reads again with a
+shorter window or several consecutive ones. Only a malformed input ends the run.
 
 `router_request_summary` reads the ruler's recorded per-minute counts over one window of up to 30 days: requests and failures, transactions (`measure=transactions`), or the router's warn and error log lines by chain and level with the 30 most frequent messages (`measure=errors`, `smartrouter_warn_error_lines:count1m`). Missing series stay
 unknown, without a zero fallback. The model never sees the samples: the server
 adds them up into `table` (`summary-tables.ts`), rows and totals per chain, and
-each count's result carries only how many samples went into it. A
+each count's result carries only how many samples went into it. A table holds
+the 40 largest rows, fewer when they would take more than half a tool result,
+and names the rest in `omittedRows`; its totals add up every row. Its bytes
+count toward the run's context like a read's. A
 transactions row reads `accepted`, `rejected`, `failedNeverSent`,
 `failedOnChain`, `unknown` and `total`, by `txResultOf`, the Transactions tab's
 own mapping. A window longer than a day also reads whether the recorded series
-hold anything in its first day; when they do not, the result carries
+hold anything in its first day: the family it sums, or for transactions (a day
+may have none) the requests the same ruler records beside them; when they do not, the result carries
 `recordingWarning` and the answer says the totals may cover only part of it. A
 count whose recorded series has nothing for a window of a day or less carries
 `fallback`: the same count over this customer's raw router
@@ -290,7 +297,7 @@ failed ones. Relays include the router's retries, hedges and health probes, and
 the router's cache (`Cached`) is left out. A count whose read failed is named
 in `table.unavailable` and its column is left out.
 
-Counts do not establish an acceptable error rate or a cause without actual evidence and an SLO. `router_recent_requests` reads a small, customer-scoped backwards sample of the dashboard's `relay_end` events for request details, over up to 24 hours at any time the logs hold. Each event's `served_by` names the provider whose reply reached the client and `attempts` every provider tried. Sampling never proves the absence of errors. Effective status/instant-query times and literal lookback windows are returned explicitly; absence of a provider-status source is reported as unavailable.
+Counts do not establish an acceptable error rate or a cause without actual evidence and an SLO. `router_recent_requests` reads a small, customer-scoped backwards sample of the dashboard's `relay_end` events for request details, over up to 24 hours at any time the logs hold. Each event's `served_by` names the provider whose reply reached the client and `attempts` every provider tried. `requested_block` names the block the request asked for, so the line filter ``|= `"requested_block":<number>` `` finds one block's requests, and `request_id` is the caller's `X-Request-Id`. Sampling never proves the absence of errors. Effective status/instant-query times and literal lookback windows are returned explicitly; absence of a provider-status source is reported as unavailable.
 
 Model dispatch guards live inside the model execution boundary, not SDK
 notification callbacks. Automatic model retries and tool repair are disabled.

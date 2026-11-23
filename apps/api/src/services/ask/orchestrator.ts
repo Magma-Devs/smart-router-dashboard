@@ -28,8 +28,9 @@ import {
   PROVIDER_NODE_ERRORS,
   requestSummaryInput,
   requestSummaryQueries,
+  WINDOW_REFUSED,
 } from "./request-summary.js";
-import { countRows, summaryTable, type CountRow } from "./summary-tables.js";
+import { countRows, MAX_TABLE_ROWS, summaryTable, type CountRow } from "./summary-tables.js";
 import { markdownFallback } from "./markdown.js";
 import { routerLogsInput, routerLogQuery } from "./router-logs.js";
 import {
@@ -37,12 +38,7 @@ import {
   LOGS_LOOKBACK_SECONDS,
   METRICS_LOOKBACK_SECONDS,
 } from "./query-bounds.js";
-import {
-  PREFETCH_NOTE,
-  RECORDED_ROUTER_LINES,
-  prefetchRead,
-  summarizePrefetch,
-} from "./prefetch.js";
+import { PREFETCH_NOTE, prefetchRead, summarizePrefetch } from "./prefetch.js";
 import { AskFailure, abortFailure } from "./errors.js";
 import { redactAskData, redactAskText } from "./redact.js";
 import { draftText } from "./draft.js";
@@ -119,7 +115,7 @@ const system = [
   // lines, the same methods, the same results.
   `Transactions: a transaction is a write the router relayed (${TX_METHODS.join(", ")}, or any request the router marks stateful). Never search logs for the word "transaction". The router ends every request with one JSON log line containing "relay_end", with the fields chain, method, stateful, outcome, tx_hash, tx_status, tx_code, tx_error and customer; find transactions by putting exactly this line filter after the stream selector: ${TX_EVENT_FILTER} and add |= \`"chain":"<CHAIN>"\` for one chain. For counts, first try the metric smartrouter_transactions:count1m (labels chain in lower case, outcome, tx_status, tx_refused; one sample a minute, so sum sum_over_time over the window); count the log lines only when it has no series. Results: outcome ok is accepted, unless tx_refused is true or tx_code is not 0 (rejected by the node) or tx_status is failure (failed on chain), and over gRPC without a tx_status it is unknown; node_error is rejected by the node; rejected_before_dispatch is failed and was never sent; ${FAILED_OUTCOMES.filter((o) => o !== "rejected_before_dispatch").join(", ")} are unknown, because a copy may have reached a provider. Say "unknown" for those, never "failed".`,
   "router_request_summary returns table: its rows and totals are the counts the server added up for the window. Copy figures from table; never add, subtract or recount them yourself. With measure=transactions each chain's row reads accepted, rejected, failedNeverSent, failedOnChain, unknown and total, by the results above.",
-  `Providers are the upstream nodes a router sends requests to, named as its configuration names them. measure=providers returns per chain and provider: relays (retries, hedges and health probes included, so not client requests), failedRelays (no usable answer) and nodeErrorReplies (answered with the node's RPC error, ${PROVIDER_NODE_ERRORS}; not in failedRelays). Name both for "which provider returned errors". The cache is not a provider. Which provider answered one request is in its relay_end line: served_by is the provider whose reply reached the client ("Cached" for the cache); attempts lists each provider tried (upstream, outcome, error_code, message), absent when the first try answered.`,
+  `Providers are the upstream nodes a router sends requests to, named as its configuration names them. measure=providers returns per chain and provider: relays (retries, hedges and health probes included, so not client requests), failedRelays (no usable answer) and nodeErrorReplies (answered with the node's RPC error, ${PROVIDER_NODE_ERRORS}; not in failedRelays). Name both for "which provider returned errors". The cache is not a provider. Which provider answered one request is in its relay_end line: served_by is the provider whose reply reached the client ("Cached" for the cache); attempts lists each provider tried (upstream, outcome, error_code, message), absent when the first try answered. One block's requests are the relay_end lines with |= \`"requested_block":<number>\`; request_id is the caller's X-Request-Id.`,
   `Failed requests: requests the router could not serve are relay_end lines whose outcome is one of ${FAILED_OUTCOMES.join(", ")}; their per-minute counts are smartrouter_final_failures:count1m, out of smartrouter_final_requests:count1m.`,
   `The reader's own customers: each router counts a client request under the customer-id header its caller sent. A question about the reader's customers, clients, callers or users means these values, not the deployment's own customer ID. router_request_summary with measure=customers reads them from ${CUSTOMER_COUNTERS.requests} and ${CUSTOMER_COUNTERS.failures} (labels customer, spec = the chain id upper-cased, method, apiInterface): requests and failures per customer, and requests per customer and method. Narrow with customer for one customer, methodPrefixes for methods that start with those prefixes (debug_ and trace_ for debug requests), and chain. These are counters, not recorded series: never count them from log lines. Name a customer exactly as returned, a long hex value included: it is an id the caller chose, not a credential. DefaultDappID is the requests that named no customer; other is the requests past a router's cap of 512 customers. Magma's own serving probe (${SERVING_PROBE_CUSTOMER}) is left out. A customer absent from the result is unknown, not zero.`,
   "Errors and warnings the router logged: router_request_summary with measure=errors returns the warn and error line counts by chain and level, and the most frequent messages. A message reads its numbers as N and its hex values as HEX. These are log lines, not failed requests: one failed request can log several, and a warning can come from a request that succeeded.",
@@ -442,7 +438,14 @@ export class AskOrchestrator {
     // a series that started later sums only part of the window. A read that
     // fails leaves the question open and adds no warning.
     const recordingReachesStart = async (start: number, measure: string, sourceId?: string) => {
-      const family = measure === "providers" ? RECORDED.requests : RECORDED_ROUTER_LINES;
+      // The family being summed, or for transactions (a day may have none) the
+      // requests the same ruler records beside them.
+      const family =
+        measure === "providers"
+          ? RECORDED.requests
+          : measure === "errors"
+            ? RECORDED_WARN_ERROR
+            : RECORDED_OUTCOMES.requests;
       try {
         const output = record(
           await read(
@@ -514,18 +517,12 @@ export class AskOrchestrator {
           } else if (uses.length) {
             for (const use of uses) {
               if (use.name === "router_request_summary") {
-                const parsed = requestSummaryInput.safeParse(use.input);
-                if (
-                  !parsed.success ||
-                  !requestSummaryQueries(parsed.data, request.recentWindows.last24Hours)
-                )
+                // A window the server refuses is the model's to correct: the
+                // tool answers it with an error. Only a malformed input ends the run.
+                if (!requestSummaryInput.safeParse(use.input).success)
                   throw new AskFailure("ASK_TOOL_DENIED", 403);
               } else if (use.name === "router_recent_requests") {
-                const parsed = routerLogsInput.safeParse(use.input);
-                if (
-                  !parsed.success ||
-                  !routerLogQuery(this.settings.customerId, parsed.data, defaultWindow)
-                )
+                if (!routerLogsInput.safeParse(use.input).success)
                   throw new AskFailure("ASK_TOOL_DENIED", 403);
               } else readRequest(use.name, use.input);
             }
@@ -594,7 +591,7 @@ export class AskOrchestrator {
           inputSchema: requestSummaryInput,
           execute: async (input) => {
             const queries = requestSummaryQueries(input, defaultWindow, this.settings.customerId);
-            if (!queries) return fail(new AskFailure("ASK_TOOL_DENIED", 403));
+            if (!queries) return { error: WINDOW_REFUSED };
             const customers = input.measure === "customers";
             // The recording lag is the ruler's; the customer counters are scraped directly.
             const partial = !customers && queries.end > serverUnixSeconds - 120;
@@ -633,9 +630,21 @@ export class AskOrchestrator {
               queries.end - queries.start > MAX_RAW_SECONDS && !customers
                 ? await recordingReachesStart(queries.start, measure, input.sourceId)
                 : true;
+            // The table is server-authored, outside each read's own budget: cap
+            // its rows to fit a tool result and count its bytes toward the context.
+            let maxRows = MAX_TABLE_ROWS;
+            let table = redactAskData(summaryTable(measure, tableCounts, maxRows), secrets);
+            while (
+              Buffer.byteLength(JSON.stringify(table)) > this.settings.maxToolResultBytes / 2 &&
+              maxRows > 1
+            ) {
+              maxRows = Math.floor(maxRows / 2);
+              table = redactAskData(summaryTable(measure, tableCounts, maxRows), secrets);
+            }
+            pendingBytes += 2 * Buffer.byteLength(JSON.stringify(table)) + 512;
             return {
               window: { start: queries.start, end: queries.end },
-              table: redactAskData(summaryTable(measure, tableCounts), secrets),
+              table,
               counts,
               note: customers
                 ? `Per-customer counters: each client request once, with its final outcome, under its caller's customer-id; up to ${TOP_CUSTOMERS} customers by requests and by failures, and ${TOP_CUSTOMER_METHODS} customer-method pairs. A full list may leave out smaller customers. DefaultDappID is requests that named no customer; other is requests past a router's 512-customer cap. A customer missing here is unknown, never zero. A customer's first request on a router may be missing until its series is first scraped. Do not sum replicated sources. table.totals add up the customers listed.`
@@ -663,7 +672,7 @@ export class AskOrchestrator {
           inputSchema: routerLogsInput,
           execute: async (input) => {
             const parameters = routerLogQuery(this.settings.customerId, input, defaultWindow);
-            if (!parameters) return fail(new AskFailure("ASK_TOOL_DENIED", 403));
+            if (!parameters) return { error: WINDOW_REFUSED };
             return {
               sampleOnly: true,
               note: "A bounded sample of request events, not an exhaustive error search or an aggregate count. Empty samples do not prove zero errors.",

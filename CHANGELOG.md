@@ -12,10 +12,13 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 - Ask answers which provider returned errors: `router_request_summary` with
   `measure=providers` reads, per chain and provider, relays, failed relays and
   node-error replies. Which provider answered one request reads from its
-  `relay_end` line's `served_by` and `attempts`.
+  `relay_end` line's `served_by` and `attempts`, and one block's requests from
+  its `requested_block`.
 - Ask reads a window the question names by date and time, at any time the
   stores hold (logs 45 days, metrics 90 days): the tools take `from`/`to` in
-  ISO 8601 and the server converts them.
+  ISO 8601 and the server converts them, a time without a zone as UTC.
+- A window too long for what it reads gets an error the model reads again
+  from, instead of ending the answer.
 - Counts cover up to 30 days in one read. Log reads and per-customer counts
   stay at 24 hours.
 
@@ -23,7 +26,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 - The model gets every summary as rows and totals the server added up, never
   the samples. Transactions arrive as accepted, rejected, failed (never sent),
-  failed on chain and unknown per chain, and the answer copies the figures.
+  failed on chain and unknown per chain, and the answer copies the figures. A
+  table holds its 40 largest rows and totals every row.
 - The answer text holds the answer only, with no working shown.
 
 ## [0.87.1]

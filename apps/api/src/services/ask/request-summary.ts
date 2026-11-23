@@ -9,6 +9,8 @@ import { RECORDED, RECORDED_INTERVAL_SECONDS } from "@sr/shared";
 export const MAX_COUNT_SECONDS = 30 * 86_400;
 /** The longest window a raw read may cover: log lines, and the per-customer counters. */
 export const MAX_RAW_SECONDS = 86_400;
+/** What a refused window tells the model, which then reads again. */
+export const WINDOW_REFUSED = `The window must be ordered, end at most 5 minutes from now and span at most ${MAX_COUNT_SECONDS / 86_400} days for counts, ${MAX_RAW_SECONDS / 3600} hours for per-customer counts and request samples. Read again with a shorter window, or several consecutive ones.`;
 /** How far back the fleet's stores answer (devops-magmadevs: smart-router-fleet-loki
  * `retention_period`, smart-router-fleet-mimir's query contract). */
 export const LOG_RETENTION_DAYS = 45;
@@ -17,8 +19,8 @@ export const METRICS_RETENTION_DAYS = 90;
 /** The per-provider counter of node-error replies: an answered relay whose reply is an RPC error. */
 export const PROVIDER_NODE_ERRORS = "smartrouter_node_errors_total";
 
-/** An ISO 8601 time with its zone, which the server turns into Unix seconds. */
-const isoTime = z.iso.datetime({ offset: true });
+/** An ISO 8601 time, which the server turns into Unix seconds; one without a zone is UTC. */
+const isoTime = z.iso.datetime({ offset: true, local: true });
 
 /** The router's log lines at warn or error, counted once a minute by the fleet's Loki ruler. */
 export const RECORDED_WARN_ERROR = "smartrouter_warn_error_lines:count1m";
@@ -90,7 +92,9 @@ export function windowInput(input: { start?: number; end?: number; from?: string
   end?: number;
 } {
   const seconds = (iso?: string) =>
-    iso === undefined ? undefined : Math.floor(Date.parse(iso) / 1000);
+    iso === undefined
+      ? undefined
+      : Math.floor(Date.parse(/(?:[zZ]|[+-]\d\d:?\d\d)$/.test(iso) ? iso : `${iso}Z`) / 1000);
   return { start: input.start ?? seconds(input.from), end: input.end ?? seconds(input.to) };
 }
 
