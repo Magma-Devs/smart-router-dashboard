@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { RECORDED_WARN_ERROR, requestSummaryInput, requestSummaryQueries } from "../services/ask/request-summary.js";
+import {
+  CUSTOMER_COUNTERS,
+  RECORDED_WARN_ERROR,
+  requestSummaryInput,
+  requestSummaryQueries,
+} from "../services/ask/request-summary.js";
 import { FAILED_PIPELINE, PARSED_PIPELINE } from "../services/relay-end.js";
 import { TX_EVENT_FILTER } from "../services/transactions.js";
 import { LOG_PIPELINE } from "../services/transactions-over-time.js";
@@ -48,23 +53,95 @@ describe("curated request evidence", () => {
     expect(requests!.raw).toBe(
       `sum by (chain) (count_over_time(${sel} |= \`"event":"relay_end"\` ${PARSED_PIPELINE} | selection!="subscription" [1800s]))`,
     );
-    expect(failures!.raw).toBe(`sum by (chain) (count_over_time(${sel} ${FAILED_PIPELINE} [1800s]))`);
-    const [tx] = requestSummaryQueries({ measure: "transactions", chain: "ETH1" }, defaults, "acme")!.counts;
+    expect(failures!.raw).toBe(
+      `sum by (chain) (count_over_time(${sel} ${FAILED_PIPELINE} [1800s]))`,
+    );
+    const [tx] = requestSummaryQueries(
+      { measure: "transactions", chain: "ETH1" },
+      defaults,
+      "acme",
+    )!.counts;
     expect(tx!.raw).toBe(
       `sum by (chain, outcome, tx_status, tx_refused, api_interface) (count_over_time(${sel} ${TX_EVENT_FILTER} ${LOG_PIPELINE} [1800s]))`,
     );
-    const [errors, messages] = requestSummaryQueries({ measure: "errors" }, defaults, "acme")!.counts;
+    const [errors, messages] = requestSummaryQueries(
+      { measure: "errors" },
+      defaults,
+      "acme",
+    )!.counts;
     expect(errors!.raw).toBe(
       'sum by (chain, level) (count_over_time({service_name=~"acme-.*",component="router"} | level=~"warn|error" [1800s]))',
     );
-    expect(messages!.raw).toContain('| level=~"warn|error" | json message="message" | __error__=""');
+    expect(messages!.raw).toContain(
+      '| level=~"warn|error" | json message="message" | __error__=""',
+    );
     for (const measure of [undefined, "transactions", "errors"] as const)
       for (const count of requestSummaryQueries({ measure }, defaults, "acme")!.counts)
         expect(hasBoundedAskQuery(count.raw!)).toBe(true);
   });
+  it("reads requests and failures per customer, and per customer and method, without the serving probe", () => {
+    const queries = requestSummaryQueries({ measure: "customers" }, defaults, "acme")!;
+    expect(queries.counts.map((count) => count.name)).toEqual([
+      "customer_requests",
+      "customer_failures",
+      "customer_methods",
+    ]);
+    const sel = '{customer!="magma-serving-probe"}';
+    expect(queries.counts[0]!.query).toBe(
+      `topk(50, round(sum by (customer) (increase(${CUSTOMER_COUNTERS.requests}${sel}[1800s]))))`,
+    );
+    expect(queries.counts[1]!.query).toBe(
+      `topk(50, round(sum by (customer) (increase(${CUSTOMER_COUNTERS.failures}${sel}[1800s]))))`,
+    );
+    expect(queries.counts[2]!.query).toBe(
+      `topk(30, round(sum by (customer, method) (increase(${CUSTOMER_COUNTERS.requests}${sel}[1800s]))))`,
+    );
+    // Prometheus counters: no recorded series behind them, so no log-line fallback.
+    for (const count of queries.counts) {
+      expect(count.raw).toBeUndefined();
+      expect(hasBoundedAskQuery(count.query)).toBe(true);
+    }
+  });
+  it("narrows the customer counts to a chain's spec, one customer and method prefixes", () => {
+    const customer = "c0ffee".repeat(10) + "abcd";
+    const queries = requestSummaryQueries(
+      {
+        measure: "customers",
+        chain: "eth1",
+        customer,
+        methodPrefixes: ["debug_", "trace_"],
+        start: end - 86400,
+        end,
+      },
+      defaults,
+    )!;
+    // The recorded series carry the chain lower-cased; these counters carry the spec upper-cased.
+    const sel = `{customer!="magma-serving-probe",spec="ETH1",customer="${customer}",method=~"(?:debug_|trace_).*"}`;
+    for (const count of queries.counts) {
+      expect(count.query).toContain(`${sel}[86400s]`);
+      expect(hasBoundedAskQuery(count.query)).toBe(true);
+    }
+  });
+  it.each([
+    { measure: "customers", customer: 'acme"} or vector(1)' },
+    { measure: "customers", customer: "" },
+    { measure: "customers", customer: "a".repeat(129) },
+    { measure: "customers", methodPrefixes: [] },
+    { measure: "customers", methodPrefixes: [".*"] },
+    { measure: "customers", methodPrefixes: ["debug_|eth_"] },
+    { measure: "customers", methodPrefixes: Array.from({ length: 9 }, (_, i) => `m${i}_`) },
+    { customer: "acme" },
+    { measure: "errors", methodPrefixes: ["debug_"] },
+  ])(
+    "refuses a customer or method filter it cannot quote literally, or outside measure=customers %#",
+    (input) => {
+      expect(requestSummaryInput.safeParse(input).success).toBe(false);
+    },
+  );
   it("gives no raw count without a plain customer id", () => {
     for (const id of [undefined, "", "Acme", 'acme"} or {x="y']) {
-      for (const count of requestSummaryQueries({}, defaults, id)!.counts) expect(count.raw).toBeUndefined();
+      for (const count of requestSummaryQueries({}, defaults, id)!.counts)
+        expect(count.raw).toBeUndefined();
     }
   });
   it("narrows both counts to the same normalized chain", () => {

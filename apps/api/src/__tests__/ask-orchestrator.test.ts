@@ -588,6 +588,54 @@ describe("bounded customer tool orchestration", () => {
     },
   );
 
+  it.each([true, false])(
+    "reads the per-customer counters with their own note, no log fallback and no recording lag (empty: %s)",
+    async (empty) => {
+      const customer = "0123456789abcdef".repeat(4);
+      const f = fixture({
+        data: {
+          status: "success",
+          data: { result: empty ? [] : [{ metric: { customer }, value: [1, "42"] }] },
+        },
+        responses: [
+          provider([
+            {
+              toolUse: {
+                toolUseId: "summary",
+                name: "router_request_summary",
+                input: { measure: "customers", methodPrefixes: ["debug_", "trace_"] },
+              },
+            },
+          ]),
+          final(),
+        ],
+      });
+      await f.answer();
+      const body = JSON.parse(f.bodies[1]!);
+      const result = JSON.parse(body.messages.at(-1).content[0].toolResult.content[0].text);
+      expect(result.counts.map((count: { name: string }) => count.name)).toEqual([
+        "customer_requests",
+        "customer_failures",
+        "customer_methods",
+      ]);
+      for (const count of result.counts as {
+        fallback?: unknown;
+        result: { coverage: string };
+      }[]) {
+        expect(count.fallback).toBeUndefined();
+        expect(count.result.coverage).toBe(empty ? "empty" : "complete");
+      }
+      expect(result.warning).toBeUndefined();
+      expect(result.note).toContain("DefaultDappID");
+      expect(result.note).not.toContain("Recorded one-minute counts");
+      if (!empty) expect(JSON.stringify(result)).toContain(customer);
+      const reads = vi.mocked(f.hooks.recordTool).mock.calls.map(([read]) => read);
+      expect(reads.map((read) => read.operationId)).toEqual(Array(3).fill("metrics.query"));
+      for (const read of reads)
+        expect(read.parameters.query).toContain('method=~"(?:debug_|trace_).*"');
+    },
+  );
+
   it("does not describe a current status observation as exhaustive incident history", async () => {
     const until = Math.floor(Date.now() / 1000);
     const f = fixture({
@@ -1192,6 +1240,13 @@ describe("conversation, grounding and execution boundaries", () => {
     expect(prompt).not.toContain("general explanations");
     expect(prompt).toContain("never mentions tools, reads, tool calls");
     expect(prompt).not.toContain("commentary outside present_answer");
+    // The reader's own customers are the customer-id header values, named as returned.
+    expect(prompt).toContain("measure=customers");
+    expect(prompt).toContain("smartrouter_customer_requests_total");
+    expect(prompt).toContain("not the deployment's own customer ID");
+    expect(prompt).toContain("Name a customer exactly as returned");
+    expect(prompt).toContain("DefaultDappID");
+    expect(prompt).toContain("requests and the customers that sent them");
   });
 });
 

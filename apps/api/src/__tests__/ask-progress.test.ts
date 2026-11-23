@@ -29,6 +29,20 @@ describe("readLabel", () => {
       }),
     ).toBe("Failure counts and request counts");
   });
+  it("names the per-customer counters", () => {
+    expect(
+      readLabel("metrics.query", {
+        query:
+          'topk(50, round(sum by (customer) (increase(smartrouter_customer_requests_total{customer!="magma-serving-probe"}[86400s]))))',
+      }),
+    ).toBe("Requests per customer");
+    expect(
+      readLabel("metrics.query", {
+        query:
+          "topk(50, round(sum by (customer) (increase(smartrouter_customer_requests_failed_total[3600s]))))",
+      }),
+    ).toBe("Failures per customer");
+  });
 
   it("names any other metric by its name, never by label values, strings or durations", () => {
     expect(

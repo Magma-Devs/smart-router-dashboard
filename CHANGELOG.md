@@ -5,6 +5,21 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.87.0]
+
+### Added
+
+- Ask answers questions about the reader's own customers: the `customer-id`
+  header their callers send. `router_request_summary` with `measure=customers`
+  reads requests and failures per customer and requests per customer and
+  method from `smartrouter_customer_requests_total` and
+  `smartrouter_customer_requests_failed_total`, narrowed by chain, one customer
+  or method prefixes (`debug_`, `trace_` for debug requests). The hub's
+  serving probe is left out; `DefaultDappID` reads as requests that named no
+  customer and `other` as requests past a router's 512-customer cap.
+- Ask's scope names the customers that sent the router's requests, so a
+  question about them is answered, not declined.
+
 ## [0.86.0]
 
 ### Changed
