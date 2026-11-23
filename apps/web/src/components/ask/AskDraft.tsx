@@ -63,13 +63,15 @@ export function AskDraftView({ text, animate = true }: { text: string; animate?:
 
 /**
  * A run's draft, read twice a second from the moment it is queued until its
- * status is final; a final status reloads the transcript at once, so the saved
- * answer replaces the draft without waiting for the slower run poll.
+ * status is final; a final status reloads the transcript at once. The server
+ * clears the draft when the run ends, so the last text read stays shown until
+ * the conversation unmounts this, when the transcript holds the run's outcome.
  */
 export function AskDraft({ run }: { run: Pick<AskRun, "id" | "status" | "progress"> | null }) {
   const { api, refresh } = useAsk();
   const live = run?.status === "queued" || run?.status === "running";
   const settled = useRef<string | null>(null);
+  const [lastText, setLastText] = useState("");
   const polled = useSWR<AskRunDraft>(
     live ? ["ask-draft", run.id] : null,
     () => api.get(`/api/ask/runs/${run!.id}/draft`),
@@ -87,7 +89,10 @@ export function AskDraft({ run }: { run: Pick<AskRun, "id" | "status" | "progres
     settled.current = run.id;
     void refresh().catch(() => undefined);
   }, [run, status, refresh]);
-  if (!live || (status && status !== "running")) return null;
-  const draft = polled.data ? (polled.data.draft ?? "") : (runningDraft(run) ?? "");
-  return <AskDraftView text={draft.trim()} />;
+  const draft = (
+    polled.data ? (polled.data.draft ?? "") : run ? (runningDraft(run) ?? "") : ""
+  ).trim();
+  if (draft && draft !== lastText) setLastText(draft);
+  if (!run) return null;
+  return <AskDraftView text={draft || lastText} />;
 }

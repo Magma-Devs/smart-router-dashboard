@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import useSWR from "swr";
-import type { AskChatDetail } from "@sr/shared";
+import type { AskChatDetail, AskRun } from "@sr/shared";
 import { ApiError } from "@/lib/api-client";
 import { useAsk } from "./AskProvider";
 import { AskAnswer, AskTime } from "./AskAnswer";
@@ -11,6 +11,11 @@ import { processingText } from "./ask-display";
 import { AskDraft } from "./AskDraft";
 import { AskReads } from "./AskReads";
 import { AskOffNotice } from "./AskSwitch";
+
+/** A run the transcript shows as done: its answer or its error is saved. */
+function finished(run: Pick<AskRun, "status"> | undefined): boolean {
+  return !!run && !["queued", "running", "cancelling"].includes(run.status);
+}
 
 function fitComposer(field: HTMLTextAreaElement) {
   field.style.height = "auto";
@@ -25,11 +30,18 @@ export function AskConversation() {
       (ask.submitting && ask.pending.originChatId === ask.chatId))
       ? ask.pending
       : null;
+  // The run last active in this chat. Its streamed reply stays shown after the
+  // run ends, until the transcript holds the run as done and the saved answer
+  // takes its place in the same render.
+  const activeHere = ask.active && ask.active.chatId === ask.chatId ? ask.active : null;
+  const [held, setHeld] = useState<AskRun | null>(null);
+  if (activeHere && held !== activeHere) setHeld(activeHere);
+  const holding = held && held.chatId === ask.chatId ? held : null;
   const feed = useSWR<AskChatDetail>(
     ask.available && ask.chatId ? ["ask", ask.scope, "chat", ask.chatId] : null,
     () => ask.api.get(`/api/ask/chats/${ask.chatId}`),
     {
-      ...askPoll<AskChatDetail>(ask.active?.chatId === ask.chatId || pending?.run ? 1500 : 0),
+      ...askPoll<AskChatDetail>(activeHere || pending?.run || holding ? 1500 : 0),
       revalidateOnFocus: true,
       keepPreviousData: false,
     },
@@ -56,6 +68,15 @@ export function AskConversation() {
   const savedPending =
     pending?.run && messages.some((message) => message.runId === pending.run!.id);
   const optimistic = pending && !savedPending ? pending : null;
+  const heldDone = !!holding && !activeHere && finished(outcomes.get(holding.id));
+  if (heldDone) setHeld(null);
+  const draftRun = activeHere
+    ? ask.connectionLost
+      ? null
+      : activeHere
+    : heldDone
+      ? null
+      : holding;
   const { acknowledge } = ask;
   useEffect(() => {
     if (savedPending && pending?.run) acknowledge(pending.run.id);
@@ -356,11 +377,9 @@ export function AskConversation() {
                   </button>
                 ) : null}
               </div>
-              {!ask.connectionLost && ask.active?.chatId === ask.chatId ? (
-                <AskDraft run={ask.active} />
-              ) : null}
             </>
           ) : null}
+          {draftRun ? <AskDraft key={draftRun.id} run={draftRun} /> : null}
         </div>
       </div>
       <form
