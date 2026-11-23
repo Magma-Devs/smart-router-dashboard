@@ -1059,6 +1059,30 @@ describe("bounded customer tool orchestration", () => {
     expect(f.hooks.recordTool).toHaveBeenCalledWith(expect.objectContaining({ ok: true }));
   });
 
+  it("hands the model a narrowed recent-requests sample the same way", async () => {
+    const window = {
+      requested: { start: 1_795_370_400, end: 1_795_456_800 },
+      read: { start: 1_795_443_600, end: 1_795_456_800 },
+    };
+    const f = fixture({
+      envelopes: [{ partial: true, window, guidance: "Continue with end=1795443600." }],
+      responses: [
+        provider([{ toolUse: { toolUseId: "sample", name: "router_recent_requests", input: {} } }]),
+        final(),
+      ],
+    });
+    const answer = await f.answer();
+    expect(answer.evidence[0]).toMatchObject({
+      operationId: "logs.query_range",
+      coverage: "partial",
+      from: "2026-11-23T14:20:00.000Z",
+      to: "2026-11-23T18:00:00.000Z",
+    });
+    const result = JSON.stringify(f.bodies[1]);
+    expect(result).toContain("Continue with end=1795443600.");
+    expect(result).toContain("never the whole window asked for");
+  });
+
   it("keeps a read the source only adjusted as it was covered, with what ran", async () => {
     const f = fixture({
       envelopes: [{ adjusted: { step: 236 }, guidance: "The step was raised to 236 seconds." }],
