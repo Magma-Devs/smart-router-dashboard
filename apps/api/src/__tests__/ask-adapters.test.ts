@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { readAskSettings } from "../config.js";
 import { BedrockAdapter } from "../services/ask/bedrock.js";
 import { Client } from "@modelcontextprotocol/client";
-import { McpAdapter, McpPool } from "../services/ask/mcp.js";
+import { MCP_GUIDANCE_MAX, McpAdapter, McpPool } from "../services/ask/mcp.js";
 import { boundedFetch } from "../services/ask/http.js";
 import { AskFailure } from "../services/ask/errors.js";
 
@@ -427,6 +427,10 @@ function mcpFixture(
     failOnce?: string;
     /** Identities `whoami` answers in turn; the last one repeats. */
     identities?: unknown[];
+    /** Fields a read's envelope carries beside its data, or replaces. */
+    envelope?: Record<string, unknown>;
+    /** What `execute_operation` answers as a tool error, in place of an envelope. */
+    toolError?: unknown;
   } = {},
 ) {
   const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
@@ -507,11 +511,18 @@ function mcpFixture(
           operationId: args.operationId,
           ok: true,
           data: { result: [] },
+          ...overrides.envelope,
         };
-      result = {
-        content: [{ type: "text", text: JSON.stringify(data) }],
-        structuredContent: { result: data },
-      };
+      result =
+        name === "execute_operation" && overrides.toolError !== undefined
+          ? {
+              content: [{ type: "text", text: JSON.stringify(overrides.toolError) }],
+              isError: true,
+            }
+          : {
+              content: [{ type: "text", text: JSON.stringify(data) }],
+              structuredContent: { result: data },
+            };
     } else throw new Error("Unexpected MCP method");
     const response = { jsonrpc: "2.0", id: request.id, result };
     return overrides.sse && request.method === "tools/call"
@@ -655,6 +666,102 @@ describe("the replica's shared MCP client", () => {
     await run(pool, readAskSettings({ ...env, ASK_DATA_MCP_TOKEN: "customer-test-token-2" }));
     expect(count(fixture.methods, "initialize")).toBe(2);
     expect(fixture.calls.filter((c) => c.name === "list_sources")).toHaveLength(2);
+  });
+
+  it("reads what the MCP server says it did differently, and drops a part it does not understand", async () => {
+    const window = { requested: { start: 100, end: 86_500 }, read: { start: 70_000, end: 86_500 } };
+    const narrowed = mcpFixture({
+      envelope: {
+        partial: true,
+        window,
+        adjusted: { query: 'count_over_time({a="b"}[16500s])' },
+        guidance: "This read covers 70000 to 86500.\u0000 Continue with end=70000.",
+        estimate: { available: true, bytes: 1, requests: 2, ms: 3 },
+      },
+    });
+    expect(await run(new McpPool(settings(), narrowed.fetchImpl))).toEqual({
+      sourceId: "acme-metrics",
+      operationId: "metrics.query",
+      ok: true,
+      data: { result: [] },
+      error: undefined,
+      partial: true,
+      window,
+      adjusted: { query: 'count_over_time({a="b"}[16500s])' },
+      guidance: "This read covers 70000 to 86500. Continue with end=70000.",
+    });
+    const odd = mcpFixture({
+      envelope: {
+        partial: "yes",
+        window: { read: { start: "now" } },
+        adjusted: { step: -1 },
+        guidance: "g".repeat(5000),
+      },
+    });
+    const read = await run(new McpPool(settings(), odd.fetchImpl));
+    expect(read).toMatchObject({ ok: true, data: { result: [] } });
+    expect(read.partial).toBeUndefined();
+    expect(read.window).toBeUndefined();
+    expect(read.adjusted).toBeUndefined();
+    expect(read.guidance).toHaveLength(MCP_GUIDANCE_MAX);
+    // An MCP server that sends none of it reads as before.
+    const plain = await run(new McpPool(settings(), mcpFixture().fetchImpl));
+    expect(Object.keys(plain).sort()).toEqual(["data", "error", "ok", "operationId", "sourceId"]);
+  });
+
+  it("takes a read the MCP server did not answer as a failed read with its code and guidance", async () => {
+    const refused = mcpFixture({
+      envelope: {
+        ok: false,
+        data: undefined,
+        error: "SOURCE_REJECTED",
+        guidance: "Check its syntax.",
+      },
+    });
+    expect(await run(new McpPool(settings(), refused.fetchImpl))).toMatchObject({
+      ok: false,
+      error: "SOURCE_REJECTED",
+      guidance: "Check its syntax.",
+    });
+  });
+
+  it("takes parameters refused as a tool error as a failed read, and keeps the connection", async () => {
+    for (const toolError of [
+      { error: "INVALID_PARAMETERS" },
+      { error: "INVALID_PARAMETERS", guidance: "start: Time range must be ordered" },
+    ]) {
+      const fixture = mcpFixture({ toolError });
+      const pool = new McpPool(settings(), fixture.fetchImpl);
+      expect(await run(pool)).toEqual({
+        sourceId: "acme-metrics",
+        operationId: "metrics.query",
+        ok: false,
+        error: "INVALID_PARAMETERS",
+        ...("guidance" in toolError ? { guidance: toolError.guidance } : {}),
+      });
+      await run(pool);
+      expect(count(fixture.methods, "initialize")).toBe(1);
+    }
+  });
+
+  it.each([
+    [{ error: "FORBIDDEN" }],
+    [{ error: "UNAVAILABLE" }],
+    [{ error: "invalid_parameters" }],
+    ["not an object"],
+  ])("still ends the run on a tool error that is not about the read: %j", async (toolError) => {
+    const fixture = mcpFixture({ toolError });
+    const pool = new McpPool(settings(), fixture.fetchImpl);
+    await expect(run(pool)).rejects.toMatchObject({ code: "ASK_MCP_UNAVAILABLE" });
+  });
+
+  it("refuses a failed read whose credential no longer answers as this customer", async () => {
+    const fixture = mcpFixture({
+      toolError: { error: "INVALID_PARAMETERS" },
+      identities: [acme, { ...acme, tenantId: "other" }],
+    });
+    const pool = new McpPool(settings(), fixture.fetchImpl);
+    await expect(run(pool)).rejects.toMatchObject({ code: "ASK_IDENTITY_MISMATCH" });
   });
 
   it("retires the connection after a failed call, so the next run connects again", async () => {

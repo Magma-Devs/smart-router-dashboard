@@ -124,8 +124,12 @@ function fixture(
     /** The result of the counts read before the first turn; other reads return `data`. */
     counts?: unknown;
     countsFail?: boolean;
+    /** What the reads answer in turn, before the default: fields merged into
+     * the envelope, or `toolError` for a tool error with that body. */
+    envelopes?: Array<Record<string, unknown>>;
   } = {},
 ) {
+  const envelopes = [...(options.envelopes ?? [])];
   const value = settings();
   const client = new Client({ name: "orchestrator-fixture", version: "1" });
   const sourceList = [
@@ -179,7 +183,13 @@ function fixture(
         ok: true,
         data: options.counts,
       };
-    } else
+    } else {
+      const next = envelopes.shift();
+      if (next && "toolError" in next)
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(next.toolError) }],
+          isError: true,
+        };
       result = {
         tenantId: "acme",
         sourceId: request.arguments?.sourceId,
@@ -190,7 +200,9 @@ function fixture(
           data: { result: [{ metric: {}, value: [Date.now() / 1000, "3"] }] },
         },
         ...(options.fail ? { error: "SOURCE_UNAVAILABLE" } : {}),
+        ...next,
       };
+    }
     return {
       content: [{ type: "text" as const, text: JSON.stringify(result) }],
       structuredContent: { result },
@@ -1013,6 +1025,96 @@ describe("bounded customer tool orchestration", () => {
         evidence: expect.objectContaining({ coverage: "unavailable" }),
       }),
     );
+  });
+
+  it("hands the model a narrowed read with the window it covers and the source's guidance, as partial evidence", async () => {
+    const window = {
+      requested: { start: 1_795_370_400, end: 1_795_456_800 },
+      read: { start: 1_795_443_600, end: 1_795_456_800 },
+    };
+    const guidance =
+      "The streams selected hold more than 16 GiB over all of it: this read covers 1795443600 to 1795456800. Continue with end=1795443600.";
+    const f = fixture({
+      envelopes: [
+        {
+          partial: true,
+          window,
+          guidance,
+          adjusted: { query: 'sum(count_over_time({a="b"}[13200s]))' },
+        },
+      ],
+    });
+    const answer = await f.answer();
+    expect(answer.evidence[0]).toMatchObject({
+      coverage: "partial",
+      from: "2026-11-23T14:20:00.000Z",
+      to: "2026-11-23T18:00:00.000Z",
+    });
+    const result = JSON.stringify(f.bodies[1]);
+    expect(result).toContain("Continue with end=1795443600.");
+    expect(result).toContain("13200s");
+    expect(result).toContain("never the whole window asked for");
+    expect(result).toContain("2026-11-22T18:00:00.000Z");
+    // The read is a successful one: the run answers from it.
+    expect(f.hooks.recordTool).toHaveBeenCalledWith(expect.objectContaining({ ok: true }));
+  });
+
+  it("keeps a read the source only adjusted as it was covered, with what ran", async () => {
+    const f = fixture({
+      envelopes: [{ adjusted: { step: 236 }, guidance: "The step was raised to 236 seconds." }],
+    });
+    const answer = await f.answer();
+    expect(answer.evidence[0]!.coverage).not.toBe("partial");
+    const result = JSON.stringify(f.bodies[1]);
+    expect(result).toContain("ranAs");
+    expect(result).toContain("raised to 236 seconds");
+    expect(result).not.toContain("never the whole window asked for");
+  });
+
+  it.each([
+    [
+      "an envelope that is not ok",
+      { ok: false, data: undefined, error: "SOURCE_REJECTED", guidance: "Check its syntax." },
+    ],
+    [
+      "parameters refused as a tool error",
+      { toolError: { error: "INVALID_PARAMETERS", guidance: "Check its syntax." } },
+    ],
+    [
+      "an MCP server that gives only a code",
+      { ok: false, data: undefined, error: "SOURCE_REJECTED" },
+    ],
+  ])(
+    "hands the model the reason for a read that was not answered, and the run reads again: %s",
+    async (_name, first) => {
+      const f = fixture({
+        envelopes: [first],
+        responses: [provider([tool()]), provider([tool()]), provider([presentation()])],
+      });
+      const answer = await f.answer();
+      expect(answer.summary).toBe(content.summary);
+      const result = JSON.stringify(f.bodies[1]);
+      expect(result).toMatch(/Read not answered: (SOURCE_REJECTED|INVALID_PARAMETERS)/);
+      expect(result.includes("Check its syntax.")).toBe(
+        "guidance" in first || "toolError" in first,
+      );
+      expect(result).not.toContain("Source unavailable");
+      expect(f.hooks.recordTool).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ok: false,
+          evidence: expect.objectContaining({ coverage: "unavailable" }),
+        }),
+      );
+      expect(f.hooks.recordTool).toHaveBeenCalledWith(expect.objectContaining({ ok: true }));
+    },
+  );
+
+  it("redacts a secret in the source's guidance before the model sees it", async () => {
+    const f = fixture({
+      envelopes: [{ partial: true, guidance: "Continue with end=5. password=hunter2" }],
+    });
+    await f.answer();
+    expect(JSON.stringify(f.bodies[1])).not.toContain("hunter2");
   });
 
   it("treats an upstream API error body as unavailable even in a successful MCP envelope", async () => {
