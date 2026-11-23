@@ -61,6 +61,8 @@ export const askRuns = pgTable(
     leaseUntil: time("lease_until"),
     attempts: integer("attempts").notNull().default(0),
     answer: jsonb("answer").$type<AskAnswer | null>(),
+    /** The answer's summary while the model writes the rest; null otherwise. */
+    draft: text("draft"),
     errorCode: text("error_code").$type<AskErrorCode | null>(),
     createdAt: time("created_at").notNull().defaultNow(),
     startedAt: time("started_at"),
@@ -82,6 +84,7 @@ export const askRuns = pgTable(
     index("ask_runs_queue").on(t.customerId, t.status, t.createdAt),
     index("ask_runs_expired_lease").on(t.customerId, t.leaseUntil),
     check("ask_runs_question", sql`length(${t.question}) between 1 and 4000`),
+    check("ask_runs_draft", sql`${t.draft} is null or length(${t.draft}) <= 2000`),
     check(
       "ask_runs_state",
       sql`${t.status} in ('queued','running','cancelling','succeeded','failed','cancelled','interrupted')`,

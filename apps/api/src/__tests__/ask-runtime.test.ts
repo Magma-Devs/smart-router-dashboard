@@ -2,7 +2,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DrizzleQueryError } from "drizzle-orm/errors";
 import { createTestDb, enrolledTwoFactor, type TestDb } from "@sr/db/testing";
-import { askBudgetMonths, askMaintenance, askModelSteps, users } from "@sr/db";
+import { askBudgetMonths, askMaintenance, askModelSteps, askRuns, users } from "@sr/db";
 import { SignJWT } from "jose";
 import { authPlugin, SESSION_JWT_AUDIENCE, SESSION_JWT_ISSUER } from "../plugins/auth.js";
 import { createSession } from "../services/sessions.js";
@@ -133,6 +133,64 @@ function expectNoSecrets(lines: string[]) {
 }
 
 describe("API runtime accounting/worker wiring", () => {
+  it("shows the summary while the model writes, then only the validated answer", async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    vi.spyOn(BedrockAdapter.prototype, "converse").mockImplementation(async (_input, options) => {
+      expect(options.onDraft).toBeTypeOf("function");
+      await options.onDispatch();
+      options.onDraft!({ text: "Hello! The answer is on its wa", complete: false });
+      await held;
+      const usage = { inputTokens: 10, outputTokens: 5, totalTokens: 15 };
+      const receipt = { requestId: "draft-receipt", providerStatus: 200 };
+      await options.onUsage(usage, receipt);
+      return {
+        message: {
+          role: "assistant",
+          content: [
+            {
+              toolUse: {
+                toolUseId: "reply",
+                name: "present_answer",
+                input: { kind: "conversation", summary: "Hello! The answer.", sections: [] },
+              },
+            },
+          ],
+        },
+        stopReason: "tool_use",
+        usage,
+        receipt,
+        model: "anthropic.fixture",
+        region: "us-east-1",
+      };
+    });
+    vi.spyOn(McpPool.prototype, "open").mockRejectedValue(new AskFailure("ASK_MCP_UNAVAILABLE"));
+    const runtime = await boot();
+    await vi.waitFor(() => expect(runtime.ready()).toBe(true));
+    const chat = (await request("/chats", {})).json() as { id: string };
+    const run = (
+      await request(`/chats/${chat.id}/runs`, {
+        idempotencyKey: crypto.randomUUID(),
+        question: "hello",
+      })
+    ).json() as { id: string };
+    await vi.waitFor(
+      async () =>
+        expect((await request("/runs/active")).json().run.progress.draft).toBe(
+          "Hello! The answer is on its",
+        ),
+      { timeout: 3000 },
+    );
+    release();
+    await vi.waitFor(
+      async () => expect((await request(`/runs/${run.id}`)).json().status).toBe("succeeded"),
+      { timeout: 3000 },
+    );
+    expect((await t.db.select({ draft: askRuns.draft }).from(askRuns))[0]!.draft).toBeNull();
+    expect((await request("/runs/active")).json().run).toBeNull();
+  });
+
+
   it("persists a conversational reply through HTTP and the real worker, with model accounting, while the MCP is down", async () => {
     const count = vi.spyOn(BedrockAdapter.prototype, "countTokens");
     vi.spyOn(BedrockAdapter.prototype, "converse").mockImplementation(async (_input, options) => {

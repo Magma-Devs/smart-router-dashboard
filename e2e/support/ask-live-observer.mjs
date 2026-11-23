@@ -1,5 +1,6 @@
 import { appendFileSync } from "node:fs";
 import { askAnswerContentSchema } from "../../packages/shared/dist/index.js";
+import { converseFromStream } from "./converse-stream.mjs";
 if (process.env.E2E_ASK_LIVE !== "true" || process.env.NODE_ENV === "production")
   throw new Error("Live metadata observer requires the isolated live-check opt-in");
 const target = process.env.E2E_ASK_LIVE_PROVIDER_META_FILE;
@@ -34,7 +35,7 @@ globalThis.fetch = async (input, init) => {
   const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url);
   if (
     url.hostname !== "bedrock-runtime.us-east-1.amazonaws.com" ||
-    !url.pathname.endsWith("/converse")
+    !(url.pathname.endsWith("/converse") || url.pathname.endsWith("/converse-stream"))
   )
     return response;
   const metadata = {
@@ -58,7 +59,12 @@ globalThis.fetch = async (input, init) => {
         chunks.push(Buffer.from(chunk.value));
       }
     }
-    const raw = known(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+    const bytes = Buffer.concat(chunks);
+    const raw = known(
+      url.pathname.endsWith("/converse-stream")
+        ? converseFromStream(bytes)
+        : JSON.parse(bytes.toString("utf8")),
+    );
     const message = known(known(raw.output).message);
     metadata.topLevelKeys = Object.keys(raw);
     metadata.outputKeys = Object.keys(known(raw.output));

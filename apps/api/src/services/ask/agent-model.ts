@@ -27,6 +27,9 @@ export function askAgentModel(options: {
   validateStep: (step: BedrockStep) => void;
   inputSize?: (bytes: number, protectedBytes: number) => void;
   timing?: (phase: "model" | "admission", durationMs: number) => void;
+  /** Given, each step streams and this receives its `present_answer` summary
+   * as it arrives, before validation. */
+  draft?: (summary: { text: string; complete: boolean }) => void;
 }): LanguageModelV4 {
   const { settings, hooks, signal } = options;
   const native = new BedrockAdapter(settings, options.fetchImpl);
@@ -67,6 +70,7 @@ export function askAgentModel(options: {
             await hooks.modelDispatched(stepId);
           },
           onUsage: (usage, receipt) => hooks.recordUsage(stepId, usage, receipt),
+          ...(options.draft ? { onDraft: options.draft } : {}),
         },
       );
       options.timing?.("model", performance.now() - started);
@@ -117,8 +121,9 @@ export function askAgentModel(options: {
       };
     },
     async doStream() {
-      // The contract requires validation before display. Never stream raw
-      // unvalidated customer data to the browser.
+      // The SDK's stream would hand unvalidated tool input to its own loop.
+      // A step streams inside doGenerate instead, and only the summary draft
+      // leaves it before the step is validated.
       throw new AskFailure("ASK_UNAVAILABLE");
     },
   };

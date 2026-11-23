@@ -8,6 +8,7 @@ import { AskAnswer, AskTime } from "./AskAnswer";
 import { AskIcon } from "./AskIcon";
 import { askPoll } from "./ask-api";
 import { processingText } from "./ask-display";
+import { AskDraft } from "./AskDraft";
 import { AskReads } from "./AskReads";
 import { AskOffNotice } from "./AskSwitch";
 
@@ -339,7 +340,10 @@ export function AskConversation() {
                   </small>
                 )}
                 {!ask.connectionLost && ask.active?.chatId === ask.chatId ? (
-                  <AskReads run={ask.active} />
+                  <>
+                    <AskReads run={ask.active} />
+                    <AskDraft run={ask.active} />
+                  </>
                 ) : null}
               </div>
               {ask.active ? (

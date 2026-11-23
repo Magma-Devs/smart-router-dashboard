@@ -126,6 +126,12 @@ export function processingText(run: Pick<AskRun, "status" | "progress"> | null):
   return "Processing…";
 }
 
+/** The answer's summary while the model writes the rest, for a running run. */
+export function runningDraft(run: Pick<AskRun, "status" | "progress"> | null): string | null {
+  if (run?.status !== "running") return null;
+  return run.progress?.draft?.trim() || null;
+}
+
 /** The reads a running answer has finished, newest last, at most `limit`. */
 export function finishedReads(run: Pick<AskRun, "status" | "progress"> | null, limit = 5) {
   if (run?.status !== "running" || !run.progress) return { shown: [], hidden: 0 };

@@ -63,3 +63,51 @@ export async function boundedFetch(
     throw new AskFailure("ASK_UNAVAILABLE");
   }
 }
+
+/** `boundedFetch` for a streamed body: the same deadline, byte ceiling and
+ * redirect refusal, with each chunk of a 2xx body handed to `onChunk` as it
+ * arrives. `onHead` sees the status and headers before any chunk. A non-2xx
+ * body is read within the same bounds and discarded. */
+export async function boundedStream(
+  url: string,
+  init: RequestInit,
+  options: { fetchImpl?: typeof fetch; timeoutMs: number; maxBytes: number; signal?: AbortSignal },
+  onHead: (head: { status: number; ok: boolean; headers: Headers }) => void,
+  onChunk: (chunk: Uint8Array) => void,
+): Promise<void> {
+  const timeout = AbortSignal.timeout(options.timeoutMs);
+  const signal = AbortSignal.any([
+    timeout,
+    ...(options.signal ? [options.signal] : []),
+    ...(init.signal ? [init.signal] : []),
+  ]);
+  try {
+    signal.throwIfAborted();
+    const response = await (options.fetchImpl ?? fetch)(url, {
+      ...init,
+      signal,
+      redirect: "error",
+    });
+    onHead({ status: response.status, ok: response.ok, headers: response.headers });
+    if (!response.body) return;
+    const reader = response.body.getReader();
+    let length = 0;
+    try {
+      for (;;) {
+        signal.throwIfAborted();
+        const next = await reader.read();
+        if (next.done) break;
+        length += next.value.byteLength;
+        if (length > options.maxBytes) throw new AskFailure("ASK_LIMIT_REACHED", 502);
+        if (response.ok) onChunk(next.value);
+      }
+    } finally {
+      await reader.cancel().catch(() => undefined);
+      reader.releaseLock();
+    }
+  } catch (error) {
+    if (signal.aborted) throw abortFailure(signal);
+    if (error instanceof AskFailure) throw error;
+    throw new AskFailure("ASK_UNAVAILABLE");
+  }
+}

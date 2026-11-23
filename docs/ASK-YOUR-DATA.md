@@ -81,7 +81,13 @@ server-written label (`Failure counts`, `Request log lines`, `Metric <name>`)
 and a cross when its source was unavailable. An API that reports no progress
 shows `Processing…`. The step comes from the model turns and reads the run
 already records, read on each poll of `GET /api/ask/runs/active` (every 1.5 s
-while a question runs); the run writes nothing extra for it. Identical questions
+while a question runs); the run writes nothing extra for it. Under the reads,
+once the model has written the answer's summary and while it writes the
+sections, the summary shows as a draft ("Draft. The full answer replaces it
+once it is checked."): the validated answer replaces it, and a run that fails
+or stops drops it. The draft is plain text, at most the summary's 500
+characters, whole words only, credential-redacted as a stored answer is; it is
+not yet checked against the reads. Identical questions
 remain distinct turns. Failed delivery restores the draft; an uncertain retry
 uses the same idempotency key and context. Refreshing accepted state only reads
 the server and never resubmits the question.
@@ -217,8 +223,10 @@ coverage. Counts do not establish an acceptable error rate or a cause without ac
 
 Model dispatch guards live inside the model execution boundary, not SDK
 notification callbacks. Automatic model retries and tool repair are disabled.
-A provider's complete response is locally validated before persistence/display;
-text preceding a valid presentation is discarded. A blank heading receives a neutral label; a long summary flows into body text without dropping words, changing facts or paying for another formatting request. The model may return a concise summary alone; it is persisted as a v1-compatible reply section that the UI shows once, so rolling back keeps history readable. Data replies still require actual successful reads.
+A provider's complete response is locally validated before persistence and before
+it replaces the draft; only the `summary` of a `present_answer` call reaches the
+page before that, as the draft. Text preceding a valid presentation is discarded
+and never drafted. A blank heading receives a neutral label; a long summary flows into body text without dropping words, changing facts or paying for another formatting request. The model may return a concise summary alone; it is persisted as a v1-compatible reply section that the UI shows once, so rolling back keeps history readable. Data replies still require actual successful reads.
 Invented evidence references, unbacked stats, mixed final/read calls and unknown
 fields are rejected after usage is recorded. The native presentation schema
 constrains structure; the full local schema enforces size and grounding limits.
@@ -308,10 +316,27 @@ run or a chat; no stored answer carries a label, and the store drops one from an
 answer before writing it, so every stored answer parses on every API version.
 An answer stored earlier gets its labels the same way while its tool events are
 kept, and renders without them otherwise.
-No model HTML is rendered. The server validates before persistence/display.
+No model HTML is rendered. The server validates before persistence; the draft
+summary is the one model text shown before validation, as plain text.
 
-Bedrock uses [Converse](https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_Converse.html),
-with a fixed server-selected region/model and explicit maxTokens. No temperature
+Bedrock uses [ConverseStream](https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ConverseStream.html)
+for every model step of a run (IAM action `bedrock:InvokeModelWithResponseStream`),
+with a fixed server-selected region/model and explicit maxTokens. The adapter
+(`services/ask/bedrock.ts`) decodes the AWS event stream (`event-stream.ts`,
+both CRC32 checksums verified), rebuilds the Converse response from its events
+and runs the same checks on it a buffered
+[Converse](https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_Converse.html)
+response gets; a caller with no draft consumer makes the buffered call. While a
+`present_answer` call's input arrives, `draft.ts` reads its top-level `summary`
+as far as it has arrived. Claude sends tool input one whole field at a time, so
+the summary is expected to show in one piece, before the sections finish when
+the model writes it first; an answer with no sections shows it only at the end. The worker
+writes the newest draft to `ask_runs.draft` (migration `0014_ask_draft`) at most
+every 500 ms, only under the run's current lease while it runs; every terminal
+write clears it. An exception event ends the step as a provider failure, a
+stream cut before its `metadata` event leaves the step's usage uncertain, and a
+content event the adapter does not know rejects the step after its usage is
+recorded. The byte ceiling and deadline cover the whole stream. No temperature
 is sent. Context is capped at 64,000 UTF-8 bytes; output at 2048 tokens. The adapter
 does not retry potentially billable invocations. Its required usage callback runs
 before output validation, including malformed/truncated answers. Missing usage

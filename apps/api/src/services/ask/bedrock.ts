@@ -1,7 +1,9 @@
 import { z } from "zod";
 import type { AskSettings } from "../../config.js";
 import { AskFailure } from "./errors.js";
-import { boundedFetch } from "./http.js";
+import { EventStreamDecoder, type StreamMessage } from "./event-stream.js";
+import { boundedFetch, boundedStream } from "./http.js";
+import { summaryPrefix } from "./draft.js";
 
 export interface BedrockTool {
   name: string;
@@ -316,6 +318,10 @@ export class BedrockAdapter {
       onUsage: (usage: BedrockUsage | null, receipt: BedrockReceipt) => Promise<void>;
       /** The durable accounting layer marks potential spend before dispatch. */
       onDispatch: () => Promise<void>;
+      /** Given, the step streams (ConverseStream) and this receives the
+       * `present_answer` summary as it arrives, unvalidated. Without it the
+       * step is one buffered Converse call. */
+      onDraft?: (summary: { text: string; complete: boolean }) => void;
     },
   ): Promise<BedrockStep> {
     if (!this.settings.enabled) throw new AskFailure("ASK_DISABLED", 404);
@@ -326,34 +332,57 @@ export class BedrockAdapter {
     );
     if (Buffer.byteLength(body) > this.settings.maxContextBytes)
       throw new AskFailure("ASK_LIMIT_REACHED", 422);
-    const endpoint = `https://bedrock-runtime.${this.settings.bedrockRegion}.amazonaws.com/model/${encodeURIComponent(this.settings.bedrockModel)}/converse`;
+    const streamed = options.onDraft !== undefined;
+    const endpoint = `https://bedrock-runtime.${this.settings.bedrockRegion}.amazonaws.com/model/${encodeURIComponent(this.settings.bedrockModel)}/${streamed ? "converse-stream" : "converse"}`;
     let raw: unknown;
     const receipt: BedrockReceipt = { requestId: null, providerStatus: null };
+    const head = (status: number, headers: Headers) => {
+      receipt.providerStatus = status;
+      const requestId = headers.get("x-amzn-requestid");
+      if (requestId && /^[A-Za-z0-9-]{1,128}$/.test(requestId)) receipt.requestId = requestId;
+    };
+    const init = {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${this.settings.bedrockToken}`,
+        "content-type": "application/json",
+      },
+      body,
+    };
+    const bounds = {
+      fetchImpl: this.fetchImpl,
+      timeoutMs: this.settings.runTimeoutMs,
+      maxBytes: this.settings.maxResponseBytes,
+      signal: options.signal,
+    };
     options.signal?.throwIfAborted();
     await options.onDispatch();
     try {
-      const response = await boundedFetch(
-        endpoint,
-        {
-          method: "POST",
-          headers: {
-            authorization: `Bearer ${this.settings.bedrockToken}`,
-            "content-type": "application/json",
+      if (streamed) {
+        const decoder = new EventStreamDecoder();
+        const stream = new ConverseStreamAssembler(options.onDraft);
+        let ok = false;
+        await boundedStream(
+          endpoint,
+          init,
+          bounds,
+          (response) => {
+            head(response.status, response.headers);
+            ok = response.ok;
           },
-          body,
-        },
-        {
-          fetchImpl: this.fetchImpl,
-          timeoutMs: this.settings.runTimeoutMs,
-          maxBytes: this.settings.maxResponseBytes,
-          signal: options.signal,
-        },
-      );
-      receipt.providerStatus = response.status;
-      const requestId = response.headers.get("x-amzn-requestid");
-      if (requestId && /^[A-Za-z0-9-]{1,128}$/.test(requestId)) receipt.requestId = requestId;
-      if (!response.ok) throw new AskFailure("ASK_BEDROCK_UNAVAILABLE");
-      raw = await response.json();
+          (chunk) => {
+            for (const message of decoder.push(chunk)) stream.message(message);
+          },
+        );
+        if (!ok) throw new AskFailure("ASK_BEDROCK_UNAVAILABLE");
+        decoder.finish();
+        raw = stream.response();
+      } else {
+        const response = await boundedFetch(endpoint, init, bounds);
+        head(response.status, response.headers);
+        if (!response.ok) throw new AskFailure("ASK_BEDROCK_UNAVAILABLE");
+        raw = await response.json();
+      }
     } catch (error) {
       await options.onUsage(null, receipt);
       if (
@@ -385,6 +414,153 @@ export class BedrockAdapter {
       model: this.settings.bedrockModel,
       region: this.settings.bedrockRegion,
       receipt,
+    };
+  }
+}
+
+type StreamBlock =
+  { text: string } | { toolUse: { toolUseId: string; name: string; type?: unknown }; json: string };
+
+/**
+ * Rebuilds a Converse response from ConverseStream's events, so the stream
+ * and the buffered call share every check that follows. Usage arrives in the
+ * last event (`metadata`); a stream cut before it leaves the step's usage
+ * unknown. A content delta this reader does not know marks the response
+ * invalid, and the stream is still read to its end so its usage is recorded;
+ * an event type it does not know is skipped.
+ * An exception event ends the step as a provider failure.
+ */
+class ConverseStreamAssembler {
+  private role: unknown;
+  private stopReason: unknown;
+  private usage: unknown;
+  private invalid = false;
+  private readonly blocks: StreamBlock[] = [];
+  private shown: string | null = null;
+
+  constructor(private readonly onDraft?: (summary: { text: string; complete: boolean }) => void) {}
+
+  message(message: StreamMessage): void {
+    const kind = message.headers[":message-type"];
+    if (kind !== "event") throw new AskFailure("ASK_BEDROCK_UNAVAILABLE");
+    let event: Record<string, unknown>;
+    try {
+      const parsed = JSON.parse(message.payload.toString("utf8")) as unknown;
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error();
+      event = parsed as Record<string, unknown>;
+    } catch {
+      this.invalid = true;
+      return;
+    }
+    const index = event.contentBlockIndex;
+    switch (message.headers[":event-type"]) {
+      case "messageStart":
+        this.role = event.role;
+        return;
+      case "contentBlockStart": {
+        const start = event.start as { toolUse?: Record<string, unknown> } | undefined;
+        const tool = start?.toolUse;
+        if (index === this.blocks.length && !tool && Object.keys(start ?? {}).length === 0) {
+          this.blocks.push({ text: "" });
+          return;
+        }
+        if (
+          index !== this.blocks.length ||
+          !tool ||
+          typeof tool.toolUseId !== "string" ||
+          typeof tool.name !== "string"
+        ) {
+          this.invalid = true;
+          return;
+        }
+        this.blocks.push({
+          toolUse: {
+            toolUseId: tool.toolUseId,
+            name: tool.name,
+            ...(tool.type === undefined ? {} : { type: tool.type }),
+          },
+          json: "",
+        });
+        return;
+      }
+      case "contentBlockDelta": {
+        const delta = event.delta as Record<string, unknown> | undefined;
+        if (typeof index !== "number" || !delta) {
+          this.invalid = true;
+          return;
+        }
+        if (typeof delta.text === "string" && Object.keys(delta).length === 1) {
+          // A text block has no start event: its first delta opens it.
+          if (index === this.blocks.length) this.blocks.push({ text: "" });
+          const block = this.blocks[index];
+          if (!block || !("text" in block)) this.invalid = true;
+          else block.text += delta.text;
+          return;
+        }
+        const toolDelta = delta.toolUse as Record<string, unknown> | undefined;
+        const block = this.blocks[index];
+        if (
+          Object.keys(delta).length !== 1 ||
+          typeof toolDelta?.input !== "string" ||
+          !block ||
+          !("json" in block)
+        ) {
+          this.invalid = true;
+          return;
+        }
+        block.json += toolDelta.input;
+        if (block.toolUse.name === "present_answer" && this.onDraft) this.draft(block.json);
+        return;
+      }
+      case "contentBlockStop":
+        return;
+      case "messageStop":
+        this.stopReason = event.stopReason;
+        return;
+      case "metadata":
+        this.usage = event.usage;
+        return;
+      default:
+        // An event type added after this reader carries no content block of
+        // its own; content always arrives in a contentBlockDelta.
+        return;
+    }
+  }
+
+  private draft(json: string): void {
+    const summary = summaryPrefix(json);
+    if (!summary) return;
+    const key = `${summary.complete ? 1 : 0}${summary.text}`;
+    if (key === this.shown) return;
+    this.shown = key;
+    try {
+      this.onDraft!(summary);
+    } catch {
+      // A draft is a preview: its consumer never ends the step.
+    }
+  }
+
+  /** The Converse-shaped response; one that is invalid carries only its usage. */
+  response(): Record<string, unknown> {
+    const content: unknown[] = [];
+    for (const block of this.blocks) {
+      if ("text" in block) {
+        content.push({ text: block.text });
+        continue;
+      }
+      try {
+        content.push({
+          toolUse: { ...block.toolUse, input: JSON.parse(block.json || "{}") as unknown },
+        });
+      } catch {
+        this.invalid = true;
+      }
+    }
+    return {
+      ...(this.usage === undefined ? {} : { usage: this.usage }),
+      ...(this.invalid
+        ? {}
+        : { output: { message: { role: this.role, content } }, stopReason: this.stopReason }),
     };
   }
 }
