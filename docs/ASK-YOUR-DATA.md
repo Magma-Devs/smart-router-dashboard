@@ -86,8 +86,11 @@ line the answer appears as the model writes it, with a caret, rendered as the
 saved answer is: the page reads `GET /api/ask/runs/:id/draft` every 500 ms from
 the moment the run is queued until its status is final, and reveals new text a
 few characters a frame (at once under reduced motion). A final status reloads
-the transcript at once, and the saved answer replaces the draft; a run that
-fails or stops drops it. The draft is whole words only, credential-redacted as a
+the transcript at once. The server clears the draft when the run ends, so the
+page keeps the last text it read on screen, and the transcript keeps polling,
+until the transcript holds that run as done. In that same render the saved
+answer replaces the draft, or a failed or stopped run's message does, so the
+reply never blanks between the two. The draft is whole words only, credential-redacted as a
 stored answer is, and not yet checked against the reads. While it streams,
 half-written Markdown is held back or closed (a table row without its closing
 `|`, a table without its separator line, an open `**` or code span), so raw

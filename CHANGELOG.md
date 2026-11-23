@@ -5,6 +5,16 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.85.0]
+
+### Fixed
+
+- An Ask reply that streamed in stays on screen until the saved answer
+  replaces it in the same render, so the reply never blanks when a run ends.
+  The page keeps the run it last showed as active and the last draft text it
+  read, since the server clears the draft at the end, and polls the transcript
+  until it holds that run as done.
+
 ## [0.84.0]
 
 ### Removed
