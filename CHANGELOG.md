@@ -5,6 +5,18 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.91.3]
+
+### Fixed
+
+- **Ask's metrics, log and status reads take ISO times (MAG-5740).** These
+  reads took times only in Unix seconds, so for a named past window the model
+  converted the dates by hand, sometimes into the wrong year, and said so in
+  its answer. Each read now takes `from`/`to` (and `at` for one instant) in
+  ISO 8601, which the server converts, as Ask's request summary and request
+  sample already did. Unix seconds still work; a time given both ways is
+  refused, and a window read that names no time reads the chat's window.
+
 ## [0.91.2]
 
 ### Fixed
