@@ -44,6 +44,8 @@ import {
   qErrorCount,
   qErrorCountSeriesExpr,
   qErrorRateSeriesExpr,
+  qClassifiedErrorsBy,
+  type ClassifiedErrorsGroupBy,
   qErrorsBy,
   qErrorsByUpstream,
   qLatencySeriesExpr,
@@ -848,17 +850,14 @@ export class MetricsDetailService {
     const rr = rangeFor(window);
 
     // Classified errors — smartrouter_errors_total carries {chain_id (NOT
-    // spec), error_category ∈ internal|external, error_name, retryable}.
-    // When present it powers the code / category / retryability pivots the
-    // design asked for.
+    // spec), error_category ∈ internal|external, error_name, retryable,
+    // source}. When present it powers the code / category / retryability
+    // pivots the design asked for, over the clients' own attempts
+    // (qClassifiedErrorsBy).
     const classifiedPresent = await this.familyPresent(
       OPTIONAL_METRICS.errorsClassifiedTotal,
     );
-    const clSel = selector({ chain_id: spec });
-    const clQ = (by: string) =>
-      this.prom.query(
-        `round(sum by (${by}) (increase(${OPTIONAL_METRICS.errorsClassifiedTotal}${clSel}[${rr}])))`,
-      );
+    const clQ = (by: ClassifiedErrorsGroupBy) => this.prom.query(qClassifiedErrorsBy(by, window, spec));
     const [byName, byCategory, byRetryable] = classifiedPresent
       ? await Promise.all([clQ("error_name"), clQ("error_category"), clQ("retryable")])
       : [[], [], []];

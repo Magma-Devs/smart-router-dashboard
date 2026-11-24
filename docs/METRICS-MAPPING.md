@@ -222,7 +222,7 @@ client requests) against the live router:
 | Error count (derived, whole) | `qErrorCount` = `round(clamp_min(total − success, 0))` |
 | Errors by chain/method/provider | `qErrorsBy(label)` — rounded; the `or … * 0` keeps all-error groups whose success series is absent |
 | Node / protocol error counts | `qLabelledErrorsTotal` / `qLabelledErrorsBy` over `smartrouter_{node,protocol}_errors_total` `{spec, apiInterface, provider_address, method}` |
-| Classified error pivots (code / category / retryability) | `smartrouter_errors_total` `{chain_id, error_category ∈ internal\|external, error_name, retryable}` — ⚠ `chain_id`, not `spec`; NO provider label |
+| Classified error pivots (code / category / retryability) | `qClassifiedErrorsBy(label)` over `smartrouter_errors_total` `{chain_id, error_category ∈ internal\|external, error_name, retryable, source}` — ⚠ `chain_id`, not `spec`; NO provider label. Reads `source=~"client\|"`: the clients' own attempts, not the router's probes, boot checks, reverifies, polls or WebSocket subscription errors (smart-router MAG-5598); `""` matches a router that doesn't emit `source` yet |
 | P50/P95/P99 latency | `qLatencyQuantile(q, spec, window)` = `histogram_quantile(q, sum by (le) (rate(…_bucket[$w])))` - grouped by `le` only, so with no chain it is every chain as one distribution, one series for `scalar()`. Per-chain lines: `qPerSpecLatencySeriesExpr(q, step)`; the overall line: `qLatencySeriesExpr(q, step, spec)` |
 | **Per-method P95** | `qMethodLatencyQuantile(q, window, spec)` — the histogram's method label is named **`function`** (the "no method label" note in the design doc was wrong) |
 | RPS (client-scoped) | `qClientRps` / `qClientRpsSeriesExpr(step, spec)` = `sum(rate(…latency_milliseconds_count[step]))` |
