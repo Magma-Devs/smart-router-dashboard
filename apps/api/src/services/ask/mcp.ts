@@ -162,7 +162,8 @@ export function askReadOperations() {
     for (const [seconds, iso] of Object.entries(ISO_TIMES)) {
       if (!(seconds in shape)) continue;
       shape[seconds] = shape[seconds]!.optional();
-      shape[iso] = isoTime.optional();
+      // A short schema the model reads; askReadParameters checks the format.
+      shape[iso] = z.string().max(40).optional();
     }
     return {
       operationId,
@@ -185,11 +186,13 @@ const ISO_TIMES: Record<string, string> = {
 /**
  * A read tool's parameters with its ISO 8601 times (`from`, `to`, `at`) in the
  * Unix-second fields the read policy and the MCP server take. A time given
- * both ways is refused.
+ * both ways is refused. A read of a window that names neither end reads
+ * `window`, the chat's own.
  */
 export function askReadParameters(
   operationId: string,
   parameters: Record<string, unknown>,
+  window: McpWindow,
 ): Record<string, unknown> {
   const policy = Object.hasOwn(readPolicy, operationId) ? readPolicy[operationId] : undefined;
   if (!(policy?.parameters instanceof z.ZodObject)) throw new AskFailure("ASK_TOOL_DENIED", 403);
@@ -202,6 +205,10 @@ export function askReadParameters(
     if (!parsed.success || parameters[seconds] !== undefined)
       throw new AskFailure("ASK_TOOL_DENIED", 403);
     result[seconds] = isoSeconds(parsed.data);
+  }
+  if (fields.includes("start") && result.start === undefined && result.end === undefined) {
+    result.start = window.start;
+    result.end = window.end;
   }
   return result;
 }

@@ -392,6 +392,22 @@ describe("bounded customer tool orchestration", () => {
     });
   });
 
+  it("reads the chat window when a window read names no time", async () => {
+    const f = fixture({
+      responses: [
+        provider([tool("acme-logs", "logs.query_range", { query: '{chain="eth1"}' })]),
+        final(),
+      ],
+    });
+    await f.answer();
+    const read = f.call.mock.calls.find(([entry]) => entry.name === "execute_operation")![0]
+      .arguments as { parameters: { start: number; end: number } };
+    // The fixture's chat window is its last 30 minutes.
+    expect(read.parameters.end - read.parameters.start).toBeGreaterThanOrEqual(1799);
+    expect(read.parameters.end - read.parameters.start).toBeLessThanOrEqual(1801);
+    expect(Math.abs(read.parameters.end - Date.now() / 1000)).toBeLessThan(60);
+  });
+
   it("converts an instant read's at into time, and takes a time without a zone as UTC", async () => {
     const f = fixture({
       responses: [
@@ -420,7 +436,7 @@ describe("bounded customer tool orchestration", () => {
         end: Date.UTC(2026, 10, 21, 0, 25) / 1000,
       },
     ],
-    [{ query: '{chain="eth1"}', from: "20.11 22:56", to: "2026-11-21T00:25:00Z" }],
+    [{ query: '{chain="eth1"}', from: "2026-11-20 22:56:00", to: "2026-11-21T00:25:00Z" }],
   ])("refuses a raw read whose time is given twice or is not ISO 8601 (%#)", async (input) => {
     const f = fixture({
       responses: [provider([tool("acme-logs", "logs.query_range", input)]), final()],

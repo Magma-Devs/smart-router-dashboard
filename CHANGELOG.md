@@ -15,7 +15,7 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   its answer. Each read now takes `from`/`to` (and `at` for one instant) in
   ISO 8601, which the server converts, as Ask's request summary and request
   sample already did. Unix seconds still work; a time given both ways is
-  refused.
+  refused, and a window read that names no time reads the chat's window.
 
 ## [0.91.2]
 

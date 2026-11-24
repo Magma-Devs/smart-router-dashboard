@@ -106,13 +106,17 @@ const presentationInput = z
   })
   .strict();
 const operations = askReadOperations();
-function readRequest(name: string, raw: unknown): z.infer<typeof toolInput> {
+function readRequest(
+  name: string,
+  raw: unknown,
+  window: { start: number; end: number },
+): z.infer<typeof toolInput> {
   const operation = operations.find((entry) => entry.toolName === name);
   const input = record(raw);
   if (!operation || !input || !operation.inputSchema.safeParse(raw).success)
     throw new AskFailure("ASK_TOOL_DENIED", 403);
   const { sourceId, ...given } = input;
-  const parameters = askReadParameters(operation.operationId, given);
+  const parameters = askReadParameters(operation.operationId, given, window);
   const parsed = toolInput.safeParse({ sourceId, operationId: operation.operationId, parameters });
   if (!parsed.success) throw new AskFailure("ASK_TOOL_DENIED", 403);
   assertAskRead(parsed.data.operationId, parameters);
@@ -584,7 +588,7 @@ export class AskOrchestrator {
               } else if (use.name === "router_recent_requests") {
                 if (!routerLogsInput.safeParse(use.input).success)
                   throw new AskFailure("ASK_TOOL_DENIED", 403);
-              } else readRequest(use.name, use.input);
+              } else readRequest(use.name, use.input, defaultWindow);
             }
           } else {
             // Text with neither a read nor the closing call. After the run's
@@ -648,9 +652,9 @@ export class AskOrchestrator {
           operations.map((operation) => [
             operation.toolName,
             dynamicTool({
-              description: `${operation.operationId}: read current customer evidence only for a new live-data request. Never refresh for rewriting or explaining an earlier answer; use present_answer with historical context. ${operation.operationId.endsWith("metadata") ? "Discover available metric names before querying unknown metrics." : "Give a named time as from/to (at for one instant) in ISO 8601 with its zone; the server converts it."} Omit sourceId for the unique authorized source; if ambiguous the server returns allowed choices. No writes, URLs, credentials or customer override.`,
+              description: `${operation.operationId}: read current customer evidence only for a new live-data request. Never refresh for rewriting or explaining an earlier answer; use present_answer with historical context. ${operation.operationId.endsWith("metadata") ? "Discover available metric names before querying unknown metrics." : "Give a named time as from/to (at for one instant) in ISO 8601 with its zone; the server converts it. Omit a window's times to read the chat window."} Omit sourceId for the unique authorized source; if ambiguous the server returns allowed choices. No writes, URLs, credentials or customer override.`,
               inputSchema: operation.inputSchema,
-              execute: (input) => read(readRequest(operation.toolName, input)),
+              execute: (input) => read(readRequest(operation.toolName, input, defaultWindow)),
             }),
           ]),
         ) as ToolSet),
