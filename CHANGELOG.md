@@ -5,6 +5,26 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.93.0]
+
+### Changed
+
+- **A chain's traffic now adds up to the whole deployment's.** With a chain
+  picked, the Metrics Overview shows the same Traffic line as with every chain
+  in view: client requests per second, filtered to that chain. Before, the
+  chain view showed requests per second per provider, which counts every try:
+  a router that sends one request to three providers showed three times the
+  traffic. That card is now **Provider share**, each provider's part of the
+  tries, as percentages only.
+- **Downtime avoided says what it saved you from.** Its tooltip says the time
+  the router kept you up by moving requests to your other providers, the time
+  you would have been down with that one provider alone. The line under it,
+  when a provider failed and clients got errors, reads "… not covered: clients
+  got errors" instead of "… with failed requests".
+- The six Overview cards sit in one row where they fit (three, then two, on
+  narrower screens), and the Availability rows name providers in the page's
+  font rather than the code font.
+
 ## [0.92.0]
 
 ### Changed

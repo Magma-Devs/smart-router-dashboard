@@ -487,3 +487,10 @@ a { text-decoration: none; }
 .gw-bar--green > span { background: var(--ok); }
 .kpi-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; color: var(--text-3); }
 .kpi-num { font-size: 28px; font-weight: 700; letter-spacing: -0.03em; line-height: 1; font-family: var(--font-mono); font-feature-settings: "tnum"; }
+
+/* Metrics Overview cards: six in a row where they fit, else three, else two -
+   sized by the page's own width (beside the menu), never four and a stray two. */
+.gw-hero { container-type: inline-size; }
+.gw-hero__grid { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@container (min-width: 540px) { .gw-hero__grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@container (min-width: 1000px) { .gw-hero__grid { grid-template-columns: repeat(6, minmax(0, 1fr)); } }

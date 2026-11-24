@@ -116,7 +116,7 @@ describe("window change on the Metrics page", () => {
     expect(html).toContain("1 h 15 min");
     expect(html).toContain("3 incidents on 2 chains");
     // One short fact under a number: what the card means is in its tooltip.
-    expect(html).not.toContain("more with failed requests");
+    expect(html).not.toContain("not covered");
     expect(html).not.toContain("kept answering");
     expect(skelCount(html)).toBe(0);
   });
@@ -133,7 +133,7 @@ describe("window change on the Metrics page", () => {
     // A provider was failing for 5 minutes and its chain's requests failed with it: nothing avoided, not nothing found.
     const trouble = card({ notAvoidedSeconds: 300 });
     expect(trouble).toContain("0 min");
-    expect(trouble).toContain("5 min with failed requests");
+    expect(trouble).toContain("5 min not covered: clients got errors");
     expect(trouble).not.toContain("no provider was failing");
     expect(card({ notAvoidedSeconds: 0 })).toContain("no provider was failing");
   });
