@@ -362,6 +362,97 @@ describe("bounded customer tool orchestration", () => {
       expect(f.hooks.recordUsage).toHaveBeenCalledTimes(2);
     },
   );
+  it("converts a raw log read's ISO from/to into the start/end it sends", async () => {
+    const f = fixture({
+      responses: [
+        provider([
+          tool(
+            "acme-logs",
+            "logs.query_range",
+            {
+              query: '{chain="eth1"}',
+              from: "2026-11-20T22:56:00Z",
+              to: "2026-11-21T00:25:00+00:00",
+              limit: 100,
+            },
+            "read-1",
+          ),
+        ]),
+        final(),
+      ],
+    });
+    await f.answer();
+    const read = f.call.mock.calls.find(([entry]) => entry.name === "execute_operation")![0]
+      .arguments as { parameters: Record<string, unknown> };
+    expect(read.parameters).toEqual({
+      query: '{chain="eth1"}',
+      start: Date.UTC(2026, 10, 20, 22, 56) / 1000,
+      end: Date.UTC(2026, 10, 21, 0, 25) / 1000,
+      limit: 100,
+    });
+  });
+
+  it("converts an instant read's at into time, and takes a time without a zone as UTC", async () => {
+    const f = fixture({
+      responses: [
+        provider([
+          tool("acme-metrics", "metrics.query", { query: "count(up)", at: "2026-11-20T22:56:00" }),
+        ]),
+        final(),
+      ],
+    });
+    await f.answer();
+    const read = f.call.mock.calls.find(([entry]) => entry.name === "execute_operation")![0]
+      .arguments as { parameters: Record<string, unknown> };
+    expect(read.parameters).toEqual({
+      query: "count(up)",
+      time: Date.UTC(2026, 10, 20, 22, 56) / 1000,
+    });
+  });
+
+  it.each([
+    // Both name the same valid time: refused for being given twice, nothing else.
+    [
+      {
+        query: '{chain="eth1"}',
+        start: Date.UTC(2026, 10, 20, 22, 56) / 1000,
+        from: "2026-11-20T22:56:00Z",
+        end: Date.UTC(2026, 10, 21, 0, 25) / 1000,
+      },
+    ],
+    [{ query: '{chain="eth1"}', from: "20.11 22:56", to: "2026-11-21T00:25:00Z" }],
+  ])("refuses a raw read whose time is given twice or is not ISO 8601 (%#)", async (input) => {
+    const f = fixture({
+      responses: [provider([tool("acme-logs", "logs.query_range", input)]), final()],
+    });
+    await expect(f.answer()).rejects.toMatchObject({ code: "ASK_TOOL_DENIED" });
+    expect(f.call.mock.calls.some(([entry]) => entry.name === "execute_operation")).toBe(false);
+  });
+
+  it("offers ISO times on every raw read that takes a time, and on no other", async () => {
+    const f = fixture({
+      responses: [provider([{ text: "Hello." }, closing({ kind: "conversation" })])],
+    });
+    await f.answer();
+    const specs = JSON.parse(f.bodies[0]!).toolConfig.tools.flatMap(
+      (t: { toolSpec?: { name: string; inputSchema: { json: { properties: object } } } }) =>
+        t.toolSpec ? [t.toolSpec] : [],
+    );
+    const fields = (name: string) =>
+      Object.keys(
+        specs.find((spec: { name: string }) => spec.name === name).inputSchema.json.properties,
+      );
+    expect(fields("logs_query_range")).toEqual(
+      expect.arrayContaining(["start", "end", "from", "to"]),
+    );
+    expect(fields("metrics_query")).toEqual(expect.arrayContaining(["time", "at"]));
+    expect(fields("status_chain_events")).toEqual(
+      expect.arrayContaining(["since", "until", "from", "to"]),
+    );
+    expect(fields("metrics_metadata")).not.toContain("from");
+    expect(fields("metrics_metadata")).not.toContain("at");
+  });
+
   it("rejects a presentation before any actual read", async () => {
     const f = fixture({ responses: [provider([presentation()])] });
     await expect(f.answer()).rejects.toMatchObject({ code: "ASK_INVALID_ANSWER" });

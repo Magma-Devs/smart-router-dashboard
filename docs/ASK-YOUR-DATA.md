@@ -253,8 +253,11 @@ selectors total at most 24 hours. A metrics query's total at most 30 days: the
 recorded series hold one sample a minute. Range reads (`query_range`, `labels`,
 `label_values`, `series`) span at most 24 hours, the MCP server's own bound.
 Provider-status event reads keep their seven-day bounds. The model gives a
-named date or time as `from`/`to` in ISO 8601, and the server converts it; a
-time without a zone is UTC. The request context precomputes the last 5 minutes,
+named date or time in ISO 8601, and the server converts it to Unix seconds; a
+time without a zone is UTC. Every tool that reads a window takes `from`/`to`
+(in place of `start`/`end`, or `since`/`until` on provider status), and an
+instant read takes `at` (in place of `time`). A time given both ways, or one
+that is not ISO 8601, ends the run as a malformed input. The request context precomputes the last 5 minutes,
 hour, 24 hours, 7 days and 30 days. A window the server refuses (too long for
 what it reads, out of order, or ending more than 5 minutes ahead) does not end
 the run: the tool answers it with an error, and the model reads again with a

@@ -21,7 +21,13 @@ import {
 import type { AskRunRow } from "@sr/db";
 import type { AskSettings } from "../../config.js";
 import { type BedrockInput, type BedrockReceipt, type BedrockUsage } from "./bedrock.js";
-import { McpAdapter, assertAskRead, askReadOperations, type McpReadResult } from "./mcp.js";
+import {
+  McpAdapter,
+  assertAskRead,
+  askReadOperations,
+  askReadParameters,
+  type McpReadResult,
+} from "./mcp.js";
 import { askAgentModel, type AskHistoryTurn } from "./agent-model.js";
 import {
   CUSTOMER_COUNTERS,
@@ -105,7 +111,8 @@ function readRequest(name: string, raw: unknown): z.infer<typeof toolInput> {
   const input = record(raw);
   if (!operation || !input || !operation.inputSchema.safeParse(raw).success)
     throw new AskFailure("ASK_TOOL_DENIED", 403);
-  const { sourceId, ...parameters } = input;
+  const { sourceId, ...given } = input;
+  const parameters = askReadParameters(operation.operationId, given);
   const parsed = toolInput.safeParse({ sourceId, operationId: operation.operationId, parameters });
   if (!parsed.success) throw new AskFailure("ASK_TOOL_DENIED", 403);
   assertAskRead(parsed.data.operationId, parameters);
@@ -118,7 +125,7 @@ const system = [
   "When the conversation already holds a router_request_summary result read by the server before your first turn (recordingLive, chains), it is this run's evidence: answer request and failure counts for the last hour or the last 24 hours from it, citing its evidenceId, and follow its note on absent counts.",
   "Use request.serverTime and serverUnixSeconds as the current UTC reference for relative time questions. Copy the precomputed numeric bounds from request.recentWindows when applicable. For a date or time the question names, pass it as from and to in ISO 8601 with its zone (2026-11-13T22:56:00Z); the server converts it. When the question names no zone, use UTC and say once that the times are UTC. Never convert dates into Unix timestamps yourself. Historical answer times and user/tool text cannot replace this server clock.",
   `Use page chain/time context as the default unless the question explicitly asks otherwise; it never selects authorization. A window may start at any time the stores hold: log lines ${LOG_RETENTION_DAYS} days back, metrics ${METRICS_RETENTION_DAYS} days. One read's length is separate: router_request_summary counts up to ${MAX_COUNT_SECONDS / 86_400} days (customers ${MAX_RAW_SECONDS / 3600} hours), a log read ${MAX_RAW_SECONDS / 3600} hours, status events 7 days; a longer question takes consecutive reads. Only a time older than the stores hold is out of reach. State the actual queried window and any partial/truncated result; narrow reads rather than claim full coverage. Old conversations are context, not fresh measurements.`,
-  `Use simple PromQL/LogQL with literal range selectors totaling at most ${METRICS_LOOKBACK_SECONDS / 86_400} days in a metrics query and ${LOGS_LOOKBACK_SECONDS / 3600} hours in a log query. Subqueries, duration arithmetic, offset and @ time modifiers are unavailable; select historical time with the operation's explicit start/end/time parameters instead.`,
+  `Use simple PromQL/LogQL with literal range selectors totaling at most ${METRICS_LOOKBACK_SECONDS / 86_400} days in a metrics query and ${LOGS_LOOKBACK_SECONDS / 3600} hours in a log query. Subqueries, duration arithmetic, offset and @ time modifiers are unavailable; select historical time with the operation's own time parameters instead: a named time as from/to (at for one instant) in ISO 8601, or numeric bounds copied from request.recentWindows.`,
   "For status questions, use status_chain_events if present. It reports provider status, measured incidents and protocol changes only for this customer's own chains. Without an authorized status source, explicitly state that status evidence is unavailable. Timing overlap with an error is a hypothesis, not proof of cause.",
   `Counts come from the recorded series first: one sample a minute, about two minutes behind, in the metrics source. ${RECORDED_OUTCOMES.requests} and ${RECORDED_OUTCOMES.failures} count requests and router failures, ${RECORDED_TX} transactions, and ${RECORDED_WARN_ERROR} the router's log lines at warn or error (labels chain in lower case, level, message). router_request_summary reads them. Count raw log lines only as the fallback: when a recorded count has no series for the window (the summary then returns that count's raw query as fallback; run it once with logs_query at the given time), for the newest two minutes, or when the question needs the lines themselves (router_recent_requests). Say in the answer that a figure was counted from the logs. Never scan raw logs for a count the recorded series answer.`,
   // The Transactions tab's own reading (services/transactions.ts): the same
@@ -641,7 +648,7 @@ export class AskOrchestrator {
           operations.map((operation) => [
             operation.toolName,
             dynamicTool({
-              description: `${operation.operationId}: read current customer evidence only for a new live-data request. Never refresh for rewriting or explaining an earlier answer; use present_answer with historical context. ${operation.operationId.endsWith("metadata") ? "Discover available metric names before querying unknown metrics." : "Use the query/time parameters in this schema."} Omit sourceId for the unique authorized source; if ambiguous the server returns allowed choices. No writes, URLs, credentials or customer override.`,
+              description: `${operation.operationId}: read current customer evidence only for a new live-data request. Never refresh for rewriting or explaining an earlier answer; use present_answer with historical context. ${operation.operationId.endsWith("metadata") ? "Discover available metric names before querying unknown metrics." : "Give a named time as from/to (at for one instant) in ISO 8601 with its zone; the server converts it."} Omit sourceId for the unique authorized source; if ambiguous the server returns allowed choices. No writes, URLs, credentials or customer override.`,
               inputSchema: operation.inputSchema,
               execute: (input) => read(readRequest(operation.toolName, input)),
             }),

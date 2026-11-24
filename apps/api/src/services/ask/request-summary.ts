@@ -20,7 +20,12 @@ export const METRICS_RETENTION_DAYS = 90;
 export const PROVIDER_NODE_ERRORS = "smartrouter_node_errors_total";
 
 /** An ISO 8601 time, which the server turns into Unix seconds; one without a zone is UTC. */
-const isoTime = z.iso.datetime({ offset: true, local: true });
+export const isoTime = z.iso.datetime({ offset: true, local: true });
+
+/** An `isoTime` in Unix seconds. */
+export function isoSeconds(iso: string): number {
+  return Math.floor(Date.parse(/(?:[zZ]|[+-]\d\d:?\d\d)$/.test(iso) ? iso : `${iso}Z`) / 1000);
+}
 
 /** The router's log lines at warn or error, counted once a minute by the fleet's Loki ruler. */
 export const RECORDED_WARN_ERROR = "smartrouter_warn_error_lines:count1m";
@@ -91,10 +96,7 @@ export function windowInput(input: { start?: number; end?: number; from?: string
   start?: number;
   end?: number;
 } {
-  const seconds = (iso?: string) =>
-    iso === undefined
-      ? undefined
-      : Math.floor(Date.parse(/(?:[zZ]|[+-]\d\d:?\d\d)$/.test(iso) ? iso : `${iso}Z`) / 1000);
+  const seconds = (iso?: string) => (iso === undefined ? undefined : isoSeconds(iso));
   return { start: input.start ?? seconds(input.from), end: input.end ?? seconds(input.to) };
 }
 

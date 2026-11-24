@@ -13,6 +13,7 @@ import {
   LOGS_LOOKBACK_SECONDS,
   METRICS_LOOKBACK_SECONDS,
 } from "./query-bounds.js";
+import { isoSeconds, isoTime } from "./request-summary.js";
 
 const identifier = z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/);
 const metricsQuery = z
@@ -157,12 +158,52 @@ const readPolicy: Record<string, { kinds: string[]; parameters: z.ZodType }> = {
 export function askReadOperations() {
   return Object.entries(readPolicy).map(([operationId, policy]) => {
     if (!(policy.parameters instanceof z.ZodObject)) throw new AskFailure("ASK_UNAVAILABLE");
+    const shape: Record<string, z.ZodType> = { ...policy.parameters.shape };
+    for (const [seconds, iso] of Object.entries(ISO_TIMES)) {
+      if (!(seconds in shape)) continue;
+      shape[seconds] = shape[seconds]!.optional();
+      shape[iso] = isoTime.optional();
+    }
     return {
       operationId,
       toolName: operationId.replaceAll(".", "_"),
-      inputSchema: policy.parameters.safeExtend({ sourceId: identifier.optional() }),
+      // The policy's own checks run on the converted parameters (askReadParameters).
+      inputSchema: z.object({ ...shape, sourceId: identifier.optional() }).strict(),
     };
   });
+}
+
+/** A time a read tool takes in Unix seconds, and the ISO 8601 field it also takes. */
+const ISO_TIMES: Record<string, string> = {
+  start: "from",
+  end: "to",
+  since: "from",
+  until: "to",
+  time: "at",
+};
+
+/**
+ * A read tool's parameters with its ISO 8601 times (`from`, `to`, `at`) in the
+ * Unix-second fields the read policy and the MCP server take. A time given
+ * both ways is refused.
+ */
+export function askReadParameters(
+  operationId: string,
+  parameters: Record<string, unknown>,
+): Record<string, unknown> {
+  const policy = Object.hasOwn(readPolicy, operationId) ? readPolicy[operationId] : undefined;
+  if (!(policy?.parameters instanceof z.ZodObject)) throw new AskFailure("ASK_TOOL_DENIED", 403);
+  const fields = Object.keys(policy.parameters.shape);
+  const result = { ...parameters };
+  for (const iso of new Set(Object.values(ISO_TIMES))) delete result[iso];
+  for (const [seconds, iso] of Object.entries(ISO_TIMES)) {
+    if (!fields.includes(seconds) || parameters[iso] === undefined) continue;
+    const parsed = isoTime.safeParse(parameters[iso]);
+    if (!parsed.success || parameters[seconds] !== undefined)
+      throw new AskFailure("ASK_TOOL_DENIED", 403);
+    result[seconds] = isoSeconds(parsed.data);
+  }
+  return result;
 }
 
 export function assertAskRead(operationId: string, parameters: Record<string, unknown>): void {
