@@ -72,7 +72,7 @@ describe("the counts read before the first turn", () => {
     });
   });
 
-  it("gives each chain the serving probe's share, read by spec and never past the count it is part of", () => {
+  it("gives each chain the serving probe's share, read by chain and never past the count it is part of", () => {
     const counts = summarizePrefetch(
       matrix([
         {
@@ -84,14 +84,14 @@ describe("the counts read before the first turn", () => {
         },
         { metric: { count: "failures", chain: "eth1" }, values: [[end, "2"]] },
         {
-          metric: { count: "probe_requests", spec: "ETH1" },
+          metric: { count: "probe_requests", chain: "eth1" },
           values: [
             [end - 3600, "60"],
             [end, "60"],
           ],
         },
-        { metric: { count: "probe_failures", spec: "ETH1" }, values: [[end, "5"]] },
-        { metric: { count: "probe_requests", spec: "BASE" }, values: [[end, "60"]] },
+        { metric: { count: "probe_failures", chain: "eth1" }, values: [[end, "5"]] },
+        { metric: { count: "probe_requests", chain: "base" }, values: [[end, "60"]] },
         { metric: { count: "router_lines" }, values: [[end, "1"]] },
       ]),
       end,

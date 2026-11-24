@@ -207,7 +207,7 @@ export function requestSummaryQueries(
               ...raw((s) => `sum by (chain) (count_over_time(${s} ${FAILED_PIPELINE} ${range}))`),
             },
             // The requests and failures above count Magma's serving probe too.
-            ...probeCounts(input.chain, range),
+            ...probeCounts(chain, range),
           ];
   return { start, end, counts };
 }
@@ -217,12 +217,13 @@ export function requestSummaryQueries(
  * request and failure counts include: the customer's own are what is left.
  */
 function probeCounts(chain: string | undefined, range: string): SummaryCount[] {
+  // By chain, the label the recorded request and failure counts carry.
   const matchers = [
     `customer=${JSON.stringify(SERVING_PROBE_CUSTOMER)}`,
-    ...(chain ? [`spec=${JSON.stringify(chain.toUpperCase())}`] : []),
+    ...(chain ? [`chain=${JSON.stringify(chain)}`] : []),
   ];
   const total = (series: string) =>
-    `round(sum by (spec) (sum_over_time(${series}{${matchers.join(",")}}${range})) * ${RECORDED_INTERVAL_SECONDS})`;
+    `round(sum by (chain) (sum_over_time(${series}{${matchers.join(",")}}${range})) * ${RECORDED_INTERVAL_SECONDS})`;
   return [
     { name: "probe_requests", query: total(RECORDED_CUSTOMER.requests), uncounted: true },
     { name: "probe_failures", query: total(RECORDED_CUSTOMER.failures), uncounted: true },

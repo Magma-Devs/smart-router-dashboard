@@ -45,15 +45,15 @@ describe("curated request evidence", () => {
   });
   it("reads the serving probe's share of each chain's requests and failures, spending no read", () => {
     const [, , requests, failures] = requestSummaryQueries({ chain: "eth1" }, defaults)!.counts;
-    const sel = '{customer="magma-serving-probe",spec="ETH1"}';
+    const sel = '{customer="magma-serving-probe",chain="eth1"}';
     expect(requests).toEqual({
       name: "probe_requests",
-      query: `round(sum by (spec) (sum_over_time(${RECORDED_CUSTOMER.requests}${sel}[1800s])) * 60)`,
+      query: `round(sum by (chain) (sum_over_time(${RECORDED_CUSTOMER.requests}${sel}[1800s])) * 60)`,
       uncounted: true,
     });
     expect(failures).toEqual({
       name: "probe_failures",
-      query: `round(sum by (spec) (sum_over_time(${RECORDED_CUSTOMER.failures}${sel}[1800s])) * 60)`,
+      query: `round(sum by (chain) (sum_over_time(${RECORDED_CUSTOMER.failures}${sel}[1800s])) * 60)`,
       uncounted: true,
     });
     for (const measure of ["transactions", "errors", "customers", "providers"] as const)
@@ -230,10 +230,7 @@ describe("curated request evidence", () => {
   it("narrows both counts to the same normalized chain", () => {
     expect(
       requestSummaryQueries({ chain: "ETH1" }, defaults)!.counts.every(
-        (count) =>
-          count.query.includes('{chain="eth1"}') ||
-          // The probe's series carry the spec, upper-cased.
-          (count.uncounted && count.query.includes('spec="ETH1"')),
+        (count) => count.query.includes('{chain="eth1"}') || count.query.includes(',chain="eth1"}'),
       ),
     ).toBe(true);
   });

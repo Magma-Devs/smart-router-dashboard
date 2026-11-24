@@ -25,10 +25,10 @@ export function prefetchRead(end: number) {
         hourly(`sum by (chain) (sum_over_time(${RECORDED_OUTCOMES.requests}[1h]))`, "requests"),
         hourly(`sum by (chain) (sum_over_time(${RECORDED_OUTCOMES.failures}[1h]))`, "failures"),
         hourly(`sum(sum_over_time(${RECORDED_ROUTER_LINES}[1h]))`, "router_lines"),
-        // Magma's serving probe's share of those requests and failures, by spec.
+        // Magma's serving probe's share of those requests and failures, by chain.
         ...(["requests", "failures"] as const).map((kind) =>
           hourly(
-            `round(sum by (spec) (sum_over_time(${RECORDED_CUSTOMER[kind]}{customer=${JSON.stringify(SERVING_PROBE_CUSTOMER)}}[1h])) * ${RECORDED_INTERVAL_SECONDS})`,
+            `round(sum by (chain) (sum_over_time(${RECORDED_CUSTOMER[kind]}{customer=${JSON.stringify(SERVING_PROBE_CUSTOMER)}}[1h])) * ${RECORDED_INTERVAL_SECONDS})`,
             `probe_${kind}`,
           ),
         ),
@@ -66,7 +66,7 @@ export function summarizePrefetch(data: unknown, end: number): PrefetchedCounts 
   if (payload?.resultType !== "matrix" || !Array.isArray(payload.result)) return null;
   const chains = new Map<string, PrefetchedCounts["chains"][number]>();
   const routerHours = new Set<number>();
-  // The probe's counts come by spec, the chain upper-cased.
+  // The probe's share of each chain's counts.
   const probe = new Map<string, { requests: [number, number]; failures: [number, number] }>();
   for (const entry of payload.result) {
     const metric = object(object(entry)?.metric);
@@ -82,8 +82,8 @@ export function summarizePrefetch(data: unknown, end: number): PrefetchedCounts 
         continue;
       }
       if (metric.count === "probe_requests" || metric.count === "probe_failures") {
-        if (typeof metric.spec !== "string") continue;
-        const key = metric.spec.toLowerCase();
+        if (typeof metric.chain !== "string") continue;
+        const key = metric.chain;
         const sums = probe.get(key) ?? { requests: [0, 0], failures: [0, 0] };
         const pair = metric.count === "probe_requests" ? sums.requests : sums.failures;
         pair[1] += value;

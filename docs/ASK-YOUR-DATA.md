@@ -281,7 +281,7 @@ The recorded requests and failures per chain include the hub's serving probe
 the alert rules read them, so they stay as they are. A requests summary also
 reads the probe's share per chain from the ruler's per-customer series
 (`spec_router_customer:smartrouter_customer_requests_total:rate2m15s` and its
-failed counterpart, by spec), as two reads beside the counts asked for that
+failed counterpart, by chain), as two reads beside the counts asked for that
 spend none of the run's eight. Each row then carries `probeRequests` and
 `probeFailures` and the customer's own, `customerRequests` and
 `customerFailures`; a probe count never exceeds the count it is part of. The

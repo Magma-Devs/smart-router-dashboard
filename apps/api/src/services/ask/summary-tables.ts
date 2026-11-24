@@ -188,14 +188,14 @@ export function summaryTable(
         add(by, labels.chain ?? "", pick(labels, ["chain"]), column, value);
       }
     }
-    // Magma's serving probe is in the counts above; its share comes by spec
-    // (the chain upper-cased), and the customer's own is what is left.
+    // Magma's serving probe is in the counts above; its share comes by chain,
+    // and the customer's own is what is left.
     const probeRequests = read("probe_requests");
     const probeFailures = read("probe_failures");
     if (columns.includes("requests") && probeRequests && probeFailures) {
       columns.push("probeRequests", "probeFailures", "customerRequests", "customerFailures");
       const probe = (rows: CountRow[]) =>
-        new Map(rows.map(({ labels, value }) => [(labels.spec ?? "").toLowerCase(), value]));
+        new Map(rows.map(({ labels, value }) => [labels.chain ?? "", value]));
       const sent = probe(probeRequests);
       const failed = probe(probeFailures);
       for (const [chain, row] of by) {

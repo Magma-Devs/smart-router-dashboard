@@ -87,9 +87,9 @@ describe("summary tables", () => {
     const table = summaryTable("requests", [
       { name: "requests", rows: [row({ chain: "eth1" }, 900), row({ chain: "sol" }, 50)] },
       { name: "failures", rows: [row({ chain: "eth1" }, 4), row({ chain: "sol" }, 7)] },
-      // By spec, upper-cased; sol's probe sent more than was counted, so it is capped.
-      { name: "probe_requests", rows: [row({ spec: "ETH1" }, 60), row({ spec: "SOL" }, 80)] },
-      { name: "probe_failures", rows: [row({ spec: "SOL" }, 7)] },
+      // sol's probe sent more than was counted, so it is capped.
+      { name: "probe_requests", rows: [row({ chain: "eth1" }, 60), row({ chain: "sol" }, 80)] },
+      { name: "probe_failures", rows: [row({ chain: "sol" }, 7)] },
     ]);
     expect(table.rows).toEqual([
       {
