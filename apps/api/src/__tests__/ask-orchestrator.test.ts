@@ -433,6 +433,26 @@ describe("bounded customer tool orchestration", () => {
     expect(f.fetchImpl).toHaveBeenCalledTimes(2);
   });
 
+  it("does not force the re-ask on the last step, so the model can write the answer there", async () => {
+    const f = fixture({
+      responses: [
+        provider([tool()]),
+        provider([{ text: "Let me get the last hour." }], "end_turn"),
+        provider([{ text: "**Three** targets are up." }, closing({ kind: "data" })]),
+      ],
+    });
+    f.settings.maxSteps = 3;
+    const answer = await f.answer();
+    expect(answer.markdown).toBe("**Three** targets are up.");
+    const reask = JSON.parse(f.bodies[2]!);
+    expect(reask.toolConfig.toolChoice).toEqual({ auto: {} });
+    expect(
+      reask.toolConfig.tools.flatMap((t: { toolSpec?: { name: string } }) =>
+        t.toolSpec ? [t.toolSpec.name] : [],
+      ),
+    ).toEqual(["present_answer"]);
+  });
+
   it("asks only once: text the re-ask still ends on is the answer", async () => {
     const f = fixture({
       responses: [

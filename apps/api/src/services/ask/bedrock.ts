@@ -523,7 +523,8 @@ class ConverseStreamAssembler {
         return;
       case "messageStop":
         this.stopReason = event.stopReason;
-        // A step that ends on its text alone is a whole answer.
+        // A step that ends on its text alone shows that text whole; the
+        // orchestrator decides whether it is the answer.
         if (event.stopReason === "end_turn") this.draft(true);
         return;
       case "metadata":

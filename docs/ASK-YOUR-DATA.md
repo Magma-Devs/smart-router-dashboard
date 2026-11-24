@@ -185,7 +185,10 @@ what came before it:
 - **After a read of its own**, the text may be the model's working ("Let me get
   the last hour") rather than the answer. The run withdraws its draft and asks
   once more, and that step must call a tool: a read, or `present_answer` alone,
-  which closes the held text as the answer without writing it again.
+  which closes the held text as the answer without writing it again. When no
+  read is left for that step (its last step, or the read or context limit), it
+  is offered `present_answer` without being forced, so the model can write the
+  answer before closing it.
 - **On the run's last step, or after the one re-ask**, the text is a data
   answer.
 

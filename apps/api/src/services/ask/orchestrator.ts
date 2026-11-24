@@ -145,7 +145,7 @@ const system = [
 
 /** Sent after a step that ended on text after the run's own reads. */
 const REASK =
-  "Your last reply ended without a read or present_answer, so the reader has not seen it. If it is your whole answer, call present_answer alone now and it closes that reply as written. If you meant to read more, call the read now.";
+  "Your last reply ended without a read or present_answer, so the reader has not seen it. If it is your whole answer, call present_answer alone now and it closes that reply as written. If you meant to read more, call the read now. If no read is offered, write the answer from the results you have, then call present_answer.";
 
 function record(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -624,7 +624,8 @@ export class AskOrchestrator {
           throw new AskFailure("ASK_MCP_UNAVAILABLE");
         return {
           // The re-ask's step reads or closes: text alone again is not offered.
-          ...(unclosed !== null ? { toolChoice: "required" as const } : {}),
+          // With no read left it is not forced, so the model can write the answer.
+          ...(unclosed !== null && !mustPresent ? { toolChoice: "required" as const } : {}),
           activeTools: mustPresent
             ? ["present_answer"]
             : [
