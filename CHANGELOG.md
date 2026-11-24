@@ -5,6 +5,19 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.91.1]
+
+### Fixed
+
+- **Ask reads more than once on a deployment with many chains (MAG-5735).** On
+  a deployment with 43 chains, the instructions, the tool definitions and the
+  counts read before the first turn filled the 64,000-byte request limit nearly
+  to the room kept for two more results, so after one read of its own Ask had
+  to answer. The request limit is 128,000 bytes, and the same run now makes four
+  reads before it answers. Earlier turns of the chat sent with a question stay
+  at 16,000 bytes. A test holds the instructions and tool definitions to a
+  40,000-byte budget and names it when they grow past it.
+
 ## [0.91.0]
 
 ### Changed

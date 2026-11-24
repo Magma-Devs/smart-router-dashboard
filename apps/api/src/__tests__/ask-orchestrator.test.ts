@@ -1202,9 +1202,12 @@ describe("bounded customer tool orchestration", () => {
     const f = fixture({
       data: { status: "success", data: { result: [{ values: lines }] } },
       responses: [
-        provider(
-          ["a", "b", "c", "d"].map((id) =>
-            tool("acme-metrics", "metrics.query", { query: "count(up)" }, id),
+        ...[
+          ["a", "b", "c", "d"],
+          ["e", "f", "g", "h"],
+        ].map((ids) =>
+          provider(
+            ids.map((id) => tool("acme-metrics", "metrics.query", { query: "count(up)" }, id)),
           ),
         ),
         provider([presentation()]),
@@ -1213,9 +1216,10 @@ describe("bounded customer tool orchestration", () => {
     expect((await f.answer()).summary).toBe(content.summary);
     for (const body of f.bodies)
       expect(Buffer.byteLength(body)).toBeLessThanOrEqual(f.settings.maxContextBytes);
-    const results = JSON.parse(f.bodies[1]!).messages.at(-1).content;
-    expect(results.at(-1).toolResult).toMatchObject({ toolUseId: "d", status: "error" });
-    expect(vi.mocked(f.hooks.recordTool).mock.calls.length).toBeLessThan(4);
+    const results = JSON.parse(f.bodies[2]!).messages.at(-1).content;
+    expect(results.at(-1).toolResult).toMatchObject({ toolUseId: "h", status: "error" });
+    expect(results.at(-1).toolResult.content[0].text).toContain("Context limit reached");
+    expect(vi.mocked(f.hooks.recordTool).mock.calls.length).toBeLessThan(f.settings.maxToolCalls);
   });
 
   it("never pays for a step once failed reads have used every read", async () => {
@@ -1228,6 +1232,54 @@ describe("bounded customer tool orchestration", () => {
     await expect(f.answer()).rejects.toMatchObject({ code: "ASK_MCP_UNAVAILABLE" });
     expect(f.fetchImpl).toHaveBeenCalledTimes(2);
     expect(f.hooks.recordTool).toHaveBeenCalledTimes(f.settings.maxToolCalls);
+  });
+
+  it("keeps the shared prompt and tool definitions within their budget", async () => {
+    // Every step sends these. Two tool results are held back for the next read,
+    // and the counts read before the first turn sits beside them, so this budget
+    // decides how many reads a run of a deployment with many chains can make.
+    const budget = 40_000;
+    const f = fixture({
+      responses: [provider([{ text: "Hello." }, closing({ kind: "conversation" })])],
+    });
+    await f.answer();
+    const body = JSON.parse(f.bodies[0]!) as {
+      system: Array<{ text?: string }>;
+      toolConfig: unknown;
+    };
+    const shared =
+      Buffer.byteLength(body.system[0]!.text!) + Buffer.byteLength(JSON.stringify(body.toolConfig));
+    expect(
+      shared,
+      `the instructions and tool definitions are ${shared} bytes, over their ${budget}-byte budget: trim them, or raise maxContextBytes with the budget`,
+    ).toBeLessThanOrEqual(budget);
+    expect(
+      budget + f.settings.maxHistoryBytes + 4 * f.settings.maxToolResultBytes,
+    ).toBeLessThanOrEqual(f.settings.maxContextBytes);
+  });
+
+  it("reads four times on a deployment with 43 chains before it answers", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const hours = Array.from({ length: 24 }, (_, i) => [now - (23 - i) * 3600, "1000"]);
+    const result = [
+      ...Array.from({ length: 43 }, (_, i) => `CHAIN${i}`).flatMap((chain) => [
+        { metric: { chain, count: "requests" }, values: hours },
+        { metric: { chain, count: "failures" }, values: hours.map(([at]) => [at, "3"]) },
+      ]),
+      { metric: { count: "router_lines" }, values: hours },
+    ];
+    const f = fixture({
+      ranges: true,
+      counts: { status: "success", data: { resultType: "matrix", result } },
+      responses: [
+        ...[1, 2, 3, 4].map((n) => provider([tool(undefined, undefined, undefined, `read-${n}`)])),
+        final(),
+      ],
+    });
+    expect((await f.answer()).summary).toBe(content.summary);
+    // The counts read, then the model's own four.
+    expect(f.hooks.recordTool).toHaveBeenCalledTimes(5);
+    expect(f.fetchImpl).toHaveBeenCalledTimes(5);
   });
 
   it("keeps a long chat's newest turns that fit, so a new question still runs", async () => {
@@ -1252,7 +1304,10 @@ describe("bounded customer tool orchestration", () => {
     const f = fixture({ responses: [provider([tool()]), provider([presentation()])] });
     expect((await f.answer(history)).summary).toBe(content.summary);
     expect(f.bodies[0]).toContain("QUESTION_18");
-    expect(f.bodies[0]).not.toContain("QUESTION_0");
+    expect(f.bodies[0]).toContain("QUESTION_16");
+    // The earlier turns sent stay within maxHistoryBytes, not a share of the
+    // whole request's limit.
+    expect(f.bodies[0]).not.toContain("QUESTION_14");
   });
 
   it("answers when a read named its time in milliseconds", async () => {
