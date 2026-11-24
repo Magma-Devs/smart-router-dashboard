@@ -175,9 +175,22 @@ answer text. A step either reads (tool calls only) or answers: the answer as
 Markdown reply text, then one `present_answer` call carrying only `kind`
 (`conversation` or `data`) and the `evidenceIds` it rests on. `present_answer`
 is available from the first step: ordinary conversation, clarifications and
-explanations of earlier answers need no data read. An answer written without its
-closing call is a data answer when the run tried a read of its own, and a
-conversation reply otherwise.
+explanations of earlier answers need no data read.
+
+A step that ends on text with neither a read nor the closing call is handled by
+what came before it:
+
+- **Before any read of the run's own** (the server's counts read does not
+  count), the text is a conversation reply.
+- **After a read of its own**, the text may be the model's working ("Let me get
+  the last hour") rather than the answer. The run withdraws its draft and asks
+  once more, and that step must call a tool: a read, or `present_answer` alone,
+  which closes the held text as the answer without writing it again. When no
+  read is left for that step (its last step, or the read or context limit), it
+  is offered `present_answer` without being forced, so the model can write the
+  answer before closing it.
+- **On the run's last step, or after the one re-ask**, the text is a data
+  answer.
 
 Ask's scope is the customer's Smart Router - its chains, providers, requests
 and the customers that sent them, errors, transactions and status - and the RPC, blockchain, monitoring and

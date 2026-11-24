@@ -1,6 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { ToolLoopAgent, stepCountIs, tool, dynamicTool, type ModelMessage, type ToolSet } from "ai";
+import {
+  ToolChoiceViolationError,
+  ToolLoopAgent,
+  stepCountIs,
+  tool,
+  dynamicTool,
+  type ModelMessage,
+  type ToolSet,
+} from "ai";
 import {
   ASK_CONTRACT_VERSION,
   ASK_LIMITS,
@@ -135,6 +143,10 @@ const system = [
   "Shape it like a modern chat assistant's reply. Open with the direct answer in one or two sentences, the key figures in **bold**. Add detail only when it helps: a short bulleted list for a few items; a table when comparing three or more rows (for example chain, requests, failures); a ### heading only in a long answer with distinct parts. Keep it under about 150 words unless the question asks for more. Never repeat a figure or a caveat. State missing coverage once, in one short sentence. Do not turn a small observation into an unsupported diagnosis or a generic checklist.",
 ].join("\n");
 
+/** Sent after a step that ended on text after the run's own reads. */
+const REASK =
+  "Your last reply ended without a read or present_answer, so the reader has not seen it. If it is your whole answer, call present_answer alone now and it closes that reply as written. If you meant to read more, call the read now. If no read is offered, write the answer from the results you have, then call present_answer.";
+
 function record(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -219,6 +231,12 @@ export class AskOrchestrator {
     let protectedInputBytes = 0;
     let pendingBytes = 0;
     let final: AskAnswer | undefined;
+    // Model steps this run has taken, across both agent calls.
+    let steps = 0;
+    // Text a step ended on after the run's own reads, with neither a read nor
+    // the closing call. It is the answer only once present_answer closes it.
+    let unclosed: string | null = null;
+    let reasking = false;
     let fatal: unknown;
     const fail = (error: unknown): never => {
       fatal = error;
@@ -526,6 +544,7 @@ export class AskOrchestrator {
             }
           : {}),
         validateStep: (step) => {
+          steps++;
           const uses = step.message.content.flatMap((part) =>
             "toolUse" in part ? [part.toolUse] : [],
           );
@@ -540,7 +559,7 @@ export class AskOrchestrator {
             if (uses.length !== 1)
               throw new AskFailure("ASK_INVALID_ANSWER", 502, "closing_call_not_alone");
             final = this.finalAnswer(
-              text,
+              text || unclosed || "",
               presentations[0]!.input,
               evidence,
               successfulReads,
@@ -548,6 +567,7 @@ export class AskOrchestrator {
               prefetchedId,
             );
           } else if (uses.length) {
+            unclosed = null;
             for (const use of uses) {
               if (use.name === "router_request_summary") {
                 // A window the server refuses is the model's to correct: the
@@ -560,9 +580,15 @@ export class AskOrchestrator {
               } else readRequest(use.name, use.input);
             }
           } else {
-            // An answer written without its closing call: a data answer when
-            // the run tried a read of its own, a conversation reply otherwise.
+            // Text with neither a read nor the closing call. After the run's
+            // own reads it may be working, not the answer: the run asks once
+            // more, while a step is left. Otherwise it is the answer: a data
+            // answer after the run's own reads, a conversation reply before.
             const ownReads = evidence.some((item) => item.id !== prefetchedId);
+            if (ownReads && !reasking && steps < this.settings.maxSteps) {
+              unclosed = text;
+              return;
+            }
             final = this.finalAnswer(
               text,
               { kind: ownReads ? "data" : "conversation" },
@@ -587,9 +613,9 @@ export class AskOrchestrator {
         ...operations.map((entry) => entry.toolName),
         "present_answer",
       ],
-      prepareStep: ({ stepNumber }) => {
+      prepareStep: () => {
         const mustPresent =
-          stepNumber === this.settings.maxSteps - 1 ||
+          steps === this.settings.maxSteps - 1 ||
           toolCalls >= this.settings.maxToolCalls ||
           (inputBytes > 0 &&
             protectedInputBytes + pendingBytes + 2 * this.settings.maxToolResultBytes + 512 >
@@ -597,6 +623,9 @@ export class AskOrchestrator {
         if (mustPresent && evidence.length && !successfulReads)
           throw new AskFailure("ASK_MCP_UNAVAILABLE");
         return {
+          // The re-ask's step reads or closes: text alone again is not offered.
+          // With no read left it is not forced, so the model can write the answer.
+          ...(unclosed !== null && !mustPresent ? { toolChoice: "required" as const } : {}),
           activeTools: mustPresent
             ? ["present_answer"]
             : [
@@ -732,8 +761,24 @@ export class AskOrchestrator {
           prefetchedId = id;
         })),
       ];
-      await agent.generate({ messages, abortSignal: active });
+      const first = await agent.generate({ messages, abortSignal: active });
       await check();
+      if (!final && unclosed !== null) {
+        reasking = true;
+        // The reader saw that text as a finished draft; it is not the answer yet.
+        hooks.draft?.("");
+        try {
+          await agent.generate({
+            messages: [...messages, ...first.response.messages, { role: "user", content: REASK }],
+            abortSignal: active,
+          });
+        } catch (error) {
+          // A step that ends on text alone despite the forced choice was already
+          // taken as the answer; the SDK reports the choice it ignored.
+          if (!(final && ToolChoiceViolationError.isInstance(error))) throw error;
+        }
+        await check();
+      }
       if (!final) throw new AskFailure("ASK_LIMIT_REACHED", 422);
       return final;
     } catch (error) {
