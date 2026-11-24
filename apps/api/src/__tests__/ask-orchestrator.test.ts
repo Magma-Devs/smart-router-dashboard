@@ -1802,14 +1802,32 @@ describe("conversation, grounding and execution boundaries", () => {
     expect(f.hooks.recordUsage).toHaveBeenCalledTimes(2);
   });
 
-  it("does not let a data answer shed its grounding by calling itself conversation", async () => {
+  it("keeps a data answer's grounding when it calls itself conversation", async () => {
     const f = fixture({
       responses: [
         provider([tool()]),
         provider([presentation({ kind: "conversation", ...content })]),
       ],
     });
-    await expect(f.answer()).rejects.toMatchObject({ code: "ASK_INVALID_ANSWER" });
+    const answer = await f.answer();
+    expect(answer.summary).toBe(content.summary);
+    // Published as a data answer, with the read it rests on as its source.
+    expect(answer.evidence).toHaveLength(1);
+    expect(answer.evidence[0]?.sourceId).toBe("acme-metrics");
+  });
+
+  it("refuses a conversation reply that cites sources when no read of its own succeeded", async () => {
+    const f = fixture({
+      fail: true,
+      responses: [
+        provider([tool()]),
+        provider([{ text: "Hello." }, closing({ kind: "conversation" })]),
+      ],
+    });
+    await expect(f.answer()).rejects.toMatchObject({
+      code: "ASK_INVALID_ANSWER",
+      reason: "conversation_with_sources",
+    });
   });
 
   it("uses the unique authorized source without preloading a remote catalog", async () => {

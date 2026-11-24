@@ -5,6 +5,17 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.91.5]
+
+### Fixed
+
+- **Ask publishes an answer the model calls conversation after reading
+  (MAG-5743).** When the model read customer data, wrote its answer and
+  closed it as a conversation reply, the answer failed
+  (`conversation_with_sources`). Such an answer is now a data answer, with
+  the reads it rests on as its sources. A conversation reply in a run with no
+  successful read of its own is checked as before.
+
 ## [0.91.4]
 
 ### Fixed

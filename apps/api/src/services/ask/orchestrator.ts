@@ -910,7 +910,14 @@ export class AskOrchestrator {
   ): AskAnswer {
     const parsed = presentationInput.safeParse(raw);
     if (!parsed.success) throw new AskFailure("ASK_INVALID_ANSWER", 502, "invalid_closing_call");
-    const { kind, evidenceIds } = parsed.data;
+    const { evidenceIds } = parsed.data;
+    // A reply the model calls conversation that the run's own successful reads
+    // stand behind is a data answer, as a reply written without its closing
+    // call is. Without such a read it stays a conversation reply.
+    const ownSuccessfulReads =
+      successfulReads - (prefetchedId && evidence.some((item) => item.id === prefetchedId) ? 1 : 0);
+    const kind =
+      parsed.data.kind === "conversation" && ownSuccessfulReads > 0 ? "data" : parsed.data.kind;
     // The server's own read before the first turn is a source only of an answer
     // that rests on it: never of a conversation reply, nor of a data answer whose
     // cited evidence leaves it out.
