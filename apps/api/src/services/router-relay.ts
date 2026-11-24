@@ -121,12 +121,12 @@ export interface RouterDirectives {
 /** The directives as the request headers the router reads. */
 export function directiveHeaders(d: RouterDirectives): Record<string, string> {
   const headers: Record<string, string> = {};
-  if (d.selectProvider) headers["lava-select-provider"] = d.selectProvider;
-  if (d.forceCacheRefresh) headers["lava-force-cache-refresh"] = "true";
+  if (d.selectProvider) headers["router-select-provider"] = d.selectProvider;
+  if (d.forceCacheRefresh) headers["router-force-cache-refresh"] = "true";
   return headers;
 }
 
-/** `Lava-Retries` read the way the drawer's browser send reads it: absent or
+/** `Router-Retries` read the way the drawer's browser send reads it: absent or
  *  blank is unknown, and a value that is not a number counts as no retries. */
 export function retriesOf(header: string | null): number | null {
   if (header === null || header === "") return null;
@@ -158,7 +158,7 @@ export interface RouterHttpOptions {
 }
 
 /**
- * Fire one HTTP request at a router and read back its body and its `Lava-*`
+ * Fire one HTTP request at a router and read back its body and its `Router-*`
  * headers. Answers with the router's own status inside, like the upstream
  * relay: a 429 from the router is a result to show, not a failure of ours.
  *
@@ -212,11 +212,11 @@ export async function relayRouterHttp(url: string, opts: RouterHttpOptions): Pro
     body: parseBody(read.text),
     truncated: read.truncated,
     transport: "http",
-    servedBy: res.headers.get("Lava-Provider-Address"),
-    retries: retriesOf(res.headers.get("Lava-Retries")),
-    cvStatus: res.headers.get("Lava-Cross-Validation-Status"),
-    cvAgreeing: res.headers.get("Lava-Cross-Validation-Agreeing-Providers"),
-    cvDisagreeing: res.headers.get("Lava-Cross-Validation-Disagreeing-Providers"),
+    servedBy: res.headers.get("Router-Provider-Address"),
+    retries: retriesOf(res.headers.get("Router-Retries")),
+    cvStatus: res.headers.get("router-cross-validation-status"),
+    cvAgreeing: res.headers.get("router-cross-validation-agreeing-providers"),
+    cvDisagreeing: res.headers.get("router-cross-validation-disagreeing-providers"),
   };
 }
 

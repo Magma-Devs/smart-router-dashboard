@@ -73,9 +73,9 @@ services:
       - "*"
       # Expose the router's relay-provenance headers so the dashboard's Live
       # test can show which upstream served a request (and "Cached" on a cache
-      # hit). Read by the browser from the Lava-Provider-Address response header.
+      # hit). Read by the browser from the Router-Provider-Address response header.
       - "--cors-expose-headers"
-      - "Lava-Provider-Address,Lava-Retries,Provider-Latest-Block,lava-cross-validation-agreeing-providers,lava-cross-validation-disagreeing-providers"
+      - "Router-Provider-Address,Router-Retries,Provider-Latest-Block,router-cross-validation-agreeing-providers,router-cross-validation-disagreeing-providers"
       - "--log-level"
       - "${SR_LOG_LEVEL:-info}"
       - "--log-format"
