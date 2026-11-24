@@ -1,8 +1,12 @@
 "use client";
 
-/* ChainTrafficByProvider — which upstream took one chain's traffic over the
- * window, stacked by upstream. Shown on the Metrics tab once a chain (or a
- * router) is picked.
+/* ChainTrafficByProvider — "Provider share": which upstream took one chain's
+ * tries over the window, as each one's share of every moment. Shown on the
+ * Metrics tab once a chain (or a router) is picked, under the chain's Traffic
+ * line. Shares only, never requests per second: the router can send one
+ * client request to several providers (to compare their answers, as a backup
+ * try, or as a retry), so the tries add up to more than the clients sent, and
+ * a stacked rate here read as a second, bigger "traffic" figure.
  * Live data: /api/metrics/upstream-mix, one range read - not the expanded
  * row's chain-series bundle, whose other reads only an open row needs.
  * Honest-state notes:
@@ -12,7 +16,7 @@
  *  - past the five biggest, upstreams are summed into "Other" rather than
  *    drawn as slivers nobody can read. */
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { buildChainMetaByIndex, type MetricWindow, type UpstreamMix } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { useFilters } from "@/components/gateway/FiltersProvider";
@@ -34,7 +38,6 @@ const isCache = (name: string) => name.toLowerCase() === "cached";
 export function ChainTrafficByProvider({ spec, timeWindow }: { spec: string; timeWindow: MetricWindow }) {
   const { scopeQ } = useFilters();
   const { data } = useApi<UpstreamMix>(`/api/metrics/upstream-mix?spec=${encodeURIComponent(spec)}&window=${timeWindow}${scopeQ}`);
-  const [mode, setMode] = useState<"share" | "rate">("share");
   const chain = buildChainMetaByIndex(spec).name;
 
   const view = useMemo(() => {
@@ -66,31 +69,24 @@ export function ChainTrafficByProvider({ spec, timeWindow }: { spec: string; tim
   }, [data, timeWindow]);
 
   const pct = (v: number) => (v > 0 && v < 0.1 ? "<0.1" : v.toFixed(1));
-  const fmtRate = (v: number) => `${v >= 100 ? Math.round(v).toLocaleString() : v >= 10 ? v.toFixed(1) : v.toFixed(2)} req/s`;
 
   return (
     <div className="gw-card" style={{ marginBottom: 14 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
         <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-2)", flex: 1, display: "inline-flex", alignItems: "center" }}>
-          Traffic by provider · {chain}
-          <Tip text={`**Which upstream took ${chain}'s traffic**, over the window. These are the requests the router sent to each upstream: a retried request counts at every upstream it reached.\n\n**Cache** is requests the relay cache answered without any upstream.\n\n**Share** shows each upstream's part of every moment; **Requests / sec** shows how much that was.`} />
-        </div>
-        <div className="gw-segctl">
-          {([["share", "Share"], ["rate", "Requests / sec"]] as const).map(([m, label]) => (
-            <button key={m} className={mode === m ? "on" : ""} onClick={() => setMode(m)} style={{ padding: "4px 10px" }}>{label}</button>
-          ))}
+          Provider share · {chain}
+          <Tip text={`**Which providers took ${chain}'s tries**, as each one's part of every moment. The router can send one request to several providers (to compare their answers, as a backup try, or as a retry), so this splits the tries, not the clients' requests. The Traffic chart above counts the requests.\n\n**Cache** is requests the relay cache answered without any provider.`} />
         </div>
       </div>
       {!data ? (
         <Skel w="100%" h={HEIGHT} r={8} />
       ) : view.total > 0 ? (
         <>
-          <StackedAreaChart key={mode} layers={mode === "share" ? view.shareLayers : view.layers} normalized={mode === "share"}
-            height={HEIGHT} xLabels={view.labels} id={`mix-${spec}-${mode}`}
+          <StackedAreaChart layers={view.shareLayers} normalized
+            height={HEIGHT} xLabels={view.labels} id={`mix-${spec}`}
             hover={{
               title: (i) => fmtDayTime((view.times[i] ?? 0) * 1000),
-              fmt: mode === "share" ? (v) => `${pct(v)}%` : fmtRate,
-              total: mode === "rate",
+              fmt: (v) => `${pct(v)}%`,
             }} />
           <ChartLegend style={{ marginTop: 8 }}
             items={view.layers.map((l) => ({ label: l.name, color: l.color, square: true }))} />

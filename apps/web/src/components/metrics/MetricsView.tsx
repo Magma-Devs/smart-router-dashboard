@@ -232,11 +232,11 @@ export function MetricsView() {
         <>
           <HeroPanel tw={timeWindow} spec={activeChain} />
           <CurrentlyUnavailable />
+          <TrafficOverTime timeWindow={timeWindow} spec={activeChain} />
           {activeChain && <ChainTrafficByProvider spec={activeChain} timeWindow={timeWindow} />}
           {activeChain && <ChainAvailability spec={activeChain} timeWindow={timeWindow} />}
           {/* The Routers table compares routers: with one chain picked, its cards above say it, and the
               chains list on the left picks between a chain's routers. */}
-          {!activeChain && <TrafficOverTime timeWindow={timeWindow} />}
           {!activeChain && (
             <RouterOverview chainFilter={activeChain} timeWindow={timeWindow} onChainClick={(ch) => { setChainFilter(ch); track("chain_pick", { chain: ch, from: "router-row" }); pickTab("upstreams"); }}
               drill={{ row: focus.expand, tile: focus.tile }} linked={linked}

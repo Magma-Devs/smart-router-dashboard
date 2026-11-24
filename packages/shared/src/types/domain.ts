@@ -407,7 +407,7 @@ export interface UpstreamTimeline {
   upstreams: UpstreamTimelineRow[];
 }
 
-/* ── Traffic by provider (Metrics · Overview tab, a chain picked) ────────── */
+/* ── Provider share (Metrics · Overview tab, a chain picked) ─────────────── */
 
 /** Which upstream took one chain's traffic over the window. */
 export interface UpstreamMix {

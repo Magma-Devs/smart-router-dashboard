@@ -101,7 +101,7 @@ export function HeroPanel({ tw, spec }: { tw: MetricWindow; spec?: string | null
         : !dt.available ? "the metrics store didn't answer"
         : dt.incidents ? incidentsWords(dt.incidents, dt.chains)
         // Provider trouble the chain did not answer through is trouble: the card says how long.
-        : dt.notAvoidedSeconds > 0 ? `${spanWords(dt.notAvoidedSeconds)} with failed requests`
+        : dt.notAvoidedSeconds > 0 ? `${spanWords(dt.notAvoidedSeconds)} not covered: clients got errors`
         : "no provider was failing",
       loading: dtSkeleton, dim: downtime.isLoading && !!dt },
     { key: "retries", label: "Saved by retry", tipKey: "successfulRetries",
@@ -121,7 +121,9 @@ export function HeroPanel({ tw, spec }: { tw: MetricWindow; spec?: string | null
   ];
 
   return (
-    <div style={{ marginBottom: 14, opacity: refreshing ? 0.55 : 1, transition: "opacity 0.2s", display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 12 }}>
+    // Six in a row where they fit, else three, else two: never four and a stray two.
+    <div className="gw-hero" style={{ marginBottom: 14 }}>
+    <div className="gw-hero__grid" style={{ opacity: refreshing ? 0.55 : 1, transition: "opacity 0.2s" }}>
       {cards.map((c) => {
         const ghost = showSkeleton || c.loading;
         return (
@@ -142,6 +144,7 @@ export function HeroPanel({ tw, spec }: { tw: MetricWindow; spec?: string | null
           </div>
         );
       })}
+    </div>
     </div>
   );
 }

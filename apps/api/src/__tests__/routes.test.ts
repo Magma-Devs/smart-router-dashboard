@@ -76,7 +76,7 @@ function mockPrometheus(): void {
         { metric: { provider_address: "eth-lava" }, values: [[1, "0.5"], [2, "0.25"]] },
       ]);
     }
-    // Traffic by provider: one chain's requests per second, per upstream.
+    // Provider share: one chain's requests per second, per upstream.
     if (new URL(url).pathname.endsWith("/query_range") && query.startsWith('sum by (provider_address) (rate(smartrouter_requests_total{spec="ETH1"}')) {
       return matrix([
         { metric: { provider_address: "eth-lava" }, values: [[1, "0.5"], [2, "0.25"]] },

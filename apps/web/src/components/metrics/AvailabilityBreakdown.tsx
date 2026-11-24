@@ -149,7 +149,7 @@ export function AvailabilityBreakdown({ spec, routerId, win }: {
             return (
               <g key={r.name}>
                 <text x={0} y={y + 12} fontSize="11.5" fontWeight={i === 0 ? 600 : 400}
-                  fill={i === 0 ? "var(--text)" : r.inConfig ? "var(--text-2)" : "var(--text-4)"} fontFamily={i === 0 ? undefined : "var(--font-mono)"}>
+                  fill={i === 0 ? "var(--text)" : r.inConfig ? "var(--text-2)" : "var(--text-4)"}>
                   <title>{r.inConfig ? label : `${label} - not in the config`}</title>
                   {label.length > maxChars ? label.slice(0, maxChars - 1) + "…" : label}
                 </text>

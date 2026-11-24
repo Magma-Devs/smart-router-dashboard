@@ -384,7 +384,7 @@ export async function metricRoutes(app: FastifyInstance, opts: MetricRoutesOptio
       app.scoped(router).metricsDetail.downtimeAvoided(window, spec || undefined, routerId || undefined));
   });
 
-  // Which upstream took one chain's traffic - the "Traffic by provider" card.
+  // Which upstream took one chain's traffic - the "Provider share" card.
   app.get<{ Querystring: { window?: string; spec?: string; router?: string } }>("/api/metrics/upstream-mix", {
     schema: {
       tags: ["Metrics"],
