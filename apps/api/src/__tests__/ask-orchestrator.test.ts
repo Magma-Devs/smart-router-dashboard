@@ -760,19 +760,45 @@ describe("bounded customer tool orchestration", () => {
       });
       if (failed) await expect(f.answer()).rejects.toMatchObject({ code: "ASK_MCP_UNAVAILABLE" });
       else
+        // Requests and failures, and the serving probe's share of each.
         expect((await f.answer()).evidence.map((item) => item.coverage)).toEqual([
           "empty",
           "empty",
+          "empty",
+          "empty",
         ]);
-      expect(f.hooks.recordTool).toHaveBeenCalledTimes(2);
+      expect(f.hooks.recordTool).toHaveBeenCalledTimes(4);
       for (const [read] of vi.mocked(f.hooks.recordTool).mock.calls)
         expect(read.evidence.coverage).toBe(failed ? "unavailable" : "empty");
     },
   );
 
+  it("reads the serving probe's share without spending the run's reads", async () => {
+    const f = fixture({
+      data: {
+        status: "success",
+        data: { result: [{ metric: { chain: "eth1" }, value: [1, "5"] }] },
+      },
+      responses: [
+        provider([
+          { toolUse: { toolUseId: "summary", name: "router_request_summary", input: {} } },
+        ]),
+        final(),
+      ],
+    });
+    f.settings.maxToolCalls = 2;
+    await f.answer();
+    // Two counted reads and the probe's two: none came back as the read limit.
+    expect(f.hooks.recordTool).toHaveBeenCalledTimes(4);
+    const body = JSON.parse(f.bodies[1]!);
+    const result = JSON.parse(body.messages.at(-1).content[0].toolResult.content[0].text);
+    expect(JSON.stringify(result.counts)).not.toContain("Read limit reached");
+    expect(result.note).toContain("customerRequests and customerFailures the customer's own");
+  });
+
   it.each([
     ["errors", { measure: "errors" }, ["errors", "error_messages"]],
-    ["requests", {}, ["requests", "failures"]],
+    ["requests", {}, ["requests", "failures", "probe_requests", "probe_failures"]],
   ])(
     "hands the model a count's raw fallback only where the recorded series has none (%s)",
     async (_name, input, names) => {
@@ -794,9 +820,11 @@ describe("bounded customer tool orchestration", () => {
         const result = JSON.parse(body.messages.at(-1).content[0].toolResult.content[0].text);
         expect(result.counts.map((count: { name: string }) => count.name)).toEqual(names);
         for (const count of result.counts as {
+          name: string;
           fallback?: { tool: string; query: string; time: number };
         }[]) {
-          if (!empty) expect(count.fallback).toBeUndefined();
+          // The probe's share is read from recorded series only, with no fallback.
+          if (!empty || count.name.startsWith("probe_")) expect(count.fallback).toBeUndefined();
           else {
             expect(count.fallback?.tool).toBe("logs_query");
             expect(count.fallback?.query).toContain('{service_name=~"acme-.*",component="router"}');
@@ -835,7 +863,12 @@ describe("bounded customer tool orchestration", () => {
         ],
       });
       const evidence = (await f.answer()).evidence;
-      expect(evidence.map((item) => item.coverage)).toEqual(["complete", "complete"]);
+      expect(evidence.map((item) => item.coverage)).toEqual([
+        "complete",
+        "complete",
+        "complete",
+        "complete",
+      ]);
       // Stored answers keep the evidence shape an older api still parses.
       for (const item of evidence)
         expect(Object.keys(item).sort()).toEqual([
@@ -852,7 +885,7 @@ describe("bounded customer tool orchestration", () => {
       const result = JSON.parse(body.messages.at(-1).content[0].toolResult.content[0].text);
       expect(
         result.counts.map((count: { result: { coverage: string } }) => count.result.coverage),
-      ).toEqual(lagging ? ["partial", "partial"] : ["complete", "complete"]);
+      ).toEqual(Array(4).fill(lagging ? "partial" : "complete"));
       expect(result.warning !== undefined).toBe(lagging);
     },
   );
@@ -2057,6 +2090,10 @@ describe("recorded counts read before the first model turn", () => {
           failuresLastHour: 0,
           requestsLast24Hours: 100,
           failuresLast24Hours: 2,
+          probeRequestsLastHour: 0,
+          probeFailuresLastHour: 0,
+          probeRequestsLast24Hours: 0,
+          probeFailuresLast24Hours: 0,
         },
         {
           chain: "sui",
@@ -2064,10 +2101,15 @@ describe("recorded counts read before the first model turn", () => {
           failuresLastHour: 0,
           requestsLast24Hours: 7,
           failuresLast24Hours: 0,
+          probeRequestsLastHour: 0,
+          probeFailuresLastHour: 0,
+          probeRequestsLast24Hours: 0,
+          probeFailuresLast24Hours: 0,
         },
       ],
     });
     expect(result.interpretation).toContain("never call it a coverage gap");
+    expect(result.interpretation).toContain("requests minus probeRequests");
     // The read sits in the model's own turn: it must know the read is not its own.
     expect(result.interpretation).toContain("Read by the server for every question");
     expect(result.interpretation).toContain("never mention them or this read");

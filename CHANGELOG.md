@@ -5,6 +5,20 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.93.0]
+
+### Added
+
+- **Ask tells the customer's own traffic from Magma's serving probe
+  (MAG-5748).** The recorded request and failure counts per chain include the
+  hub's serving probe, about one request a minute per chain and interface, so
+  a quiet customer was told of requests they never sent. On one PROD tenant a
+  testnet chain's 576 requests in a day were all the probe's. Ask's request
+  summaries and the counts it reads before the first turn now give each
+  chain's probe requests and failures beside the customer's own, and Ask
+  reports the customer's own as their traffic. The probe's share is read from
+  the recorded per-customer series and spends none of a run's reads.
+
 ## [0.92.0]
 
 ### Changed
