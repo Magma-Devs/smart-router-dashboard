@@ -38,6 +38,7 @@ export type AskRejectReason =
   | "history_mismatch"
   | "too_many_tool_calls"
   | "closing_call_not_alone"
+  | "closing_calls_disagree"
   | "invalid_closing_call"
   | "conversation_with_sources"
   | "data_without_reads"

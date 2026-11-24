@@ -5,6 +5,17 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.91.4]
+
+### Fixed
+
+- **Ask keeps an answer closed twice (MAG-5741).** The model sometimes closes
+  its answer with two `present_answer` calls in one step, one citing its
+  evidence and one not, and the whole answer failed. Closing calls that agree
+  on the kind of answer are now one close, citing every evidence id any of
+  them names; calls that name different kinds still fail
+  (`closing_calls_disagree`).
+
 ## [0.91.3]
 
 ### Fixed

@@ -106,6 +106,23 @@ const presentationInput = z
   })
   .strict();
 const operations = askReadOperations();
+
+/**
+ * The closing calls of one step as one close. Calls that agree on kind cite
+ * every evidence id any of them names; calls that disagree are refused. A
+ * call that is not a valid close is handed on as it is, for finalAnswer to refuse.
+ */
+export function oneClose(inputs: Record<string, unknown>[]): unknown {
+  if (inputs.length === 1) return inputs[0];
+  const parsed = inputs.map((input) => presentationInput.safeParse(input));
+  const invalid = parsed.findIndex((result) => !result.success);
+  if (invalid >= 0) return inputs[invalid];
+  const closes = parsed.map((result) => result.data!);
+  if (new Set(closes.map((close) => close.kind)).size !== 1)
+    throw new AskFailure("ASK_INVALID_ANSWER", 502, "closing_calls_disagree");
+  const ids = [...new Set(closes.flatMap((close) => close.evidenceIds ?? []))];
+  return { kind: closes[0]!.kind, ...(ids.length ? { evidenceIds: ids } : {}) };
+}
 function readRequest(
   name: string,
   raw: unknown,
@@ -567,11 +584,11 @@ export class AskOrchestrator {
             .trim();
           const presentations = uses.filter((use) => use.name === "present_answer");
           if (presentations.length) {
-            if (uses.length !== 1)
+            if (presentations.length !== uses.length)
               throw new AskFailure("ASK_INVALID_ANSWER", 502, "closing_call_not_alone");
             final = this.finalAnswer(
               text || unclosed || "",
-              presentations[0]!.input,
+              oneClose(presentations.map((use) => use.input)),
               evidence,
               successfulReads,
               secrets,

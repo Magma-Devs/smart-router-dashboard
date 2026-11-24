@@ -3,7 +3,7 @@ import { Client } from "@modelcontextprotocol/client";
 import type { AskMessage } from "@sr/shared";
 import type { AskRunRow } from "@sr/db";
 import { readAskSettings } from "../config.js";
-import { AskOrchestrator, type AskExecutionHooks } from "../services/ask/orchestrator.js";
+import { AskOrchestrator, oneClose, type AskExecutionHooks } from "../services/ask/orchestrator.js";
 import { McpAdapter, McpConnection } from "../services/ask/mcp.js";
 import { redactAskData, redactAskText } from "../services/ask/redact.js";
 import { AskFailure } from "../services/ask/errors.js";
@@ -467,6 +467,59 @@ describe("bounded customer tool orchestration", () => {
     );
     expect(fields("metrics_metadata")).not.toContain("from");
     expect(fields("metrics_metadata")).not.toContain("at");
+  });
+
+  /** A closing call with its own call id. */
+  const closingAs = (id: string, input: unknown) => ({
+    toolUse: { toolUseId: id, name: "present_answer", input },
+  });
+
+  it("takes two closing calls that agree on kind as one close", async () => {
+    const f = fixture({
+      responses: [
+        provider([tool()]),
+        provider([
+          { text: "**Three** targets are up." },
+          closingAs("close-1", { kind: "data" }),
+          closingAs("close-2", { kind: "data" }),
+        ]),
+      ],
+    });
+    const answer = await f.answer();
+    expect(answer.markdown).toBe("**Three** targets are up.");
+    expect(answer.evidence).toHaveLength(1);
+    expect(f.fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    [{ kind: "conversation" }, "closing_calls_disagree"],
+    [{ kind: "report" }, "invalid_closing_call"],
+  ] as const)("refuses closing calls that do not agree (%#: %s)", async (second, reason) => {
+    const f = fixture({
+      responses: [
+        provider([tool()]),
+        provider([
+          { text: "**Three** targets are up." },
+          closingAs("close-1", { kind: "data" }),
+          closingAs("close-2", second),
+        ]),
+      ],
+    });
+    await expect(f.answer()).rejects.toMatchObject({ code: "ASK_INVALID_ANSWER", reason });
+  });
+
+  it("merges agreeing closes into one that cites every evidence id they name, once", () => {
+    const [a, b, c] = [crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID()];
+    expect(
+      oneClose([
+        { kind: "data" },
+        { kind: "data", evidenceIds: [a, b] },
+        { kind: "data", evidenceIds: [b, c] },
+      ]),
+    ).toEqual({ kind: "data", evidenceIds: [a, b, c] });
+    expect(oneClose([{ kind: "conversation" }, { kind: "conversation" }])).toEqual({
+      kind: "conversation",
+    });
   });
 
   it("rejects a presentation before any actual read", async () => {

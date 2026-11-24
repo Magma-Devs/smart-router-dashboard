@@ -173,8 +173,10 @@ The API runs a bounded AI SDK `ToolLoopAgent` against the existing native
 Bedrock adapter, with tool choice `auto`: forced tool use would suppress the
 answer text. A step either reads (tool calls only) or answers: the answer as
 Markdown reply text, then one `present_answer` call carrying only `kind`
-(`conversation` or `data`) and the `evidenceIds` it rests on. `present_answer`
-is available from the first step: ordinary conversation, clarifications and
+(`conversation` or `data`) and the `evidenceIds` it rests on. Two or more
+closing calls in one step that agree on `kind` are one close citing every
+evidence id any of them names; calls that name different kinds are refused.
+`present_answer` is available from the first step: ordinary conversation, clarifications and
 explanations of earlier answers need no data read.
 
 A step that ends on text with neither a read nor the closing call is handled by
@@ -357,6 +359,7 @@ input or evidence id is logged.
 | `history_mismatch` | the earlier turns sent do not match the chat's history |
 | `too_many_tool_calls` | more than four tool calls in one step, or a repeated call id |
 | `closing_call_not_alone` | `present_answer` beside another tool call |
+| `closing_calls_disagree` | two or more `present_answer` calls in one step that name different kinds |
 | `invalid_closing_call` | `present_answer` input other than `kind` and `evidenceIds` |
 | `conversation_with_sources` | a conversation reply that cites or carries a source |
 | `data_without_reads` | a data answer with no read behind it |
