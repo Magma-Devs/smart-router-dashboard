@@ -800,7 +800,7 @@ export class AskOrchestrator {
   }
 
   private recentHistory(history: AskMessage[], secrets: string[]): AskHistoryTurn[] {
-    const budget = Math.floor(this.settings.maxContextBytes / 4);
+    const budget = this.settings.maxHistoryBytes;
     const kept: AskHistoryTurn[] = [];
     let used = 0;
     for (const message of history.slice(-20).reverse()) {

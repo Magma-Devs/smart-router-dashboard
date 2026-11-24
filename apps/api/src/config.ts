@@ -622,6 +622,8 @@ export interface AskSettings {
   runTimeoutMs: number;
   maxResponseBytes: number;
   maxContextBytes: number;
+  /** Earlier turns of the chat sent with a question, newest first. */
+  maxHistoryBytes: number;
   maxOutputTokens: number;
   maxSteps: number;
   retentionDays: number;
@@ -650,7 +652,8 @@ export function readAskSettings(source: NodeJS.ProcessEnv = process.env): AskSet
     requestTimeoutMs: 20_000,
     runTimeoutMs: 120_000,
     maxResponseBytes: 1024 * 1024,
-    maxContextBytes: 64_000,
+    maxContextBytes: 128_000,
+    maxHistoryBytes: 16_000,
     maxOutputTokens: 2048,
     maxSteps: 5,
     // Invalid availability configuration must not stop mandatory cleanup.

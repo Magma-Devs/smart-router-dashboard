@@ -363,8 +363,13 @@ the covered time said once, no source IDs, label names or queries in the prose.
 
 At most 5 model steps and 8 data reads run; a step can request at most 4 tools.
 Individual tool context is capped at 12,000 bytes with explicit partial coverage;
-the whole request remains capped at 64,000 bytes. Prior personal messages are
-bounded role-based messages, explicitly historical evidence. Replicated sources must not be summed; correlation
+the whole request is capped at 128,000 bytes. A read runs only while the request
+has room for two more whole results. The instructions and tool definitions every
+step sends stay within a 40,000-byte budget that `ask-orchestrator.test.ts`
+holds, so a deployment with 43 chains, whose counts read before the first turn
+are about 6,400 bytes, still makes four reads before it answers. Prior personal
+messages are bounded role-based messages, at most 16,000 bytes of the newest
+turns, explicitly historical evidence. Replicated sources must not be summed; correlation
 with provider status must not be presented as proof of causation.
 
 Read admission measures this run's protected context separately from reclaimable
@@ -459,7 +464,7 @@ while it runs; every terminal write clears it. An exception event ends the step 
 stream cut before its `metadata` event leaves the step's usage uncertain, and a
 content event the adapter does not know rejects the step after its usage is
 recorded. The byte ceiling and deadline cover the whole stream. No temperature
-is sent. Context is capped at 64,000 UTF-8 bytes; output at 2048 tokens. The adapter
+is sent. Context is capped at 128,000 UTF-8 bytes; output at 2048 tokens. The adapter
 does not retry potentially billable invocations. Its required usage callback runs
 before output validation, including malformed/truncated answers. Missing usage
 and transport failures are explicitly uncertain; budget accounting keeps
