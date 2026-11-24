@@ -698,6 +698,7 @@ export class AskOrchestrator {
                 },
                 { ...queries, partial },
                 {
+                  ...(count.uncounted ? { uncounted: true } : {}),
                   // The model reads the server's table below, never the samples.
                   summarize: (data) => {
                     rows = countRows(data);
@@ -740,7 +741,7 @@ export class AskOrchestrator {
                 ? `Per-customer counters: each client request once, with its final outcome, under its caller's customer-id; up to ${TOP_CUSTOMERS} customers by requests and by failures, and ${TOP_CUSTOMER_METHODS} customer-method pairs. A full list may leave out smaller customers. DefaultDappID is requests that named no customer; other is requests past a router's 512-customer cap. A customer missing here is unknown, never zero. A customer's first request on a router may be missing until its series is first scraped. Do not sum replicated sources. table.totals add up the customers listed.`
                 : measure === "providers"
                   ? "Per chain and provider: relays sent to it (retries, hedges and the router's health probes included), failedRelays it gave no usable answer to, and nodeErrorReplies it answered with an RPC error. A provider absent here had no relays recorded; a count named in table.unavailable could not be read and is unknown."
-                  : `Recorded one-minute counts, read first. A count with no recorded series carries fallback: the same count over the raw log lines; run it once with logs_query only when the question needs that count, and say the figure was counted from the logs. The router failure count includes only ${FAILED_OUTCOMES.join(", ")}, not a served node_error response. Do not match sampled errors to this count without evidence. Missing series are unknown, never zero. table classifies transactions by result; only transaction writes have an on-chain outcome. Counts unchanged between reads do not establish zero new activity. Do not sum replicated sources or infer an acceptable failure rate without an SLO.`,
+                  : `Recorded one-minute counts, read first. A count with no recorded series carries fallback: the same count over the raw log lines; run it once with logs_query only when the question needs that count, and say the figure was counted from the logs. The router failure count includes only ${FAILED_OUTCOMES.join(", ")}, not a served node_error response. The requests and failures include Magma's serving probe, about one request a minute per chain and interface: table.probeRequests and probeFailures are its share, and customerRequests and customerFailures the customer's own; report those as the customer's traffic, and the probe's only as Magma's. Do not match sampled errors to this count without evidence. Missing series are unknown, never zero. table classifies transactions by result; only transaction writes have an on-chain outcome. Counts unchanged between reads do not establish zero new activity. Do not sum replicated sources or infer an acceptable failure rate without an SLO.`,
               ...(partial
                 ? {
                     warning:

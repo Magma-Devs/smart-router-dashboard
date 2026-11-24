@@ -43,6 +43,16 @@ export const CUSTOMER_COUNTERS = {
   failures: "smartrouter_customer_requests_failed_total",
 } as const;
 
+/**
+ * The fleet ruler's per-customer request and failure rates, by spec and
+ * customer: the probe's share of a chain's requests is read from these, a
+ * window's total being the sum of its samples times the one-minute interval.
+ */
+export const RECORDED_CUSTOMER = {
+  requests: "spec_router_customer:smartrouter_customer_requests_total:rate2m15s",
+  failures: "spec_router_customer:smartrouter_customer_requests_failed_total:rate2m15s",
+} as const;
+
 /** The customer-id the hub's serving probes send: Magma's own traffic, never the reader's customer. */
 export const SERVING_PROBE_CUSTOMER = "magma-serving-probe";
 
@@ -105,6 +115,8 @@ export interface SummaryCount {
   name: string;
   query: string;
   raw?: string;
+  /** Read beside the counts asked for; it spends none of the run's reads. */
+  uncounted?: true;
 }
 
 /**
@@ -194,8 +206,27 @@ export function requestSummaryQueries(
               query: `sum by (chain) (sum_over_time(${RECORDED_OUTCOMES.failures}${selector}${range}))`,
               ...raw((s) => `sum by (chain) (count_over_time(${s} ${FAILED_PIPELINE} ${range}))`),
             },
+            // The requests and failures above count Magma's serving probe too.
+            ...probeCounts(input.chain, range),
           ];
   return { start, end, counts };
+}
+
+/**
+ * Magma's serving probe's requests and failures per chain, which the recorded
+ * request and failure counts include: the customer's own are what is left.
+ */
+function probeCounts(chain: string | undefined, range: string): SummaryCount[] {
+  const matchers = [
+    `customer=${JSON.stringify(SERVING_PROBE_CUSTOMER)}`,
+    ...(chain ? [`spec=${JSON.stringify(chain.toUpperCase())}`] : []),
+  ];
+  const total = (series: string) =>
+    `round(sum by (spec) (sum_over_time(${series}{${matchers.join(",")}}${range})) * ${RECORDED_INTERVAL_SECONDS})`;
+  return [
+    { name: "probe_requests", query: total(RECORDED_CUSTOMER.requests), uncounted: true },
+    { name: "probe_failures", query: total(RECORDED_CUSTOMER.failures), uncounted: true },
+  ];
 }
 
 /**

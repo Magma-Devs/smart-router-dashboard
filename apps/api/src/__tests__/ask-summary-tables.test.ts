@@ -83,6 +83,46 @@ describe("summary tables", () => {
     ]);
     expect(table.totals).toEqual({ requests: 950, failures: 7 });
   });
+  it("splits each chain's requests and failures into the serving probe's and the customer's own", () => {
+    const table = summaryTable("requests", [
+      { name: "requests", rows: [row({ chain: "eth1" }, 900), row({ chain: "sol" }, 50)] },
+      { name: "failures", rows: [row({ chain: "eth1" }, 4), row({ chain: "sol" }, 7)] },
+      // By spec, upper-cased; sol's probe sent more than was counted, so it is capped.
+      { name: "probe_requests", rows: [row({ spec: "ETH1" }, 60), row({ spec: "SOL" }, 80)] },
+      { name: "probe_failures", rows: [row({ spec: "SOL" }, 7)] },
+    ]);
+    expect(table.rows).toEqual([
+      {
+        chain: "sol",
+        requests: 50,
+        failures: 7,
+        probeRequests: 50,
+        probeFailures: 7,
+        customerRequests: 0,
+        customerFailures: 0,
+      },
+      {
+        chain: "eth1",
+        requests: 900,
+        failures: 4,
+        probeRequests: 60,
+        probeFailures: 0,
+        customerRequests: 840,
+        customerFailures: 4,
+      },
+    ]);
+    expect(table.totals).toMatchObject({ customerRequests: 840, probeRequests: 110 });
+  });
+  it("leaves the split out when the probe's share could not be read", () => {
+    const table = summaryTable("requests", [
+      { name: "requests", rows: [row({ chain: "eth1" }, 900)] },
+      { name: "failures", rows: [] },
+      { name: "probe_requests", rows: null },
+      { name: "probe_failures", rows: [] },
+    ]);
+    expect(table.rows).toEqual([{ chain: "eth1", requests: 900, failures: 0 }]);
+    expect(table.unavailable).toEqual(["probe_requests"]);
+  });
   it("gives each provider its failed relays and node-error replies, most errors first", () => {
     const table = summaryTable("providers", [
       {

@@ -52,6 +52,10 @@ describe("the counts read before the first turn", () => {
           failuresLastHour: 0,
           requestsLast24Hours: 14,
           failuresLast24Hours: 3,
+          probeRequestsLastHour: 0,
+          probeFailuresLastHour: 0,
+          probeRequestsLast24Hours: 0,
+          probeFailuresLast24Hours: 0,
         },
         {
           chain: "base",
@@ -59,9 +63,52 @@ describe("the counts read before the first turn", () => {
           failuresLastHour: 1,
           requestsLast24Hours: 0,
           failuresLast24Hours: 1,
+          probeRequestsLastHour: 0,
+          probeFailuresLastHour: 0,
+          probeRequestsLast24Hours: 0,
+          probeFailuresLast24Hours: 0,
         },
       ],
     });
+  });
+
+  it("gives each chain the serving probe's share, read by spec and never past the count it is part of", () => {
+    const counts = summarizePrefetch(
+      matrix([
+        {
+          metric: { count: "requests", chain: "eth1" },
+          values: [
+            [end - 3600, "100"],
+            [end, "60"],
+          ],
+        },
+        { metric: { count: "failures", chain: "eth1" }, values: [[end, "2"]] },
+        {
+          metric: { count: "probe_requests", spec: "ETH1" },
+          values: [
+            [end - 3600, "60"],
+            [end, "60"],
+          ],
+        },
+        { metric: { count: "probe_failures", spec: "ETH1" }, values: [[end, "5"]] },
+        { metric: { count: "probe_requests", spec: "BASE" }, values: [[end, "60"]] },
+        { metric: { count: "router_lines" }, values: [[end, "1"]] },
+      ]),
+      end,
+    );
+    expect(counts?.chains).toEqual([
+      {
+        chain: "eth1",
+        requestsLastHour: 60,
+        failuresLastHour: 2,
+        requestsLast24Hours: 160,
+        failuresLast24Hours: 2,
+        probeRequestsLastHour: 60,
+        probeFailuresLastHour: 2,
+        probeRequestsLast24Hours: 120,
+        probeFailuresLast24Hours: 2,
+      },
+    ]);
   });
 
   it("reads an idle tenant as live with no chains, and a stopped recording as not live", () => {

@@ -274,8 +274,23 @@ adds them up into `table` (`summary-tables.ts`), rows and totals per chain, and
 each count's result carries only how many samples went into it. A table holds
 the 40 largest rows, fewer when they would take more than half a tool result,
 and names the rest in `omittedRows`; its totals add up every row. Its bytes
-count toward the run's context like a read's. A
-transactions row reads `accepted`, `rejected`, `failedNeverSent`,
+count toward the run's context like a read's.
+
+The recorded requests and failures per chain include the hub's serving probe
+(`magma-serving-probe`), about one request a minute per chain and interface;
+the alert rules read them, so they stay as they are. A requests summary also
+reads the probe's share per chain from the ruler's per-customer series
+(`spec_router_customer:smartrouter_customer_requests_total:rate2m15s` and its
+failed counterpart, by spec), as two reads beside the counts asked for that
+spend none of the run's eight. Each row then carries `probeRequests` and
+`probeFailures` and the customer's own, `customerRequests` and
+`customerFailures`; a probe count never exceeds the count it is part of. The
+counts read before the first turn carry the same split for the last hour and
+the last 24 hours. The tool's note and the prefetch note tell the model to
+report the customer's own as the customer's traffic. On a quiet chain the
+whole count can be the probe's.
+
+A transactions row reads `accepted`, `rejected`, `failedNeverSent`,
 `failedOnChain`, `unknown` and `total`, by `txResultOf`, the Transactions tab's
 own mapping. A window longer than a day also reads whether the recorded series
 hold anything in its first day: the family it sums, or for transactions (a day

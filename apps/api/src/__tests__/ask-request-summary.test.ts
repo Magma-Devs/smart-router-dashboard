@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   CUSTOMER_COUNTERS,
   MAX_COUNT_SECONDS,
+  RECORDED_CUSTOMER,
   RECORDED_WARN_ERROR,
   requestSummaryInput,
   requestSummaryQueries,
@@ -27,7 +28,12 @@ describe("curated request evidence", () => {
   it("uses the dashboard's recorded outcome families over one exact window", () => {
     const result = requestSummaryQueries({}, defaults)!;
     expect(result).toMatchObject(defaults);
-    expect(result.counts.map((count) => count.name)).toEqual(["requests", "failures"]);
+    expect(result.counts.map((count) => count.name)).toEqual([
+      "requests",
+      "failures",
+      "probe_requests",
+      "probe_failures",
+    ]);
     expect(result.counts[0]!.query).toBe(
       "sum by (chain) (sum_over_time(smartrouter_final_requests:count1m[1800s]))",
     );
@@ -36,6 +42,26 @@ describe("curated request evidence", () => {
     );
     expect(result.counts.every((count) => hasBoundedAskQuery(count.query))).toBe(true);
     expect(JSON.stringify(result)).not.toContain("vector(0)");
+  });
+  it("reads the serving probe's share of each chain's requests and failures, spending no read", () => {
+    const [, , requests, failures] = requestSummaryQueries({ chain: "eth1" }, defaults)!.counts;
+    const sel = '{customer="magma-serving-probe",spec="ETH1"}';
+    expect(requests).toEqual({
+      name: "probe_requests",
+      query: `round(sum by (spec) (sum_over_time(${RECORDED_CUSTOMER.requests}${sel}[1800s])) * 60)`,
+      uncounted: true,
+    });
+    expect(failures).toEqual({
+      name: "probe_failures",
+      query: `round(sum by (spec) (sum_over_time(${RECORDED_CUSTOMER.failures}${sel}[1800s])) * 60)`,
+      uncounted: true,
+    });
+    for (const measure of ["transactions", "errors", "customers", "providers"] as const)
+      expect(
+        requestSummaryQueries({ measure }, defaults)!.counts.some((c) =>
+          c.name.startsWith("probe_"),
+        ),
+      ).toBe(false);
   });
   it("reads the recorded warn and error lines by chain and level, and the most frequent messages", () => {
     const queries = requestSummaryQueries({ measure: "errors", chain: "ETH1" }, defaults)!;
@@ -76,9 +102,10 @@ describe("curated request evidence", () => {
     expect(messages!.raw).toContain(
       '| level=~"warn|error" | json message="message" | __error__=""',
     );
+    // The probe's share is read from the recorded per-customer series only.
     for (const measure of [undefined, "transactions", "errors"] as const)
       for (const count of requestSummaryQueries({ measure }, defaults, "acme")!.counts)
-        expect(hasBoundedAskQuery(count.raw!)).toBe(true);
+        if (!count.uncounted) expect(hasBoundedAskQuery(count.raw!)).toBe(true);
   });
   it("reads requests and failures per customer, and per customer and method, without the serving probe", () => {
     const queries = requestSummaryQueries({ measure: "customers" }, defaults, "acme")!;
@@ -179,7 +206,7 @@ describe("curated request evidence", () => {
     }
     for (const count of requestSummaryQueries({ start: end - 86400, end }, defaults, "acme")!
       .counts)
-      expect(count.raw).toBeDefined();
+      if (!count.uncounted) expect(count.raw).toBeDefined();
   });
   it("reads relays and successes per provider from the recorded pair, and node-error replies raw, without the cache", () => {
     const queries = requestSummaryQueries({ measure: "providers", chain: "eth1" }, defaults)!;
@@ -202,8 +229,11 @@ describe("curated request evidence", () => {
   });
   it("narrows both counts to the same normalized chain", () => {
     expect(
-      requestSummaryQueries({ chain: "ETH1" }, defaults)!.counts.every((count) =>
-        count.query.includes('{chain="eth1"}'),
+      requestSummaryQueries({ chain: "ETH1" }, defaults)!.counts.every(
+        (count) =>
+          count.query.includes('{chain="eth1"}') ||
+          // The probe's series carry the spec, upper-cased.
+          (count.uncounted && count.query.includes('spec="ETH1"')),
       ),
     ).toBe(true);
   });
