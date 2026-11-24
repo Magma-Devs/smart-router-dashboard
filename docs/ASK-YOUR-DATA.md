@@ -175,7 +175,9 @@ answer text. A step either reads (tool calls only) or answers: the answer as
 Markdown reply text, then one `present_answer` call carrying only `kind`
 (`conversation` or `data`) and the `evidenceIds` it rests on. Two or more
 closing calls in one step that agree on `kind` are one close citing every
-evidence id any of them names; calls that name different kinds are refused.
+evidence id any of them names; calls that name different kinds are refused. A
+close that says `conversation` in a run with a successful read of its own (the
+server's counts read does not count) is a data answer resting on that evidence.
 `present_answer` is available from the first step: ordinary conversation, clarifications and
 explanations of earlier answers need no data read.
 
@@ -361,7 +363,7 @@ input or evidence id is logged.
 | `closing_call_not_alone` | `present_answer` beside another tool call |
 | `closing_calls_disagree` | two or more `present_answer` calls in one step that name different kinds |
 | `invalid_closing_call` | `present_answer` input other than `kind` and `evidenceIds` |
-| `conversation_with_sources` | a conversation reply that cites or carries a source |
+| `conversation_with_sources` | a conversation reply that cites or carries a source, in a run with no successful read of its own |
 | `data_without_reads` | a data answer with no read behind it |
 | `unknown_evidence` | an evidence id that no read of the run returned, or one cited twice |
 | `empty_answer` | no answer text |
