@@ -5,6 +5,19 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.91.2]
+
+### Fixed
+
+- **Ask no longer publishes its working as the answer (MAG-5734).** After a
+  read, the model could end a step on text such as "the window was 24 hours,
+  not one. Let me get the last hour" without reading or closing the answer,
+  and that text became the answer. Such a step now asks once more, and the
+  next step must read or close: a lone closing call publishes the text as
+  written, a read carries on. The draft the reader saw is withdrawn while it
+  asks. A reply before any read of the run's own, and text on the run's last
+  step, are taken as before.
+
 ## [0.91.1]
 
 ### Fixed

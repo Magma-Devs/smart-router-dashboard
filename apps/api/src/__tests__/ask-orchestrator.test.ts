@@ -7,6 +7,8 @@ import { AskOrchestrator, type AskExecutionHooks } from "../services/ask/orchest
 import { McpAdapter, McpConnection } from "../services/ask/mcp.js";
 import { redactAskData, redactAskText } from "../services/ask/redact.js";
 import { AskFailure } from "../services/ask/errors.js";
+// @ts-expect-error The browser tests' provider helper is plain JavaScript.
+import { converseStreamResponse } from "../../../../e2e/support/converse-stream.mjs";
 
 const settings = () =>
   readAskSettings({
@@ -127,6 +129,8 @@ function fixture(
     /** What the reads answer in turn, before the default: fields merged into
      * the envelope, or `toolError` for a tool error with that body. */
     envelopes?: Array<Record<string, unknown>>;
+    /** Each model step streams, and the hooks take its draft. */
+    stream?: boolean;
   } = {},
 ) {
   const envelopes = [...(options.envelopes ?? [])];
@@ -227,7 +231,10 @@ function fixture(
     bodies.push(String(init?.body));
     const response = plan.shift();
     if (!response) throw new Error("Unexpected model call");
-    return Response.json(response, { headers: { "x-amzn-requestid": "fixture-request-1" } });
+    const headers = { "x-amzn-requestid": "fixture-request-1" };
+    return options.stream
+      ? (converseStreamResponse(response, headers) as Response)
+      : Response.json(response, { headers });
   });
   const hooks: AskExecutionHooks = {
     checkActive: vi.fn(async () => undefined),
@@ -244,6 +251,13 @@ function fixture(
     recordTool: vi.fn(async () => {
       events.push("tool");
     }),
+    ...(options.stream
+      ? {
+          draft: vi.fn((text: string) => {
+            events.push(`draft:${text}`);
+          }),
+        }
+      : {}),
   };
   return {
     settings: value,
@@ -353,12 +367,14 @@ describe("bounded customer tool orchestration", () => {
     await expect(f.answer()).rejects.toMatchObject({ code: "ASK_INVALID_ANSWER" });
     expect(f.call.mock.calls.some(([call]) => call.name === "execute_operation")).toBe(false);
   });
-  it("takes an answer written without its closing call after a read as a data answer citing it", async () => {
+  it("asks once more after text without its closing call that follows a read, and a lone closing call keeps that text", async () => {
     const f = fixture({
       responses: [
         provider([tool()]),
         provider([{ text: "**Three** targets are up." }], "end_turn"),
+        provider([closing({ kind: "data" })]),
       ],
+      stream: true,
     });
     const answer = await f.answer();
     expect(answer).toMatchObject({
@@ -366,7 +382,68 @@ describe("bounded customer tool orchestration", () => {
       summary: "Three targets are up.",
     });
     expect(answer.evidence).toHaveLength(1);
+    expect(f.fetchImpl).toHaveBeenCalledTimes(3);
+    const reask = JSON.parse(f.bodies[2]!);
+    // The step after the re-ask reads or closes; text alone is not offered.
+    expect(reask.toolConfig.toolChoice).toEqual({ any: {} });
+    expect(reask.messages.at(-2).content[0].text).toBe("**Three** targets are up.");
+    expect(JSON.stringify(reask.messages.at(-1))).toContain(
+      "ended without a read or present_answer",
+    );
+    // The text was shown as a finished draft; it is withdrawn while the run asks.
+    // Withdrawn before the re-ask is sent, not when its reply starts.
+    const shown = f.events.lastIndexOf("draft:**Three** targets are up.");
+    const withdrawn = f.events.indexOf("draft:", shown);
+    expect(shown).toBeGreaterThan(-1);
+    expect(withdrawn).toBeGreaterThan(shown);
+    expect(f.events.slice(withdrawn).filter((e) => e === "fetch")).toHaveLength(1);
+  });
+
+  it("reads again when the step after the re-ask calls a read, and answers from it", async () => {
+    const f = fixture({
+      responses: [
+        provider([tool()]),
+        provider(
+          [{ text: "The window was 24 hours, not one. Let me get the last hour." }],
+          "end_turn",
+        ),
+        provider([tool(undefined, undefined, undefined, "read-2")]),
+        final(),
+      ],
+    });
+    const answer = await f.answer();
+    expect(answer.summary).toBe(content.summary);
+    expect(answer.markdown).not.toContain("Let me get");
+    expect(f.fetchImpl).toHaveBeenCalledTimes(4);
+    expect(JSON.parse(f.bodies[3]!).toolConfig.toolChoice).toEqual({ auto: {} });
+    expect(f.hooks.recordTool).toHaveBeenCalledTimes(2);
+  });
+
+  it("takes text without its closing call as the answer when it ends the run's last step", async () => {
+    const f = fixture({
+      responses: [
+        provider([tool()]),
+        provider([{ text: "**Three** targets are up." }], "end_turn"),
+      ],
+    });
+    f.settings.maxSteps = 2;
+    const answer = await f.answer();
+    expect(answer.markdown).toBe("**Three** targets are up.");
+    expect(answer.evidence).toHaveLength(1);
     expect(f.fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("asks only once: text the re-ask still ends on is the answer", async () => {
+    const f = fixture({
+      responses: [
+        provider([tool()]),
+        provider([{ text: "Checking." }], "end_turn"),
+        provider([{ text: "**Three** targets are up." }], "end_turn"),
+      ],
+    });
+    const answer = await f.answer();
+    expect(answer.markdown).toBe("**Three** targets are up.");
+    expect(f.fetchImpl).toHaveBeenCalledTimes(3);
   });
   it("takes an answer written without its closing call and without a read as a reply with no source", async () => {
     const f = fixture({
