@@ -88,8 +88,7 @@ This is the single biggest structural constraint in the design; see §8.
 
 ### 2.3 Security primitives and the team model
 
-The account system has two halves: the *security primitives*, and a *team model* —
-organisation, invitation, multi-user tenancy.
+The account system has two halves: the *security primitives* and the *team model*.
 
 | Security primitives | Team model |
 |---|---|
@@ -108,7 +107,7 @@ organisation, invitation, multi-user tenancy.
 
 Three semantics are fixed by this ticket: no admin **chooses** another user's password
 (§7); removal is a state change, never a **hard delete** of the row (§4.1); and
-removing the last admin is a prompt, not a **block** (§3.3).
+being down to one admin is a prompt, not a **block** (§3.3).
 
 ---
 
