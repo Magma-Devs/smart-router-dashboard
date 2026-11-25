@@ -23,4 +23,4 @@
 ## Metrics
 - Metric names are GROUND TRUTH from a live scrape (`smartrouter_*`/`rpc_endpoint_*`),
   catalogued in `packages/shared/src/constants/metrics.ts`. Don't trust the design docs.
-- Chains are keyed by Lava spec index (`spec` label) via `buildChainMetaByIndex`.
+- Chains are keyed by spec index (`spec` label) via `buildChainMetaByIndex`.

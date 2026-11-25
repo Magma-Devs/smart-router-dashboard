@@ -2,7 +2,7 @@
  * generate-chain-map.mjs — build the dashboard's chain metadata map from the
  * Magma-Devs/lava-specs repo, mirroring the v1 chains.ts model.
  *
- * The dashboard only ever knows a chain by its Lava spec INDEX (the `spec`
+ * The dashboard only ever knows a chain by its spec INDEX (the `spec`
  * Prometheus label / the values-file `chain-id`, e.g. ETH1, HYPERLIQUID). This
  * script produces one entry per index:
  *

@@ -1,6 +1,6 @@
 # Chain catalogs — what the dashboard knows about a chain
 
-The dashboard only ever knows a chain by its **Lava spec index** — the `spec`
+The dashboard only ever knows a chain by its **spec index** — the `spec`
 Prometheus label, the values-file `chain-id`: `ETH1`, `COSMOSHUB`,
 `HYPERLIQUID`. Everything a human sees about that chain is resolved from
 generated catalogs keyed by that index.

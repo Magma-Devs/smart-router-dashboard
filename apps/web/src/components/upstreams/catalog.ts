@@ -250,7 +250,7 @@ export interface ChainUpstreamRow {
 }
 
 export interface ChainGroup {
-  /** Lava spec index — `ETH1`, `COSMOSHUB`, … */
+  /** Spec index — `ETH1`, `COSMOSHUB`, … */
   spec: string;
   rows: ChainUpstreamRow[];
   /** Distinct upstreams serving the chain. `rows` counts ENDPOINTS — one

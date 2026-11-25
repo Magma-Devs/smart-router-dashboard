@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Generate the full-coverage Try-it method catalog from the Lava spec repo.
+ * Generate the full-coverage Try-it method catalog from the lava-specs repo.
  *
  *   LAVA_SPECS_DIR=~/projects/lava-specs node scripts/generate-try-me-catalog.mjs
  *

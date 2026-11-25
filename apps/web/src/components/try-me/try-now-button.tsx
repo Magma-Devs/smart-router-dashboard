@@ -17,7 +17,7 @@ import { IconZap, TryMeDrawer } from "./drawer";
 const getServerCatalogVersion = () => 0;
 
 interface TryNowButtonProps {
-  /** Lava spec label (`ETH1`, `SOLANA`, …). */
+  /** Spec label (`ETH1`, `SOLANA`, …). */
   spec: string;
   /** The config router this endpoint belongs to — how the api addresses the
    *  router when it sends the router leg. */

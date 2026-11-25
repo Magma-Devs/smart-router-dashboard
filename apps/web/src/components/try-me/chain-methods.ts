@@ -7,7 +7,7 @@
  *     `scripts/generate-try-me-catalog.mjs` from the spec proposals in
  *     `lava-specs/` (imports resolved transitively, debug/trace/blockbook
  *     add-on collections mapped to tiers, archive synthesised from the collection
- *     `archive` extension + curated hints). Keyed by exact Lava spec index
+ *     `archive` extension + curated hints). Keyed by exact spec index
  *     (`ETH1`, `COSMOSHUB`, …); a string value is an alias to an identical
  *     entry (testnets mostly alias their mainnet).
  *
@@ -519,7 +519,7 @@ export const FAMILY_METHODS: Record<
 };
 
 /**
- * Map a Lava spec label (the Prometheus `spec` label: `ETH1`, `SOLANA`, …) to
+ * Map a spec label (the Prometheus `spec` label: `ETH1`, `SOLANA`, …) to
  * a catalog family via its uppercase prefix. Returns null when no prefix
  * matches — callers fall back per-interface (jsonrpc → evm, rest /
  * tendermintrpc → cosmos) so unknown chains still get a sensible catalog.

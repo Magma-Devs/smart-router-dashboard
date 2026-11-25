@@ -5,7 +5,7 @@
 import chainMap from "./chain-map.generated.json" with { type: "json" };
 
 /**
- * Chain metadata keyed by Lava spec index (the `spec` Prometheus label /
+ * Chain metadata keyed by spec index (the `spec` Prometheus label /
  * values-file `chain-id`: `ETH1`, `HYPERLIQUID`, `COSMOSHUB`, …) — NOT a
  * human chain id. Every metric series and every mounted endpoint carries the
  * index, so the dashboard resolves display metadata through this map.
@@ -73,7 +73,7 @@ interface ChainMapEntry {
 }
 
 export interface ChainMeta {
-  /** The Lava spec index — the `spec` label value. */
+  /** The spec index — the `spec` label value. */
   spec: string;
   /** Display name (from the spec's `name`, "Mainnet" trimmed). */
   name: string;
