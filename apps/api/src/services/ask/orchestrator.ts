@@ -465,7 +465,6 @@ export class AskOrchestrator {
           observedWindow?.partial && ["complete", "unknown"].includes(item.coverage)
             ? "partial"
             : item.coverage;
-        const names = namesIn(payload, customerNames);
         const output = {
           evidenceId: item.id,
           coverage: modelCoverage,
@@ -475,13 +474,19 @@ export class AskOrchestrator {
               ? "Only the returned values and labels are established. Missing series or labels are unknown, never zero or false. A complete query response does not prove that every chain reported data."
               : "Coverage is not exhaustive. Report only returned observations, never zero/no incidents/no other errors over the full window. Missing series or labels are unknown, not zero or false. Current status does not establish incident-free history.",
           ...(JSON.parse(payload) as Record<string, unknown>),
-          ...(names ? { customerNames: names } : {}),
         };
-        const outputBytes = Buffer.byteLength(JSON.stringify(output));
+        // The names of the ids this result holds, as many as fit beside it.
+        const names = namesIn(
+          payload,
+          customerNames,
+          this.settings.maxToolResultBytes - Buffer.byteLength(JSON.stringify(output)),
+        );
+        const named = names ? { ...output, customerNames: names } : output;
+        const outputBytes = Buffer.byteLength(JSON.stringify(named));
         if (outputBytes > this.settings.maxToolResultBytes)
           throw new AskFailure("ASK_LIMIT_REACHED", 422);
         pendingBytes += 2 * outputBytes + 512;
-        return output;
+        return named;
       } catch (error) {
         if (options?.soft) throw error;
         return fail(error);

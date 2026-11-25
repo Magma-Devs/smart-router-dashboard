@@ -1036,6 +1036,46 @@ describe("bounded customer tool orchestration", () => {
     expect(result.customerNames).toEqual({ [named]: "Acme Wallet" });
   });
 
+  it("names only as many ids as fit beside a raw read near its limit, and never fails the read over them", async () => {
+    const ids = Array.from({ length: 50 }, (_, i) => i.toString(16).padStart(64, "f"));
+    const series = ids.map((customer) => ({ metric: { customer }, value: [1, "1"] }));
+    const bare = JSON.stringify({
+      status: "success",
+      data: { resultType: "vector", result: series },
+    });
+    // Just under the size at which the read is cut to a preview.
+    series.push({
+      metric: { customer: "unnamed", pad: "x".repeat(10_700 - bare.length) },
+      value: [1, "1"],
+    });
+    const f = fixture({
+      customerNames: new Map(ids.map((id, i) => [id, `Customer number ${i} of the deployment`])),
+      data: { status: "success", data: { resultType: "vector", result: series } },
+      responses: [
+        provider([
+          {
+            toolUse: {
+              toolUseId: "raw",
+              name: "metrics_query",
+              input: { query: "sum by (customer) (smartrouter_customer_requests_total)" },
+            },
+          },
+        ]),
+        final(),
+      ],
+    });
+    await f.answer();
+    const body = JSON.parse(f.bodies[1]!);
+    const text = body.messages.at(-1).content[0].toolResult.content[0].text;
+    const result = JSON.parse(text);
+    expect(result.truncated).toBeUndefined();
+    expect(result.error).toBeUndefined();
+    const named = Object.keys(result.customerNames ?? {}).length;
+    expect(named).toBeGreaterThan(0);
+    expect(named).toBeLessThan(50);
+    expect(Buffer.byteLength(text)).toBeLessThanOrEqual(f.settings.maxToolResultBytes);
+  });
+
   it("hands the model the transactions the server added up by result, never the samples", async () => {
     const f = fixture({
       data: {

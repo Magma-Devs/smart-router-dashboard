@@ -7,16 +7,16 @@ hex digest. A deployment's admins give an id a name on the **Customers** page.
 The dashboard and Ask then show the name wherever that id appears.
 
 Names need accounts (`AUTH_MODE=enabled`): they live in the accounts database.
-Without accounts there are no names. The Customers page is not in the menu,
-its routes are not registered, and every list shows the ids as before.
+Without accounts there are no names: the Customers page is not in the menu,
+its routes are not registered, and every list shows the ids.
 
 ## Where a name shows
 
 | Surface | What it shows |
 |---|---|
-| Customers page (`/customers`) | Every id the routers counted in the last 24 hours, busiest first, and every named id. Each row has its name, its requests in the last 24 hours and when it was named. An admin names, renames and clears. |
+| Customers page (`/customers`) | Every id the routers counted in the last 24 hours, busiest first, and every named id. Each row has its name, its requests in the last 24 hours and when it was named. An admin names, renames and clears. The page reads the list when it opens and after each save, never on a timer. |
 | Transactions and Errors lists | The row's time cell and the Customer filter show the name. The id is in the tooltip. An opened request shows the name beside the id. |
-| Ask | A `measure=customers` row, and each method row, carries `name` beside `customer`. Any other read whose result holds a named id as a whole value carries `customerNames` (id → name, at most 50). The prompt tells the model to call such a customer by its name. `customer` takes an id or a name. |
+| Ask | A `measure=customers` row, and each method row, carries `name` beside `customer`. Any other read whose result holds a named id under the `customer` key (a series label, a JSON field, or a field inside a log line) carries `customerNames` (id → name): at most 50, and only as many as fit within the result's byte limit. The prompt tells the model to call such a customer by its name. `customer` takes an id or a name. |
 
 A name never leaves the deployment: it is not written to the metrics store,
 the logs or the usage data. Ask sends it to the model as part of a tool result.

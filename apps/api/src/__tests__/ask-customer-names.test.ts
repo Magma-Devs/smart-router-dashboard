@@ -52,14 +52,31 @@ describe("namesIn", () => {
     expect(namesIn(logLine, NAMES)).toEqual({ "team/eu": "Team EU" });
   });
 
-  it("does not match an id inside a longer value, or a result without one", () => {
+  it("does not match an id inside a longer value, or under another key", () => {
     expect(namesIn(JSON.stringify({ customer: `${ACME}0` }), NAMES)).toBeUndefined();
     expect(namesIn(JSON.stringify({ path: "team/eu/2" }), NAMES)).toBeUndefined();
+    // A short or numeric id is a common sample value; only the customer key names it.
+    const short = new Map([["42", "Forty Two"]]);
+    expect(
+      namesIn(JSON.stringify({ metric: { spec: "ETH1" }, value: [1, "42"] }), short),
+    ).toBeUndefined();
+    expect(namesIn(JSON.stringify({ metric: { customer: "42" } }), short)).toEqual({
+      "42": "Forty Two",
+    });
+  });
+
+  it("adds names only while they fit the bytes it is given", () => {
+    const payload = JSON.stringify([{ customer: ACME }, { customer: "team/eu" }]);
+    expect(namesIn(payload, NAMES, 10)).toBeUndefined();
+    const one = namesIn(payload, NAMES, 110)!;
+    expect(Object.keys(one)).toHaveLength(1);
+    expect(Buffer.byteLength(JSON.stringify({ customerNames: one }))).toBeLessThanOrEqual(110);
+    expect(Object.keys(namesIn(payload, NAMES)!)).toHaveLength(2);
   });
 
   it("carries at most MAX_NAMES_PER_READ names", () => {
     const many = new Map(Array.from({ length: 80 }, (_, i) => [`id-${i}`, `Name ${i}`]));
-    const payload = JSON.stringify([...many.keys()]);
+    const payload = JSON.stringify([...many.keys()].map((customer) => ({ customer })));
     expect(Object.keys(namesIn(payload, many)!)).toHaveLength(MAX_NAMES_PER_READ);
   });
 });

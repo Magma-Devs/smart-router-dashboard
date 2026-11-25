@@ -9,6 +9,7 @@
  */
 
 import { useMemo, useState } from "react";
+import { useSWRConfig } from "swr";
 import {
   CUSTOMER_NAME_MAX_LENGTH,
   parseCustomerName,
@@ -26,7 +27,9 @@ const CUSTOMERS_KEY = "/api/customers";
 
 export function CustomersView() {
   const { isAdmin } = useMe();
-  const customers = useApi<CustomersResponse>(CUSTOMERS_KEY, 60_000);
+  // Read on open and after a save: each read sums a day of the routers' counters.
+  const customers = useApi<CustomersResponse>(CUSTOMERS_KEY, 0);
+  const { mutate } = useSWRConfig();
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -61,7 +64,8 @@ export function CustomersView() {
     try {
       await apiSend("POST", "/api/customers/name", { customer: id, name });
       setEditing(null);
-      await customers.mutate();
+      // The request lists read the names on their own key.
+      await Promise.all([customers.mutate(), mutate("/api/customers/names")]);
     } catch (e) {
       setError(e instanceof Error ? e.message : "The name could not be saved.");
     } finally {

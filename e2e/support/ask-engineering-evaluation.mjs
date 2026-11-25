@@ -304,7 +304,11 @@ function sourceData(operationId, parameters) {
     };
   }
   // Per-customer counters: the named customer sends the most, failing twice.
-  if (query.includes("smartrouter_customer_requests") && !operationId.endsWith("query_range")) {
+  if (
+    query.includes("smartrouter_customer_requests") &&
+    !query.includes("spec_router_customer:") &&
+    !operationId.endsWith("query_range")
+  ) {
     const failed = query.includes("failed");
     const byMethod = query.includes("method");
     return {
