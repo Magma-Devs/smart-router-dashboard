@@ -1,4 +1,4 @@
-import type { TxOutcome } from "@sr/shared";
+import { BEHIND_CAVEAT_SECONDS, TIP_WINDOW_SECONDS, type TxOutcome } from "@sr/shared";
 import { txResultOf } from "../transactions.js";
 
 /** One sample of an instant vector: its labels and its value, rounded to a whole count. */
@@ -25,7 +25,8 @@ export function countRows(data: unknown): CountRow[] | null {
   return rows;
 }
 
-export type SummaryMeasure = "requests" | "transactions" | "errors" | "customers" | "providers";
+export type SummaryMeasure =
+  "requests" | "transactions" | "errors" | "customers" | "providers" | "blocks";
 export type TableRow = Record<string, string | number>;
 
 /**
@@ -94,6 +95,7 @@ export function summaryTable(
 ): SummaryTable {
   const unavailable = counts.filter((count) => count.rows === null).map((count) => count.name);
   const read = (name: string) => counts.find((count) => count.name === name)?.rows ?? null;
+  if (measure === "blocks") return blockTable(read, unavailable, maxRows);
   const by = new Map<string, TableRow>();
   let columns: string[] = [];
   let detail: TableRow[] | undefined;
@@ -218,6 +220,85 @@ export function summaryTable(
     ...(rows.length > maxRows ? { omittedRows: rows.length - maxRows } : {}),
     totals: totalsOf(rows, columns),
     ...(detail ? { detail: detail.slice(0, maxRows) } : {}),
+    ...(unavailable.length ? { unavailable } : {}),
+  };
+}
+
+/**
+ * Each provider's distance from the best block among its router's providers on
+ * the same chain and interface, the Upstreams roster's reading: in blocks, and
+ * in seconds at the chain's pace. notMoving is a block that did not move over
+ * the tip window while the chain made two blocks or more. Totals count
+ * providers, never add up blocks.
+ */
+function blockTable(
+  read: (name: string) => CountRow[] | null,
+  unavailable: string[],
+  maxRows: number,
+): SummaryTable {
+  const heights = read("block_heights") ?? [];
+  const group = (l: Record<string, string>) =>
+    `${l.router ?? ""}\u0000${l.spec ?? ""}\u0000${l.apiInterface ?? ""}`;
+  const id = (l: Record<string, string>) => `${group(l)}\u0000${l.endpoint_id ?? ""}`;
+  const index = (name: string, key: (l: Record<string, string>) => string) =>
+    new Map((read(name) ?? []).map(({ labels, value }) => [key(labels), value]));
+  const best = new Map<string, number>();
+  for (const { labels, value } of heights)
+    best.set(group(labels), Math.max(best.get(group(labels)) ?? 0, value));
+  const pace = index("block_pace", group);
+  const moves = index("block_moves", id);
+  const stalled = index("head_stalled_urls", id);
+  const paceKnown = read("block_pace") !== null;
+  const movesKnown = read("block_moves") !== null;
+  const rows: TableRow[] = heights.map(({ labels, value }) => {
+    const perHour = pace.get(group(labels));
+    const behind = (best.get(group(labels)) ?? value) - value;
+    const moved = moves.get(id(labels));
+    const row: TableRow = {
+      ...pick(labels, ["router"]),
+      chain: labels.spec ?? "",
+      interface: labels.apiInterface ?? "",
+      provider: labels.endpoint_id ?? "",
+      latestBlock: value,
+      blocksBehind: behind,
+    };
+    if (perHour !== undefined && perHour > 0)
+      row.secondsBehind = Math.round((behind * 3600) / perHour);
+    if (paceKnown && movesKnown)
+      row.notMoving =
+        moved === 0 && perHour !== undefined && (perHour * TIP_WINDOW_SECONDS) / 3600 >= 2
+          ? "yes"
+          : "no";
+    const out = stalled.get(id(labels));
+    if (out) row.headStalledUrls = out;
+    return row;
+  });
+  const late = (row: TableRow) =>
+    row.secondsBehind !== undefined
+      ? Number(row.secondsBehind) >= BEHIND_CAVEAT_SECONDS
+      : Number(row.blocksBehind) > 0;
+  // A block that stopped first, then one far behind, then the rest.
+  const rank = (row: TableRow) =>
+    row.notMoving === "yes" || row.headStalledUrls ? 2 : late(row) ? 1 : 0;
+  rows.sort(
+    (a, b) =>
+      rank(b) - rank(a) ||
+      Number(b.secondsBehind ?? -1) - Number(a.secondsBehind ?? -1) ||
+      Number(b.blocksBehind) - Number(a.blocksBehind) ||
+      JSON.stringify(a).localeCompare(JSON.stringify(b)),
+  );
+  return {
+    rows: rows.slice(0, maxRows),
+    ...(rows.length > maxRows ? { omittedRows: rows.length - maxRows } : {}),
+    totals: {
+      providers: rows.length,
+      atBestBlock: rows.filter((row) => Number(row.blocksBehind) === 0).length,
+      [`behind${BEHIND_CAVEAT_SECONDS}sOrMore`]: rows.filter(late).length,
+      ...(movesKnown && paceKnown
+        ? { notMoving: rows.filter((row) => row.notMoving === "yes").length }
+        : {}),
+      headStalledUrls: rows.reduce((sum, row) => sum + Number(row.headStalledUrls ?? 0), 0),
+    },
     ...(unavailable.length ? { unavailable } : {}),
   };
 }

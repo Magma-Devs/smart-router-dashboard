@@ -1,4 +1,4 @@
-import type { DeploymentPulse, HealthState, UpstreamMetrics } from "@sr/shared";
+import { BEHIND_CAVEAT_SECONDS, type DeploymentPulse, type HealthState, type UpstreamMetrics } from "@sr/shared";
 import { durationWords } from "./health";
 
 /**
@@ -22,8 +22,6 @@ export function upstreamHealthNotice(health: HealthState, reason?: string): stri
   return `${status} ${evidence}`;
 }
 
-/** Seconds behind the chain from which it is worth saying. */
-const CAVEAT_BEHIND_SEC = 30;
 
 /**
  * What an OPERATIONAL provider's status leaves out about its block: one that
@@ -35,7 +33,7 @@ const CAVEAT_BEHIND_SEC = 30;
 export function upstreamCaveat(pm: Pick<UpstreamMetrics, "health" | "behindSec" | "stale">): string | null {
   if (pm.health !== "operational") return null;
   if (pm.stale) return "its block stopped moving";
-  return pm.behindSec != null && pm.behindSec >= CAVEAT_BEHIND_SEC ? `${Math.round(pm.behindSec)} s behind the chain` : null;
+  return pm.behindSec != null && pm.behindSec >= BEHIND_CAVEAT_SECONDS ? `${Math.round(pm.behindSec)} s behind the chain` : null;
 }
 
 /**
@@ -57,7 +55,7 @@ export function blockBehind(
   const time = sec != null && sec >= 1 ? ` · ${sec < 60 ? `${Math.round(sec)} s` : durationWords(sec)}` : "";
   const text = `${fmt(pm.blockLag)} behind${time}`;
   if (pm.stale) return { text: `${text} · not moving`, tone: "warn" };
-  return { text, tone: sec != null && sec >= CAVEAT_BEHIND_SEC ? "warn" : "plain" };
+  return { text, tone: sec != null && sec >= BEHIND_CAVEAT_SECONDS ? "warn" : "plain" };
 }
 
 /**

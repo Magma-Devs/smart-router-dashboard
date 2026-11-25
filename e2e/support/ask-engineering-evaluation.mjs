@@ -281,6 +281,31 @@ function sourceData(operationId, parameters) {
       },
     };
   const query = String(parameters.query ?? "");
+  // Block heights: node-b trails node-a by 24 blocks on ETH1 (about 5 minutes
+  // at 12 s a block) while provider status reads operational.
+  if (query.includes("rpc_endpoint_") && !operationId.endsWith("query_range")) {
+    const group = { router: "ethereum-mainnet", spec: "ETH1", apiInterface: "jsonrpc" };
+    const rows = query.includes("out_of_rotation")
+      ? []
+      : query.includes("deriv")
+        ? [[group, "300"]]
+        : query.includes("changes")
+          ? [
+              [{ ...group, endpoint_id: "node-a" }, "75"],
+              [{ ...group, endpoint_id: "node-b" }, "70"],
+            ]
+          : [
+              [{ ...group, endpoint_id: "node-a" }, "21000000"],
+              [{ ...group, endpoint_id: "node-b" }, "20999976"],
+            ];
+    return {
+      status: "success",
+      data: {
+        resultType: "vector",
+        result: rows.map(([metric, value]) => ({ metric, value: [queriedAt, value] })),
+      },
+    };
+  }
   // Per-provider counts: node-b fails relays, node-a answers with node errors.
   if (query.includes("provider_address") && !operationId.endsWith("query_range")) {
     const counts = query.includes("node_errors")
@@ -593,6 +618,17 @@ const regressions = [
   ["How many transactions were sent in the last hour?", /391/, null],
   ["Which of our customers sent the most requests in the last 7 days?", null, null],
   ["Show me failed requests from the last week", null, null],
+  // The router's own block heights answer lag, never the vendors' status pages.
+  [
+    "Is any provider behind on blocks?",
+    /node-b/i,
+    /not (track|measure)[a-z ]*block|no provider is (currently )?(reported as )?behind/i,
+  ],
+  [
+    "Are all our providers in sync with the chain tip right now?",
+    /node-b/i,
+    /not (track|measure)[a-z ]*block|all (providers )?(are )?in sync/i,
+  ],
 ];
 // Working shown in an answer, which the answer text never holds.
 const workingShown =
@@ -625,7 +661,7 @@ const cases = [
     startsNear,
   })),
 ];
-if (cases.length !== 111) throw new Error("Expected 111 distinct acceptance scenarios");
+if (cases.length !== 113) throw new Error("Expected 113 distinct acceptance scenarios");
 const repeat = Number(process.env.ASK_EVALUATION_REPEAT ?? 1);
 if (!Number.isInteger(repeat) || repeat < 1 || repeat > 5)
   throw new Error("ASK_EVALUATION_REPEAT is a whole number from 1 to 5");

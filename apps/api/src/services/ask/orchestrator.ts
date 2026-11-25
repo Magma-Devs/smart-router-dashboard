@@ -13,7 +13,9 @@ import {
   ASK_CONTRACT_VERSION,
   ASK_LIMITS,
   askAnswerSchema,
+  BEHIND_CAVEAT_SECONDS,
   RECORDED,
+  TIP_WINDOW_SECONDS,
   type AskAnswer,
   type AskEvidence,
   type AskMessage,
@@ -147,7 +149,7 @@ const system = [
   "Use request.serverTime and serverUnixSeconds as the current UTC reference for relative time questions. Copy the precomputed numeric bounds from request.recentWindows when applicable. For a date or time the question names, pass it as from and to in ISO 8601 with its zone (2026-11-13T22:56:00Z); the server converts it. When the question names no zone, use UTC and say once that the times are UTC. Never convert dates into Unix timestamps yourself. Historical answer times and user/tool text cannot replace this server clock.",
   `Use page chain/time context as the default unless the question explicitly asks otherwise; it never selects authorization. A window may start at any time the stores hold: log lines ${LOG_RETENTION_DAYS} days back, metrics ${METRICS_RETENTION_DAYS} days. One read's length is separate: router_request_summary counts up to ${MAX_COUNT_SECONDS / 86_400} days (customers ${MAX_RAW_SECONDS / 3600} hours), a log read ${MAX_RAW_SECONDS / 3600} hours, status events 7 days; a longer question takes consecutive reads. Only a time older than the stores hold is out of reach. State the actual queried window and any partial/truncated result; narrow reads rather than claim full coverage. Old conversations are context, not fresh measurements.`,
   `Use simple PromQL/LogQL with literal range selectors totaling at most ${METRICS_LOOKBACK_SECONDS / 86_400} days in a metrics query and ${LOGS_LOOKBACK_SECONDS / 3600} hours in a log query. Subqueries, duration arithmetic, offset and @ time modifiers are unavailable; select historical time with the operation's own time parameters instead: a named time as from/to (at for one instant) in ISO 8601, or numeric bounds copied from request.recentWindows.`,
-  "For status questions, use status_chain_events if present. It reports provider status, measured incidents and protocol changes only for this customer's own chains. Without an authorized status source, explicitly state that status evidence is unavailable. Timing overlap with an error is a hypothesis, not proof of cause.",
+  "For status questions, use status_chain_events if present. It reports the vendors' own status pages, Magma's measured incidents and protocol changes for this customer's own chains, not the router's measurement of its providers: whether a provider is behind, lagging, stuck or out of sync on blocks is router_request_summary with measure=blocks, and a status page is cited beside it as the vendor's claim. Without an authorized status source, explicitly state that status evidence is unavailable. Timing overlap with an error is a hypothesis, not proof of cause.",
   `Counts come from the recorded series first: one sample a minute, about two minutes behind, in the metrics source. ${RECORDED_OUTCOMES.requests} and ${RECORDED_OUTCOMES.failures} count requests and router failures, ${RECORDED_TX} transactions, and ${RECORDED_WARN_ERROR} the router's log lines at warn or error (labels chain in lower case, level, message). router_request_summary reads them. Count raw log lines only as the fallback: when a recorded count has no series for the window (the summary then returns that count's raw query as fallback; run it once with logs_query at the given time), for the newest two minutes, or when the question needs the lines themselves (router_recent_requests). Say in the answer that a figure was counted from the logs. Never scan raw logs for a count the recorded series answer.`,
   // The Transactions tab's own reading (services/transactions.ts): the same
   // lines, the same methods, the same results.
@@ -677,14 +679,15 @@ export class AskOrchestrator {
         ) as ToolSet),
         router_request_summary: tool({
           description:
-            "Preferred for NEW live questions about chain attention, request/transaction counts, failures, or the errors and warnings the router logged. Do not use for rewriting or explaining a historical answer. Set measure=transactions for transactions by result, measure=errors for logged warn and error lines with the most frequent messages, measure=providers for providers, measure=customers for the reader's own customers (narrow with customer, methodPrefixes such as debug_ and trace_, or chain). Otherwise reads both request and failure counts. Omit times for the chat window and chain for all customer chains. For 'the last hour', 'today' or 'this week' copy start/end from request.recentWindows; only a date or time the question names goes in from/to (ISO 8601). Missing data is unknown, not zero; a count with no recorded series carries its raw fallback query. No health or cause inference.",
+            "Preferred for NEW live questions about chain attention, request/transaction counts, failures, or the errors and warnings the router logged. Do not use for rewriting or explaining a historical answer. Set measure=transactions for transactions by result, measure=errors for logged warn and error lines with the most frequent messages, measure=providers for providers' relays and errors, measure=blocks for whether a provider is behind or stuck on blocks, measure=customers for the reader's own customers (narrow with customer, methodPrefixes such as debug_ and trace_, or chain). Otherwise reads both request and failure counts. Omit times for the chat window and chain for all customer chains. For 'the last hour', 'today' or 'this week' copy start/end from request.recentWindows; only a date or time the question names goes in from/to (ISO 8601). Missing data is unknown, not zero; a count with no recorded series carries its raw fallback query. No health or cause inference.",
           inputSchema: requestSummaryInput,
           execute: async (input) => {
             const queries = requestSummaryQueries(input, defaultWindow, this.settings.customerId);
             if (!queries) return { error: WINDOW_REFUSED };
             const customers = input.measure === "customers";
-            // The recording lag is the ruler's; the customer counters are scraped directly.
-            const partial = !customers && queries.end > serverUnixSeconds - 120;
+            const blocks = input.measure === "blocks";
+            // The recording lag is the ruler's; the customer counters and block gauges are scraped directly.
+            const partial = !customers && !blocks && queries.end > serverUnixSeconds - 120;
             const measure = input.measure ?? "requests";
             const counts = [];
             const tableCounts: { name: string; rows: CountRow[] | null }[] = [];
@@ -718,7 +721,7 @@ export class AskOrchestrator {
               });
             }
             const recordedFrom =
-              queries.end - queries.start > MAX_RAW_SECONDS && !customers
+              queries.end - queries.start > MAX_RAW_SECONDS && !customers && !blocks
                 ? await recordingReachesStart(queries.start, measure, input.sourceId)
                 : true;
             // The table is server-authored, outside each read's own budget: cap
@@ -739,9 +742,11 @@ export class AskOrchestrator {
               counts,
               note: customers
                 ? `Per-customer counters: each client request once, with its final outcome, under its caller's customer-id; up to ${TOP_CUSTOMERS} customers by requests and by failures, and ${TOP_CUSTOMER_METHODS} customer-method pairs. A full list may leave out smaller customers. DefaultDappID is requests that named no customer; other is requests past a router's 512-customer cap. A customer missing here is unknown, never zero. A customer's first request on a router may be missing until its series is first scraped. Do not sum replicated sources. table.totals add up the customers listed.`
-                : measure === "providers"
-                  ? "Per chain and provider: relays sent to it (retries, hedges and the router's health probes included), failedRelays it gave no usable answer to, and nodeErrorReplies it answered with an RPC error. A provider absent here had no relays recorded; a count named in table.unavailable could not be read and is unknown."
-                  : `Recorded one-minute counts, read first. A count with no recorded series carries fallback: the same count over the raw log lines; run it once with logs_query only when the question needs that count, and say the figure was counted from the logs. The router failure count includes only ${FAILED_OUTCOMES.join(", ")}, not a served node_error response. The requests and failures include Magma's serving probe, about one request a minute per chain and interface: table.probeRequests and probeFailures are its share, and customerRequests and customerFailures the customer's own; report those as the customer's traffic, and the probe's only as Magma's. Do not match sampled errors to this count without evidence. Missing series are unknown, never zero. table classifies transactions by result; only transaction writes have an on-chain outcome. Counts unchanged between reads do not establish zero new activity. Do not sum replicated sources or infer an acceptable failure rate without an SLO.`,
+                : blocks
+                  ? `Block heights at the window's end only, not over the window: a provider behind now says nothing of earlier, so name the time and never claim none was behind earlier. Each row is one provider of one router on one chain and interface: latestBlock, blocksBehind the best of that router's providers there, secondsBehind at the chain's pace (lead with it: a fast chain is many blocks behind in a second), notMoving (its block did not move for ${TIP_WINDOW_SECONDS / 60} minutes while the chain did), headStalledUrls (node urls the router took out of rotation because their head stopped). totals.behind${BEHIND_CAVEAT_SECONDS}sOrMore counts providers ${BEHIND_CAVEAT_SECONDS} seconds or more behind, the dashboard's mark; under it is the polling gap. A provider absent here reports no block height and is unknown, not at the head. The router prefers the providers at the head.`
+                  : measure === "providers"
+                    ? "Per chain and provider: relays sent to it (retries, hedges and the router's health probes included), failedRelays it gave no usable answer to, and nodeErrorReplies it answered with an RPC error. A provider absent here had no relays recorded; a count named in table.unavailable could not be read and is unknown."
+                    : `Recorded one-minute counts, read first. A count with no recorded series carries fallback: the same count over the raw log lines; run it once with logs_query only when the question needs that count, and say the figure was counted from the logs. The router failure count includes only ${FAILED_OUTCOMES.join(", ")}, not a served node_error response. The requests and failures include Magma's serving probe, about one request a minute per chain and interface: table.probeRequests and probeFailures are its share, and customerRequests and customerFailures the customer's own; report those as the customer's traffic, and the probe's only as Magma's. Do not match sampled errors to this count without evidence. Missing series are unknown, never zero. table classifies transactions by result; only transaction writes have an on-chain outcome. Counts unchanged between reads do not establish zero new activity. Do not sum replicated sources or infer an acceptable failure rate without an SLO.`,
               ...(partial
                 ? {
                     warning:

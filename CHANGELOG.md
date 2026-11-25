@@ -5,6 +5,22 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.93.1]
+
+### Fixed
+
+- **Ask answers "is a provider behind on blocks" from the router's own block
+  heights (MAG-5767).** Asked whether any provider was behind, Ask read only
+  the vendors' status pages and said none was, while on a PROD tenant one
+  COSMOSHUB provider stood 24 blocks (about 2.4 minutes) behind on
+  tendermintrpc. `router_request_summary` takes `measure=blocks`: each
+  provider's latest block against the best of its router's providers on the
+  same chain and interface, in blocks and seconds, whether its block stopped
+  moving, and the node urls the router took out for a stalled head. The prompt
+  sends lag, stuck and out-of-sync questions there, and provider status is
+  cited beside it as the vendor's own claim. The 30-second mark Ask counts is
+  the Upstreams page's warning, one shared constant.
+
 ## [0.93.0]
 
 ### Added
