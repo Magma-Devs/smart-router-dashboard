@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestDb, enrolledTwoFactor, type TestDb } from "@sr/db/testing";
-import { askRuns, users, type AskRunRow } from "@sr/db";
+import { askRuns, customerNames, users, type AskRunRow } from "@sr/db";
 import { eq } from "drizzle-orm";
 import { DrizzleQueryError } from "drizzle-orm/errors";
 import type { AskAnswer } from "@sr/shared";
@@ -134,6 +134,28 @@ const slowAfterCommit = <T>(call: Promise<T>) =>
   call.then((value) => new Promise<T>((resolve) => setTimeout(() => resolve(value), 60)));
 
 describe("durable run worker scheduling and cancellation", () => {
+  it("hands the run the deployment's customer names, and none when they cannot be read", async () => {
+    const id = "a1".repeat(32);
+    await t.db.insert(customerNames).values({ customer: id, name: "Acme Wallet" });
+    const spy = vi.spyOn(AskOrchestrator.prototype, "answer").mockResolvedValue(answer);
+    const first = await submit();
+    const { instance } = worker();
+    await instance.tick();
+    await instance.drained();
+    expect((await store.getRun(owner, first.id)).status).toBe("succeeded");
+    expect(spy.mock.calls[0]![4]).toEqual(new Map([[id, "Acme Wallet"]]));
+
+    const errors: string[] = [];
+    vi.spyOn(store, "customerNames").mockRejectedValue(new Error("names table unreadable"));
+    const second = await submit();
+    const unnamed = worker({ onError: (code) => errors.push(code) });
+    await unnamed.instance.tick();
+    await unnamed.instance.drained();
+    expect((await store.getRun(owner, second.id)).status).toBe("succeeded");
+    expect(spy.mock.calls[1]![4]).toEqual(new Map());
+    expect(errors).toContain("ASK_CUSTOMER_NAMES_UNAVAILABLE");
+  });
+
   it("a starting replica awaiting readiness leaves another replica's admitted question queued", async () => {
     const run = await submit();
     let ready = false;
