@@ -1121,6 +1121,79 @@ describe("bounded customer tool orchestration", () => {
     },
   );
 
+  it("answers block lag from the router's own block heights, not the status pages, with no recording-gap warning", async () => {
+    const vector = (result: { metric: Record<string, string>; value: [number, string] }[]) => ({
+      data: { status: "success", data: { resultType: "vector", result } },
+    });
+    const at = Date.now() / 1000;
+    const tip = (endpoint_id: string, block: string) => ({
+      metric: {
+        router: "cosmos-hub",
+        spec: "COSMOSHUB",
+        apiInterface: "tendermintrpc",
+        endpoint_id,
+      },
+      value: [at, block] as [number, string],
+    });
+    const f = fixture({
+      status: true,
+      question: "Is any provider behind on blocks?",
+      envelopes: [
+        vector([tip("lavanet", "976"), tip("blockdaemon", "1000")]),
+        vector([
+          {
+            metric: { router: "cosmos-hub", spec: "COSMOSHUB", apiInterface: "tendermintrpc" },
+            value: [at, "600"],
+          },
+        ]),
+        vector([tip("lavanet", "140"), tip("blockdaemon", "150")]),
+        vector([]),
+      ],
+      responses: [
+        provider([
+          {
+            toolUse: {
+              toolUseId: "blocks",
+              name: "router_request_summary",
+              input: { measure: "blocks" },
+            },
+          },
+        ]),
+        final(),
+      ],
+    });
+    await f.answer();
+    const first = JSON.parse(f.bodies[0]!) as {
+      system: Array<{ text?: string }>;
+      toolConfig: { tools: Array<{ toolSpec: { name: string; description: string } }> };
+    };
+    expect(first.system[0]!.text).toContain(
+      "whether a provider is behind, lagging, stuck or out of sync on blocks is router_request_summary with measure=blocks",
+    );
+    const summary = first.toolConfig.tools.find(
+      (t) => t.toolSpec.name === "router_request_summary",
+    )!;
+    expect(summary.toolSpec.description).toContain(
+      "measure=blocks for whether a provider is behind",
+    );
+    const body = JSON.parse(f.bodies[1]!);
+    const result = JSON.parse(body.messages.at(-1).content[0].toolResult.content[0].text);
+    expect(result.table.rows[0]).toMatchObject({
+      provider: "lavanet",
+      blocksBehind: 24,
+      secondsBehind: 144,
+      notMoving: "no",
+    });
+    expect(result.table.totals).toMatchObject({
+      providers: 2,
+      behind30sOrMore: 1,
+      headStalledUrls: 0,
+    });
+    expect(result.note).toMatch(/^Block heights at the window's end only/);
+    expect(result).not.toHaveProperty("warning");
+    expect(result).not.toHaveProperty("recordingWarning");
+  });
+
   it("caps a provider table to fit one tool result", async () => {
     const f = fixture({
       data: {

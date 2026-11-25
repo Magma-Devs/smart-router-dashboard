@@ -227,6 +227,29 @@ describe("curated request evidence", () => {
     ]);
     for (const count of queries.counts) expect(hasBoundedAskQuery(count.query)).toBe(true);
   });
+  it("reads each provider's latest block by router, chain and interface, the chain's pace, its moves and its stalled urls", () => {
+    const queries = requestSummaryQueries({ measure: "blocks", chain: "cosmoshub" }, defaults)!;
+    const tips = 'rpc_endpoint_latest_block{spec="COSMOSHUB"}';
+    const by = "router, spec, apiInterface, endpoint_id";
+    expect(queries.counts).toEqual([
+      { name: "block_heights", query: `max by (${by}) (${tips}) > 0` },
+      {
+        name: "block_pace",
+        query: `round(max by (router, spec, apiInterface) (deriv(${tips}[15m])) * 3600)`,
+        uncounted: true,
+      },
+      { name: "block_moves", query: `max by (${by}) (changes(${tips}[15m]))`, uncounted: true },
+      {
+        name: "head_stalled_urls",
+        query: `count by (${by}) (max by (${by}, url) (rpc_endpoint_url_out_of_rotation{reason="head-stalled",spec="COSMOSHUB"}))`,
+        uncounted: true,
+      },
+    ]);
+    for (const count of queries.counts) expect(hasBoundedAskQuery(count.query)).toBe(true);
+    expect(requestSummaryQueries({ measure: "blocks" }, defaults)!.counts[0]!.query).toBe(
+      `max by (${by}) (rpc_endpoint_latest_block) > 0`,
+    );
+  });
   it("narrows both counts to the same normalized chain", () => {
     expect(
       requestSummaryQueries({ chain: "ETH1" }, defaults)!.counts.every(

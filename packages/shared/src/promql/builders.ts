@@ -894,6 +894,9 @@ export const TIP_WINDOW = "15m";
 /** `TIP_WINDOW` in seconds, for the "did this chain produce blocks?" test. */
 export const TIP_WINDOW_SECONDS = 15 * 60;
 
+/** Seconds behind the best provider's block from which a provider reads as behind: the Upstreams roster's warning and Ask's count. */
+export const BEHIND_CAVEAT_SECONDS = 30;
+
 /**
  * Chain block RATE in blocks/sec, from the per-endpoint gauge (which advances
  * every poll — the router gauge is far coarser, see `qRouterTips`).

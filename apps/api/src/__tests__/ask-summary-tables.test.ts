@@ -202,3 +202,120 @@ describe("summary tables", () => {
     expect(table.totals.relays).toBe((130 * 131) / 2);
   });
 });
+
+describe("block table", () => {
+  const tip = (router: string, spec: string, apiInterface: string, endpoint_id: string) => ({
+    router,
+    spec,
+    apiInterface,
+    endpoint_id,
+  });
+  const counts = (over: Partial<Record<string, CountRow[] | null>> = {}) =>
+    [
+      {
+        name: "block_heights",
+        rows: [
+          row(tip("cosmos-hub", "COSMOSHUB", "tendermintrpc", "lavanet"), 976),
+          row(tip("cosmos-hub", "COSMOSHUB", "tendermintrpc", "blockdaemon"), 1000),
+          row(tip("cosmos-hub", "COSMOSHUB", "rest", "lavanet"), 1000),
+          // GraphQL counts checkpoints its own way: measured against GraphQL only.
+          row(tip("sui", "SUI", "graphql", "foundation"), 410_494_211),
+          row(tip("sui", "SUI", "grpc", "foundation"), 410_493_961),
+          row(tip("sui", "SUI", "grpc", "mysten"), 410_493_960),
+          row(tip("eth", "ETH1", "jsonrpc", "frozen"), 500),
+          row(tip("eth", "ETH1", "jsonrpc", "fresh"), 500),
+        ],
+      },
+      {
+        name: "block_pace",
+        rows: [
+          row(tip("cosmos-hub", "COSMOSHUB", "tendermintrpc", ""), 600),
+          row(tip("cosmos-hub", "COSMOSHUB", "rest", ""), 600),
+          row(tip("sui", "SUI", "grpc", ""), 14_400),
+          row(tip("sui", "SUI", "graphql", ""), 14_400),
+          row(tip("eth", "ETH1", "jsonrpc", ""), 300),
+        ],
+      },
+      {
+        name: "block_moves",
+        rows: [
+          row(tip("cosmos-hub", "COSMOSHUB", "tendermintrpc", "lavanet"), 140),
+          row(tip("cosmos-hub", "COSMOSHUB", "tendermintrpc", "blockdaemon"), 150),
+          row(tip("eth", "ETH1", "jsonrpc", "frozen"), 0),
+          row(tip("eth", "ETH1", "jsonrpc", "fresh"), 70),
+        ],
+      },
+      { name: "head_stalled_urls", rows: [row(tip("eth", "ETH1", "jsonrpc", "frozen"), 1)] },
+    ].map((count) => (count.name in over ? { ...count, rows: over[count.name]! } : count));
+
+  it("measures each provider against the best of its router's providers on that chain and interface", () => {
+    const table = summaryTable("blocks", counts());
+    const find = (router: string, iface: string, provider: string) =>
+      table.rows.find(
+        (r) => r.router === router && r.interface === iface && r.provider === provider,
+      );
+    expect(find("cosmos-hub", "tendermintrpc", "lavanet")).toEqual({
+      router: "cosmos-hub",
+      chain: "COSMOSHUB",
+      interface: "tendermintrpc",
+      provider: "lavanet",
+      latestBlock: 976,
+      blocksBehind: 24,
+      secondsBehind: 144,
+      notMoving: "no",
+    });
+    expect(find("cosmos-hub", "rest", "lavanet")).toMatchObject({
+      blocksBehind: 0,
+      secondsBehind: 0,
+    });
+    expect(find("sui", "graphql", "foundation")).toMatchObject({ blocksBehind: 0 });
+    expect(find("sui", "grpc", "foundation")).toMatchObject({ blocksBehind: 0 });
+    expect(find("sui", "grpc", "mysten")).toMatchObject({ blocksBehind: 1, secondsBehind: 0 });
+  });
+
+  it("marks a block that stood still while the chain moved, with its stalled urls, and puts the flagged rows first", () => {
+    const table = summaryTable("blocks", counts());
+    expect(table.rows[0]).toMatchObject({
+      provider: "frozen",
+      notMoving: "yes",
+      headStalledUrls: 1,
+    });
+    expect(table.rows[1]).toMatchObject({ provider: "lavanet", interface: "tendermintrpc" });
+    expect(table.rows.find((r) => r.provider === "fresh")).toMatchObject({ notMoving: "no" });
+    expect(table.totals).toEqual({
+      providers: 8,
+      atBestBlock: 6,
+      behind30sOrMore: 1,
+      notMoving: 1,
+      headStalledUrls: 1,
+    });
+  });
+
+  it("calls nothing stuck on a chain that made under two blocks in the window", () => {
+    const table = summaryTable(
+      "blocks",
+      counts({ block_pace: [row(tip("eth", "ETH1", "jsonrpc", ""), 7)] }),
+    );
+    expect(table.rows.find((r) => r.provider === "frozen")).toMatchObject({ notMoving: "no" });
+  });
+
+  it("leaves out what a failed read would have said, and names it", () => {
+    const table = summaryTable("blocks", counts({ block_pace: null, block_moves: null }));
+    expect(table.unavailable).toEqual(["block_pace", "block_moves"]);
+    const lagging = table.rows.find(
+      (r) => r.provider === "lavanet" && r.interface === "tendermintrpc",
+    )!;
+    expect(lagging).toMatchObject({ blocksBehind: 24 });
+    expect(lagging).not.toHaveProperty("secondsBehind");
+    expect(lagging).not.toHaveProperty("notMoving");
+    expect(table.totals).not.toHaveProperty("notMoving");
+    expect(table.totals.behind30sOrMore).toBe(2);
+  });
+
+  it("caps the rows and counts every provider in the totals", () => {
+    const table = summaryTable("blocks", counts(), 2);
+    expect(table.rows).toHaveLength(2);
+    expect(table.omittedRows).toBe(6);
+    expect(table.totals.providers).toBe(8);
+  });
+});

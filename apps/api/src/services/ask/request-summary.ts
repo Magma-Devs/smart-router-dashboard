@@ -3,7 +3,7 @@ import { RECORDED_OUTCOMES } from "../error-requests.js";
 import { FAILED_PIPELINE, PARSED_PIPELINE, RELAY_END } from "../relay-end.js";
 import { TX_EVENT_FILTER } from "../transactions.js";
 import { LOG_PIPELINE, RECORDED_TX } from "../transactions-over-time.js";
-import { RECORDED, RECORDED_INTERVAL_SECONDS } from "@sr/shared";
+import { ENDPOINT_METRICS, RECORDED, RECORDED_INTERVAL_SECONDS, TIP_WINDOW } from "@sr/shared";
 
 /** The longest window a count from the recorded series or the provider counters may cover. */
 export const MAX_COUNT_SECONDS = 30 * 86_400;
@@ -67,7 +67,9 @@ const METHOD_PREFIX = /^[A-Za-z0-9_/]{1,64}$/;
 
 export const requestSummaryInput = z
   .object({
-    measure: z.enum(["requests", "transactions", "errors", "customers", "providers"]).optional(),
+    measure: z
+      .enum(["requests", "transactions", "errors", "customers", "providers", "blocks"])
+      .optional(),
     sourceId: z
       .string()
       .regex(/^[a-z0-9][a-z0-9_-]{0,63}$/)
@@ -161,6 +163,7 @@ export function requestSummaryQueries(
   const range = `[${seconds}s]`;
   if (input.measure === "customers") return { start, end, counts: customerCounts(input, range) };
   if (input.measure === "providers") return { start, end, counts: providerCounts(input, range) };
+  if (input.measure === "blocks") return { start, end, counts: blockReads(input) };
   const counts: SummaryCount[] =
     input.measure === "transactions"
       ? [
@@ -251,6 +254,38 @@ function providerCounts(input: z.infer<typeof requestSummaryInput>, range: strin
     {
       name: "provider_node_errors",
       query: `round(sum by (spec, provider_address) (increase(${PROVIDER_NODE_ERRORS}${selector}${range})))`,
+    },
+  ];
+}
+
+/**
+ * Each provider's latest block at the window's end, by router, chain and
+ * interface: an interface reports its own height (Sui's gRPC and GraphQL
+ * differ). Beside it, each chain's pace over the tip window (blocks an hour,
+ * whole at that scale), how often each provider's block moved in it, and the
+ * node urls the router took out for a stalled head.
+ */
+function blockReads(input: z.infer<typeof requestSummaryInput>): SummaryCount[] {
+  const spec = input.chain ? [`spec=${JSON.stringify(input.chain.toUpperCase())}`] : [];
+  const tips = `${ENDPOINT_METRICS.latestBlock}${spec.length ? `{${spec.join(",")}}` : ""}`;
+  const provider = "router, spec, apiInterface, endpoint_id";
+  const stalled = `rpc_endpoint_url_out_of_rotation{${['reason="head-stalled"', ...spec].join(",")}}`;
+  return [
+    { name: "block_heights", query: `max by (${provider}) (${tips}) > 0` },
+    {
+      name: "block_pace",
+      query: `round(max by (router, spec, apiInterface) (deriv(${tips}[${TIP_WINDOW}])) * 3600)`,
+      uncounted: true,
+    },
+    {
+      name: "block_moves",
+      query: `max by (${provider}) (changes(${tips}[${TIP_WINDOW}]))`,
+      uncounted: true,
+    },
+    {
+      name: "head_stalled_urls",
+      query: `count by (${provider}) (max by (${provider}, url) (${stalled}))`,
+      uncounted: true,
     },
   ];
 }
