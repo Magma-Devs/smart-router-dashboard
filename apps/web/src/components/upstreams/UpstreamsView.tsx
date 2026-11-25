@@ -67,7 +67,7 @@ function InitialBadge({ name, spec, size = 28 }: { name: string; spec?: string; 
  *
  * Each grouping MUST pass one of them. The url can't stand in for either: it
  * is masked to scheme+host (the path is where API keys live), so a provider
- * that serves every chain off one hostname — `g.w.lavanet.xyz`,
+ * that serves every chain off one hostname — a gateway host,
  * `*.blockdaemon.com` — renders row after identical row without it.
  */
 function EndpointRow({

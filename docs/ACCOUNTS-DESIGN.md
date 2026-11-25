@@ -86,33 +86,29 @@ mail server and never will be. Every credential-delivery path therefore exists t
 a link the system emails, and a link an admin copies out of the UI and hands over.
 This is the single biggest structural constraint in the design; see §8.
 
-### 2.3 What we take from lava-connect
+### 2.3 Security primitives and the team model
 
-`Magma-Devs/lava-connect` is the repo this codebase was shaped after and carries a
-mature account system. It solves the *security primitives* and has *no team model at
-all* — no organisation, no invitation, no multi-user tenancy.
+The account system has two halves: the *security primitives*, and a *team model* —
+organisation, invitation, multi-user tenancy.
 
-| From lava-connect | Built here |
+| Security primitives | Team model |
 |---|---|
 | `requireAuthFresh` / `requireAdminFresh` · the `jti`-per-sign-in mint · `isBreachedPassword` (HIBP) · lockout counters · the signed single-use link shape · the managed reset flow · `services/csv.ts` · SES email + templates · `verifyGithubTokenBelongsToOurApp` | Invitations · the four-role model · first-run and the setup token · removal as a state change · access events in the audit log · everything on-prem |
 
 > **Constraint: no Redis, and no fail-open.**
-> lava-connect keeps sessions, lockout counters and single-use token claims in Redis,
-> and every helper opens with `if (!redis) return <permissive default>` —
-> `isSessionActive` returns `true`, the lockout never trips, a reset link stays
-> replayable. Defensible for a hosted SaaS that always has Redis. Not shippable here:
-> "we can revoke a session, unless Redis is down, in which case we can't and nothing
-> tells you" is a failed control, not a degraded one.
+> Sessions, lockout counters and single-use token claims never sit in a store whose
+> absence makes every helper return a permissive default — a session that reads as
+> active, a lockout that never trips, a reset link that stays replayable. "We can
+> revoke a session, unless Redis is down, in which case we can't and nothing tells
+> you" is a failed control, not a degraded one.
 >
-> **Decision: same designs, Postgres storage.** `AUTH_MODE=enabled` already requires
-> Postgres, so this adds nothing to an on-prem install, fail-closed is the natural
-> behaviour, and MAG-2770 needs sessions as durable audit data rather than
-> TTL-evicting cache entries anyway. Cost is ~200 lines rewritten instead of copied.
+> **Decision: Postgres storage.** `AUTH_MODE=enabled` already requires Postgres, so
+> this adds nothing to an on-prem install, fail-closed is the natural behaviour, and
+> MAG-2770 needs sessions as durable audit data rather than TTL-evicting cache entries.
 
-Three semantics in lava-connect are the *opposite* of what this ticket requires, and
-the closest-looking flows are the wrong ones to copy: its admin reset endpoint lets an
-admin **choose** another user's password (§7); `DELETE /admin/users/:id`
-**hard-deletes** the row (§4.1); and it **blocks** removing the last admin (§3.3).
+Three semantics are fixed by this ticket: no admin **chooses** another user's password
+(§7); removal is a state change, never a **hard delete** of the row (§4.1); and
+removing the last admin is a prompt, not a **block** (§3.3).
 
 ---
 
@@ -153,8 +149,7 @@ the moment of the action" true. The web mirrors `roleAtLeast` for affordances on
 - **Nobody demotes or removes themselves.** Checked api-side, not just hidden in the UI.
 - **One admin is a prompt, not a block.** While exactly one admin exists, the members
   screen says so and suggests adding a second — but nothing is prevented. Admin has to
-  stay transferable, or a departing employee's account cannot be removed. A deliberate
-  divergence from lava-connect, which refuses to remove the last admin.
+  stay transferable, or a departing employee's account cannot be removed.
 - **Demoting below `approver`** cancels anything waiting on that person (§16, hook
   owned by MAG-2731).
 
@@ -263,7 +258,7 @@ unique index (token_hash)
 
 ### 4.5 `login_attempts` — new
 
-Per-account lockout, replacing lava-connect's Redis counter. One row per identity per
+Per-account lockout, in Postgres. One row per identity per
 window; bumped on failure, cleared on success.
 
 ```
@@ -299,11 +294,10 @@ re-reads it. `sid` is the only claim that is load-bearing.
 
 ### 5.2 The session is minted by the api, not the web
 
-A deliberate departure from lava-connect, which fires a separate
-`POST /me/sessions/register` from the `jwt()` callback. That call runs server-side in
-the web container and forwards no client headers, so what the api records is whatever
-it sees from the web pod — never the browser. Since MAG-2770's access events are built
-on exactly those fields, inheriting it would make them useless.
+The web fires no separate `POST /me/sessions/register` from the `jwt()` callback. Such
+a call runs server-side in the web container and forwards no client headers, so what
+the api records is whatever it sees from the web pod — never the browser. MAG-2770's
+access events are built on exactly those fields.
 
 ```
  browser            web (Auth.js)                api                     postgres
@@ -359,7 +353,7 @@ unavailable in the Auth.js callback scope, the fallback is a single browser-orig
 
 ### 5.3 Two revocation mechanisms, both required
 
-They do different jobs, which is why lava-connect runs both and why §4.1 keeps
+They do different jobs, which is why both run and why §4.1 keeps
 `signed_out_all_at` rather than replacing it:
 
 | Mechanism | Kills | Fires on |
@@ -470,9 +464,8 @@ session row, emits `password.reset_completed` — and **does not sign anyone in*
 forgot endpoint always answers `202`, whether or not the address exists.
 
 > **An admin never sets another person's password.** The ticket is explicit ("Nobody
-> sets somebody else's password, ever"), and lava-connect's
-> `POST /admin/users/:id/reset-password` — which takes a password in the body — is
-> precisely the endpoint not to port. An admin generates a link; only the account holder
+> sets somebody else's password, ever"), so no endpoint takes a password in the body
+> for another user's account. An admin generates a link; only the account holder
 > chooses the value. A Google-only account has no password to reset, and the UI says so
 > rather than silently doing nothing.
 
@@ -513,7 +506,7 @@ revoked, because the role is re-read on the next action anyway.
 
 ### 7.2 Breach check
 
-Port `isBreachedPassword` from lava-connect: HIBP k-anonymity — SHA-1 the password, send
+`isBreachedPassword`: HIBP k-anonymity — SHA-1 the password, send
 the first five hex characters, scan the response for the suffix, so the full hash never
 leaves the process — with `Add-Padding` so response size leaks nothing, a 750 ms cap,
 and fail-open with a logged reason.
@@ -547,10 +540,9 @@ the preview and accept endpoints are `POST /auth/invite/preview` rather than
 `GET /auth/invite/:token`. A token in a path lands in api access logs, ingress logs and
 any proxy in between, and none of those are places we control the retention of.
 
-> lava-connect signs its magic-link, verify and reset tokens with the same `AUTH_SECRET`
-> as session JWTs, separated only by a `kind` claim. Tolerable when every consumer is
-> server-side; not here, because our redemption path *creates accounts* — a
-> `kind`-confusion bug becomes account creation rather than a bad link. Opaque random
+> Link tokens are never signed with the same `AUTH_SECRET` as session JWTs, separated
+> only by a `kind` claim: the redemption path *creates accounts*, so a
+> `kind`-confusion bug would become account creation rather than a bad link. Opaque random
 > tokens sidestep the class entirely and are simpler to revoke.
 
 ---
@@ -797,11 +789,10 @@ and `PUBLIC_WEB_ORIGIN`. What remains is per deployment, tracked in
 every route here needs real rows. Today `apps/api/src/__tests__/auth.test.ts`
 deliberately points at an unroutable address and only exercises the JWT gate.
 
-**lava-connect has already answered this:** a Map-backed fake store with the service
-layer mocked (`__tests__/_helpers/test-app.ts`) for route tests, plus opt-in integration
-tests gated on `TEST_DATABASE_URL`. Same harness, same conventions, no new dependency —
-with one caveat to fix rather than inherit: those integration tests `describe.skip`
-without the env var, so nothing gates a merge. The behaviour this design leans on
+**The harness:** a Map-backed fake store with the service layer mocked
+(`__tests__/_helpers/test-app.ts`) for route tests, plus integration tests on
+`TEST_DATABASE_URL`, with no new dependency. Integration tests that `describe.skip`
+without the env var would gate no merge. The behaviour this design leans on
 hardest — the partial unique index, the conditional single-use update, the removal
 transaction — is exactly what a fake store cannot check. Either run a Postgres service
 container in CI, or add **pglite** for real in-process Postgres with no Docker. Decide in
@@ -843,8 +834,7 @@ currently on `member`, and it is the one release that needs a backup taken first
 
 **2 · First run and setup token — ~2 pts**
 `GET /auth/bootstrap` · `POST /auth/setup` · the `/setup` page · `DEPLOYMENT_MODE`
-through `/api/config`. Nothing to port — this is the piece lava-connect has no
-equivalent of.
+through `/api/config`.
 
 **3 · Invitations — ~2.5 pts**
 Table, create/list/resend/revoke, the redemption page, mode-dependent TTL and delivery —
@@ -865,7 +855,7 @@ delete-or-set-password semantics.
 Swap the no-op writer for MAG-2770's. Small *because* the call sites went in as each
 slice landed — which only works if the §10 interface is agreed during slice 1.
 
-Roughly 11 points against the 8 on the ticket — 15 without the lava-connect ports. If the
+Roughly 11 points against the 8 on the ticket. If the
 estimate has to hold, the cut line is after slice 3: that is what "people sign in as
 themselves" requires. Slices 4–6 are what makes it pass the review.
 
@@ -934,8 +924,7 @@ progress is visible and the cut line is explicit.
 
 ### Deliberately not blocking
 
-- **Email provider.** Managed-only and a thin adapter over link generation; SES ports
-  from lava-connect if we want it.
+- **Email provider.** Managed-only and a thin adapter over link generation; SES fits.
 - **Retention periods for IP data.** MAG-2770 owns it and says explicitly it does not
   block the build.
 - **Pending-request cancellation.** MAG-2731 owns the table; this task exposes and
@@ -960,5 +949,4 @@ progress is visible and the cut line is explicit.
 
 ---
 
-*Sources: MAG-2729 · MAG-2770 · MAG-2686 · `Magma-Devs/lava-connect` @ main incl. its
-`docs/AUTH-FLOWS.md` · `Magma-Devs/smart-router-helm-chart`.*
+*Sources: MAG-2729 · MAG-2770 · MAG-2686 · `Magma-Devs/smart-router-helm-chart`.*

@@ -547,11 +547,11 @@ describe("MetricsService.upstreams · scores without traffic", () => {
   it("prefers the sampler's gauge over the routing path's for the same upstream", async () => {
     const r = await row(
       prom({
-        optimizer: [["eth-lava", "composite", "0.99"]],
-        endpoint: [["eth-lava", "composite", "0.42"]],
-        relays: [["eth-lava", "5000"]],
+        optimizer: [["eth-primary", "composite", "0.99"]],
+        endpoint: [["eth-primary", "composite", "0.42"]],
+        relays: [["eth-primary", "5000"]],
       }),
-      "eth-lava",
+      "eth-primary",
     );
     expect(r?.scores.composite).toBeCloseTo(0.99);
     expect(r?.scoreSource).toBe("optimizer");
@@ -560,7 +560,7 @@ describe("MetricsService.upstreams · scores without traffic", () => {
   it("falls back to the routing path's gauge when the sampler's is absent", async () => {
     // An older router build. Same numbers, written only on selection — so the
     // row still gets a score rather than an empty column.
-    const r = await row(prom({ endpoint: [["eth-lava", "composite", "0.42"]] }), "eth-lava");
+    const r = await row(prom({ endpoint: [["eth-primary", "composite", "0.42"]] }), "eth-primary");
     expect(r?.scores.composite).toBeCloseTo(0.42);
     expect(r?.scoreSource).toBe("endpoint");
   });
@@ -570,10 +570,10 @@ describe("MetricsService.upstreams · scores without traffic", () => {
     // make `scoreSource` a lie for whichever half it did not name.
     const r = await row(
       prom({
-        optimizer: [["eth-lava", "composite", "0.99"]],
-        endpoint: [["eth-lava", "composite", "0.42"], ["eth-lava", "latency", "0.10"]],
+        optimizer: [["eth-primary", "composite", "0.99"]],
+        endpoint: [["eth-primary", "composite", "0.42"], ["eth-primary", "latency", "0.10"]],
       }),
-      "eth-lava",
+      "eth-primary",
     );
     expect(r?.scoreSource).toBe("optimizer");
     expect(r?.scores.composite).toBeCloseTo(0.99);
@@ -621,7 +621,7 @@ describe("MetricsService.upstreams · scores without traffic", () => {
 describe("MetricsService · cross-chain shared node names (MAG-2875)", () => {
   /** Two routers on DIFFERENT chains reusing one vendor node name - a shape
    *  production deployments have: every chain's router declares
-   *  "lava"/"publicnode"-style nodes. */
+   *  "nodeworks"/"publicnode"-style nodes. */
   const twoChainsSharedName = {
     getRouters: () => [
       {
@@ -635,7 +635,7 @@ describe("MetricsService · cross-chain shared node names (MAG-2875)", () => {
         publicUrls: {},
         interfaces: ["jsonrpc"],
         nodes: [
-          { name: "lava", isBackup: false, endpoints: [{ interface: "jsonrpc", urlHost: "https://a", addons: [] }] },
+          { name: "nodeworks", isBackup: false, endpoints: [{ interface: "jsonrpc", urlHost: "https://a", addons: [] }] },
         ],
       },
       {
@@ -649,7 +649,7 @@ describe("MetricsService · cross-chain shared node names (MAG-2875)", () => {
         publicUrls: {},
         interfaces: ["jsonrpc"],
         nodes: [
-          { name: "lava", isBackup: true, endpoints: [{ interface: "jsonrpc", urlHost: "https://b", addons: [] }] },
+          { name: "nodeworks", isBackup: true, endpoints: [{ interface: "jsonrpc", urlHost: "https://b", addons: [] }] },
         ],
       },
     ],
@@ -667,8 +667,8 @@ describe("MetricsService · cross-chain shared node names (MAG-2875)", () => {
         }
         if (expr.includes("endpoint_id")) {
           return [
-            { metric: { endpoint_id: "lava", spec: "ETH1" }, value: [1, "10"] as [number, string] },
-            { metric: { endpoint_id: "lava", spec: "SOLANA" }, value: [1, "5"] as [number, string] },
+            { metric: { endpoint_id: "nodeworks", spec: "ETH1" }, value: [1, "10"] as [number, string] },
+            { metric: { endpoint_id: "nodeworks", spec: "SOLANA" }, value: [1, "5"] as [number, string] },
           ];
         }
         return [];
@@ -688,8 +688,8 @@ describe("MetricsService · cross-chain shared node names (MAG-2875)", () => {
     // spec Prometheus returned, and every chain's row named the first router
     // in the values file — the "router says ETH for all chains" bug.
     expect(rows.map((r) => [r.endpointId, r.spec, r.routerIds])).toEqual([
-      ["lava", "ETH1", ["Ethereum"]],
-      ["lava", "SOLANA", ["Solana"]],
+      ["nodeworks", "ETH1", ["Ethereum"]],
+      ["nodeworks", "SOLANA", ["Solana"]],
     ]);
   });
 
@@ -703,7 +703,7 @@ describe("MetricsService · cross-chain shared node names (MAG-2875)", () => {
       ["SOLANA", "backup"],
     ]);
     const solOnly = await svc.upstreams(undefined, "1d", "Solana");
-    expect(solOnly.map((r) => [r.endpointId, r.spec])).toEqual([["lava", "SOLANA"]]);
+    expect(solOnly.map((r) => [r.endpointId, r.spec])).toEqual([["nodeworks", "SOLANA"]]);
   });
 });
 

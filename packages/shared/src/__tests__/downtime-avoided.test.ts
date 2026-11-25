@@ -43,7 +43,7 @@ describe("downtimeAvoided", () => {
 
   it("counts a stretch once per chain, however many providers failed in it, and each chain on its own", () => {
     const r = run(
-      [failed("ETH1", "tatum", [[100, 103, 50]]), failed("ETH1", "lava", [[102, 105, 50]]), failed("BASE", "tatum", [[100, 101, 50]])],
+      [failed("ETH1", "tatum", [[100, 103, 50]]), failed("ETH1", "nodeworks", [[102, 105, 50]]), failed("BASE", "tatum", [[100, 101, 50]])],
       [served("ETH1", 5_000), served("BASE", 5_000)],
     );
     // ETH1: stretches 100..105 = 6; BASE: 100..101 = 2.

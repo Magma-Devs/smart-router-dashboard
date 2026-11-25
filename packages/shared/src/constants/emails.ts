@@ -50,9 +50,9 @@ export const EMAIL_SUBJECTS: Record<
  * How an invitation's delivery is recorded on the audit row that already
  * describes it (`member.invited`, `invite.resent`).
  *
- * There is deliberately **no email-log table**. lava-connect has one because it
- * has sixteen types, an admin console that answers "did this person already get
- * X", CSV export, and SES bounce correlation to build on. None of that is in
+ * There is deliberately **no email-log table**. A log table pays off with many
+ * email types, an admin console that answers "did this person already get
+ * X", CSV export, or SES bounce correlation to build on. None of that is in
  * scope here, and a table nothing reads is schema we would have to migrate
  * around later. The one fact worth keeping — did it go, or is the admin holding
  * the link — belongs on the row an auditor already opens.

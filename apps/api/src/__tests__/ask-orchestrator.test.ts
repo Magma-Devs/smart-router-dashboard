@@ -1139,14 +1139,14 @@ describe("bounded customer tool orchestration", () => {
       status: true,
       question: "Is any provider behind on blocks?",
       envelopes: [
-        vector([tip("lavanet", "976"), tip("blockdaemon", "1000")]),
+        vector([tip("nodeworks", "976"), tip("blockdaemon", "1000")]),
         vector([
           {
             metric: { router: "cosmos-hub", spec: "COSMOSHUB", apiInterface: "tendermintrpc" },
             value: [at, "600"],
           },
         ]),
-        vector([tip("lavanet", "140"), tip("blockdaemon", "150")]),
+        vector([tip("nodeworks", "140"), tip("blockdaemon", "150")]),
         vector([]),
       ],
       responses: [
@@ -1182,7 +1182,7 @@ describe("bounded customer tool orchestration", () => {
     const body = JSON.parse(f.bodies[1]!);
     const result = JSON.parse(body.messages.at(-1).content[0].toolResult.content[0].text);
     expect(result.table.rows[0]).toMatchObject({
-      provider: "lavanet",
+      provider: "nodeworks",
       blocksBehind: 24,
       secondsBehind: 144,
       notMoving: "no",

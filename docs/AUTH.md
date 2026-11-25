@@ -12,9 +12,6 @@ The dashboard has two auth modes, selected by the `AUTH_MODE` env var
 | `disabled` *(default)* | Today's behaviour — no login, no database, every route open. The zero-dependency self-hosted posture. The api registers none of the account routes, and the web follows: no Team entry in the sidebar, `/team` redirects, and Account shows only the build details. |
 | `enabled` | Auth.js v5 sign-in (email+password, plus OAuth), Postgres-backed users, HS256 JWT shared between web and api. `/api/*` requires a Bearer token. |
 
-The implementation is a trimmed port of `lava-connect`'s auth stack — same
-JWT codec, same plugin layout, same seed semantics.
-
 > **Ticket coverage:** [`MAG-2729-REQUIREMENTS.md`](./MAG-2729-REQUIREMENTS.md)
 > maps every line of MAG-2729 to what implements it, with what is outstanding and
 > who owns it.
@@ -322,8 +319,8 @@ impossible: the admin holds the link and could use it themselves. What they
 cannot do is set a password silently — `password_resets.created_by` records
 who generated each link, the link and its `password.reset_link_generated` row
 commit together, and `password.reset_completed` names that admin when their
-link is used (`used a reset link from Dana`). (lava-connect's equivalent takes
-a password in the body, which leaves nothing to see.)
+link is used (`used a reset link from Dana`). No endpoint takes a password for
+someone else's account in its body, which would leave nothing to see.
 
 | | Managed | On-prem |
 |---|---|---|
@@ -398,7 +395,7 @@ Four transactional emails: the invitation and the password reset, which
 MAG-2870 specifies; the notice that a password changed, which MAG-2868 adds; and
 the notice that somebody's two-factor authentication was reset, which is
 MAG-2869's — see [`TWO-FACTOR.md`](./TWO-FACTOR.md) → "Lost phone". All four
-follow lava-connect's approach — SES v2 behind a single send function,
+go through SES v2 behind a single send function, with
 table-based HTML with inline styles because that is what renders the same in
 Gmail, Outlook and Apple Mail.
 
@@ -425,8 +422,8 @@ names both people.
 make accounts-managed          # inbox at http://localhost:8005
 ```
 
-Mail goes to a **local SES mock** (`dasprid/aws-ses-v2-local`, the image
-lava-connect uses) rather than to Amazon. It implements the SES v2 API, so
+Mail goes to a **local SES mock** (`dasprid/aws-ses-v2-local`) rather than to
+Amazon. It implements the SES v2 API, so
 `SES_ENDPOINT` is the only thing that differs from a real send — the SDK cannot
 tell, and neither can our transport. Nothing leaves the machine and no AWS
 account is involved.
@@ -497,9 +494,9 @@ one that never answers.
 
 ### Why there is no email-log table
 
-lava-connect has `user_emails` because it has sixteen types, an admin console
-answering "did this person already get X", CSV export, and SES bounce
-correlation to build on. None of that is in scope here, and a table nothing
+A log table pays off with many email types, an admin console answering "did
+this person already get X", CSV export, or SES bounce correlation to build on.
+None of that is in scope here, and a table nothing
 reads is schema to migrate around later.
 
 The one fact worth keeping — did it go, or is the admin holding the link — goes
@@ -528,7 +525,7 @@ From the ticket, and each has a test:
 - **The link appears as text as well as a button**, in the two emails that
   have one. Mail clients strip buttons and people forward these.
 - **The expiry is in the message**, and is passed in rather than written into
-  the copy — lava-connect's template hardcodes 30 minutes and ours is an hour.
+  the copy: the managed reset is an hour.
 - **No marketing footer, no tracking, no unsubscribe.** The shell has no footer
   and **no `<img>` at all**: a remote image in a security email reports when it
   was opened and from where, whether or not anybody meant it as a tracking

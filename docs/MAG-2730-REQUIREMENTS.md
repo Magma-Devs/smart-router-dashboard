@@ -18,14 +18,9 @@ so the ticket can be checked off rather than taken on trust.
 
 Everything the ticket asks for is implemented and nothing is open for decision. Somebody whose 2FA is reset is emailed on a managed deployment (MAG-2869); on-prem, which sends no email, they find out at their next sign-in and the `2fa.reset` row naming both people is the record.
 
-**Nothing was taken from lava-connect.** It was checked first, since it is this
-repo's shape reference and carries a mature account system: it has **no TOTP
-anywhere** — no column in `0000_init.sql`, no path in `services/auth.ts`, three
-grep hits and all of them in Stripe skill documentation. What it does have
-(Auth.js v5 credentials, bcrypt, sessions, per-account lockout, HIBP, single-use
-link tokens) was already harvested by MAG-2729 and deliberately re-implemented on
-Postgres rather than copied, because lava-connect's versions fail open without
-Redis (design §2.3). The one piece worth reusing was therefore already in this
+**The account pieces this builds on are MAG-2729's** (Auth.js v5 credentials,
+bcrypt, sessions, per-account lockout, HIBP, single-use link tokens), all on
+Postgres (design §2.3). The one piece worth reusing was therefore already in this
 repo — `services/lockout.ts`, at five failures per fifteen minutes, the exact
 numbers this ticket wants for codes — and reuse here means **the same counter**,
 not a second one.

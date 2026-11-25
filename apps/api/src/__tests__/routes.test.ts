@@ -30,15 +30,15 @@ function mockPrometheus(): void {
       });
     if (new URL(url).pathname.endsWith("/query_range") && query.includes("sum by (le, endpoint_id)")) {
       return matrix([
-        { metric: { endpoint_id: "eth-lava" }, values: [[1, "40"], [2, "44"]] },
+        { metric: { endpoint_id: "eth-primary" }, values: [[1, "40"], [2, "44"]] },
         { metric: { endpoint_id: "eth-frozen" }, values: [[1, "90"], [2, "NaN"]] },
       ]);
     }
-    // The incidents read: failed tries per chain and provider, a burst at eth-lava.
+    // The incidents read: failed tries per chain and provider, a burst at eth-primary.
     if (new URL(url).pathname.endsWith("/query_range") && query.startsWith("sum by (spec, provider_address) (increase(smartrouter_requests_failed_total")) {
       const pts = (hot: (t: number) => boolean) => Array.from({ length: 31 }, (_, k) => [k * 60, hot(k * 60) ? "50" : "0"]);
       return matrix([
-        { metric: { spec: "ETH1", provider_address: "eth-lava" }, values: pts((t) => t >= 1500 && t <= 1680) },
+        { metric: { spec: "ETH1", provider_address: "eth-primary" }, values: pts((t) => t >= 1500 && t <= 1680) },
         { metric: { spec: "BTC", provider_address: "btc-node" }, values: pts((t) => t >= 300 && t <= 420) },
         { metric: { spec: "ETH1", provider_address: "Cached" }, values: pts(() => true) },
       ]);
@@ -66,33 +66,33 @@ function mockPrometheus(): void {
     // Outvoted providers over the window, an instant read.
     if (new URL(url).pathname.endsWith("/query") && query.startsWith("sum by (spec, provider_address) (") && query.includes("smartrouter_cross_validation_provider_disagreements_total")) {
       return vector([
-        { metric: { spec: "ETH1", provider_address: "eth-lava" }, value: [1800, "340"] },
+        { metric: { spec: "ETH1", provider_address: "eth-primary" }, value: [1800, "340"] },
         { metric: { spec: "BTC", provider_address: "btc-node" }, value: [1800, "2"] },
       ]);
     }
     // Request volume: short rates averaged over what is there (see qUpstreamRpsByUpstreamSeriesExpr).
     if (new URL(url).pathname.endsWith("/query_range") && query.startsWith("avg_over_time((sum by (provider_address) (rate(")) {
       return matrix([
-        { metric: { provider_address: "eth-lava" }, values: [[1, "0.5"], [2, "0.25"]] },
+        { metric: { provider_address: "eth-primary" }, values: [[1, "0.5"], [2, "0.25"]] },
       ]);
     }
     // Traffic by provider: one chain's requests per second, per upstream.
     if (new URL(url).pathname.endsWith("/query_range") && query.startsWith('sum by (provider_address) (rate(smartrouter_requests_total{spec="ETH1"}')) {
       return matrix([
-        { metric: { provider_address: "eth-lava" }, values: [[1, "0.5"], [2, "0.25"]] },
+        { metric: { provider_address: "eth-primary" }, values: [[1, "0.5"], [2, "0.25"]] },
         { metric: { provider_address: "Cached" }, values: [[1, "2"], [2, "2"]] },
       ]);
     }
     // Upstream timeline: failed tries and latest-block polls per upstream.
     if (new URL(url).pathname.endsWith("/query_range") && query.startsWith("clamp_min(sum by (provider_address)")) {
-      return matrix([{ metric: { provider_address: "eth-lava" }, values: [[600, "0.5"], [1200, "0"]] }]);
+      return matrix([{ metric: { provider_address: "eth-primary" }, values: [[600, "0.5"], [1200, "0"]] }]);
     }
     if (new URL(url).pathname.endsWith("/query_range") && query.startsWith("sum by (endpoint_id) (increase(rpc_endpoint_fetch_latest_success")) {
-      return matrix([{ metric: { endpoint_id: "eth-lava" }, values: [[600, "0"], [1200, "1"]] }]);
+      return matrix([{ metric: { endpoint_id: "eth-primary" }, values: [[600, "0"], [1200, "1"]] }]);
     }
     if (new URL(url).pathname.endsWith("/query_range") && query.startsWith("max by (endpoint_id) (max_over_time(rpc_endpoint_latest_block")) {
       return matrix([
-        { metric: { endpoint_id: "eth-lava" }, values: [[1, "100"], [2, "101"]] },
+        { metric: { endpoint_id: "eth-primary" }, values: [[1, "100"], [2, "101"]] },
         { metric: { endpoint_id: "eth-frozen" }, values: [[1, "95"], [2, "95"]] },
       ]);
     }
@@ -104,7 +104,7 @@ function mockPrometheus(): void {
     } else if (query.includes("== bool 1")) {
       result = []; // no chain is fully down
     } else if (query.includes("clamp_min") && query.includes("sum by (spec, provider_address)")) {
-      result = [{ metric: { spec: "ETH1", provider_address: "eth-lava" }, value: [1, "3"] }];
+      result = [{ metric: { spec: "ETH1", provider_address: "eth-primary" }, value: [1, "3"] }];
     } else if (query.includes("clamp_min") && query.includes("sum by (method)")) {
       result = [{ metric: { method: "eth_blockNumber" }, value: [1, "3"] }];
     } else if (query.includes("clamp_min") && query.includes("sum by (spec)")) {
@@ -130,7 +130,7 @@ function mockPrometheus(): void {
     } else if (query.includes("selection_score")) {
       result = [
         {
-          metric: { spec: "ETH1", endpoint_id: "eth-lava", score_type: "composite" },
+          metric: { spec: "ETH1", endpoint_id: "eth-primary", score_type: "composite" },
           value: [1, "0.9"],
         },
       ];
@@ -139,20 +139,20 @@ function mockPrometheus(): void {
       result = [{ metric: { spec: "ETH1" }, value: [1, "1"] }];
     } else if (query.includes("smartrouter_csm_provider_blocked")) {
       // The gauge itself, keyed by endpoint_id: 0 = serving.
-      result = [{ metric: { spec: "ETH1", endpoint_id: "eth-lava" }, value: [1, "0"] }];
+      result = [{ metric: { spec: "ETH1", endpoint_id: "eth-primary" }, value: [1, "0"] }];
     } else if (query.includes("deriv(rpc_endpoint_latest_block")) {
       result = [{ metric: { spec: "ETH1" }, value: [1, "0.1"] }]; // 0.1 blocks/sec
     } else if (query.includes("changes(rpc_endpoint_latest_block")) {
       // eth-frozen's tip gauge never moved over the staleness window.
       result = [
-        { metric: { spec: "ETH1", endpoint_id: "eth-lava", apiInterface: "jsonrpc" }, value: [1, "12"] },
+        { metric: { spec: "ETH1", endpoint_id: "eth-primary", apiInterface: "jsonrpc" }, value: [1, "12"] },
         { metric: { spec: "ETH1", endpoint_id: "eth-frozen", apiInterface: "jsonrpc" }, value: [1, "0"] },
       ];
     } else if (query.includes("max by (spec) (rpc_endpoint_latest_block")) {
       result = [{ metric: { spec: "ETH1" }, value: [1, "100"] }]; // best tip
     } else if (query.includes("max by (spec, endpoint_id, apiInterface)")) {
       result = [
-        { metric: { spec: "ETH1", endpoint_id: "eth-lava", apiInterface: "jsonrpc" }, value: [1, "100"] },
+        { metric: { spec: "ETH1", endpoint_id: "eth-primary", apiInterface: "jsonrpc" }, value: [1, "100"] },
         { metric: { spec: "ETH1", endpoint_id: "eth-frozen", apiInterface: "jsonrpc" }, value: [1, "95"] },
       ];
     } else if (query.includes("changes(smartrouter_latest_block")) {
@@ -165,7 +165,7 @@ function mockPrometheus(): void {
         { metric: { spec: "ETH1", apiInterface: "jsonrpc", router: "eth-router" }, value: [1, "90"] },
       ];
     } else if (query.includes("rpc_endpoint_latest_block")) {
-      result = [{ metric: { spec: "ETH1", endpoint_id: "eth-lava" }, value: [1, "100"] }];
+      result = [{ metric: { spec: "ETH1", endpoint_id: "eth-primary" }, value: [1, "100"] }];
     } else if (query.includes("overall_health")) {
       result = [{ metric: {}, value: [1, "1"] }];
     } else if (query.includes("success_total") && query.includes(" / ")) {
@@ -177,7 +177,7 @@ function mockPrometheus(): void {
     } else if (query.includes("sum by (method)")) {
       result = [{ metric: { method: "eth_blockNumber" }, value: [1, "100"] }];
     } else if (query.includes("sum by (spec, provider_address)")) {
-      result = [{ metric: { spec: "ETH1", provider_address: "eth-lava" }, value: [1, "100"] }];
+      result = [{ metric: { spec: "ETH1", provider_address: "eth-primary" }, value: [1, "100"] }];
     } else if (query.includes("smartrouter_requests_total")) {
       result = [{ metric: { spec: "ETH1" }, value: [1, "1234"] }];
     }
@@ -328,7 +328,7 @@ describe("api routes", () => {
       spec: "ETH1",
       upstreams: [
         { upstream: "Cached", points: [{ t: 1, v: 2 }, { t: 2, v: 2 }] },
-        { upstream: "eth-lava", points: [{ t: 1, v: 0.5 }, { t: 2, v: 0.25 }] },
+        { upstream: "eth-primary", points: [{ t: 1, v: 0.5 }, { t: 2, v: 0.25 }] },
       ],
     });
   });
@@ -337,13 +337,13 @@ describe("api routes", () => {
     const missing = await app.inject({ method: "GET", url: "/api/metrics/upstream-detail?spec=ETH1&window=1d" });
     expect(missing.statusCode).toBe(400);
     // A name alone spans every chain the vendor serves — refused, not guessed.
-    const noSpec = await app.inject({ method: "GET", url: "/api/metrics/upstream-detail?endpointId=eth-lava&window=1d" });
+    const noSpec = await app.inject({ method: "GET", url: "/api/metrics/upstream-detail?endpointId=eth-primary&window=1d" });
     expect(noSpec.statusCode).toBe(400);
 
-    const res = await app.inject({ method: "GET", url: "/api/metrics/upstream-detail?endpointId=eth-lava&spec=ETH1&window=1d" });
+    const res = await app.inject({ method: "GET", url: "/api/metrics/upstream-detail?endpointId=eth-primary&spec=ETH1&window=1d" });
     expect(res.statusCode).toBe(200);
     const body = res.json();
-    expect(body.endpointId).toBe("eth-lava");
+    expect(body.endpointId).toBe("eth-primary");
     expect(body.spec).toBe("ETH1");
     expect(body.health).toBe("operational");
     expect(body.scores.composite).toBeCloseTo(0.9);
@@ -359,7 +359,7 @@ describe("api routes", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date(Date.UTC(2026, 8, 28, 15, 23, 32)));
     try {
-      const res = await app.inject({ method: "GET", url: "/api/metrics/upstream-detail?endpointId=eth-lava&spec=ETH1&window=1d" });
+      const res = await app.inject({ method: "GET", url: "/api/metrics/upstream-detail?endpointId=eth-primary&spec=ETH1&window=1d" });
       const eot = res.json().errorsOverTime;
       expect(eot.asOf).toBe(Date.UTC(2026, 8, 28, 15, 23, 32) / 1000);
       // A day is a bar per 30 minutes: from the one the window starts in
@@ -393,7 +393,7 @@ describe("api routes", () => {
     expect(body.spec).toBe("ETH1");
     expect(body.available).toBe(true);
     // The relay cache counts in the chain's tries and gets no row.
-    expect(body.upstreams.map((u: { upstream: string }) => u.upstream)).toEqual(["eth-lava"]);
+    expect(body.upstreams.map((u: { upstream: string }) => u.upstream)).toEqual(["eth-primary"]);
     const cells = body.upstreams[0].cells;
     expect(cells).toHaveLength(3);
     // Scraped but neither tried nor polled: unknown. A poll that answered: operational.
@@ -418,10 +418,10 @@ describe("api routes", () => {
     // Another chain's burst and the relay cache are left out. The providers disagreeing on two methods at once is one chain-wide line.
     expect(body.lines).toHaveLength(2);
     expect(body.lines.map((l: { kind: string }) => l.kind).sort()).toEqual(["disagreed", "failed"]);
-    expect(body.lines.find((l: { kind: string }) => l.kind === "failed")).toMatchObject({ shape: "incident", providers: ["eth-lava"], start: 1500, end: 1680, count: 200, ongoing: false });
+    expect(body.lines.find((l: { kind: string }) => l.kind === "failed")).toMatchObject({ shape: "incident", providers: ["eth-primary"], start: 1500, end: 1680, count: 200, ongoing: false });
     expect(body.lines.find((l: { kind: string }) => l.kind === "disagreed")).toMatchObject({ shape: "chain-wide", providers: ["eth_getBalance", "eth_getBlockByNumber"], count: 56 });
     // Outvoted providers: the chain's only.
-    expect(body.outvoted).toEqual([{ spec: "ETH1", provider: "eth-lava", count: 340 }]);
+    expect(body.outvoted).toEqual([{ spec: "ETH1", provider: "eth-primary", count: 340 }]);
   });
 
   it("GET /api/metrics/downtime-avoided counts the time a provider was failing while its chain kept answering", async () => {
@@ -476,7 +476,7 @@ describe("api routes", () => {
       // No requests at a point ⇒ no latency there: a gap, never a zero.
       { upstream: "eth-frozen", latencyP95: [{ t: 1, v: 90 }, { t: 2, v: null }], rps: [], latestBlock: [{ t: 1, v: 95 }, { t: 2, v: 95 }] },
       {
-        upstream: "eth-lava", latencyP95: [{ t: 1, v: 40 }, { t: 2, v: 44 }], rps: [{ t: 1, v: 0.5 }, { t: 2, v: 0.25 }],
+        upstream: "eth-primary", latencyP95: [{ t: 1, v: 40 }, { t: 2, v: 44 }], rps: [{ t: 1, v: 0.5 }, { t: 2, v: 0.25 }],
         latestBlock: [{ t: 1, v: 100 }, { t: 2, v: 101 }],
       },
     ]);
@@ -495,7 +495,7 @@ describe("api routes", () => {
     ]);
     // No `code` label exists on node_errors_total — per-code stays empty.
     expect(body.pivots.code).toEqual([]);
-    expect(body.hotspots[0]).toMatchObject({ spec: "ETH1", upstream: "eth-lava", errors: 3, requests: 100, nodeMethods: [] });
+    expect(body.hotspots[0]).toMatchObject({ spec: "ETH1", upstream: "eth-primary", errors: 3, requests: 100, nodeMethods: [] });
     expect(body.hotspots[0].errorRate).toBeCloseTo(0.03);
     expect(body.families).toEqual({
       requestsFailedTotal: false,
@@ -617,8 +617,8 @@ describe("api routes", () => {
       },
     ]);
 
-    const lava = eth.upstreams.find((u: { endpointId: string }) => u.endpointId === "eth-lava");
-    expect(lava).toMatchObject({ block: 100, behindBlocks: 0, behindSec: 0, stale: false });
+    const primary = eth.upstreams.find((u: { endpointId: string }) => u.endpointId === "eth-primary");
+    expect(primary).toMatchObject({ block: 100, behindBlocks: 0, behindSec: 0, stale: false });
   });
 
   it("GET /api/metrics/block-heights → a frozen tip is stale, and 5 blocks is 50s", async () => {
@@ -630,7 +630,7 @@ describe("api routes", () => {
 
   it("GET /api/metrics/upstreams → roster carries seconds-behind + stale", async () => {
     const res = await app.inject({ method: "GET", url: "/api/metrics/upstreams" });
-    const row = res.json().upstreams.find((u: { endpointId: string }) => u.endpointId === "eth-lava");
+    const row = res.json().upstreams.find((u: { endpointId: string }) => u.endpointId === "eth-primary");
     expect(row).toMatchObject({ blockLag: 0, behindSec: 0, stale: false });
   });
 

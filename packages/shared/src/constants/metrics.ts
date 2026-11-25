@@ -4,10 +4,9 @@
  * These names were captured from a live `~/projects/smart-router` build's
  * `/metrics` endpoint (router on :7779), NOT from the design-drop docs.
  *
- * ⚠️ The `SR Dashboard/*.md` docs say `lava_rpcsmartrouter_*`. The real build
- * emits a bare `smartrouter_*` prefix (router scope) plus `rpc_endpoint_*` /
- * `rpc_optimizer_*` (per-endpoint / optimizer scope). Always verify against a
- * live scrape, not the doc.
+ * The router emits a bare `smartrouter_*` prefix (router scope) plus
+ * `rpc_endpoint_*` / `rpc_optimizer_*` (per-endpoint / optimizer scope).
+ * Always verify against a live scrape, not the design docs.
  *
  * Families absent here (cache/retries/hedge/cross-validation/errors/ws/write/
  * batch) are simply not registered until that feature fires — the API and UI

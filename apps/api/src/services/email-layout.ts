@@ -1,6 +1,5 @@
 /**
- * Branded HTML shell + body builders for transactional email, ported from
- * lava-connect's `services/email-layout.ts`. Copy lives in
+ * Branded HTML shell + body builders for transactional email. Copy lives in
  * `email-templates.ts`; this module owns structure and style only.
  *
  * Everything is table-based with inline styles — no `<style>` blocks, no
@@ -8,19 +7,18 @@
  * same in Gmail, Outlook and Apple Mail, and it is why this looks nothing like
  * the app's CSS despite describing the same brand.
  *
- * **Two deliberate departures from the port.**
+ * **No footer and no hosted logo.**
  *
- * There is no footer. lava-connect ends its shell with a foundation byline and
- * a privacy-policy link; MAG-2870 says "no marketing footer, no tracking, no
- * unsubscribe", on the grounds that an unsubscribe link on a password reset
- * teaches people the wrong habit. A sender-identity line would be defensible,
- * but the ticket's rule is unqualified and these are two security messages, so
- * the card ends where the message ends.
+ * There is no footer, no byline and no privacy-policy link: MAG-2870 says "no
+ * marketing footer, no tracking, no unsubscribe", on the grounds that an
+ * unsubscribe link on a password reset teaches people the wrong habit. A
+ * sender-identity line would be defensible, but the ticket's rule is
+ * unqualified and these are two security messages, so the card ends where the
+ * message ends.
  *
- * And there is no hosted logo. lava-connect serves a PNG wordmark from the web
- * origin; a remote image in a security email is a tracking pixel whether or not
- * anybody meant it as one — it reports when the message was opened, and from
- * where. The wordmark is set in text instead.
+ * And there is no hosted logo: a remote image in a security email is a
+ * tracking pixel whether or not anybody meant it as one — it reports when the
+ * message was opened, and from where. The wordmark is set in text instead.
  */
 
 /** Email-safe system stack. The app's Inter is dropped on purpose: linked

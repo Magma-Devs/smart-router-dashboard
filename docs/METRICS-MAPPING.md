@@ -1,8 +1,7 @@
 # Metrics Mapping — UI value → real Prometheus series
 
 Source of truth is a **live `/metrics` scrape**, not the `../SR_Dashboard/*.md`
-design docs. Those docs use the prefix `lava_rpcsmartrouter_*`; the real build
-emits `smartrouter_*` / `rpc_endpoint_*` / `rpc_optimizer_*`. The catalog lives
+design docs. The router emits `smartrouter_*` / `rpc_endpoint_*` / `rpc_optimizer_*`. The catalog lives
 in `packages/shared/src/constants/metrics.ts`; the typed query builders in
 `packages/shared/src/promql/builders.ts`.
 

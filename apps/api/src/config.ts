@@ -344,7 +344,7 @@ export const config = {
     version: env("APP_VERSION") ?? "0.0.0",
   },
 
-  /** Cache TTLs (seconds) — realtime 10-30s, lists 60-300s (lava-connect rule). */
+  /** Cache TTLs (seconds) — realtime 10-30s, lists 60-300s. */
   cacheTtl: {
     realtime: 15,
     lists: 60,

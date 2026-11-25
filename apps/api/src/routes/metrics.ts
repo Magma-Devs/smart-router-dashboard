@@ -450,7 +450,7 @@ export async function metricRoutes(app: FastifyInstance, opts: MetricRoutesOptio
           window: windowQuerySchema.properties.window,
           router: windowQuerySchema.properties.router,
           endpointId: { type: "string" as const, description: "Backing endpoint id (= upstream name)" },
-          spec: { type: "string" as const, description: "Chain the upstream serves (Lava spec index)" },
+          spec: { type: "string" as const, description: "Chain the upstream serves (spec index)" },
         },
       },
     },

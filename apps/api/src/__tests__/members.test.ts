@@ -386,7 +386,7 @@ describe("members", () => {
     });
 
     it("lets one admin remove another, as long as one is left", async () => {
-      // Deliberate divergence from lava-connect: admin has to stay
+      // Admin has to stay
       // transferable, or a departing employee's account can't be removed. The
       // sole-admin case is a prompt on the screen, not a refusal here. The
       // last admin itself can never be removed: nobody removes themselves.

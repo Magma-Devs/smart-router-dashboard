@@ -4,10 +4,9 @@ import { useState } from "react";
 import { buildChainMetaByIndex } from "@sr/shared";
 
 /**
- * Chain icon, resolved by Lava spec index. Ported from lava-connect's
- * `<ChainIcon>`: renders the vendored brand SVG from public/chains/ on a
- * transparent ground (most chain SVGs carry their own brand color, so a
- * colored frame would hide the artwork). Falls back to a colored-letter
+ * Chain icon, resolved by spec index: renders the vendored brand SVG from
+ * public/chains/ on a transparent ground (most chain SVGs carry their own
+ * brand color, so a colored frame would hide the artwork). Falls back to a colored-letter
  * badge only when the image is missing or fails to load — including the
  * `default.svg` placeholder for chains with no vendored icon.
  *

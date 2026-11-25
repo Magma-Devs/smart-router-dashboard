@@ -1,10 +1,9 @@
 import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
 
 /**
- * Low-level email transport over AWS SES (v2). Ported from lava-connect's
- * `services/email.ts`, which has been sending production mail for a while —
- * the copy and the templates live in `email-templates.ts`; this module only
- * knows how to put bytes on the wire.
+ * Low-level email transport over AWS SES (v2). The copy and the templates
+ * live in `email-templates.ts`; this module only knows how to put bytes on
+ * the wire.
  *
  * Configuration:
  *   - AWS_REGION              enables SES. Absent ⇒ the dev fallback below

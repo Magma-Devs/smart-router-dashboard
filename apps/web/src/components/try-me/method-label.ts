@@ -27,7 +27,7 @@ import type {
 
 /** Curated common methods per interface, method → friendly label. The generated
  *  catalog lists 50+ methods with no friendly names, so the Command dropdown
- *  defaults to this short curated set (labels like lava-connect: "Block Number ·
+ *  defaults to this short curated set (labels like "Block Number ·
  *  eth_blockNumber") with a "show all" escape hatch. Order here is the display
  *  order; anything not listed is hidden until the user expands.
  *

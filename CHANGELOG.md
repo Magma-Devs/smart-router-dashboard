@@ -5,6 +5,21 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.93.3]
+
+### Changed
+
+- **Ten error codes say what they mean for the router's session with a
+  provider (MAG-5784).** The opened row of a request on the Errors and
+  Transactions tabs gives each provider-session code its own meaning, taken
+  from the router's registry: a used-up compute-unit allowance, a session the
+  provider no longer held, an expired epoch, a router the provider blocked or
+  does not know, a request count or session state the two sides disagree on, a
+  failed session check, or a session result the router could not record. The
+  api's OpenAPI description of an upstream's `spec` reads "spec index". Code
+  comments, notes and test fixtures use neutral provider names and
+  `example.com` hosts.
+
 ## [0.93.2]
 
 ### Fixed

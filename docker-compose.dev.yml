@@ -6,7 +6,7 @@
 #   # Add the logs stack (Loki + Promtail + Grafana on :3001):
 #   docker compose -f docker-compose.dev.yml --profile router --profile logs up --build
 #
-# Mirrors lava-connect's dev pattern:
+# The dev pattern:
 #   - a shared Dockerfile.dev image carries node_modules (so mounts don't clobber it)
 #   - only source + dist dirs are mounted (NOT the whole tree)
 #   - `builder` runs `tsc --watch` on @sr/shared → dist/ (which api+web read)
@@ -110,7 +110,7 @@ services:
   # the `auth` profile: docker compose -f docker-compose.dev.yml --profile
   # router --profile auth up. The api connects lazily (retry loop) so
   # AUTH_MODE=disabled keeps the zero-dependency boot. Host port 5434 for
-  # psql debugging (5433 is lava-connect's dev postgres).
+  # psql debugging.
   postgres:
     profiles: ["auth"]
     image: postgres:18.6-alpine@sha256:9ba53c7d41ea093baf5c1ba635ba5434c4f979880527d49bb7d9237d3193085b

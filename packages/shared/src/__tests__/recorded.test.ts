@@ -59,7 +59,7 @@ import {
   qUpstreamVolumeSeriesExpr,
 } from "../promql/builders.js";
 
-const REF = { spec: "ETH1", endpointId: "eth-lava" };
+const REF = { spec: "ETH1", endpointId: "eth-primary" };
 // A raw family name standing on its own — not the one inside a recorded name
 // (`spec_router:smartrouter_requests_total:rate2m15s` carries it between colons).
 const RAW_FAMILIES = /(?<![:a-z_])(smartrouter_requests_(?:total|success_total|read_total)|smartrouter_end_to_end_latency_milliseconds_(?:bucket|count)|rpc_endpoint_end_to_end_latency_milliseconds_bucket|rpc_endpoint_total_relays_serviced)(?![:a-z_])/;
