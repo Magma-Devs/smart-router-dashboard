@@ -627,7 +627,7 @@ const regressions = [
   [
     "Are all our providers in sync with the chain tip right now?",
     /node-b/i,
-    /not (track|measure)[a-z ]*block|all (providers )?(are )?in sync/i,
+    /not (track|measure)[a-z ]*block|(?<!not )all (providers )?(are )?in sync/i,
   ],
 ];
 // Working shown in an answer, which the answer text never holds.
