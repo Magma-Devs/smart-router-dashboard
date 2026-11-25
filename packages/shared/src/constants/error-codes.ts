@@ -249,7 +249,7 @@ const ENTRIES: Record<string, Entry> = {
     source: "router",
     routerRetries: false,
     mayHaveGoneThrough: false,
-    meaning: "The provider has blocked the router.",
+    meaning: "The router was blocklisted.",
     action: "",
   },
   PROTOCOL_CONSUMER_NOT_REGISTERED: {
@@ -257,7 +257,7 @@ const ENTRIES: Record<string, Entry> = {
     source: "router",
     routerRetries: false,
     mayHaveGoneThrough: false,
-    meaning: "The router isn't registered with the provider.",
+    meaning: "The router wasn't registered.",
     action: "",
   },
   PROTOCOL_RELAY_NUMBER_MISMATCH: {

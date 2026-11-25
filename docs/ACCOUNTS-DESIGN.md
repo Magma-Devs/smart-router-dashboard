@@ -93,7 +93,7 @@ organisation, invitation, multi-user tenancy.
 
 | Security primitives | Team model |
 |---|---|
-| `requireAuthFresh` / `requireAdminFresh` · the `jti`-per-sign-in mint · `isBreachedPassword` (HIBP) · lockout counters · the signed single-use link shape · the managed reset flow · `services/csv.ts` · SES email + templates · `verifyGithubTokenBelongsToOurApp` | Invitations · the four-role model · first-run and the setup token · removal as a state change · access events in the audit log · everything on-prem |
+| the session gate in `plugins/auth.ts` · one session row per sign-in, addressed by the token's `sid` (`services/sessions.ts`) · `checkPasswordBreached` (HIBP) · lockout counters (`services/lockout.ts`) · opaque single-use link tokens · the managed reset flow · `packages/shared/src/utils/csv.ts` · SES email + templates · `verifyOAuthToken` | Invitations · the four-role model · first-run and the setup token · removal as a state change · access events in the audit log · everything on-prem |
 
 > **Constraint: no Redis, and no fail-open.**
 > Sessions, lockout counters and single-use token claims never sit in a store whose
@@ -294,10 +294,10 @@ re-reads it. `sid` is the only claim that is load-bearing.
 
 ### 5.2 The session is minted by the api, not the web
 
-The web fires no separate `POST /me/sessions/register` from the `jwt()` callback. Such
-a call runs server-side in the web container and forwards no client headers, so what
-the api records is whatever it sees from the web pod — never the browser. MAG-2770's
-access events are built on exactly those fields.
+The api mints the session in the sign-in request itself. A separate register call
+fired from the web's `jwt()` callback would run server-side in the web container and
+forward no client headers, so the api would record the web pod — never the browser.
+MAG-2770's access events are built on exactly those fields.
 
 ```
  browser            web (Auth.js)                api                     postgres
@@ -506,7 +506,7 @@ revoked, because the role is re-read on the next action anyway.
 
 ### 7.2 Breach check
 
-`isBreachedPassword`: HIBP k-anonymity — SHA-1 the password, send
+`checkPasswordBreached`: HIBP k-anonymity — SHA-1 the password, send
 the first five hex characters, scan the response for the suffix, so the full hash never
 leaves the process — with `Add-Padding` so response size leaks nothing, a 750 ms cap,
 and fail-open with a logged reason.
@@ -560,7 +560,7 @@ no mail server.
 | Reset initiation | self-serve "forgot password" | admin generates a link |
 | Reset TTL | 1 hour | 24 hours |
 | "Forgot password" on `/login` | shown | hidden — there is nowhere to send it |
-| Email transport | SES (ported) | none, ever |
+| Email transport | SES | none, ever |
 
 **The web needs this value at runtime**, not build time — `NEXT_PUBLIC_*` is baked into
 the bundle and one published image has to serve both shapes. Fold it into the existing
@@ -733,9 +733,8 @@ that way in the code.
   history by the nature of an emailed link; mitigated by a short TTL, single use, and
   `Referrer-Policy: no-referrer` on those pages so the token never leaves in a referer
   header.
-- **CSV injection.** Port `services/csv.ts` — it guards `= + - @` plus tab and CR, and
-  uses RFC 4180 CRLF. Put it in `packages/shared`; MAG-2770's export needs the same
-  function.
+- **CSV injection.** `packages/shared/src/utils/csv.ts` guards `= + - @` plus tab, CR
+  and LF, and uses RFC 4180 CRLF. MAG-2770's export uses the same function.
 - **`trustProxy`.** Narrow from `true` to the ingress CIDR (§5.2).
 - **Secret separation.** Link tokens are opaque random values, not JWTs signed with the
   session secret (§7.4).
@@ -789,14 +788,11 @@ and `PUBLIC_WEB_ORIGIN`. What remains is per deployment, tracked in
 every route here needs real rows. Today `apps/api/src/__tests__/auth.test.ts`
 deliberately points at an unroutable address and only exercises the JWT gate.
 
-**The harness:** a Map-backed fake store with the service layer mocked
-(`__tests__/_helpers/test-app.ts`) for route tests, plus integration tests on
-`TEST_DATABASE_URL`, with no new dependency. Integration tests that `describe.skip`
-without the env var would gate no merge. The behaviour this design leans on
-hardest — the partial unique index, the conditional single-use update, the removal
-transaction — is exactly what a fake store cannot check. Either run a Postgres service
-container in CI, or add **pglite** for real in-process Postgres with no Docker. Decide in
-slice 1.
+**The harness:** **pglite**, a real in-process Postgres with no Docker
+(`@sr/db/testing`), so route tests run on real rows in every CI run. The behaviour this
+design leans on hardest — the partial unique index, the conditional single-use update,
+the removal transaction — is exactly what a fake store cannot check, and an integration
+suite that skips without a database would gate no merge.
 
 ### Cases, mapped to done-whens
 
@@ -847,9 +843,8 @@ lockout. Mostly a port — only the on-prem admin-generated link is new.
 
 **5 · Members, sessions UI, export — ~2.5 pts**
 Real team page, role change, removal with its confirmation dialog, the account page's
-sessions list, CSV export, role-gated affordances, the single-admin prompt. Ports
-`services/csv.ts` verbatim and the admin-table patterns — but not their
-delete-or-set-password semantics.
+sessions list, CSV export, role-gated affordances, the single-admin prompt. Uses
+`packages/shared/src/utils/csv.ts`, and no delete-or-set-password semantics.
 
 **6 · Audit emission — ~1 pt**
 Swap the no-op writer for MAG-2770's. Small *because* the call sites went in as each
