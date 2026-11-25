@@ -1170,6 +1170,9 @@ describe("bounded customer tool orchestration", () => {
     expect(first.system[0]!.text).toContain(
       "whether a provider is behind, lagging, stuck or out of sync on blocks is router_request_summary with measure=blocks",
     );
+    expect(first.system[0]!.text).toContain(
+      "never which provider served a request or a block: that is the request's relay_end line (router_recent_requests)",
+    );
     const summary = first.toolConfig.tools.find(
       (t) => t.toolSpec.name === "router_request_summary",
     )!;

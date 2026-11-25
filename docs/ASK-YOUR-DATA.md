@@ -364,7 +364,9 @@ Stopped providers come first, then those 30 seconds or more behind
 `notMoving`, `headStalledUrls`) and never add up blocks. A provider with no
 block height has no row and is unknown. The prompt sends lag questions here
 and cites provider status beside it only as the vendor's claim. The reading is
-one instant, so it says nothing about earlier in the window.
+one instant, so it says nothing about earlier in the window. It is
+not where a request's provider is read: which provider served a request or a
+block is that request's `relay_end` line (`router_recent_requests`).
 
 Counts do not establish an acceptable error rate or a cause without actual evidence and an SLO. `router_recent_requests` reads a small, customer-scoped backwards sample of the dashboard's `relay_end` events for request details, over up to 24 hours at any time the logs hold. Each event's `served_by` names the provider whose reply reached the client and `attempts` every provider tried. `requested_block` names the block the request asked for, so the line filter ``|= `"requested_block":<number>` `` finds one block's requests, and `request_id` is the caller's `X-Request-Id`. Sampling never proves the absence of errors. Effective status/instant-query times and literal lookback windows are returned explicitly; absence of a provider-status source is reported as unavailable. A provider-status read (`status.chain_events`) reaches the model summarized (`services/ask/status-summary.ts`): the chains whose every provider is operational and whose measured state is up or unconfigured by name (`chainsAllOperational`), every other chain with only its non-operational providers and a count of the operational ones, and the events newest first with titles and details cut to 160 characters. A many-chain tenant's status fits whole; when the events still do not fit, the oldest are left out, `eventsOmitted` counts them and the source reads Partial.
 

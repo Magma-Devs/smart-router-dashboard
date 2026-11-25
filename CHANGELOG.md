@@ -5,6 +5,16 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.93.2]
+
+### Fixed
+
+- **Ask reads which provider served a block from the request's own log line
+  (MAG-5770).** Since 0.93.1, asked which provider answered a request for one
+  block, Ask read providers' block heights at the window's end instead. The
+  prompt keeps `measure=blocks` to where providers stand against the head and
+  sends a served request to its `relay_end` line.
+
 ## [0.93.1]
 
 ### Fixed
