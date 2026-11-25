@@ -2,7 +2,7 @@ import { config } from "../config.js";
 import type { OAuthProfile, OAuthProvider } from "./users.js";
 
 /**
- * Server-side OAuth token verification (lava-connect's pattern, condensed).
+ * Server-side OAuth token verification.
  * The web's Auth.js signIn callback forwards the provider token here; we
  * verify it against the provider's own API so a forged token can never
  * mint a session. Each function returns the normalized profile or throws.

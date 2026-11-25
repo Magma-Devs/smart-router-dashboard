@@ -9,11 +9,10 @@ interface CodeBlockProps {
 }
 
 /**
- * Code block with a copy affordance. The lava-connect reference renders this
- * through prism-react-renderer; v2 ships no highlighting dependency, so this
- * keeps the exact wrapper geometry (padding, mono, 360px cap, both-axis
- * scroll, top-right copy) with plain text. `language` is kept in the
- * signature so snippet blocks stay drop-in compatible with the reference.
+ * Code block with a copy affordance, in plain text: no highlighting
+ * dependency. The wrapper geometry is fixed (padding, mono, 360px cap,
+ * both-axis scroll, top-right copy). `language` is accepted and unused: no
+ * syntax highlighter is bundled.
  *
  *  - `whiteSpace: pre` keeps long lines on one line — readers can scroll
  *    horizontally instead of wrapping (matches what an IDE/editor does).

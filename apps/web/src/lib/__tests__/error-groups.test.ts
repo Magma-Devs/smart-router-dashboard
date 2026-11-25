@@ -16,7 +16,7 @@ const row = (over: Partial<ErrorRequestRow>): ErrorRequestRow => ({
 
 describe("decidingError - the error that decided a request, and who caused it", () => {
   it("two providers each failing differently, with the client getting one: every provider failed", () => {
-    const r = row({ attempts: [attempt("lava", { message: "malformed JSON-RPC response" }), attempt("tatum", { replied: true, code: "NODE_INTERNAL_ERROR" })] });
+    const r = row({ attempts: [attempt("nodeworks", { message: "malformed JSON-RPC response" }), attempt("tatum", { replied: true, code: "NODE_INTERNAL_ERROR" })] });
     expect(decidingError(r)).toMatchObject({ key: "all-failed", cause: "all-failed", providerCount: 2 });
   });
 
@@ -26,8 +26,8 @@ describe("decidingError - the error that decided a request, and who caused it", 
   });
 
   it("is the last failed try when none went back (the request recovered)", () => {
-    const r = row({ result: "recovered", attempts: [attempt("lava", { message: "timeout after 5000ms" }), attempt("tatum", { outcome: "ok", replied: true })] });
-    expect(decidingError(r)).toMatchObject({ key: "msg:timeout after #ms", label: "timeout after 5000ms", cause: "provider", provider: "lava" });
+    const r = row({ result: "recovered", attempts: [attempt("nodeworks", { message: "timeout after 5000ms" }), attempt("tatum", { outcome: "ok", replied: true })] });
+    expect(decidingError(r)).toMatchObject({ key: "msg:timeout after #ms", label: "timeout after 5000ms", cause: "provider", provider: "nodeworks" });
   });
 
   it("is the client's request when the router's code says so, whichever provider answered", () => {
@@ -38,7 +38,7 @@ describe("decidingError - the error that decided a request, and who caused it", 
 
   it("is every provider when two or more gave the same provider-side error", () => {
     const err = { code: "NODE_DATA_NOT_HELD" };
-    const r = row({ attempts: [attempt("lava", err), attempt("tatum", { ...err, replied: true })] });
+    const r = row({ attempts: [attempt("nodeworks", err), attempt("tatum", { ...err, replied: true })] });
     expect(decidingError(r)).toMatchObject({ cause: "every-provider", providerCount: 2 });
   });
 
@@ -53,7 +53,7 @@ describe("decidingError - the error that decided a request, and who caused it", 
   });
 
   it("names the error in the list's words, without the request a transport error wraps", () => {
-    const r = row({ attempts: [attempt("lava", { replied: true, message: 'http request failed: Post "http://node-a.example:8545": dial tcp 10.0.0.1:8545: connect: connection refused' })] });
+    const r = row({ attempts: [attempt("nodeworks", { replied: true, message: 'http request failed: Post "http://node-a.example:8545": dial tcp 10.0.0.1:8545: connect: connection refused' })] });
     expect(decidingError(r).label).toBe("dial tcp 10.0.0.1:8545: connect: connection refused");
   });
 
@@ -66,29 +66,29 @@ describe("decidingError - the error that decided a request, and who caused it", 
 
 describe("groupErrors", () => {
   it("folds a burst of one error at one provider into one group, biggest first", () => {
-    const burst = Array.from({ length: 5 }, (_, k) => row({ time: 1000 + k, attempts: [attempt("lava", { replied: true, code: "NODE_SERVER_ERROR" })] }));
-    const other = row({ time: 5000, attempts: [attempt("lava", { replied: true, message: "malformed JSON-RPC response" })] });
+    const burst = Array.from({ length: 5 }, (_, k) => row({ time: 1000 + k, attempts: [attempt("nodeworks", { replied: true, code: "NODE_SERVER_ERROR" })] }));
+    const other = row({ time: 5000, attempts: [attempt("nodeworks", { replied: true, message: "malformed JSON-RPC response" })] });
     const groups = groupErrors([other, ...burst]);
-    expect(groups.map((g) => [g.errorLabel, g.provider, g.count])).toEqual([["server error", "lava", 5], ["malformed JSON-RPC response", "lava", 1]]);
+    expect(groups.map((g) => [g.errorLabel, g.provider, g.count])).toEqual([["server error", "nodeworks", 5], ["malformed JSON-RPC response", "nodeworks", 1]]);
     expect(groups[0]!.methods).toEqual([{ method: "block", count: 5 }]);
     expect(groups[0]).toMatchObject({ firstMs: 1000, lastMs: 1004, reached: true });
     expect(groups[0]!.rows.map((r) => r.time)).toEqual([1004, 1003, 1002, 1001, 1000]);
   });
 
   it("keeps apart the same error on another chain, at another provider, or one the client never saw", () => {
-    const err = () => [attempt("lava", { replied: true, code: "NODE_SERVER_ERROR" })];
+    const err = () => [attempt("nodeworks", { replied: true, code: "NODE_SERVER_ERROR" })];
     const groups = groupErrors([
       row({ attempts: err() }),
       row({ spec: "ETH1", attempts: err() }),
       row({ attempts: [attempt("tatum", { replied: true, code: "NODE_SERVER_ERROR" })] }),
-      row({ result: "recovered", attempts: [attempt("lava", { code: "NODE_SERVER_ERROR" }), attempt("tatum", { outcome: "ok", replied: true })] }),
+      row({ result: "recovered", attempts: [attempt("nodeworks", { code: "NODE_SERVER_ERROR" }), attempt("tatum", { outcome: "ok", replied: true })] }),
     ]);
     expect(groups).toHaveLength(4);
     expect(groups.filter((g) => !g.reached)).toHaveLength(1);
   });
 
   it("keeps a request with no end logged apart from recovered ones: nobody knows what its client got", () => {
-    const tries = () => [attempt("lava", { code: "NODE_SERVER_ERROR" }), attempt("tatum", { outcome: "ok", replied: true })];
+    const tries = () => [attempt("nodeworks", { code: "NODE_SERVER_ERROR" }), attempt("tatum", { outcome: "ok", replied: true })];
     const groups = groupErrors([row({ result: "recovered", attempts: tries() }), row({ result: "unknown", attempts: tries() })]);
     expect(groups).toHaveLength(2);
     expect(groups.map((g) => [g.reached, g.noEnd]).sort()).toEqual([[false, false], [false, true]]);
@@ -96,8 +96,8 @@ describe("groupErrors", () => {
 
   it("blanks the numbers in a message, so one error on different blocks is one group", () => {
     const groups = groupErrors([
-      row({ attempts: [attempt("lava", { replied: true, message: "block 101 not found" })] }),
-      row({ attempts: [attempt("lava", { replied: true, message: "block 202 not found" })] }),
+      row({ attempts: [attempt("nodeworks", { replied: true, message: "block 101 not found" })] }),
+      row({ attempts: [attempt("nodeworks", { replied: true, message: "block 202 not found" })] }),
     ]);
     expect(groups).toHaveLength(1);
     expect(groups[0]!.count).toBe(2);
@@ -105,7 +105,7 @@ describe("groupErrors", () => {
 });
 
 describe("groupErrors - one error reads as one, whatever ids it carries", () => {
-  const one = (message: string) => row({ attempts: [attempt("lava", { replied: true, message })] });
+  const one = (message: string) => row({ attempts: [attempt("nodeworks", { replied: true, message })] });
   const groupsOf = (...messages: string[]) => groupErrors(messages.map(one));
 
   it("blanks transaction hashes, addresses and ids, with or without 0x", () => {
@@ -170,7 +170,7 @@ describe("groupErrors - who caused it", () => {
   });
 
   it("pins 'every provider failed' above bigger groups", () => {
-    const big = Array.from({ length: 4 }, () => row({ attempts: [attempt("lava", { replied: true, code: "NODE_SERVER_ERROR" })] }));
+    const big = Array.from({ length: 4 }, () => row({ attempts: [attempt("nodeworks", { replied: true, code: "NODE_SERVER_ERROR" })] }));
     const all = row({ result: "failed", attempts: [attempt("a", { code: "NODE_TIMEOUT" }), attempt("b", { message: "HTTP 503" })] });
     const groups = groupErrors([...big, all]);
     expect(groups[0]).toMatchObject({ pinned: true, count: 1 });
@@ -178,8 +178,8 @@ describe("groupErrors - who caused it", () => {
 
   it("keeps HTTP statuses apart when there is no code", () => {
     const groups = groupErrors([
-      row({ attempts: [attempt("lava", { replied: true, message: "HTTP 429" })] }),
-      row({ attempts: [attempt("lava", { replied: true, message: "HTTP 503" })] }),
+      row({ attempts: [attempt("nodeworks", { replied: true, message: "HTTP 429" })] }),
+      row({ attempts: [attempt("nodeworks", { replied: true, message: "HTTP 503" })] }),
     ]);
     expect(groups.map((g) => g.errorLabel).sort()).toEqual(["HTTP 429", "HTTP 503"]);
   });
@@ -243,7 +243,7 @@ describe("groupErrors - every request lands in exactly one group (mixed fixtures
   };
   const RESULTS: ErrorRequestRow["result"][] = ["ok", "recovered", "error-reply", "failed", "write-unknown", "unknown"];
   const OUTCOMES: RelayAttempt["outcome"][] = ["ok", "failed", "failed", "skipped", "cancelled", "no-result"];
-  const UPSTREAMS = ["lava", "tatum", "blockdaemon", "Cached"];
+  const UPSTREAMS = ["nodeworks", "tatum", "blockdaemon", "Cached"];
   const CODES = [null, null, "UNKNOWN_ERROR", "NODE_SERVER_ERROR", "NODE_RATE_LIMITED", "CHAIN_NONCE_TOO_LOW", "CHAIN_STATE_PRUNED", "USER_INVALID_PARAMS", "CHAIN_SOMETHING_NEW"];
   const hex = (next: () => number, n: number) => Array.from({ length: n }, () => "0123456789abcdef"[Math.floor(next() * 16)]).join("");
   const MESSAGES = [

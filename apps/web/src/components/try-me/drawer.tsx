@@ -116,7 +116,7 @@ export const IFACE_LABEL: Record<CatalogInterface, string> = {
 };
 
 interface TryMeDrawerProps {
-  /** Lava spec label (`ETH1`, `SOLANA`, …) — display metadata is resolved
+  /** Spec label (`ETH1`, `SOLANA`, …) — display metadata is resolved
    *  via `buildChainMetaByIndex`. */
   spec: string;
   /** The config router this endpoint belongs to. When the api sends the

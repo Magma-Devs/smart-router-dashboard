@@ -257,10 +257,10 @@ owns the transport and the copy, and it is implemented in
 | **Managed forgot-password** | Failed closed: `POST /auth/password/forgot` answered 404 on every deployment and wrote nothing | Emailed. Always 202, whether or not the address exists |
 | **Managed first admin** | Worked, minus the email: the Magma account `/setup` creates invited the customer's named admin, and the join link was handed over by hand | The same flow, and the invitation is emailed |
 
-Ported from lava-connect's `services/email.ts` and `email-layout.ts`: SES v2 behind one send
-function, table-based HTML with no webfonts, and its single `deliver()` choke point. Three
-deliberate departures, all recorded in [`AUTH.md`](./AUTH.md) — no email-log table, no footer and no
-`<img>` anywhere, and an expiry passed in rather than baked into the copy.
+The transport is `services/email.ts` and `email-layout.ts`: SES v2 behind one send function, table-based HTML
+with no webfonts, and a single `deliver()` choke point. Three rules, all recorded in
+[`AUTH.md`](./AUTH.md): no email-log table, no footer and no `<img>` anywhere, and an expiry
+passed in rather than baked into the copy.
 
 **The one decision worth knowing.** An invitation row is committed before the send is attempted, so
 a failed send cannot fail the request without reporting failure for something that half happened —

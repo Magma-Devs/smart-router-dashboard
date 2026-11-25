@@ -11,10 +11,9 @@
 # Mail goes to a local SES mock, so nothing leaves the machine and no AWS
 # account is involved. See the `ses` service below.
 services:
-  # A SES-compatible mock with an inbox UI (the same image lava-connect uses in
-  # its dev stack). It implements the SES v2 API, so the AWS SDK cannot tell it
-  # apart from the real thing — `SES_ENDPOINT` is the only difference, and that
-  # hook exists in the transport precisely so this is possible.
+  # A SES-compatible mock with an inbox UI. It implements the SES v2 API, so
+  # the AWS SDK cannot tell it apart from the real thing — `SES_ENDPOINT` is
+  # the only difference, and that hook exists in the transport precisely so this is possible.
   #
   # It accepts every address without verification, which real SES does not: a
   # new SES account is sandboxed and silently drops mail to unverified

@@ -542,7 +542,7 @@ describe("since when an unhealthy provider has been unhealthy", () => {
       q.includes("smartrouter_csm_provider_blocked")
         ? [{ metric: { provider_address: "Tatum", spec: "ETH1" }, values: minutes((ago) => (ago <= 130 || (ago > 600 && ago < 620) ? "1" : "0")) }]
         : []);
-    const rows = rowsOf(row("tatum", "blocked"), row("lava", "ok", "operational"));
+    const rows = rowsOf(row("tatum", "blocked"), row("nodeworks", "ok", "operational"));
     await readHealthSince(prom, rows, NOW);
     expect(reads).toEqual(['max by (provider_address, spec) (smartrouter_csm_provider_blocked{provider_address=~"tatum"})']);
     // An earlier blocked stretch that ended is not this one.

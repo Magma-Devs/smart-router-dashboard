@@ -49,7 +49,7 @@ describe("detectErrorIncidents", () => {
   });
 
   it("ignores bumps under the floor, however far above the usual level", () => {
-    const { lines } = detect([series("failed", "NEAR", "lava", [[100, 101, 9]])]);
+    const { lines } = detect([series("failed", "NEAR", "nodeworks", [[100, 101, 9]])]);
     expect(lines).toEqual([]);
   });
 
@@ -70,7 +70,7 @@ describe("detectErrorIncidents", () => {
   });
 
   it("a gap over 15 minutes starts a new wave; the same cause within 3 hours stays one line", () => {
-    const { lines } = detect([series("failed", "SOLANAT", "lava", [[100, 101, 40], [110, 111, 40]])]);
+    const { lines } = detect([series("failed", "SOLANAT", "nodeworks", [[100, 101, 40], [110, 111, 40]])]);
     expect(lines).toHaveLength(1);
     expect(lines[0]!.waves).toHaveLength(2);
     expect(lines[0]!.shape).toBe("incident");
@@ -86,31 +86,31 @@ describe("detectErrorIncidents", () => {
   it("two providers of one chain at the same time are one chain-wide line", () => {
     const { lines } = detect([
       series("reply", "XLMT", "blockdaemon", [[100, 104, 200]]),
-      series("reply", "XLMT", "lava", [[101, 104, 200]]),
+      series("reply", "XLMT", "nodeworks", [[101, 104, 200]]),
       series("reply", "XLMT", "tatum", [[100, 103, 200]]),
     ]);
     expect(lines).toHaveLength(1);
-    expect(lines[0]).toMatchObject({ shape: "chain-wide", providers: ["blockdaemon", "lava", "tatum"] });
+    expect(lines[0]).toMatchObject({ shape: "chain-wide", providers: ["blockdaemon", "nodeworks", "tatum"] });
   });
 
   it("a long burst stays long-running and swallows nothing else on its chains", () => {
     const { lines } = detect([
       series("reply", "HOD1", "tatum", [[10, 10 + ERROR_INCIDENT_RULES.longSec / STEP, 5000]]),
-      series("reply", "HOD1", "lava", [[40, 41, 200]]),
+      series("reply", "HOD1", "nodeworks", [[40, 41, 200]]),
     ]);
-    expect(lines.map((l) => [l.shape, l.providers.join()]).sort()).toEqual([["incident", "lava"], ["long-running", "tatum"]]);
+    expect(lines.map((l) => [l.shape, l.providers.join()]).sort()).toEqual([["incident", "nodeworks"], ["long-running", "tatum"]]);
   });
 
   it("is long-running from exactly 6 hours, counting the first stretch's own 5 minutes", () => {
     const stretches = ERROR_INCIDENT_RULES.longSec / STEP; // 72 stretches of 5 minutes = 6 hours
-    const shape = (n: number) => detect([series("failed", "NEAR", "lava", [[10, 10 + n - 1, 40]])]).lines.map((l) => l.shape);
+    const shape = (n: number) => detect([series("failed", "NEAR", "nodeworks", [[10, 10 + n - 1, 40]])]).lines.map((l) => l.shape);
     expect(shape(stretches)).toEqual(["long-running"]);
     expect(shape(stretches - 1)).toEqual(["incident"]);
   });
 
   it("a line with a 6-hour wave is long-running, even when a short repeat joins it", () => {
     const long = ERROR_INCIDENT_RULES.longSec / STEP;
-    const { lines } = detect([series("failed", "NEAR", "lava", [[10, 10 + long, 40], [10 + long + 20, 10 + long + 21, 40]])]);
+    const { lines } = detect([series("failed", "NEAR", "nodeworks", [[10, 10 + long, 40], [10 + long + 20, 10 + long + 21, 40]])]);
     expect(lines).toHaveLength(1);
     expect(lines[0]!.waves).toHaveLength(2);
     expect(lines[0]!.shape).toBe("long-running");
@@ -122,9 +122,9 @@ describe("detectErrorIncidents", () => {
   });
 
   it("marks a line still going at the newest stretch, lists it first, and leaves out lines ended before the window", () => {
-    const { lines } = detect([series("failed", "NEAR", "lava", [[N - 3, N - 1, 40]]), series("failed", "BTC", "blockdaemon", [[20, 21, 40]])], at(200));
+    const { lines } = detect([series("failed", "NEAR", "nodeworks", [[N - 3, N - 1, 40]]), series("failed", "BTC", "blockdaemon", [[20, 21, 40]])], at(200));
     expect(lines).toHaveLength(1);
-    expect(lines[0]).toMatchObject({ ongoing: true, providers: ["lava"] });
+    expect(lines[0]).toMatchObject({ ongoing: true, providers: ["nodeworks"] });
   });
 
   it("scales the floor to the read's step", () => {
@@ -142,13 +142,13 @@ describe("detectErrorIncidents", () => {
     expect(minutes("reply", 9, 11)).toEqual([]);
     expect(minutes("reply", 10, 10)).toHaveLength(1);
     // At 5-minute steps one hot stretch at the floor is not yet a line; twice the floor is.
-    expect(detect([series("failed", "NEAR", "lava", [[100, 100, 19]])]).lines).toEqual([]);
-    expect(detect([series("failed", "NEAR", "lava", [[100, 100, 20]])]).lines).toHaveLength(1);
+    expect(detect([series("failed", "NEAR", "nodeworks", [[100, 100, 19]])]).lines).toEqual([]);
+    expect(detect([series("failed", "NEAR", "nodeworks", [[100, 100, 20]])]).lines).toHaveLength(1);
     expect(ERROR_INCIDENT_RULES.minCount).toEqual({ failed: 20, reply: 100, disagreed: 10 });
   });
 
   it("keeps a line that reaches into the window, and leaves out one whose last stretch ends as it opens", () => {
-    const edge = (lastStretch: number) => detect([series("failed", "NEAR", "lava", [[lastStretch - 1, lastStretch, 40]])], at(200)).lines.length;
+    const edge = (lastStretch: number) => detect([series("failed", "NEAR", "nodeworks", [[lastStretch - 1, lastStretch, 40]])], at(200)).lines.length;
     expect(edge(200)).toBe(0);
     expect(edge(201)).toBe(1);
   });

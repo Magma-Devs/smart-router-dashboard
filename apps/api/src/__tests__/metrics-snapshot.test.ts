@@ -223,7 +223,7 @@ describe("the metrics routes' snapshot (MAG-4572)", () => {
       "/api/metrics/upstream-mix?spec=ETH1",
       "/api/metrics/upstream-timeline?spec=ETH1",
       "/api/metrics/upstream-peers?spec=ETH1",
-      "/api/metrics/upstream-detail?spec=ETH1&endpointId=eth-lava",
+      "/api/metrics/upstream-detail?spec=ETH1&endpointId=eth-primary",
       "/api/metrics/errors",
       "/api/metrics/error-incidents",
       "/api/metrics/downtime-avoided",

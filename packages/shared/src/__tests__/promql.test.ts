@@ -396,23 +396,23 @@ describe("series expressions", () => {
     // The values file may say `Blockdaemon` while the router labels its series
     // `blockdaemon`; a case-sensitive match returns an empty numerator, which
     // is indistinguishable from a genuine 0% backup share (MAG-2537).
-    const q = qBackupShareExpr("SOLANA", ["Blockdaemon", "Lava"], "10m");
-    expect(q).toContain('provider_address=~"(?i)(Blockdaemon|Lava)"');
+    const q = qBackupShareExpr("SOLANA", ["Blockdaemon", "Nodeworks"], "10m");
+    expect(q).toContain('provider_address=~"(?i)(Blockdaemon|Nodeworks)"');
     // The `(?i)` group must wrap the WHOLE alternation, not just the first arm.
-    expect(q).not.toContain('(?i)Blockdaemon|Lava');
+    expect(q).not.toContain('(?i)Blockdaemon|Nodeworks');
   });
 });
 
 describe("per-upstream builders", () => {
-  const ref = { spec: "ETH1", endpointId: "eth-lava" };
+  const ref = { spec: "ETH1", endpointId: "eth-primary" };
 
   it("selectors pin the upstream to its chain under each family's label", () => {
-    expect(upstreamEndpointSelector(ref)).toBe('{spec="ETH1",endpoint_id="eth-lava"}');
-    expect(upstreamProviderSelector(ref)).toBe('{spec="ETH1",provider_address="eth-lava"}');
+    expect(upstreamEndpointSelector(ref)).toBe('{spec="ETH1",endpoint_id="eth-primary"}');
+    expect(upstreamProviderSelector(ref)).toBe('{spec="ETH1",provider_address="eth-primary"}');
   });
   it("endpoint latency quantile targets rpc_endpoint buckets", () => {
     expect(qEndpointLatencyQuantile(0.99, ref, "1d")).toBe(
-      'histogram_quantile(0.99, sum by (le) (rate(rpc_endpoint_end_to_end_latency_milliseconds_bucket{spec="ETH1",endpoint_id="eth-lava"}[86400s])))',
+      'histogram_quantile(0.99, sum by (le) (rate(rpc_endpoint_end_to_end_latency_milliseconds_bucket{spec="ETH1",endpoint_id="eth-primary"}[86400s])))',
     );
   });
   it("endpoint latency series uses the step", () => {
@@ -420,16 +420,16 @@ describe("per-upstream builders", () => {
   });
   it("provider volume + read volume target router counters by provider_address", () => {
     expect(qUpstreamVolumeSeriesExpr(ref, "10m")).toContain(
-      'smartrouter_requests_total{spec="ETH1",provider_address="eth-lava"}',
+      'smartrouter_requests_total{spec="ETH1",provider_address="eth-primary"}',
     );
     expect(qUpstreamReadVolumeSeriesExpr(ref, "10m")).toContain(
-      'smartrouter_requests_read_total{spec="ETH1",provider_address="eth-lava"}',
+      'smartrouter_requests_read_total{spec="ETH1",provider_address="eth-primary"}',
     );
   });
   it("provider error rate is 1 − success/total scoped by provider_address", () => {
     const q = qUpstreamErrorRate(ref, "1d");
     expect(q.startsWith("1 - (")).toBe(true);
-    expect(q).toContain('{spec="ETH1",provider_address="eth-lava"}');
+    expect(q).toContain('{spec="ETH1",provider_address="eth-primary"}');
   });
   it("never selects an upstream by name alone — a name spans every chain it serves", () => {
     const queries = [
@@ -441,7 +441,7 @@ describe("per-upstream builders", () => {
       qEndpointBlockLagSeriesExpr(ref),
     ];
     for (const q of queries) {
-      expect(q).not.toMatch(/\{(endpoint_id|provider_address)="eth-lava"\}/);
+      expect(q).not.toMatch(/\{(endpoint_id|provider_address)="eth-primary"\}/);
     }
   });
 });
@@ -453,16 +453,16 @@ describe("health / lag / score / gauge builders", () => {
     expect(q).toContain("on(spec) group_right()");
   });
   it("single-endpoint block-lag series subtracts max()s", () => {
-    expect(qEndpointBlockLagSeriesExpr({ spec: "ETH1", endpointId: "eth-lava" })).toBe(
-      'max(rpc_endpoint_latest_block{spec="ETH1"}) - max(rpc_endpoint_latest_block{spec="ETH1",endpoint_id="eth-lava"})',
+    expect(qEndpointBlockLagSeriesExpr({ spec: "ETH1", endpointId: "eth-primary" })).toBe(
+      'max(rpc_endpoint_latest_block{spec="ETH1"}) - max(rpc_endpoint_latest_block{spec="ETH1",endpoint_id="eth-primary"})',
     );
   });
   it("chain-down is a bool comparison on the spec min of the blocked gauge", () => {
     expect(qChainDown()).toBe("min by (spec) (smartrouter_csm_provider_blocked) == bool 1");
   });
   it("score expressions target both scopes", () => {
-    expect(qScoreExpr("composite", "ETH1", "eth-lava")).toBe(
-      'avg(rpc_endpoint_selection_score{spec="ETH1",endpoint_id="eth-lava",score_type="composite"})',
+    expect(qScoreExpr("composite", "ETH1", "eth-primary")).toBe(
+      'avg(rpc_endpoint_selection_score{spec="ETH1",endpoint_id="eth-primary",score_type="composite"})',
     );
     expect(qOptimizerScore("composite", "ETH1")).toBe(
       'avg(rpc_optimizer_selection_score{spec="ETH1",score_type="composite"})',
@@ -844,7 +844,7 @@ describe("grouped chain-level reads (MAG-4295)", () => {
 // A rate needs two samples in its range, and the store scrapes every 15 seconds:
 // a range of one 15-second step holds one.
 describe("short drawing steps", () => {
-  const ref = { endpointId: "eth-lava", spec: "ETH1" };
+  const ref = { endpointId: "eth-primary", spec: "ETH1" };
 
   it("rateRange: the step itself, never less than a minute", () => {
     expect(MIN_RATE_RANGE_SEC).toBe(60);
@@ -867,7 +867,7 @@ describe("short drawing steps", () => {
         qPerSpecLatencySeriesExpr(0.95, step),
         qPerUpstreamRpsExpr(step, "ETH1"),
         qPerSpecRpsExpr(step),
-        qBackupShareExpr("ETH1", ["eth-lava"], step),
+        qBackupShareExpr("ETH1", ["eth-primary"], step),
         qEndpointLatencySeriesExpr(0.95, ref, step),
         qUpstreamVolumeSeriesExpr(ref, step),
         qUpstreamReadVolumeSeriesExpr(ref, step),
@@ -917,7 +917,7 @@ describe("short drawing steps", () => {
     expect(countRangeSec("37s", true)).toBe(52);
     const failed = qUpstreamFailedSeriesExpr(ref, "37s", undefined, true);
     expect(failed).toMatch(/^round\(/);
-    expect(failed).toContain('{spec="ETH1",provider_address="eth-lava"}[52s]) * 37)');
+    expect(failed).toContain('{spec="ETH1",provider_address="eth-primary"}[52s]) * 37)');
     expect(qUpstreamNodeErrorSeriesExpr(ref, "37s", true)).toContain("[52s]) * 37)");
   });
 });

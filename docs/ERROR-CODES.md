@@ -80,7 +80,8 @@ row isn't drawn. It is empty for:
   server errors, unavailable, refused, reset or closed connections, gateway errors. Telling
   the client to "retry later" adds nothing;
 - "no action on your side" and "read the provider's message" (the screen shows the message);
-- old Lava-network codes that no longer apply.
+- the router's provider-session codes (compute units, epochs, session state), which the
+  router doesn't send.
 
 An action is a real, specific step: "Check the ID, address or block number.", "Add funds or
 lower the amount.", "Raise the fee.", "Get the account's current nonce, sign again and send.",
@@ -107,7 +108,7 @@ and never sells a feature.
 
 v1.6.0 sends 103 of these codes. Nine more are only written by the per-request log line that
 came after v1.6.0 (`relay_end`, smart-router `docs/RELAY-END-EVENT.md`). The other 22 are never
-sent, mostly leftovers from the Lava network's session protocol. They keep a row so that an
+sent, most of them provider-session codes the registry still lists. They keep a row so that an
 unexpected one still gets a line.
 
 ## Open for R&D

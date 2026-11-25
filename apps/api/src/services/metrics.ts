@@ -752,7 +752,7 @@ export class MetricsService {
     // there) + every router that declares the name ON THAT CHAIN. The series
     // carries `endpoint_id` + `spec`, so the config is the sole source of
     // router attribution — and a name-only key was the bug: vendors reused
-    // across chains ("lava", "publicnode") attributed every chain's row to
+    // across chains ("publicnode", "blockdaemon") attributed every chain's row to
     // whichever router declared the name first in the values file.
     const nodeKey = (name: string, spec: string) => `${name}\u0000${spec}`;
     const roleByNode = new Map<string, { role: "primary" | "backup"; iface: string | null }>();

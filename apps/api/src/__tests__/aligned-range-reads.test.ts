@@ -46,7 +46,7 @@ async function everyChart(prom: PrometheusClient, w: MetricWindow): Promise<void
   await metrics.traffic(w);
   await metrics.rpsSeries(undefined, w);
   await detail.chainSeries("ETH1", w);
-  await detail.upstreamDetail({ endpointId: "eth-lava", spec: "ETH1" }, w);
+  await detail.upstreamDetail({ endpointId: "eth-primary", spec: "ETH1" }, w);
   await detail.upstreamPeers("ETH1", w);
   await detail.errors(w);
   await new MetricsDashboardService(prom).dashboard(w);
@@ -122,7 +122,7 @@ describe("a bar that has just closed is read again until it has settled (MAG-457
     const detail = new MetricsDetailService(new PrometheusClient("http://prom.test", 1000, null, {}, { cacheTtlMs: 10_000 }));
     const poll = async (sinceClosed: number) => {
       vi.setSystemTime(closed + sinceClosed);
-      await detail.upstreamDetail({ endpointId: "eth-lava", spec: "ETH1" }, "6h");
+      await detail.upstreamDetail({ endpointId: "eth-primary", spec: "ETH1" }, "6h");
     };
     await poll(5_000);
     await poll(20_000); // the next poll reads the closed bar again

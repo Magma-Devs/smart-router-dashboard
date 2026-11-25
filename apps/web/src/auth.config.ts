@@ -20,8 +20,7 @@ import {
 } from "@/lib/two-factor-handoff";
 
 /**
- * Auth.js v5 configuration (ported from lava-connect's auth.config.ts,
- * trimmed to the dashboard's needs). Split from `auth.ts` so the edge
+ * Auth.js v5 configuration. Split from `auth.ts` so the edge
  * proxy can import the config without pulling in the full Node-only
  * Auth.js handler.
  *
@@ -514,7 +513,7 @@ export const authConfig = {
       session.user.avatarUrl = (token.avatarUrl as string | null | undefined) ?? null;
       // Re-sign the api Bearer here — the custom `encode` only persists
       // the base claims into the cookie, so a token stashed on `token`
-      // would be dropped on the next decode (lava-connect's lesson).
+      // would be dropped on the next decode.
       //
       // `sid` is carried through, never generated: the api refuses a token
       // whose session id doesn't resolve, so a fabricated one would 401 the

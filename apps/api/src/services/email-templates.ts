@@ -21,9 +21,8 @@ import { emailTime } from "./email-time.js";
 /**
  * The transactional emails, with their copy. The invitation and the password
  * reset are MAG-2870's; the password-changed notice is MAG-2868's and the
- * two-factor reset notice MAG-2869's. Structure follows lava-connect: one
- * `send*` per type, each composing subject, plain text and HTML and handing
- * them to `deliver()`.
+ * two-factor reset notice MAG-2869's. One `send*` per type, each composing
+ * subject, plain text and HTML and handing them to `deliver()`.
  *
  * The invitation and the reset follow the four rules MAG-2870 sets for them.
  * The two notices keep rules 3 and 4, and in place of 1 and 2 carry no link at
@@ -85,12 +84,11 @@ export function personLabel(person: NamedPerson): string {
 /**
  * The one place a send happens.
  *
- * lava-connect's `deliver()` sends and then writes an email-log row, so no
- * caller can forget to record it. There is no log table here (see
- * `EMAIL_DELIVERY_NOTES` in `@sr/shared` for why), so the equivalent guarantee
- * is the return value: this hands back an {@link EmailDelivery} that the caller
- * must put on its audit row and act on. `sent` is the only outcome where the
- * admin can stop thinking about the link.
+ * There is no email-log table (see `EMAIL_DELIVERY_NOTES` in `@sr/shared` for
+ * why), so the guarantee that no caller forgets to record a send is the return
+ * value: this hands back an {@link EmailDelivery} that the caller must put on
+ * its audit row and act on. `sent` is the only outcome where the admin can stop
+ * thinking about the link.
  */
 async function deliver(
   input: { to: string; subject: string; text: string; html: string },
@@ -182,8 +180,8 @@ export async function sendInvitationEmail(
  * Password reset.
  *
  * The expiry stated here is passed in rather than written into the copy:
- * lava-connect's template hardcodes 30 minutes, and this product's managed
- * reset is an hour. A number in prose that nothing derives from the code is a
+ * the managed reset is an hour, and the window can differ per mode. A number
+ * in prose that nothing derives from the code is a
  * number that goes stale silently.
  */
 export function renderPasswordResetEmail(opts: {

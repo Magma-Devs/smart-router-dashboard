@@ -5,7 +5,7 @@ import explorerKinds from "./explorer-kinds.json" with { type: "json" };
 import explorerTx from "./explorer-tx.json" with { type: "json" };
 
 /**
- * Where a human goes to check a chain, keyed by Lava spec index.
+ * Where a human goes to check a chain, keyed by spec index.
  *
  * The dashboard renders two values a public chain can confirm: a block
  * HEIGHT — the router's tip, an upstream's tip, the lag between them — and a

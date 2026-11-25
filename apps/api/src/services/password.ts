@@ -2,7 +2,7 @@ import bcrypt from "bcryptjs";
 import { createHash, randomBytes } from "node:crypto";
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from "@sr/shared";
 
-/** bcrypt cost 12 — same as lava-connect (industry default). */
+/** bcrypt cost 12 (industry default). */
 const BCRYPT_COST = 12;
 let cost = BCRYPT_COST;
 
@@ -124,10 +124,10 @@ export interface BreachCheckResult {
  * can't infer the prefix's hit count from response length. Padded entries come
  * back with `:0` and are ignored.
  *
- * **Fails open**, deliberately, and for a reason lava-connect didn't have: an
- * on-prem deployment may have no egress at all, and failing closed would make
- * the first admin account uncreatable — locking an operator out of their own
- * install to enforce a defence-in-depth check. `PASSWORD_BREACH_CHECK=off`
+ * **Fails open**, deliberately: an on-prem deployment may have no egress at
+ * all, and failing closed would make the first admin account uncreatable —
+ * locking an operator out of their own install to enforce a defence-in-depth
+ * check. `PASSWORD_BREACH_CHECK=off`
  * turns it off explicitly, which is the honest thing for an air-gapped site to
  * do rather than relying on a silent timeout.
  */

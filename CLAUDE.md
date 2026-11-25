@@ -7,13 +7,11 @@ multiplexes, retries, hedges, caches, and cross-validates across them.
 A pnpm/TypeScript monorepo (Fastify API + Next.js 16 web + shared package, plus
 `apps/auth-proxy`, a Cloudflare Worker that is the sign-in redirect proxy for
 every dashboard — [`docs/AUTH.md`](docs/AUTH.md#one-callback-for-every-dashboard-the-redirect-proxy)),
-built to the engineering standard of `~/projects/lava-connect`, with the web UI
-built 1:1 against the `SR_Dashboard/` design prototype. Everything lives at the
-repo root — `apps/`, `packages/`, `docker-compose*.yml`, `Makefile`.
+with the web UI built 1:1 against the `SR_Dashboard/` design prototype.
+Everything lives at the repo root — `apps/`, `packages/`, `docker-compose*.yml`, `Makefile`.
 
-> **lava-connect is the shape reference only.** We copy its *tooling, structure,
-> and conventions* (strict TS, Node16 ESM `.js` suffixes, Fastify plugin/route/
-> service layout, pnpm workspace, vitest, Docker patterns) — NOT its domain.
+> **Tooling, structure and conventions:** strict TS, Node16 ESM `.js` suffixes,
+> Fastify plugin/route/service layout, pnpm workspace, vitest, Docker patterns.
 > This product has **no billing and no users table by default**. It reads live
 > metrics from Prometheus and router topology from a mounted config file.
 > **Auth is optional**: `AUTH_MODE=disabled` (the default) leaves every route
@@ -308,7 +306,7 @@ reflects the running topology with no duplicated config.
 packages/shared/          @sr/shared — domain types, metric catalog, PromQL builders
   src/
     constants/metrics.ts   GROUND-TRUTH metric names + OPTIONAL_METRICS (see "Metrics")
-    constants/chains.ts     buildChainMetaByIndex(spec) — keyed by Lava spec index
+    constants/chains.ts     buildChainMetaByIndex(spec) — keyed by spec index
     constants/explorers.ts  explorersFor / explorerUrl — the chain's block
                             explorer + deep links; explorerTxUrl — a
                             transaction's page, from the curated
@@ -404,9 +402,9 @@ matching the prototype's two families — no runtime Google Fonts fetch.
 
 ## Metrics — ground truth vs. the design docs
 
-⚠️ **The live router build emits `smartrouter_*` / `rpc_endpoint_*` / `rpc_optimizer_*`,
-NOT `lava_rpcsmartrouter_*`** as the `../SR_Dashboard/*.md` docs claim. Always verify
-against a live scrape (`docker exec smart-router-router-1 wget -qO- localhost:7779/metrics`).
+⚠️ **The live router build emits `smartrouter_*` / `rpc_endpoint_*` / `rpc_optimizer_*`.**
+Metric names come from the router, never from the `../SR_Dashboard/*.md` design
+docs. Always verify against a live scrape (`docker exec smart-router-router-1 wget -qO- localhost:7779/metrics`).
 The catalog lives in `packages/shared/src/constants/metrics.ts`. See
 [`docs/METRICS-MAPPING.md`](docs/METRICS-MAPPING.md).
 
@@ -476,7 +474,7 @@ counters at zero means "not polled in this window", never "healthy"**.
 fill this gap: it says only whether the router took the provider out, so an
 untouched backup with every url up reads serving there whatever its urls answer.
 
-Chains are keyed by **Lava spec index** (the `spec` label: `ETH1`, `BASE`, …),
+Chains are keyed by **spec index** (the `spec` label: `ETH1`, `BASE`, …),
 not a human chain id — resolve display metadata via `buildChainMetaByIndex`.
 
 ### Resyncing chains with lava-specs
@@ -1314,7 +1312,7 @@ Compose / Makefile knobs:
 |---|---|
 | ESM `.js` suffixes | `apps/api` + `packages/shared` use Node16 resolution — relative imports need `.js` suffixes even though source is `.ts`. `apps/web` uses bundler resolution (no suffixes). |
 | shared `dist` | api/web read `@sr/shared` from `dist/` — run `pnpm --filter @sr/shared build` after editing it (the docker dev `builder` service does this on a `tsc --watch`). |
-| Metric names | NOT `lava_rpcsmartrouter_*` — see Metrics above. The `../SR_Dashboard/` prototype is authoritative for **pixels**, not for metric names. |
+| Metric names | `smartrouter_*` / `rpc_endpoint_*` / `rpc_optimizer_*` from a live scrape — see Metrics above. The `../SR_Dashboard/` prototype is authoritative for **pixels**, not for metric names. |
 | Polling | A poll belongs in `useApi`: the per-window cadence and the idle gate live there, and a direct `useSWR` poll gets neither. While the gate has polling paused, `isPaused` refuses every revalidation, a `mutate()` included. A click or a key resumes polling before its handler runs, so a refresh a person asks for works; one fired by a timer does nothing until someone comes back. See "Polling" |
 | Window params | `24h` is a wire alias of `1d`; unknown values silently fall back to `DEFAULT_WINDOW` = `30m` (never a 400). The web opens on the same constant, and a window the user picks persists to `localStorage` under `sr:window` — so a changed default only reaches someone who has never picked one. The Metrics page's `?window=` beats both and is never saved. `1h` is in the catalog but not in the page-level select. |
 | Provider `role` | Only the helm values format marks backups (`is_backup`); with a raw SR_CONFIG mount, `role` is null and backup-share panels stay empty — that's honest, not a bug. |

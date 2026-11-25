@@ -209,7 +209,7 @@ const ENTRIES: Record<string, Entry> = {
     source: "router",
     routerRetries: false,
     mayHaveGoneThrough: false,
-    meaning: "An old Lava-network limit on compute units was reached.",
+    meaning: "The router's session with the provider used up its compute-unit allowance.",
     action: "",
   },
   PROTOCOL_BATCH_SIZE_EXCEEDED: {
@@ -225,7 +225,7 @@ const ENTRIES: Record<string, Entry> = {
     source: "router",
     routerRetries: false,
     mayHaveGoneThrough: false,
-    meaning: "An old Lava-network error about compute units.",
+    meaning: "The router's compute-unit count for a provider session didn't add up.",
     action: "",
   },
   PROTOCOL_SESSION_NOT_FOUND: {
@@ -233,7 +233,7 @@ const ENTRIES: Record<string, Entry> = {
     source: "router",
     routerRetries: false,
     mayHaveGoneThrough: false,
-    meaning: "An old Lava-network session error.",
+    meaning: "The router's session with the provider didn't exist.",
     action: "",
   },
   PROTOCOL_EPOCH_MISMATCH: {
@@ -241,7 +241,7 @@ const ENTRIES: Record<string, Entry> = {
     source: "router",
     routerRetries: false,
     mayHaveGoneThrough: false,
-    meaning: "An old Lava-network epoch error.",
+    meaning: "The router's session with the provider was for another epoch, or an expired one.",
     action: "",
   },
   PROTOCOL_CONSUMER_BLOCKED: {
@@ -249,7 +249,7 @@ const ENTRIES: Record<string, Entry> = {
     source: "router",
     routerRetries: false,
     mayHaveGoneThrough: false,
-    meaning: "An old Lava-network error: the consumer was blocked.",
+    meaning: "The router was blocklisted.",
     action: "",
   },
   PROTOCOL_CONSUMER_NOT_REGISTERED: {
@@ -257,7 +257,7 @@ const ENTRIES: Record<string, Entry> = {
     source: "router",
     routerRetries: false,
     mayHaveGoneThrough: false,
-    meaning: "An old Lava-network error: the consumer wasn't registered.",
+    meaning: "The router wasn't registered.",
     action: "",
   },
   PROTOCOL_RELAY_NUMBER_MISMATCH: {
@@ -265,7 +265,7 @@ const ENTRIES: Record<string, Entry> = {
     source: "router",
     routerRetries: false,
     mayHaveGoneThrough: false,
-    meaning: "An old Lava-network session error.",
+    meaning: "The router and the provider disagreed on how many requests the session had carried.",
     action: "",
   },
   PROTOCOL_SESSION_OUT_OF_SYNC: {
@@ -273,7 +273,7 @@ const ENTRIES: Record<string, Entry> = {
     source: "router",
     routerRetries: false,
     mayHaveGoneThrough: false,
-    meaning: "An old Lava-network session error.",
+    meaning: "The router's session state didn't match the provider's.",
     action: "",
   },
   PROTOCOL_INVALID_RELAY_REQUEST: {
@@ -281,7 +281,7 @@ const ENTRIES: Record<string, Entry> = {
     source: "router",
     routerRetries: false,
     mayHaveGoneThrough: false,
-    meaning: "An old Lava-network check on the request failed.",
+    meaning: "The request failed a session check between the router and the provider.",
     action: "",
   },
   PROTOCOL_REQUEST_BLOCK_MISMATCH: {
@@ -297,7 +297,7 @@ const ENTRIES: Record<string, Entry> = {
     source: "router",
     routerRetries: false,
     mayHaveGoneThrough: false,
-    meaning: "An old Lava-network session accounting error.",
+    meaning: "The router failed to record the result of a provider session.",
     action: "",
   },
   PROTOCOL_SUBSCRIPTION_CLEANUP_FAILED: {

@@ -226,7 +226,7 @@ describe("the password-reset email", () => {
   });
 
   it("states the expiry it was actually given, not a hardcoded one", async () => {
-    // lava-connect's template says 30 minutes; ours is an hour and could change
+    // The managed reset is an hour and could change
     // per mode. A number in prose that nothing derives from goes stale silently.
     expect(await render(1)).toContain("expires in 1 hour");
     expect(await render(4)).toContain("expires in 4 hours");

@@ -33,13 +33,13 @@ endpoints:
     chain-id: "ETH1"
     api-interface: "jsonrpc"
 direct-rpc:
-  - name: "eth-lava"
+  - name: "eth-primary"
     chain-id: "ETH1"
     api-interface: "jsonrpc"
     node-urls:
-      - url: "https://eth1.lava.build/lava-referer-secret-key/"
+      - url: "https://eth.rpc.example.com/referer-secret-key/"
         addons: [archive]
-      - url: "wss://eth1.lava.build/websocket"
+      - url: "wss://eth.rpc.example.com/websocket"
   - name: "eth-publicnode"
     chain-id: "ETH1"
     api-interface: "jsonrpc"
@@ -55,7 +55,7 @@ describe("ConfigurationService · SR_CONFIG format", () => {
     expect(eth.id).toBe("ETH1");
     expect(eth.spec).toBe("ETH1");
     expect(eth.network).toBe("eth1");
-    expect(eth.nodes.map((n) => n.name)).toEqual(["eth-lava", "eth-publicnode"]);
+    expect(eth.nodes.map((n) => n.name)).toEqual(["eth-primary", "eth-publicnode"]);
     expect(eth.interfaces).toEqual(["jsonrpc"]);
     expect(eth.pathBased).toBe(false);
   });
@@ -104,11 +104,11 @@ direct-rpc:
   - name: "lava-rest"
     chain-id: "LAVA"
     api-interface: "rest"
-    node-urls: [{ url: "https://lava.rest.lava.build" }]
+    node-urls: [{ url: "https://rest.node.example.com" }]
   - name: "lava-tm"
     chain-id: "LAVA"
     api-interface: "tendermintrpc"
-    node-urls: [{ url: "https://lava.tendermintrpc.lava.build" }]
+    node-urls: [{ url: "https://tendermintrpc.node.example.com" }]
 `).getRouters();
     expect(routers).toHaveLength(1);
     const lava = routers[0]!;
@@ -150,11 +150,11 @@ direct-rpc:
 
   it("preserves addons and masks node URLs to scheme+host", () => {
     const eth = serviceFor(SR_CONFIG_ETH).getRouters()[0]!;
-    const lavaNode = eth.nodes[0]!;
-    expect(lavaNode.endpoints[0]!.addons).toEqual(["archive"]);
+    const primaryNode = eth.nodes[0]!;
+    expect(primaryNode.endpoints[0]!.addons).toEqual(["archive"]);
     // The referer-secret path segment must NOT survive into the API payload.
-    expect(lavaNode.endpoints[0]!.urlHost).toBe("https://eth1.lava.build");
-    expect(lavaNode.endpoints[1]!.urlHost).toBe("wss://eth1.lava.build");
+    expect(primaryNode.endpoints[0]!.urlHost).toBe("https://eth.rpc.example.com");
+    expect(primaryNode.endpoints[1]!.urlHost).toBe("wss://eth.rpc.example.com");
   });
 
   it("multichain config yields one router per chain", () => {
@@ -180,9 +180,9 @@ routers:
     network: eth1
     custom_url_prefix: eth-main
     nodes:
-      - name: lava
+      - name: nodeworks
         endpoints:
-          - url: https://eth1.lava.build/some/keyed/path
+          - url: https://eth.rpc.example.com/some/keyed/path
             interface: jsonrpc
             addons: [archive]
       - name: backup-node
@@ -193,12 +193,12 @@ routers:
   - id: Lava
     network: lava
     nodes:
-      - name: lava
+      - name: nodeworks
         endpoints:
-          - url: https://lava.tendermintrpc.lava.build
+          - url: https://tendermintrpc.node.example.com
             interface: tendermintrpc
             addons: [archive]
-          - url: https://lava.rest.lava.build
+          - url: https://rest.node.example.com
             interface: rest
 `;
 
@@ -218,7 +218,7 @@ describe("ConfigurationService · helm-values format", () => {
 
   it("carries is_backup onto nodes (any key dialect)", () => {
     const eth = serviceFor(HELM_FULL).getRouters()[0]!;
-    expect(eth.nodes.find((n) => n.name === "lava")!.isBackup).toBe(false);
+    expect(eth.nodes.find((n) => n.name === "nodeworks")!.isBackup).toBe(false);
     expect(eth.nodes.find((n) => n.name === "backup-node")!.isBackup).toBe(true);
 
     const kebab = serviceFor(`
@@ -235,7 +235,7 @@ routers:
 
   it("masks helm node URLs too", () => {
     const eth = serviceFor(HELM_FULL).getRouters()[0]!;
-    expect(eth.nodes[0]!.endpoints[0]!.urlHost).toBe("https://eth1.lava.build");
+    expect(eth.nodes[0]!.endpoints[0]!.urlHost).toBe("https://eth.rpc.example.com");
   });
 
   describe("node-name normalization (mirrors the chart's `lower | replace \" \" \"-\"`)", () => {
@@ -245,14 +245,14 @@ routers:
   - id: iota-mainnet
     network: iota
     nodes:
-      - name: Lava
-        endpoints: [{ url: "https://iota.lava.build", interface: jsonrpc }]
+      - name: Nodeworks
+        endpoints: [{ url: "https://iota.rpc.example.com", interface: jsonrpc }]
       - name: Blockdaemon
         endpoints: [{ url: "https://iota.blockdaemon.com", interface: jsonrpc }]
 `).getRouters();
-      // Prometheus reports `provider_address="lava"`, and the router only
-      // honours `router-select-provider: lava`. Both read this field.
-      expect(routers[0]!.nodes.map((n) => n.name)).toEqual(["lava", "blockdaemon"]);
+      // Prometheus reports `provider_address="nodeworks"`, and the router only
+      // honours `router-select-provider: nodeworks`. Both read this field.
+      expect(routers[0]!.nodes.map((n) => n.name)).toEqual(["nodeworks", "blockdaemon"]);
     });
 
     it("turns spaces into dashes, exactly as the chart does", () => {
@@ -273,21 +273,21 @@ routers:
   - id: iota-mainnet
     network: iota
     nodes:
-      - name: Lava
-        endpoints: [{ url: "https://iota.lava.build/keyed/path", interface: jsonrpc }]
+      - name: Nodeworks
+        endpoints: [{ url: "https://iota.rpc.example.com/keyed/path", interface: jsonrpc }]
 `);
       // A caller reads the node name off getRouters() and hands it back; if the
       // key were the raw name the round-trip would 404.
       const node = svc.getRouters()[0]!.nodes[0]!.name;
       expect(svc.resolveEndpointUrl({ routerId: "iota-mainnet", node, endpointIndex: 0 })).toBe(
-        "https://iota.lava.build/keyed/path",
+        "https://iota.rpc.example.com/keyed/path",
       );
       // And the raw name a caller may still be holding (a hand-written call,
       // a name read off an older page) folds to the same endpoint rather than
       // 404-ing — the same folding the pin header goes through.
       expect(
-        svc.resolveEndpointUrl({ routerId: "iota-mainnet", node: "Lava", endpointIndex: 0 }),
-      ).toBe("https://iota.lava.build/keyed/path");
+        svc.resolveEndpointUrl({ routerId: "iota-mainnet", node: "Nodeworks", endpointIndex: 0 }),
+      ).toBe("https://iota.rpc.example.com/keyed/path");
     });
 
     it("still falls back to the network when a node is unnamed", () => {
@@ -538,7 +538,7 @@ describe("ConfigurationService · unknown shapes", () => {
 
 describe("normalizeHelmNodeName", () => {
   it("lowercases and de-spaces", () => {
-    expect(normalizeHelmNodeName("Lava")).toBe("lava");
+    expect(normalizeHelmNodeName("Nodeworks")).toBe("nodeworks");
     expect(normalizeHelmNodeName("Blockdaemon")).toBe("blockdaemon");
     expect(normalizeHelmNodeName("My Node Co")).toBe("my-node-co");
   });
@@ -559,13 +559,13 @@ endpoints:
     chain-id: "ETH1"
     api-interface: "jsonrpc"
 direct-rpc:
-  - name: "Eth Lava"
+  - name: "Eth Nodeworks"
     chain-id: "ETH1"
     api-interface: "jsonrpc"
     node-urls:
-      - url: "https://eth1.lava.build"
+      - url: "https://eth.rpc.example.com"
 `).getRouters();
-    expect(routers[0]!.nodes[0]!.name).toBe("Eth Lava");
+    expect(routers[0]!.nodes[0]!.name).toBe("Eth Nodeworks");
   });
 });
 
@@ -621,15 +621,15 @@ endpoints:
     chain-id: "ETH1"
     api-interface: "jsonrpc"
 direct-rpc:
-  - name: "Eth Lava"
+  - name: "Eth Nodeworks"
     chain-id: "ETH1"
     api-interface: "jsonrpc"
     node-urls:
-      - url: "https://eth1.lava.build/keyed"
+      - url: "https://eth.rpc.example.com/keyed"
 `);
-    expect(svc.getRouters()[0]!.nodes[0]!.name).toBe("Eth Lava");
-    expect(svc.resolveEndpointUrl({ routerId: "ETH1", node: "Eth Lava", endpointIndex: 0 })).toBe(
-      "https://eth1.lava.build/keyed",
+    expect(svc.getRouters()[0]!.nodes[0]!.name).toBe("Eth Nodeworks");
+    expect(svc.resolveEndpointUrl({ routerId: "ETH1", node: "Eth Nodeworks", endpointIndex: 0 })).toBe(
+      "https://eth.rpc.example.com/keyed",
     );
   });
 });
@@ -643,16 +643,16 @@ routers:
   - id: Hyperliquid
     network: hyperliquid
     nodes:
-      - name: Lava
+      - name: Nodeworks
         endpoints:
-          - url: "https://g.w.lavanet.xyz/gateway/hyperliquid/rpc-http/"
+          - url: "https://gateway.example.com/gateway/hyperliquid/rpc-http/"
             interface: jsonrpc
             auth_config:
               auth_headers:
                 Authorization: "Bearer 0f8d432c-18c2-47c0"
               auth_query: "apikey=abcdef123456"
 `);
-    const dial = svc.resolveEndpoint({ routerId: "Hyperliquid", node: "lava", endpointIndex: 0 })!;
+    const dial = svc.resolveEndpoint({ routerId: "Hyperliquid", node: "nodeworks", endpointIndex: 0 })!;
     expect(dial.authHeaders).toEqual({ Authorization: "Bearer 0f8d432c-18c2-47c0" });
     expect(dial.authQuery).toBe("apikey=abcdef123456");
     expect(dial.unresolved).toEqual([]);
@@ -696,7 +696,7 @@ routers:
   - id: Hyperliquid
     network: hyperliquid
     nodes:
-      - name: Lava
+      - name: Nodeworks
         endpoints:
           - url: "https://rpc.example/\${HL_TOKEN}/evm"
             interface: jsonrpc
@@ -704,7 +704,7 @@ routers:
               auth_headers:
                 Authorization: "Bearer \${HL_TOKEN}"
 `);
-    const dial = svc.resolveEndpoint({ routerId: "Hyperliquid", node: "lava", endpointIndex: 0 })!;
+    const dial = svc.resolveEndpoint({ routerId: "Hyperliquid", node: "nodeworks", endpointIndex: 0 })!;
     expect(dial.url).toBe("https://rpc.example/tok-abcdef123456/evm");
     expect(dial.authHeaders).toEqual({ Authorization: "Bearer tok-abcdef123456" });
     expect(dial.unresolved).toEqual([]);
@@ -725,7 +725,7 @@ routers:
   - id: Hyperliquid
     network: hyperliquid
     nodes:
-      - name: Lava
+      - name: Nodeworks
         endpoints:
           - url: "https://rpc.example/evm"
             interface: jsonrpc
@@ -733,7 +733,7 @@ routers:
               auth_headers:
                 Authorization: "Bearer \${HL_TOKEN}"
 `);
-    const dial = svc.resolveEndpoint({ routerId: "Hyperliquid", node: "lava", endpointIndex: 0 })!;
+    const dial = svc.resolveEndpoint({ routerId: "Hyperliquid", node: "nodeworks", endpointIndex: 0 })!;
     // A Secret the router mounts and the dashboard does not.
     expect(dial.unresolved).toEqual(["${HL_TOKEN}"]);
     expect(dial.authHeaders).toEqual({ Authorization: "Bearer ${HL_TOKEN}" });
@@ -763,7 +763,7 @@ routers:
 
   it("leaves an endpoint with no auth-config carrying nothing", () => {
     const svc = serviceFor(SR_CONFIG_ETH);
-    const dial = svc.resolveEndpoint({ routerId: "ETH1", node: "eth-lava", endpointIndex: 0 })!;
+    const dial = svc.resolveEndpoint({ routerId: "ETH1", node: "eth-primary", endpointIndex: 0 })!;
     expect(dial.authHeaders).toEqual({});
     expect(dial.authQuery).toBeNull();
     expect(dial.unresolved).toEqual([]);
@@ -806,9 +806,9 @@ describe("ConfigurationService.resolveEndpointUrl", () => {
   it("returns the FULL url — the part getRouters() masks away (SR_CONFIG)", () => {
     const svc = serviceFor(SR_CONFIG_ETH);
     const masked = svc.getRouters()[0]!.nodes[0]!.endpoints[0]!;
-    expect(masked.urlHost).toBe("https://eth1.lava.build");
-    expect(svc.resolveEndpointUrl({ routerId: "ETH1", node: "eth-lava", endpointIndex: 0 })).toBe(
-      "https://eth1.lava.build/lava-referer-secret-key/",
+    expect(masked.urlHost).toBe("https://eth.rpc.example.com");
+    expect(svc.resolveEndpointUrl({ routerId: "ETH1", node: "eth-primary", endpointIndex: 0 })).toBe(
+      "https://eth.rpc.example.com/referer-secret-key/",
     );
   });
 
@@ -816,25 +816,25 @@ describe("ConfigurationService.resolveEndpointUrl", () => {
     const svc = serviceFor(SR_CONFIG_ETH);
     const endpoints = svc.getRouters()[0]!.nodes[0]!.endpoints;
     expect(endpoints.map((e) => e.index)).toEqual([0, 1]);
-    expect(svc.resolveEndpointUrl({ routerId: "ETH1", node: "eth-lava", endpointIndex: 1 })).toBe(
-      "wss://eth1.lava.build/websocket",
+    expect(svc.resolveEndpointUrl({ routerId: "ETH1", node: "eth-primary", endpointIndex: 1 })).toBe(
+      "wss://eth.rpc.example.com/websocket",
     );
   });
 
   it("resolves helm-format endpoints by the router id it publishes", () => {
     const svc = serviceFor(HELM_FULL);
     // `id: Ethereum` — NOT the uppercased network, which is what `spec` is.
-    expect(svc.resolveEndpointUrl({ routerId: "Ethereum", node: "lava", endpointIndex: 0 })).toBe(
-      "https://eth1.lava.build/some/keyed/path",
+    expect(svc.resolveEndpointUrl({ routerId: "Ethereum", node: "nodeworks", endpointIndex: 0 })).toBe(
+      "https://eth.rpc.example.com/some/keyed/path",
     );
-    expect(svc.resolveEndpointUrl({ routerId: "ETH1", node: "lava", endpointIndex: 0 })).toBeNull();
+    expect(svc.resolveEndpointUrl({ routerId: "ETH1", node: "nodeworks", endpointIndex: 0 })).toBeNull();
   });
 
   it("returns null for anything the values file doesn't name", () => {
     const svc = serviceFor(SR_CONFIG_ETH);
-    expect(svc.resolveEndpointUrl({ routerId: "ETH1", node: "eth-lava", endpointIndex: 9 })).toBeNull();
+    expect(svc.resolveEndpointUrl({ routerId: "ETH1", node: "eth-primary", endpointIndex: 9 })).toBeNull();
     expect(svc.resolveEndpointUrl({ routerId: "ETH1", node: "ghost", endpointIndex: 0 })).toBeNull();
-    expect(svc.resolveEndpointUrl({ routerId: "NOPE", node: "eth-lava", endpointIndex: 0 })).toBeNull();
+    expect(svc.resolveEndpointUrl({ routerId: "NOPE", node: "eth-primary", endpointIndex: 0 })).toBeNull();
   });
 
   it("carries internal_path through the helm normalizer, null when absent", () => {

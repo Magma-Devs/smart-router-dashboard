@@ -13,9 +13,9 @@ import { clearFailures } from "./lockout.js";
  * The shape is the same in both deployment modes; only who starts it and how it
  * travels differ. What is identical, and is the point, is that **nobody ever
  * sets somebody else's password**. An admin on-prem generates a *link*; the
- * account holder chooses the value. lava-connect's equivalent endpoint takes a
- * password in the body, and that is precisely the design this rejects: it lets
- * an admin take an account over and sign in as them, which is exactly the
+ * account holder chooses the value. No endpoint takes a password for someone
+ * else's account in its body: that would let an admin take an account over and
+ * sign in as them, which is exactly the
  * takeover the audit log exists to make visible.
  *
  * See `docs/ACCOUNTS-DESIGN.md` §6.3.

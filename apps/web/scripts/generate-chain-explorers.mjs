@@ -1,5 +1,5 @@
 /**
- * generate-chain-explorers.mjs — resolve every Lava spec index to its official
+ * generate-chain-explorers.mjs — resolve every spec index to its official
  * block explorer(s), so the dashboard can link a number it renders (a latest
  * block, a tip, a hash) to the public chain it is a claim about.
  *

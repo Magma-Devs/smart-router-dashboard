@@ -129,7 +129,7 @@ export interface UpstreamMetrics {
    * Config routers that declare this upstream ON THIS ROW'S CHAIN — `[]` when
    * no values file is mounted, one id normally, SEVERAL when routers of the
    * same chain share a node name. A vendor name reused across chains
-   * ("lava", "publicnode") is a different endpoint per chain and never joins
+   * ("publicnode", "blockdaemon") is a different endpoint per chain and never joins
    * another chain's list.
    *
    * It comes from the config, not from the series, because no series carries a

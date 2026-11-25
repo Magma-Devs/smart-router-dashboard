@@ -1,6 +1,6 @@
 # Shared dev image — has the workspace deps baked in (pnpm install at build
 # time), so the dev compose can mount only source/dist dirs without clobbering
-# node_modules. Mirrors lava-connect's Dockerfile.dev.
+# node_modules.
 
 # pnpm comes from its official image, pinned by digest. Its version matches
 # `packageManager` in package.json; Dependabot moves this line, so move the

@@ -215,9 +215,9 @@ describe("block table", () => {
       {
         name: "block_heights",
         rows: [
-          row(tip("cosmos-hub", "COSMOSHUB", "tendermintrpc", "lavanet"), 976),
+          row(tip("cosmos-hub", "COSMOSHUB", "tendermintrpc", "nodeworks"), 976),
           row(tip("cosmos-hub", "COSMOSHUB", "tendermintrpc", "blockdaemon"), 1000),
-          row(tip("cosmos-hub", "COSMOSHUB", "rest", "lavanet"), 1000),
+          row(tip("cosmos-hub", "COSMOSHUB", "rest", "nodeworks"), 1000),
           // GraphQL counts checkpoints its own way: measured against GraphQL only.
           row(tip("sui", "SUI", "graphql", "foundation"), 410_494_211),
           row(tip("sui", "SUI", "grpc", "foundation"), 410_493_961),
@@ -239,7 +239,7 @@ describe("block table", () => {
       {
         name: "block_moves",
         rows: [
-          row(tip("cosmos-hub", "COSMOSHUB", "tendermintrpc", "lavanet"), 140),
+          row(tip("cosmos-hub", "COSMOSHUB", "tendermintrpc", "nodeworks"), 140),
           row(tip("cosmos-hub", "COSMOSHUB", "tendermintrpc", "blockdaemon"), 150),
           row(tip("eth", "ETH1", "jsonrpc", "frozen"), 0),
           row(tip("eth", "ETH1", "jsonrpc", "fresh"), 70),
@@ -254,17 +254,17 @@ describe("block table", () => {
       table.rows.find(
         (r) => r.router === router && r.interface === iface && r.provider === provider,
       );
-    expect(find("cosmos-hub", "tendermintrpc", "lavanet")).toEqual({
+    expect(find("cosmos-hub", "tendermintrpc", "nodeworks")).toEqual({
       router: "cosmos-hub",
       chain: "COSMOSHUB",
       interface: "tendermintrpc",
-      provider: "lavanet",
+      provider: "nodeworks",
       latestBlock: 976,
       blocksBehind: 24,
       secondsBehind: 144,
       notMoving: "no",
     });
-    expect(find("cosmos-hub", "rest", "lavanet")).toMatchObject({
+    expect(find("cosmos-hub", "rest", "nodeworks")).toMatchObject({
       blocksBehind: 0,
       secondsBehind: 0,
     });
@@ -280,7 +280,7 @@ describe("block table", () => {
       notMoving: "yes",
       headStalledUrls: 1,
     });
-    expect(table.rows[1]).toMatchObject({ provider: "lavanet", interface: "tendermintrpc" });
+    expect(table.rows[1]).toMatchObject({ provider: "nodeworks", interface: "tendermintrpc" });
     expect(table.rows.find((r) => r.provider === "fresh")).toMatchObject({ notMoving: "no" });
     expect(table.totals).toEqual({
       providers: 8,
@@ -303,7 +303,7 @@ describe("block table", () => {
     const table = summaryTable("blocks", counts({ block_pace: null, block_moves: null }));
     expect(table.unavailable).toEqual(["block_pace", "block_moves"]);
     const lagging = table.rows.find(
-      (r) => r.provider === "lavanet" && r.interface === "tendermintrpc",
+      (r) => r.provider === "nodeworks" && r.interface === "tendermintrpc",
     )!;
     expect(lagging).toMatchObject({ blocksBehind: 24 });
     expect(lagging).not.toHaveProperty("secondsBehind");

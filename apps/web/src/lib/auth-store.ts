@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Tiny module-level auth store (lava-connect's ApiTokenBridge pattern).
+ * Tiny module-level auth store.
  * `ApiTokenBridge` mirrors the Auth.js session into it once per page
  * load; `api-client` reads the Bearer from here so every data fetch is
  * authenticated without threading the session through every call site.

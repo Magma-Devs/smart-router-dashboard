@@ -1,5 +1,5 @@
 # Smart Router Direct RPC config — multi-chain demo + per-method cross-validation.
-# Direct public endpoints only (no Lava providers). Chains with two RELIABLE
+# Direct public endpoints only. Chains with two RELIABLE
 # vendor groups carry a corroboration policy; BTC/HYPERLIQUID (single source)
 # and SOLANA (second source rate-limits) are served without one.
 #

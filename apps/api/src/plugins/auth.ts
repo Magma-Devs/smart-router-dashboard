@@ -204,10 +204,9 @@ function rejectionResponse(
  *     live user row**, and puts both on `request.authUser`.
  *  3. A global gate: any non-public route without a usable session gets 401.
  *
- * **Why every request hits the database.** lava-connect splits this into a cheap
- * claims-only check for GETs and a `requireAuthFresh` variant for mutations,
- * because its session registry lives in Redis and doesn't carry the user row.
- * Here one indexed join returns both, so the split buys nothing and costs
+ * **Why every request hits the database.** There is no cheap claims-only
+ * check for GETs beside a fresh one for mutations: one indexed join returns the
+ * session and the user row, so such a split buys nothing and costs
  * correctness: with it, a removed person keeps reading the dashboard until they
  * happen to attempt a write. "Their access dies immediately" has to mean all of
  * it. The same request already makes multi-second Prometheus round-trips, so
