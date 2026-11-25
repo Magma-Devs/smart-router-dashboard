@@ -5,6 +5,23 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.94.0]
+
+### Added
+
+- **Admins name the customer-ids callers send, and the dashboard and Ask show
+  the names (MAG-5764).** The routers count each request under the
+  `customer-id` header as sent, and on a PROD tenant that is a 64-character
+  hex id, so Ask's breakdown by customer was a column of hashes. With
+  accounts on, a new Customers page lists every id the routers counted in the
+  last 24 hours with its requests. An admin names, renames or clears an id
+  there, and each change is audited (`customer.named`,
+  `customer.name_cleared`). The Transactions and Errors lists, their Customer
+  filters and an opened request show the name, with the id on hover. Ask's
+  customer rows carry the name, and Ask calls a named customer by its name
+  and takes a name where it takes a customer. Names stay in the deployment's
+  own database. See `docs/CUSTOMER-NAMES.md`.
+
 ## [0.93.0]
 
 ### Added

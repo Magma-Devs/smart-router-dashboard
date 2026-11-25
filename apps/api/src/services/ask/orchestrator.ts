@@ -42,6 +42,7 @@ import {
   PROVIDER_NODE_ERRORS,
   requestSummaryInput,
   requestSummaryQueries,
+  resolveSummaryCustomer,
   WINDOW_REFUSED,
 } from "./request-summary.js";
 import { countRows, MAX_TABLE_ROWS, summaryTable, type CountRow } from "./summary-tables.js";
@@ -55,6 +56,7 @@ import {
 import { PREFETCH_NOTE, prefetchRead, summarizePrefetch } from "./prefetch.js";
 import { STATUS_SUMMARY_NOTE, summarizeChainEvents } from "./status-summary.js";
 import { failedRead, narrowedRead } from "./read-notes.js";
+import { namesIn } from "./customer-names.js";
 import { AskFailure, abortFailure } from "./errors.js";
 import { redactAskData, redactAskText } from "./redact.js";
 import { draftText } from "./draft.js";
@@ -155,7 +157,7 @@ const system = [
   "router_request_summary returns table: its rows and totals are the counts the server added up for the window. Copy figures from table; never add, subtract or recount them yourself. With measure=transactions each chain's row reads accepted, rejected, failedNeverSent, failedOnChain, unknown and total, by the results above.",
   `Providers are the upstream nodes a router sends requests to, named as its configuration names them. measure=providers returns per chain and provider: relays (retries, hedges and health probes included, so not client requests), failedRelays (no usable answer) and nodeErrorReplies (answered with the node's RPC error, ${PROVIDER_NODE_ERRORS}; not in failedRelays). Name both for "which provider returned errors". The cache is not a provider. Which provider answered one request is in its relay_end line: served_by is the provider whose reply reached the client ("Cached" for the cache); attempts lists each provider tried (upstream, outcome, error_code, message), absent when the first try answered. One block's requests are the relay_end lines with |= \`"requested_block":<number>\`; request_id is the caller's X-Request-Id.`,
   `Failed requests: requests the router could not serve are relay_end lines whose outcome is one of ${FAILED_OUTCOMES.join(", ")}; their per-minute counts are smartrouter_final_failures:count1m, out of smartrouter_final_requests:count1m.`,
-  `The reader's own customers: each router counts a client request under the customer-id header its caller sent. A question about the reader's customers, clients, callers or users means these values, not the deployment's own customer ID. router_request_summary with measure=customers reads them from ${CUSTOMER_COUNTERS.requests} and ${CUSTOMER_COUNTERS.failures} (labels customer, spec = the chain id upper-cased, method, apiInterface): requests and failures per customer, and requests per customer and method. Narrow with customer for one customer, methodPrefixes for methods that start with those prefixes (debug_ and trace_ for debug requests), and chain. These are counters, not recorded series: never count them from log lines. Name a customer exactly as returned, a long hex value included: it is an id the caller chose, not a credential. DefaultDappID is the requests that named no customer; other is the requests past a router's cap of 512 customers. Magma's own serving probe (${SERVING_PROBE_CUSTOMER}) is left out. A customer absent from the result is unknown, not zero.`,
+  `The reader's own customers: each router counts a client request under the customer-id header its caller sent. A question about the reader's customers, clients, callers or users means these values, not the deployment's own customer ID. router_request_summary with measure=customers reads them from ${CUSTOMER_COUNTERS.requests} and ${CUSTOMER_COUNTERS.failures} (labels customer, spec = the chain id upper-cased, method, apiInterface): requests and failures per customer, and requests per customer and method. Narrow with customer for one customer (its id or its name), methodPrefixes for methods that start with those prefixes (debug_ and trace_ for debug requests), and chain. These are counters, not recorded series: never count them from log lines. A row's name, or a read's customerNames entry, is the name this deployment gave that customer-id: call such a customer by its name, not its id. Name any other customer by its id exactly as returned, a long hex value included: it is an id the caller chose, not a credential. DefaultDappID is the requests that named no customer; other is the requests past a router's cap of 512 customers. Magma's own serving probe (${SERVING_PROBE_CUSTOMER}) is left out. A customer absent from the result is unknown, not zero.`,
   "Errors and warnings the router logged: router_request_summary with measure=errors returns the warn and error line counts by chain and level, and the most frequent messages. A message reads its numbers as N and its hex values as HEX. These are log lines, not failed requests: one failed request can log several, and a warning can come from a request that succeeded.",
   "A node_error is a node's RPC error response, not one of those router failure outcomes. Distinguish RPC errors from requests the router could not serve. A log sample and an aggregate count in the same time window are not necessarily the same events; do not say a sampled node error is one of the counted router failures without evidence of that relationship.",
   "A recorded router failure is a known failure to serve the RPC request. An aggregate may lack the cause breakdown, but that does not make these unknown-outcome requests. Only an actual transaction write can have an unknown on-chain result; never apply that transaction classification to all request failures.",
@@ -233,6 +235,8 @@ export class AskOrchestrator {
     history: AskMessage[],
     hooks: AskExecutionHooks,
     signal: AbortSignal,
+    /** The deployment's names for its callers' customer-ids, read for this run. */
+    customerNames: ReadonlyMap<string, string> = new Map(),
   ): Promise<AskAnswer> {
     if (run.customerId !== this.settings.customerId) throw new AskFailure("ASK_IDENTITY_MISMATCH");
     await hooks.checkActive();
@@ -461,6 +465,7 @@ export class AskOrchestrator {
           observedWindow?.partial && ["complete", "unknown"].includes(item.coverage)
             ? "partial"
             : item.coverage;
+        const names = namesIn(payload, customerNames);
         const output = {
           evidenceId: item.id,
           coverage: modelCoverage,
@@ -470,6 +475,7 @@ export class AskOrchestrator {
               ? "Only the returned values and labels are established. Missing series or labels are unknown, never zero or false. A complete query response does not prove that every chain reported data."
               : "Coverage is not exhaustive. Report only returned observations, never zero/no incidents/no other errors over the full window. Missing series or labels are unknown, not zero or false. Current status does not establish incident-free history.",
           ...(JSON.parse(payload) as Record<string, unknown>),
+          ...(names ? { customerNames: names } : {}),
         };
         const outputBytes = Buffer.byteLength(JSON.stringify(output));
         if (outputBytes > this.settings.maxToolResultBytes)
@@ -677,9 +683,15 @@ export class AskOrchestrator {
         ) as ToolSet),
         router_request_summary: tool({
           description:
-            "Preferred for NEW live questions about chain attention, request/transaction counts, failures, or the errors and warnings the router logged. Do not use for rewriting or explaining a historical answer. Set measure=transactions for transactions by result, measure=errors for logged warn and error lines with the most frequent messages, measure=providers for providers, measure=customers for the reader's own customers (narrow with customer, methodPrefixes such as debug_ and trace_, or chain). Otherwise reads both request and failure counts. Omit times for the chat window and chain for all customer chains. For 'the last hour', 'today' or 'this week' copy start/end from request.recentWindows; only a date or time the question names goes in from/to (ISO 8601). Missing data is unknown, not zero; a count with no recorded series carries its raw fallback query. No health or cause inference.",
+            "Preferred for NEW live questions about chain attention, request/transaction counts, failures, or the errors and warnings the router logged. Do not use for rewriting or explaining a historical answer. Set measure=transactions for transactions by result, measure=errors for logged warn and error lines with the most frequent messages, measure=providers for providers, measure=customers for the reader's own customers (narrow with customer, an id or a name, methodPrefixes such as debug_ and trace_, or chain). Otherwise reads both request and failure counts. Omit times for the chat window and chain for all customer chains. For 'the last hour', 'today' or 'this week' copy start/end from request.recentWindows; only a date or time the question names goes in from/to (ISO 8601). Missing data is unknown, not zero; a count with no recorded series carries its raw fallback query. No health or cause inference.",
           inputSchema: requestSummaryInput,
-          execute: async (input) => {
+          execute: async (asked) => {
+            let input = asked;
+            if (asked.customer !== undefined) {
+              const resolved = resolveSummaryCustomer(asked.customer, customerNames);
+              if ("error" in resolved) return { error: resolved.error };
+              input = { ...asked, customer: resolved.customer };
+            }
             const queries = requestSummaryQueries(input, defaultWindow, this.settings.customerId);
             if (!queries) return { error: WINDOW_REFUSED };
             const customers = input.measure === "customers";
@@ -724,13 +736,19 @@ export class AskOrchestrator {
             // The table is server-authored, outside each read's own budget: cap
             // its rows to fit a tool result and count its bytes toward the context.
             let maxRows = MAX_TABLE_ROWS;
-            let table = redactAskData(summaryTable(measure, tableCounts, maxRows), secrets);
+            let table = redactAskData(
+              summaryTable(measure, tableCounts, maxRows, customerNames),
+              secrets,
+            );
             while (
               Buffer.byteLength(JSON.stringify(table)) > this.settings.maxToolResultBytes / 2 &&
               maxRows > 1
             ) {
               maxRows = Math.floor(maxRows / 2);
-              table = redactAskData(summaryTable(measure, tableCounts, maxRows), secrets);
+              table = redactAskData(
+                summaryTable(measure, tableCounts, maxRows, customerNames),
+                secrets,
+              );
             }
             pendingBytes += 2 * Buffer.byteLength(JSON.stringify(table)) + 512;
             return {

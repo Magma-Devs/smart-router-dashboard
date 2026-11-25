@@ -28,7 +28,7 @@ import { AUDIT_GROUPS, isKnownSpecIndex, isMetricWindow, USAGE_TABS } from "@sr/
 /** Every fixed segment of the dashboard's routes (`src/app`). Any other segment reads `:id`. */
 export const USAGE_PATH_SEGMENTS = [
   "metrics", "upstreams", "team", "audit", "account", "two-factor", "standalone",
-  "login", "setup", "forgot-password", "invite", "reset", "ask",
+  "login", "setup", "forgot-password", "invite", "reset", "ask", "customers",
 ] as const;
 
 const SEGMENTS: ReadonlySet<string> = new Set(USAGE_PATH_SEGMENTS);

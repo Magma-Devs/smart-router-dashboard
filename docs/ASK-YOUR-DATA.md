@@ -333,8 +333,14 @@ letters, digits, `_` and `/` only) selects methods that start with them, so
 that named no customer, and `other` the requests past a router's 512-customer
 cap. These are Prometheus counters, not recorded series: they carry no log
 fallback and no recording lag, and a customer missing from the result is unknown.
-A customer id is named in the answer as returned; the prompt tells the model a
-long hex id is the caller's choice, not a credential, and redaction leaves it.
+A customer the deployment named ([CUSTOMER-NAMES.md](CUSTOMER-NAMES.md)) carries
+`name` beside `customer` in each row and method row, and any other read whose
+result holds a named id carries `customerNames` (id → name). The model calls
+such a customer by its name. `customer` takes an id or a name: a named id, then
+a name in any case, then a plain id; anything else is a tool error that lists
+the known names. Any other customer is named in the answer by its id as
+returned; the prompt tells the model a long hex id is the caller's choice, not a
+credential, and redaction leaves it.
 
 `measure=providers` answers which provider (upstream node) sent or failed what.
 Per chain and provider it reads relays and successful relays from the recorded

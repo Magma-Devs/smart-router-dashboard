@@ -385,3 +385,4 @@ export type LoginAttempt = typeof loginAttempts.$inferSelect;
 export * from "./schema-audit.js";
 export * from "./schema-ask.js";
 export * from "./schema-ask-accounting.js";
+export * from "./schema-customers.js";

@@ -74,6 +74,9 @@ and durable runs, and shared customer budget admission. The customer feature
 flag, managed accounts and current session gate both the UI and paid routes.
 An admin turns Ask off for everyone at once, and back on, from the Team page
 (`POST /api/ask/switch`, audited as `ask.turned_off` / `ask.turned_on`).
+With accounts on, an admin names the customer-ids callers send on the
+Customers page; the request lists and Ask show the name wherever the id appears
+([`docs/CUSTOMER-NAMES.md`](docs/CUSTOMER-NAMES.md)).
 
 ```
 ┌──────────────┐  REST  ┌─────────────────────┐  PromQL  ┌────────────┐
@@ -327,6 +330,7 @@ packages/shared/          @sr/shared — domain types, metric catalog, PromQL bu
 packages/db/              @sr/db — Drizzle + Postgres (AUTH_MODE=enabled only)
   src/
     schema.ts           users · sessions
+    schema-customers.ts customer_names — admins' names for callers' customer-ids
     schema-audit.ts     audit_events · audit_event_changes (append-only)
     audit.ts            createAuditWriter — the writer every task emits through
     testing.ts          createTestDb() — pglite, a real Postgres in-process
@@ -347,7 +351,7 @@ apps/api/                 @sr/api — Fastify 5 (:8000)
     config.ts           single source of truth for env defaults
 apps/web/                 @sr/web — Next.js 16 App Router (:3000)
   src/
-    app/(app)/          metrics · upstreams · team · audit · account
+    app/(app)/          metrics · upstreams · customers · team · audit · account
                         (Shell layout; the dashboard opens on /metrics,
                         HOME_PATH in lib/home-path.ts)
     app/standalone/     chrome-less Metrics page (sharing/embedding)

@@ -30,6 +30,7 @@ import { LocalTime } from "@/components/gateway/LocalTime";
 import { blockOffHead, quorumChips } from "@/lib/cross-validation";
 import { fmtComma } from "@/lib/format";
 import { codeWords, fmtTook, isCache, providerInWords, providerName, realCode, RequestLogsLink } from "./request-log";
+import { useCustomerNames } from "@/hooks/use-customer-names";
 
 /** What each source means, on hover. */
 export const SOURCE_HINTS: Record<ErrorSource, string> = {
@@ -242,6 +243,7 @@ export function RequestBreakdown(p: BreakdownProps) {
   const entry = finalCode ? explainRouterError(finalCode) : null;
   const routerAnswered = p.final?.from === "router";
   const facts = p.facts;
+  const customerName = useCustomerNames().get(facts.customer ?? "");
   // A block number links to the chain's explorer where the catalog has a proven block page, as the Routers table's heights do.
   const block = (n: number) => (p.spec ? <ExplorerBlockLink spec={p.spec} block={n}>{fmtComma(n)}</ExplorerBlockLink> : fmtComma(n));
   // The cache is not a provider: "2 providers" for one provider and a cache hit read as two.
@@ -375,7 +377,7 @@ export function RequestBreakdown(p: BreakdownProps) {
               <KV label="Smart Router request ID"><span title="The ID Smart Router gives every request: its GUID in the router's logs, and the Router-Guid header on the reply" style={{ display: "contents" }}><Id value={p.guid} /></span><RequestLogsLink id={p.guid} startMs={p.time} tookMs={p.tookMs} /></KV>
               <KV label="Chain"><span title={p.chainTitle}>{p.chain}</span></KV>
               <KV label="Time"><LocalTime t={p.time} format="dateTime" className="gw-mono gw-tnum" /></KV>
-              {facts.customer && <KV label="Customer"><Id value={facts.customer} /></KV>}
+              {facts.customer && <KV label="Customer">{customerName && <span style={{ fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}>{customerName}</span>}<Id value={facts.customer} /></KV>}
               {/* A failed cross-validation shows the two blocks side by side above, once. */}
               {!blocks && facts.requestedBlock != null && <KV label="Requested block"><span className="gw-mono gw-tnum">{block(facts.requestedBlock)}</span></KV>}
               {!blocks && facts.seenBlock != null && <KV label="Router's latest block"><span className="gw-mono gw-tnum">{block(facts.seenBlock)}</span></KV>}

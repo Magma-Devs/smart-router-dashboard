@@ -34,6 +34,8 @@ export const NAV_SECTIONS: NavSection[] = [
       // same config the other two groupings read.
       { href: "/metrics", label: "Metrics", icon: IconChart },
       { href: "/upstreams", label: "Upstreams", icon: IconServer },
+      // The names live in the accounts database, so the page needs accounts.
+      { href: "/customers", label: "Customers", icon: IconUsers, requiresAuth: true },
     ],
   },
   {

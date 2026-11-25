@@ -15,6 +15,7 @@ import { buildChainMetaByIndex, explorerTxUrl, guidMintedSecond, type LogUnavail
 import { SkelRows, type SkelCol } from "@/components/gateway/Skel";
 import { CopyButton } from "@/components/gateway/CopyButton";
 import { LocalTime, ZoneLabel } from "@/components/gateway/LocalTime";
+import { useCustomerNames } from "@/hooks/use-customer-names";
 import { useGrafanaUrl } from "@/hooks/use-grafana-url";
 import { fmtDay, fmtTime, toLocalInputValue } from "@/lib/datetime";
 import { fmtComma } from "@/lib/format";
@@ -328,16 +329,20 @@ export function TimeColumnHead() {
 }
 
 /** A row's time: the hour, and under it the date (a list can span midnight)
- *  and the caller's project when the request named one. The time's tooltip
- *  gives the instant in full, local and UTC. */
+ *  and the caller's customer when the request named one: the deployment's
+ *  name for it, else its id. The time's tooltip gives the instant in full,
+ *  local and UTC. */
 export function WhenCell({ time, customer }: { time: number; customer?: string }) {
+  const name = useCustomerNames().get(customer ?? "");
   return (
     <>
       <LocalTime t={time} format="timeSec" className="gw-mono gw-tnum" style={{ fontSize: 12 }} />
-      <span title={customer ? undefined : "No customer: the caller sent no project-id header"}
+      <span title={customer ? undefined : "No customer: the caller sent no customer-id header"}
         style={{ display: "block", marginTop: 4, fontSize: 10.5, color: "var(--text-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
         <LocalTime t={time} format="day" title={false} />
-        {customer && <span className="gw-mono" title={`Customer - the project-id header the caller sent: ${customer}`}> · {customer}</span>}
+        {customer && (name
+          ? <span title={`Customer ${name} - the customer-id header the caller sent: ${customer}`}> · {name}</span>
+          : <span className="gw-mono" title={`Customer - the customer-id header the caller sent: ${customer}`}> · {customer}</span>)}
       </span>
     </>
   );
@@ -346,11 +351,18 @@ export function WhenCell({ time, customer }: { time: number; customer?: string }
 /** The customer filter's key for requests that carried none. */
 export const NO_CUSTOMER = "\u0000none";
 
-/** The customers in these rows, by name, each with its count; "no customer" last, when some carried none. */
-export function customerOptions(rows: { customer?: string }[]): { key: string; label: string; count: number }[] {
+/** The customers in these rows, each with its count, labelled by the deployment's
+ *  name for it or else its id, in label order; "no customer" last, when some carried none. */
+export function customerOptions(
+  rows: { customer?: string }[],
+  names: ReadonlyMap<string, string> = new Map(),
+): { key: string; label: string; count: number }[] {
   const n = new Map<string, number>();
   for (const r of rows) n.set(r.customer ?? NO_CUSTOMER, (n.get(r.customer ?? NO_CUSTOMER) ?? 0) + 1);
-  const named = [...n].filter(([k]) => k !== NO_CUSTOMER).sort(([a], [b]) => a.localeCompare(b)).map(([key, count]) => ({ key, label: key, count }));
+  const named = [...n]
+    .filter(([k]) => k !== NO_CUSTOMER)
+    .map(([key, count]) => ({ key, label: names.get(key) ?? key, count }))
+    .sort((a, b) => a.label.localeCompare(b.label));
   const none = n.get(NO_CUSTOMER);
   return none ? [...named, { key: NO_CUSTOMER, label: "No customer", count: none }] : named;
 }

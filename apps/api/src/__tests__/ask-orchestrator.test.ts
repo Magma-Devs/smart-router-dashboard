@@ -131,6 +131,8 @@ function fixture(
     envelopes?: Array<Record<string, unknown>>;
     /** Each model step streams, and the hooks take its draft. */
     stream?: boolean;
+    /** The deployment's names for its callers' customer-ids. */
+    customerNames?: ReadonlyMap<string, string>;
   } = {},
 ) {
   const envelopes = [...(options.envelopes ?? [])];
@@ -272,6 +274,7 @@ function fixture(
         history,
         hooks,
         signal,
+        options.customerNames,
       ),
   };
 }
@@ -937,6 +940,101 @@ describe("bounded customer tool orchestration", () => {
         expect(read.parameters.query).toContain('method=~"(?:debug_|trace_).*"');
     },
   );
+
+  it("reads a customer the model names by its name under its id, and the rows carry the name", async () => {
+    const named = "a1".repeat(32);
+    const unnamed = "b2".repeat(32);
+    const f = fixture({
+      customerNames: new Map([[named, "Acme Wallet"]]),
+      data: {
+        status: "success",
+        data: {
+          resultType: "vector",
+          result: [
+            { metric: { customer: named }, value: [1, "42"] },
+            { metric: { customer: unnamed }, value: [1, "7"] },
+          ],
+        },
+      },
+      responses: [
+        provider([
+          {
+            toolUse: {
+              toolUseId: "summary",
+              name: "router_request_summary",
+              input: { measure: "customers", customer: "acme wallet" },
+            },
+          },
+        ]),
+        final(),
+      ],
+    });
+    await f.answer();
+    const reads = vi.mocked(f.hooks.recordTool).mock.calls.map(([read]) => read);
+    for (const read of reads) expect(read.parameters.query).toContain(`customer="${named}"`);
+    const body = JSON.parse(f.bodies[1]!);
+    const result = JSON.parse(body.messages.at(-1).content[0].toolResult.content[0].text);
+    expect(result.table.rows).toEqual([
+      expect.objectContaining({ name: "Acme Wallet", customer: named, requests: 42 }),
+      expect.not.objectContaining({ name: expect.anything() }),
+    ]);
+    expect(result.table.rows[1].customer).toBe(unnamed);
+  });
+
+  it("answers a customer that is neither a name nor an id with a tool error and no read", async () => {
+    const f = fixture({
+      customerNames: new Map([["a1".repeat(32), "Acme Wallet"]]),
+      responses: [
+        provider([
+          {
+            toolUse: {
+              toolUseId: "summary",
+              name: "router_request_summary",
+              input: { measure: "customers", customer: "Nobody Inc" },
+            },
+          },
+        ]),
+        final(),
+      ],
+    });
+    // The scripted model then claims data it never read; only the tool's answer matters here.
+    await f.answer().catch(() => undefined);
+    expect(f.hooks.recordTool).not.toHaveBeenCalled();
+    const body = JSON.parse(f.bodies[1]!);
+    const result = JSON.parse(body.messages.at(-1).content[0].toolResult.content[0].text);
+    expect(result.error).toContain('No customer is named "Nobody Inc"');
+    expect(result.error).toContain("Acme Wallet");
+  });
+
+  it("names the customer-ids a raw read returns, and only those", async () => {
+    const named = "a1".repeat(32);
+    const f = fixture({
+      customerNames: new Map([
+        [named, "Acme Wallet"],
+        ["c3".repeat(32), "Not In This Read"],
+      ]),
+      data: {
+        status: "success",
+        data: { result: [{ metric: { customer: named }, value: [1, "3"] }] },
+      },
+      responses: [
+        provider([
+          {
+            toolUse: {
+              toolUseId: "raw",
+              name: "metrics_query",
+              input: { query: "sum by (customer) (smartrouter_customer_requests_total)" },
+            },
+          },
+        ]),
+        final(),
+      ],
+    });
+    await f.answer();
+    const body = JSON.parse(f.bodies[1]!);
+    const result = JSON.parse(body.messages.at(-1).content[0].toolResult.content[0].text);
+    expect(result.customerNames).toEqual({ [named]: "Acme Wallet" });
+  });
 
   it("hands the model the transactions the server added up by result, never the samples", async () => {
     const f = fixture({
@@ -2005,7 +2103,8 @@ describe("conversation, grounding and execution boundaries", () => {
     expect(prompt).toContain("measure=customers");
     expect(prompt).toContain("smartrouter_customer_requests_total");
     expect(prompt).toContain("not the deployment's own customer ID");
-    expect(prompt).toContain("Name a customer exactly as returned");
+    expect(prompt).toContain("call such a customer by its name, not its id");
+    expect(prompt).toContain("Name any other customer by its id exactly as returned");
     expect(prompt).toContain("DefaultDappID");
     expect(prompt).toContain("requests and the customers that sent them");
   });

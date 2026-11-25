@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { readCustomerNames } from "../customer-names.js";
 import { and, desc, eq, gt, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import {
   askChats,
@@ -282,6 +283,11 @@ export class AskStore {
   /** The retained messages a worker gives a run as history: the newest page
    * `chatDetail` shows, in one round trip. The chat check and the page are
    * read side by side; a chat that is gone fails the run as `chatDetail` does. */
+  /** The deployment's names for its callers' customer-ids, id → name. */
+  customerNames(): Promise<Map<string, string>> {
+    return readCustomerNames(this.db);
+  }
+
   async history(run: Pick<AskRunRow, "ownerId" | "chatId">): Promise<AskMessage[]> {
     const [chat, rows] = await Promise.all([
       this.db

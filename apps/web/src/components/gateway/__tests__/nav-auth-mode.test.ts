@@ -22,6 +22,11 @@ describe("visibleNavSections", () => {
     expect(hrefs(false)).not.toContain("/team");
   });
 
+  it("drops Customers when it does not: the names live in the accounts database", () => {
+    expect(hrefs(true)).toContain("/customers");
+    expect(hrefs(false)).not.toContain("/customers");
+  });
+
   it("keeps the surfaces that have nothing to do with accounts", () => {
     expect(hrefs(false)).toContain("/metrics");
     expect(hrefs(false)).toContain("/upstreams");
@@ -44,7 +49,12 @@ describe("the Ask entry", () => {
   it("is in the menu only where this person can use Ask, after the router's own pages", () => {
     expect(hrefs(true)).not.toContain("/ask");
     const first = visibleNavSections(true, null, null, true)[0]!;
-    expect(first.items.map((i) => i.href)).toEqual(["/metrics", "/upstreams", "/ask"]);
+    expect(first.items.map((i) => i.href)).toEqual([
+      "/metrics",
+      "/upstreams",
+      "/customers",
+      "/ask",
+    ]);
     expect(NAV_SECTIONS.flatMap((s) => s.items).some((i) => i.href === "/ask")).toBe(false);
   });
 });

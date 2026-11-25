@@ -6,6 +6,7 @@ import {
   RECORDED_WARN_ERROR,
   requestSummaryInput,
   requestSummaryQueries,
+  resolveSummaryCustomer,
 } from "../services/ask/request-summary.js";
 import { FAILED_PIPELINE, PARSED_PIPELINE } from "../services/relay-end.js";
 import { TX_EVENT_FILTER } from "../services/transactions.js";
@@ -150,8 +151,17 @@ describe("curated request evidence", () => {
       expect(hasBoundedAskQuery(count.query)).toBe(true);
     }
   });
+  it("never quotes a customer that is not an id into a query: the resolver refuses it first", () => {
+    const injection = 'acme"} or vector(1)';
+    expect(
+      requestSummaryInput.safeParse({ measure: "customers", customer: injection }).success,
+    ).toBe(true);
+    expect(resolveSummaryCustomer(injection, new Map())).toHaveProperty("error");
+    expect(() =>
+      requestSummaryQueries({ measure: "customers", customer: injection }, defaults),
+    ).toThrow("customer is not a customer-id");
+  });
   it.each([
-    { measure: "customers", customer: 'acme"} or vector(1)' },
     { measure: "customers", customer: "" },
     { measure: "customers", customer: "a".repeat(129) },
     { measure: "customers", methodPrefixes: [] },

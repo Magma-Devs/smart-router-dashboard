@@ -225,7 +225,15 @@ export class AskWorker {
     try {
       // The first lease check and the history read go together; nothing
       // external starts until the check has passed.
-      const [, history] = await Promise.all([check(), this.store.history(run)]);
+      const [, history, customerNames] = await Promise.all([
+        check(),
+        this.store.history(run),
+        // A name that cannot be read leaves its id unnamed; it never fails the answer.
+        this.store.customerNames().catch(() => {
+          this.options.onError?.("ASK_CUSTOMER_NAMES_UNAVAILABLE");
+          return new Map<string, string>();
+        }),
+      ]);
       if (controller.signal.aborted) throw controller.signal.reason;
       const supplied = this.options.hooks(run);
       const hooks: AskExecutionHooks = {
@@ -248,6 +256,7 @@ export class AskWorker {
         history.filter((message) => message.runId !== run.id),
         hooks,
         controller.signal,
+        customerNames,
       );
       // `succeed` publishes only under a current lease, a running status and
       // a live session, and the branch below handles each refusal; this

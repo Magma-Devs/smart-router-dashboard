@@ -3,7 +3,7 @@ import { RECORDED_OUTCOMES } from "../error-requests.js";
 import { FAILED_PIPELINE, PARSED_PIPELINE, RELAY_END } from "../relay-end.js";
 import { TX_EVENT_FILTER } from "../transactions.js";
 import { LOG_PIPELINE, RECORDED_TX } from "../transactions-over-time.js";
-import { RECORDED, RECORDED_INTERVAL_SECONDS } from "@sr/shared";
+import { RECORDED, RECORDED_INTERVAL_SECONDS, sameCustomerName } from "@sr/shared";
 
 /** The longest window a count from the recorded series or the provider counters may cover. */
 export const MAX_COUNT_SECONDS = 30 * 86_400;
@@ -62,6 +62,24 @@ export const TOP_CUSTOMER_METHODS = 30;
 
 /** A customer-id value the summary may select by: plain id characters, the router's own 128-byte bound. */
 const CUSTOMER_ID = /^[A-Za-z0-9._:@+=/-]{1,128}$/;
+/**
+ * The customer-id a summary's `customer` names: a named id as given, else the
+ * id whose name it is (in any case), else the value itself when it can be an
+ * id. A value that is none of these is the model's mistake to correct.
+ */
+export function resolveSummaryCustomer(
+  value: string,
+  names: ReadonlyMap<string, string>,
+): { customer: string } | { error: string } {
+  if (names.has(value)) return { customer: value };
+  for (const [id, name] of names) if (sameCustomerName(name, value)) return { customer: id };
+  if (CUSTOMER_ID.test(value)) return { customer: value };
+  const known = [...names.values()].slice(0, 20);
+  return {
+    error: `No customer is named "${value}", and it is not a customer-id. ${known.length ? `Named customers: ${known.join(", ")}.` : "No customer has a name."} Give an id exactly as returned, or omit customer to list them.`,
+  };
+}
+
 /** A method-name prefix: letters, digits, `_` and `/` only, so it is literal inside a regex matcher. */
 const METHOD_PREFIX = /^[A-Za-z0-9_/]{1,64}$/;
 
@@ -76,7 +94,7 @@ export const requestSummaryInput = z
       .string()
       .regex(/^[A-Za-z0-9_-]{2,32}$/)
       .optional(),
-    customer: z.string().regex(CUSTOMER_ID).optional(),
+    customer: z.string().min(1).max(128).optional(),
     methodPrefixes: z.array(z.string().regex(METHOD_PREFIX)).min(1).max(8).optional(),
     start: z.number().int().nonnegative().optional(),
     end: z.number().int().nonnegative().optional(),
@@ -261,6 +279,9 @@ function providerCounts(input: z.infer<typeof requestSummaryInput>, range: strin
  * these counters carry upper-cased where the recorded series carry it lower-cased.
  */
 function customerCounts(input: z.infer<typeof requestSummaryInput>, range: string): SummaryCount[] {
+  // The orchestrator resolves a name to its id first (resolveSummaryCustomer).
+  if (input.customer !== undefined && !CUSTOMER_ID.test(input.customer))
+    throw new Error("customer is not a customer-id");
   const matchers = [
     `customer!=${JSON.stringify(SERVING_PROBE_CUSTOMER)}`,
     ...(input.chain ? [`spec=${JSON.stringify(input.chain.toUpperCase())}`] : []),

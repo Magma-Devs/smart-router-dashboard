@@ -65,7 +65,8 @@ export type AuditOrigin =
   | "MAG-4403"
   | "MAG-2869"
   | "MAG-5351"
-  | "MAG-4750";
+  | "MAG-4750"
+  | "MAG-5764";
 
 export interface AuditEventSpec {
   readonly group: AuditGroup;
@@ -429,6 +430,21 @@ export const AUDIT_EVENTS = {
     carriesChanges: false,
     carriesAccessContext: false,
     origin: "MAG-4750",
+  },
+  "customer.named": {
+    group: "config",
+    description:
+      "An admin named a customer-id that callers send, or renamed it. The name shows wherever that id does on this dashboard and in Ask's answers.",
+    carriesChanges: true,
+    carriesAccessContext: false,
+    origin: "MAG-5764",
+  },
+  "customer.name_cleared": {
+    group: "config",
+    description: "An admin cleared a customer-id's name. The dashboard shows the id itself again.",
+    carriesChanges: true,
+    carriesAccessContext: false,
+    origin: "MAG-5764",
   },
 
   // ── Approval ──────────────────────────────────────────────────────────────

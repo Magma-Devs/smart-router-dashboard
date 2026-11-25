@@ -60,6 +60,7 @@ import {
 } from "./request-log";
 import { RequestBreakdown, type BreakdownProps, type FinalAnswer } from "./request-breakdown";
 import { track } from "@/lib/usage";
+import { useCustomerNames } from "@/hooks/use-customer-names";
 
 const PER_PAGE = 25;
 export const ALL = "all";
@@ -355,7 +356,8 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
     return [...n].sort(([a], [b]) => (a < b ? -1 : 1)).map(([name, count]) => ({ name, count }));
   }, [allRows]);
   const errTypes = useMemo(() => errorTypeOptions(allRows), [allRows]);
-  const customers = useMemo(() => customerOptions(allRows), [allRows]);
+  const customerNames = useCustomerNames();
+  const customers = useMemo(() => customerOptions(allRows, customerNames), [allRows, customerNames]);
 
   // Each row of pills counts within every other filter, so a pill's number is
   // what picking it would list.

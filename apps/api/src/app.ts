@@ -28,6 +28,7 @@ import { auditRoutes } from "./routes/audit.js";
 import { auditTokenRoutes } from "./routes/audit-tokens.js";
 import { askRoutes } from "./routes/ask.js";
 import { askInternalRoutes } from "./routes/ask-internal.js";
+import { customerRoutes } from "./routes/customers.js";
 import { installAskRuntime } from "./services/ask/runtime.js";
 
 /**
@@ -114,6 +115,8 @@ export async function buildApp(): Promise<FastifyInstance> {
     // is disabled.
     await app.register(auditRoutes);
     await app.register(auditTokenRoutes);
+    // The names live in the accounts database, so the routes exist only with it.
+    await app.register(customerRoutes);
     const askRuntime = installAskRuntime(app);
     await app.register(askRoutes, askRuntime);
     await app.register(askInternalRoutes);

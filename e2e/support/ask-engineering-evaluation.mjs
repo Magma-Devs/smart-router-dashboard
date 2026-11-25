@@ -108,6 +108,10 @@ const metricNames = [
   "smartrouter_transactions:count1m",
   "smartrouter_warn_error_lines:count1m",
 ];
+// The deployment's names for its callers' customer-ids: one named, one not.
+const NAMED_CUSTOMER = "c0ffee".padEnd(64, "0");
+const UNNAMED_CUSTOMER = "decaf".padEnd(64, "1");
+const customerNames = new Map([[NAMED_CUSTOMER, "Northwind Wallet"]]);
 const receipts = [];
 const answers = [];
 let currentReads = [];
@@ -294,6 +298,25 @@ function sourceData(operationId, parameters) {
         resultType: "vector",
         result: Object.entries(counts).map(([provider, value]) => ({
           metric: { spec: "ETH1", provider_address: provider },
+          value: [queriedAt, value],
+        })),
+      },
+    };
+  }
+  // Per-customer counters: the named customer sends the most, failing twice.
+  if (query.includes("smartrouter_customer_requests") && !operationId.endsWith("query_range")) {
+    const failed = query.includes("failed");
+    const byMethod = query.includes("method");
+    return {
+      status: "success",
+      data: {
+        resultType: "vector",
+        result: [
+          [NAMED_CUSTOMER, failed ? "2" : "1330"],
+          [UNNAMED_CUSTOMER, failed ? "0" : "754"],
+          ["DefaultDappID", failed ? "9" : "20688"],
+        ].map(([customer, value]) => ({
+          metric: { customer, ...(byMethod ? { method: "eth_call" } : {}) },
           value: [queriedAt, value],
         })),
       },
@@ -593,6 +616,13 @@ const regressions = [
   ["How many transactions were sent in the last hour?", /391/, null],
   ["Which of our customers sent the most requests in the last 7 days?", null, null],
   ["Show me failed requests from the last week", null, null],
+  // A named customer by its name, never its id; an unnamed one by its id.
+  ["show me breakdown by customer", /Northwind Wallet/, new RegExp(NAMED_CUSTOMER.slice(0, 12))],
+  [
+    "How many requests did northwind wallet send today?",
+    /1,?330/,
+    /not (a )?(known|recognized)|no customer named/i,
+  ],
 ];
 // Working shown in an answer, which the answer text never holds.
 const workingShown =
@@ -625,7 +655,7 @@ const cases = [
     startsNear,
   })),
 ];
-if (cases.length !== 111) throw new Error("Expected 111 distinct acceptance scenarios");
+if (cases.length !== 113) throw new Error("Expected 113 distinct acceptance scenarios");
 const repeat = Number(process.env.ASK_EVALUATION_REPEAT ?? 1);
 if (!Number.isInteger(repeat) || repeat < 1 || repeat > 5)
   throw new Error("ASK_EVALUATION_REPEAT is a whole number from 1 to 5");
@@ -673,6 +703,7 @@ async function turn(actor, session, chat, question) {
         },
       },
       AbortSignal.timeout(settings.runTimeoutMs),
+      customerNames,
     );
     if (!(await store.succeed(run.id, run.leaseToken, answer)))
       throw new Error("Evaluation lost its lease");

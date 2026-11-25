@@ -91,6 +91,8 @@ export function summaryTable(
   measure: SummaryMeasure,
   counts: { name: string; rows: CountRow[] | null }[],
   maxRows: number = MAX_TABLE_ROWS,
+  /** measure=customers: the deployment's names for its callers' customer-ids. */
+  customerNames: ReadonlyMap<string, string> = new Map(),
 ): SummaryTable {
   const unavailable = counts.filter((count) => count.rows === null).map((count) => count.name);
   const read = (name: string) => counts.find((count) => count.name === name)?.rows ?? null;
@@ -98,6 +100,11 @@ export function summaryTable(
   let columns: string[] = [];
   let detail: TableRow[] | undefined;
   let order: (a: TableRow, b: TableRow) => number = () => 0;
+  // A named customer's row carries its name beside the id; an unnamed one has no name field.
+  const named = (row: TableRow): TableRow => {
+    const name = customerNames.get(String(row.customer ?? ""));
+    return name === undefined ? row : { name, ...row };
+  };
 
   if (measure === "transactions") {
     const rows = read("transactions");
@@ -139,11 +146,11 @@ export function summaryTable(
       if (!rows) continue;
       columns.push(column);
       for (const { labels, value } of rows) {
-        add(by, labels.customer ?? "", pick(labels, ["customer"]), column, value);
+        add(by, labels.customer ?? "", named(pick(labels, ["customer"])), column, value);
       }
     }
     detail = read("customer_methods")?.map(({ labels, value }) => ({
-      ...pick(labels, ["customer", "method"]),
+      ...named(pick(labels, ["customer", "method"])),
       requests: value,
     }));
     order = (a, b) => Number(b.requests ?? 0) - Number(a.requests ?? 0);

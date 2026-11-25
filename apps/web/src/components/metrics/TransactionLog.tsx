@@ -66,6 +66,7 @@ import {
 import { TransactionsChart, TX_RESULT } from "./TransactionsChart";
 import { RequestBreakdown, type BreakdownProps, type FinalAnswer } from "./request-breakdown";
 import { track } from "@/lib/usage";
+import { useCustomerNames } from "@/hooks/use-customer-names";
 
 const PER_PAGE = 25;
 const ALL = "all";
@@ -231,7 +232,8 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
     return [...n].sort(([a], [b]) => (a < b ? -1 : 1)).map(([name, count]) => ({ name, count }));
   }, [allRows]);
   // The result options count within the other filters, so a number is what picking it would list.
-  const customers = useMemo(() => customerOptions(allRows), [allRows]);
+  const customerNames = useCustomerNames();
+  const customers = useMemo(() => customerOptions(allRows, customerNames), [allRows, customerNames]);
   const byOthers = allRows.filter((r) =>
     (customer === ALL || hasCustomer(r, customer)) &&
     (method === ALL || r.method === method) &&

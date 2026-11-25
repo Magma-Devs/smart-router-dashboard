@@ -55,6 +55,8 @@ export const AUDIT_EVENT_LABELS: Record<AuditAction, string> = {
   "apikey.deleted": "API key deleted",
   "ask.turned_off": "Ask turned off",
   "ask.turned_on": "Ask turned on",
+  "customer.named": "Customer named",
+  "customer.name_cleared": "Customer name cleared",
 
   "change.requested": "Change requested",
   "change.approved": "Change approved",
