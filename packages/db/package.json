@@ -28,7 +28,7 @@
     "@sr/shared": "workspace:*",
     "bcryptjs": "3.0.3",
     "drizzle-orm": "0.45.3",
-    "postgres": "3.4.9"
+    "postgres": "4.1.1"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.5.16",
