@@ -19,7 +19,7 @@
   "dependencies": {
     "@ai-sdk/provider": "4.0.39",
     "@aws-sdk/client-sesv2": "3.1173.0",
-    "@fastify/cors": "11.3.0",
+    "@fastify/cors": "11.4.3",
     "@fastify/helmet": "13.2.0",
     "@fastify/jwt": "10.2.8",
     "@fastify/rate-limit": "11.2.2",
