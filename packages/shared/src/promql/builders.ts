@@ -358,6 +358,25 @@ export function qErrorsByUpstream(window: MetricWindow = DEFAULT_WINDOW, spec?: 
   return `round(clamp_min(${tot} - (${ok} or ${tot} * 0), 0))`;
 }
 
+export type ClassifiedErrorsGroupBy = "error_name" | "error_category" | "retryable";
+
+/**
+ * The classified counter's pivots (code, category, retryability), whole
+ * errors. The counter carries `chain_id`, not `spec`. Its `source` label says
+ * who sent the attempt (smart-router MAG-5598): only `client` is the
+ * customer's traffic; the router's own probes, boot checks, reverifies and
+ * polls, and the errors on WebSocket subscriptions, stay out. `""` matches a
+ * router that doesn't emit the label yet.
+ */
+export function qClassifiedErrorsBy(
+  by: ClassifiedErrorsGroupBy,
+  window: MetricWindow = DEFAULT_WINDOW,
+  spec?: string,
+): string {
+  const sel = [...(spec ? [`chain_id="${spec}"`] : []), `source=~"client|"`].join(",");
+  return `round(sum by (${by}) (increase(${OPTIONAL_METRICS.errorsClassifiedTotal}{${sel}}[${rangeFor(window)}])))`;
+}
+
 /** Relays per (chain × upstream) over the window, whole numbers — the pair the Errors hotspots divide by. */
 export function qRequestsByUpstream(window: MetricWindow = DEFAULT_WINDOW, spec?: string): string {
   const sel = selector({ spec });

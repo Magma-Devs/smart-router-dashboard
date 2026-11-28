@@ -17,6 +17,7 @@ import {
   qErrorRate,
   qLatencyQuantile,
   qLatestBlock,
+  qClassifiedErrorsBy,
   qErrorCount,
   qErrorsBy,
   qErrorsByUpstream,
@@ -347,6 +348,19 @@ describe("derived error math", () => {
     expect(q).toContain("or sum by (provider_address) (increase(smartrouter_requests_total[86400s])) * 0");
     // round(): error counts are whole events, never increase() fractions.
     expect(q.startsWith("round(clamp_min(")).toBe(true);
+  });
+  it("qClassifiedErrorsBy reads the clients' attempts: source client, or no label yet (MAG-5598)", () => {
+    expect(qClassifiedErrorsBy("error_name", "1h", "ETH1")).toBe(
+      'round(sum by (error_name) (increase(smartrouter_errors_total{chain_id="ETH1",source=~"client|"}[3600s])))',
+    );
+    expect(qClassifiedErrorsBy("retryable", "1d")).toBe(
+      'round(sum by (retryable) (increase(smartrouter_errors_total{source=~"client|"}[86400s])))',
+    );
+  });
+  it("qClassifiedErrorsBy takes the router scope beside its source matcher", () => {
+    expect(applyScope(qClassifiedErrorsBy("error_category", "1h"), { label: "router", value: "eth-main" })).toBe(
+      'round(sum by (error_category) (increase(smartrouter_errors_total{router="eth-main",source=~"client|"}[3600s])))',
+    );
   });
   it("qRequestsBy groups whole-number relays by the label", () => {
     expect(qRequestsBy("method", "1h", "ETH1")).toBe(

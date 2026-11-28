@@ -259,3 +259,48 @@ describe("MetricsDetailService error classes (MAG-3847)", () => {
     for (const expr of protocolExprs) expect(expr).toContain("min_over_time(smartrouter_protocol_errors_total");
   });
 });
+
+describe("MetricsDetailService classified error pivots (MAG-5598)", () => {
+  // smartrouter_errors_total gains `source` (client, probe, boot, reverify,
+  // poll, subscription). The code, category and retryability pivots count what
+  // the customer's own requests met, so they read source="client", and "" for a
+  // router that doesn't emit the label yet.
+  function classifiedProm(): { prom: PrometheusClient; queries: string[] } {
+    const queries: string[] = [];
+    const prom = {
+      async query(expr: string) {
+        queries.push(expr);
+        return [];
+      },
+      async queryRange() {
+        return [];
+      },
+      async scalar(expr: string) {
+        return expr === 'count({__name__="smartrouter_errors_total"})' ? 1 : null;
+      },
+      async ping() {
+        return true;
+      },
+    } as unknown as PrometheusClient;
+    return { prom, queries };
+  }
+  const pivots = (queries: string[]) => queries.filter((q) => q.includes("smartrouter_errors_total"));
+
+  it("all three pivots read the clients' attempts on the chosen chain", async () => {
+    const { prom, queries } = classifiedProm();
+    await new MetricsDetailService(prom).errors("1d", "ETH1");
+    expect(pivots(queries)).toEqual(
+      ["error_name", "error_category", "retryable"].map(
+        (by) =>
+          `round(sum by (${by}) (increase(smartrouter_errors_total{chain_id="ETH1",source=~"client|"}[86400s])))`,
+      ),
+    );
+  });
+
+  it("...and with no chain chosen", async () => {
+    const { prom, queries } = classifiedProm();
+    await new MetricsDetailService(prom).errors("1d");
+    expect(pivots(queries)).toHaveLength(3);
+    for (const q of pivots(queries)) expect(q).toContain('smartrouter_errors_total{source=~"client|"}[86400s]');
+  });
+});

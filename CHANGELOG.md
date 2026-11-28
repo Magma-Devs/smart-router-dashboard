@@ -5,6 +5,18 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.93.4]
+
+### Fixed
+
+- **The error code, category and retryability pivots count only the
+  clients' own attempts (MAG-5598).** smart-router is adding a `source` label
+  to `smartrouter_errors_total`. Besides `client`, its values are `probe`,
+  `boot`, `reverify` and `poll` (the router's own checks) and
+  `subscription` (errors on WebSocket subscriptions). The Errors tab's three
+  pivots now read `source=~"client|"`, which also matches a router that
+  doesn't emit the label yet.
+
 ## [0.93.3]
 
 ### Changed
